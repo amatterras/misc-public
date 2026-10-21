@@ -1,0 +1,534 @@
+import 'package:flutter/material.dart';
+
+import '../../app/theme.dart';
+import '../../data/models/canvas_models.dart';
+import 'canvas_controller.dart';
+
+const organizerColorNames = [
+  'Coral',
+  'Amber',
+  'Yellow',
+  'Green',
+  'Teal',
+  'Blue',
+  'Indigo',
+  'Purple',
+  'Pink',
+  'Grey',
+];
+
+/// Floating vertical tool palette on the left of the canvas.
+class CanvasToolbar extends StatelessWidget {
+  const CanvasToolbar({
+    super.key,
+    required this.controller,
+    required this.onAddImage,
+    required this.onAddLink,
+  });
+
+  final CanvasController controller;
+  final VoidCallback onAddImage;
+  final VoidCallback onAddLink;
+
+  @override
+  Widget build(BuildContext context) {
+    final tool = controller.tool;
+    Widget toolButton(CanvasTool t, Widget icon, String label) => ToolButton(
+      icon: icon,
+      tooltip: label,
+      active: tool == t,
+      onPressed: () => controller.tool = t,
+    );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ToolPanel(
+          children: [
+            toolButton(
+              CanvasTool.select,
+              Transform.flip(
+                flipX: true,
+                child: const Icon(Icons.near_me_outlined, size: 18),
+              ),
+              'Select & move  (V)',
+            ),
+            toolButton(
+              CanvasTool.pan,
+              const Icon(Icons.pan_tool_outlined, size: 17),
+              'Pan  (H, or hold Space / middle mouse)',
+            ),
+            const _PanelDivider(),
+            toolButton(
+              CanvasTool.pen,
+              const Icon(Icons.draw_outlined, size: 18),
+              'Draw  (P)',
+            ),
+            toolButton(
+              CanvasTool.eraser,
+              const _EraserIcon(),
+              'Eraser — removes drawings  (E)',
+            ),
+            toolButton(
+              CanvasTool.text,
+              const Icon(Icons.title, size: 18),
+              'Note  (T, or double-click)',
+            ),
+            const _PanelDivider(),
+            ToolButton(
+              icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+              tooltip: 'Add photos from this PC',
+              onPressed: onAddImage,
+            ),
+            ToolButton(
+              icon: const Icon(Icons.add_link, size: 18),
+              tooltip: 'Add link  (or paste a URL with Ctrl+V)',
+              onPressed: onAddLink,
+            ),
+          ],
+        ),
+        const SizedBox(height: Space.md),
+        ToolPanel(
+          children: [
+            ToolButton(
+              icon: const Icon(Icons.undo, size: 18),
+              tooltip: 'Undo  (Ctrl+Z)',
+              onPressed: controller.canUndo ? controller.undo : null,
+            ),
+            ToolButton(
+              icon: const Icon(Icons.redo, size: 18),
+              tooltip: 'Redo  (Ctrl+Y)',
+              onPressed: controller.canRedo ? controller.redo : null,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Context options shown at the top of the canvas: pen colours/widths while
+/// drawing, formatting and actions for the current selection.
+class CanvasContextBar extends StatelessWidget {
+  const CanvasContextBar({
+    super.key,
+    required this.controller,
+    required this.onActivate,
+    required this.onRefreshLink,
+  });
+
+  final CanvasController controller;
+  final void Function(CanvasItem) onActivate;
+  final void Function(LinkItem) onRefreshLink;
+
+  static const _penColors = [AppColors.text, ...OrganizerColors.all];
+  static const _penWidths = [1.5, 2.5, 5.0, 9.0];
+  static const _fontSizes = {'S': 13.0, 'M': 16.0, 'L': 22.0, 'XL': 32.0};
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    if (c.tool == CanvasTool.pen) {
+      return ToolPanel(
+        horizontal: true,
+        children: [
+          for (final color in _penColors)
+            _Swatch(
+              color: color,
+              active: c.penColor == color,
+              onTap: () => c.setPen(color: color),
+            ),
+          const _PanelDivider(vertical: true),
+          for (final width in _penWidths)
+            ToolButton(
+              tooltip: 'Line width',
+              active: c.penWidth == width,
+              onPressed: () => c.setPen(width: width),
+              icon: Container(
+                width: width + 2,
+                height: width + 2,
+                decoration: const BoxDecoration(
+                  color: AppColors.text,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+    final selected = c.selectedItems;
+    if (c.tool != CanvasTool.select || selected.isEmpty || c.isDragging) {
+      return const SizedBox.shrink();
+    }
+    final texts = selected.whereType<TextItem>().toList();
+    final first = texts.isEmpty ? null : texts.first;
+    final single = selected.length == 1 ? selected.first : null;
+
+    return ToolPanel(
+      horizontal: true,
+      children: [
+        if (first != null) ...[
+          for (final entry in _fontSizes.entries)
+            ToolButton(
+              tooltip: 'Text size',
+              active: first.fontSize == entry.value,
+              onPressed: () => c.setFontSize(entry.value),
+              icon: Text(
+                entry.key,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          const _PanelDivider(vertical: true),
+          ToolButton(
+            tooltip: 'Bold',
+            active: first.bold,
+            onPressed: () =>
+                c.updateSelectedTexts((t) => t.copyWith(bold: !first.bold)),
+            icon: const Icon(Icons.format_bold, size: 18),
+          ),
+          ToolButton(
+            tooltip: 'Italic',
+            active: first.italic,
+            onPressed: () =>
+                c.updateSelectedTexts((t) => t.copyWith(italic: !first.italic)),
+            icon: const Icon(Icons.format_italic, size: 18),
+          ),
+          ToolButton(
+            tooltip: 'Alignment',
+            onPressed: () {
+              final next = TextAlignment.values[(first.align.index + 1) % 3];
+              c.updateSelectedTexts((t) => t.copyWith(align: next));
+            },
+            icon: Icon(switch (first.align) {
+              TextAlignment.left => Icons.format_align_left,
+              TextAlignment.center => Icons.format_align_center,
+              TextAlignment.right => Icons.format_align_right,
+            }, size: 18),
+          ),
+          _ColorMenu(
+            tooltip: 'Text colour',
+            icon: Icons.format_color_text,
+            current: first.textColor,
+            noneLabel: 'Default',
+            onSelected: (color) => c.updateSelectedTexts(
+              (t) => t.copyWith(textColor: () => color),
+            ),
+          ),
+          _ColorMenu(
+            tooltip: 'Note background',
+            icon: Icons.format_color_fill,
+            current: first.background,
+            noneLabel: 'None',
+            onSelected: (color) => c.updateSelectedTexts(
+              (t) => t.copyWith(background: () => color),
+            ),
+          ),
+          const _PanelDivider(vertical: true),
+        ],
+        if (single is LinkItem) ...[
+          ToolButton(
+            tooltip: 'Open link in browser  (double-click)',
+            onPressed: () => onActivate(single),
+            icon: const Icon(Icons.open_in_new, size: 17),
+          ),
+          ToolButton(
+            tooltip: 'Fetch title & preview again',
+            onPressed: () => onRefreshLink(single),
+            icon: const Icon(Icons.refresh, size: 17),
+          ),
+          const _PanelDivider(vertical: true),
+        ],
+        if (single is NoteCardItem) ...[
+          ToolButton(
+            tooltip: 'Open note  (double-click)',
+            onPressed: () => onActivate(single),
+            icon: const Icon(Icons.open_in_new, size: 17),
+          ),
+          const _PanelDivider(vertical: true),
+        ],
+        ToolButton(
+          tooltip: 'Duplicate  (Ctrl+D)',
+          onPressed: c.duplicateSelection,
+          icon: const Icon(Icons.copy_all_outlined, size: 17),
+        ),
+        ToolButton(
+          tooltip: 'Bring to front',
+          onPressed: c.bringToFront,
+          icon: const Icon(Icons.flip_to_front, size: 17),
+        ),
+        ToolButton(
+          tooltip: 'Send to back',
+          onPressed: c.sendToBack,
+          icon: const Icon(Icons.flip_to_back, size: 17),
+        ),
+        ToolButton(
+          tooltip: 'Delete  (Del)',
+          onPressed: c.deleteSelection,
+          icon: const Icon(Icons.delete_outline, size: 17),
+        ),
+      ],
+    );
+  }
+}
+
+class _ColorMenu extends StatelessWidget {
+  const _ColorMenu({
+    required this.tooltip,
+    required this.icon,
+    required this.current,
+    required this.noneLabel,
+    required this.onSelected,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final Color? current;
+  final String noneLabel;
+  final ValueChanged<Color?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<int>(
+      tooltip: tooltip,
+      position: PopupMenuPosition.under,
+      onSelected: (i) => onSelected(i < 0 ? null : OrganizerColors.all[i]),
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: -1,
+          height: 34,
+          child: Row(
+            children: [
+              const Icon(Icons.block, size: 14, color: AppColors.textFaint),
+              const SizedBox(width: 10),
+              Text(noneLabel),
+            ],
+          ),
+        ),
+        for (var i = 0; i < OrganizerColors.all.length; i++)
+          PopupMenuItem(
+            value: i,
+            height: 34,
+            child: Row(
+              children: [
+                Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: OrganizerColors.all[i],
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(organizerColorNames[i]),
+              ],
+            ),
+          ),
+      ],
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 17, color: AppColors.textMuted),
+            const SizedBox(height: 2),
+            Container(
+              width: 16,
+              height: 3,
+              decoration: BoxDecoration(
+                color: current ?? AppColors.textFaint,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ToolPanel extends StatelessWidget {
+  const ToolPanel({super.key, required this.children, this.horizontal = false});
+
+  final List<Widget> children;
+  final bool horizontal;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: horizontal
+          ? Row(mainAxisSize: MainAxisSize.min, children: children)
+          : Column(mainAxisSize: MainAxisSize.min, children: children),
+    );
+  }
+}
+
+class _PanelDivider extends StatelessWidget {
+  const _PanelDivider({this.vertical = false});
+
+  final bool vertical;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: vertical ? 1 : 20,
+    height: vertical ? 20 : 1,
+    margin: vertical
+        ? const EdgeInsets.symmetric(horizontal: 6)
+        : const EdgeInsets.symmetric(vertical: 6),
+    color: AppColors.border,
+  );
+}
+
+class ToolButton extends StatelessWidget {
+  const ToolButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.active = false,
+  });
+
+  final Widget icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    return Tooltip(
+      message: tooltip,
+      preferBelow: false,
+      child: Material(
+        color: active ? AppColors.selected : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: AppColors.hover,
+          onTap: onPressed,
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: Center(
+              child: IconTheme.merge(
+                data: IconThemeData(
+                  color: !enabled
+                      ? AppColors.textFaint
+                      : active
+                      ? AppColors.text
+                      : AppColors.textMuted,
+                ),
+                child: DefaultTextStyle.merge(
+                  style: TextStyle(
+                    color: active ? AppColors.text : AppColors.textMuted,
+                  ),
+                  child: icon,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Swatch extends StatelessWidget {
+  const _Swatch({
+    required this.color,
+    required this.active,
+    required this.onTap,
+  });
+
+  final Color color;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(5),
+        child: Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: active ? AppColors.text : Colors.transparent,
+              width: 2,
+              strokeAlign: BorderSide.strokeAlignOutside,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Material Icons has no eraser glyph, so we draw a simple one.
+class _EraserIcon extends StatelessWidget {
+  const _EraserIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = IconTheme.of(context).color ?? AppColors.textMuted;
+    return CustomPaint(
+      size: const Size(18, 18),
+      painter: _EraserPainter(color),
+    );
+  }
+}
+
+class _EraserPainter extends CustomPainter {
+  _EraserPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeJoin = StrokeJoin.round;
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2 - 1);
+    canvas.rotate(-0.7);
+    final body = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: Offset.zero, width: 14, height: 8),
+      const Radius.circular(2),
+    );
+    canvas.drawRRect(body, paint);
+    canvas.drawLine(const Offset(-1, -4), const Offset(-1, 4), paint);
+    canvas.restore();
+    canvas.drawLine(
+      Offset(size.width * 0.45, size.height - 1.5),
+      Offset(size.width - 1, size.height - 1.5),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_EraserPainter old) => old.color != color;
+}
