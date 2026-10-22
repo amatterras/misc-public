@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'record.dart' show utcIso;
+import 'unknown_fields.dart';
 
 /// Generates a reasonably unique id without extra dependencies.
 String newId() {
@@ -552,6 +553,9 @@ class CanvasDocument {
     this.tombstones = const {},
     this.metaRev,
     this.unknownItems = const [],
+    this.itemUnknownFields = const {},
+    this.unknownKeys = const {},
+    this.metaUnknownFields = const {},
   });
 
   /// 2: note styling, images, link and note cards.
@@ -584,6 +588,36 @@ class CanvasDocument {
   /// another device). Kept untouched and written back as they were.
   final List<Map<String, dynamic>> unknownItems;
 
+  /// Fields of readable items that this version does not know (item id →
+  /// fields), written back with the item. See `unknown_fields.dart`.
+  final Map<String, Map<String, dynamic>> itemUnknownFields;
+
+  /// Top-level keys of the file that this version does not know.
+  final Map<String, dynamic> unknownKeys;
+
+  /// Fields of the synced canvas metadata (title, folder, order) that this
+  /// version does not know; sent back with it.
+  final Map<String, dynamic> metaUnknownFields;
+
+  static const _knownKeys = {
+    'schema',
+    'id',
+    'title',
+    'folderId',
+    'updatedAt',
+    'viewport',
+    'items',
+    'itemRevs',
+    'tombstones',
+    'metaRev',
+    'metaUnknownFields',
+  };
+
+  /// [item] as stored and synced, including fields this version does not
+  /// know.
+  Map<String, dynamic> itemJson(CanvasItem item) =>
+      withUnknownFields(item.toJson(), itemUnknownFields[item.id]);
+
   CanvasDocument copyWith({
     String? title,
     List<CanvasItem>? items,
@@ -602,29 +636,38 @@ class CanvasDocument {
       tombstones: tombstones,
       metaRev: metaRev,
       unknownItems: unknownItems,
+      itemUnknownFields: itemUnknownFields,
+      unknownKeys: unknownKeys,
+      metaUnknownFields: metaUnknownFields,
     );
   }
 
   Map<String, dynamic> toJson() => {
+    ...unknownKeys,
     'schema': schemaVersion,
     'id': id,
     'title': title,
     'folderId': folderId,
     'updatedAt': utcIso(updatedAt),
     'viewport': viewport.toJson(),
-    'items': [for (final item in items) item.toJson(), ...unknownItems],
+    'items': [for (final item in items) itemJson(item), ...unknownItems],
     if (itemRevs.isNotEmpty) 'itemRevs': itemRevs,
     if (tombstones.isNotEmpty) 'tombstones': tombstones,
     'metaRev': ?metaRev,
+    if (metaUnknownFields.isNotEmpty) 'metaUnknownFields': metaUnknownFields,
   };
 
   factory CanvasDocument.fromJson(Map<String, dynamic> json) {
     final items = <CanvasItem>[];
     final unknown = <Map<String, dynamic>>[];
+    final itemUnknown = <String, Map<String, dynamic>>{};
     for (final raw in json['items'] as List) {
       final map = raw as Map<String, dynamic>;
       try {
-        items.add(CanvasItem.fromJson(map));
+        final item = CanvasItem.fromJson(map);
+        items.add(item);
+        final fields = unknownFields(map, item.toJson().keys);
+        if (fields.isNotEmpty) itemUnknown[item.id] = fields;
       } catch (_) {
         unknown.add(map);
       }
@@ -643,6 +686,11 @@ class CanvasDocument {
       itemRevs: {...?(json['itemRevs'] as Map?)?.cast<String, String>()},
       tombstones: {...?(json['tombstones'] as Map?)?.cast<String, String>()},
       metaRev: json['metaRev'] as String?,
+      itemUnknownFields: itemUnknown,
+      unknownKeys: unknownFields(json, _knownKeys),
+      metaUnknownFields: {
+        ...?(json['metaUnknownFields'] as Map?)?.cast<String, dynamic>(),
+      },
     );
   }
 }

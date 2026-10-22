@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../models/record.dart';
+import '../models/unknown_fields.dart';
 import '../storage/app_log.dart';
 import '../storage/json_file_store.dart';
 import '../sync/sync_clock.dart';
@@ -43,6 +44,16 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
   /// Records this version could not read (damaged, or written by a newer
   /// version). Kept untouched and written back, never silently dropped.
   final List<Map<String, dynamic>> _unreadable = [];
+
+  /// Fields of each record that this version does not know (record id →
+  /// fields), e.g. added by a newer version on another device. Written back
+  /// and synced with the record, so an edit here never drops them.
+  final Map<String, Map<String, dynamic>> _unknownFields = {};
+
+  /// Top-level keys of the file that this version does not know.
+  Map<String, dynamic> _unknownFileKeys = const {};
+  static const _fileKeys = {'schema', 'records', 'revs', 'tombstones'};
+
   Timer? _timer;
   bool _dirty = false;
 
@@ -66,14 +77,18 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     _revs.clear();
     _tombstones.clear();
     _unreadable.clear();
+    _unknownFields.clear();
+    _unknownFileKeys = const {};
     if (json == null) return;
     loadedSchema = json['schema'] as int? ?? 1;
+    _unknownFileKeys = unknownFields(json, _fileKeys);
     final savedRevs =
         (json['revs'] as Map?)?.cast<String, String>() ?? const {};
     for (final raw in json['records'] as List? ?? const []) {
       try {
         final record = fromJson(raw as Map<String, dynamic>);
         _records[record.id] = record;
+        _keepUnknownFields(record, raw);
         // Records from before revisions existed get one from their edit time.
         _revs[record.id] =
             savedRevs[record.id] ?? clock.stampAt(record.updatedAt);
@@ -90,6 +105,23 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     _tombstones.values.forEach(clock.observe);
     if (loadedSchema < schemaVersion) _dirty = true;
     notifyListeners();
+  }
+
+  void _keepUnknownFields(T record, Map<String, dynamic> raw) {
+    final unknown = unknownFields(raw, record.toJson().keys);
+    if (unknown.isEmpty) {
+      _unknownFields.remove(record.id);
+    } else {
+      _unknownFields[record.id] = unknown;
+    }
+  }
+
+  /// The record as stored and synced: its own fields plus any fields this
+  /// version does not know. Null if there is no such record.
+  Map<String, dynamic>? jsonOf(String id) {
+    final record = _records[id];
+    if (record == null) return null;
+    return withUnknownFields(record.toJson(), _unknownFields[id]);
   }
 
   /// Record content without its edit time, to detect real changes.
@@ -128,6 +160,7 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
 
   void remove(String id) {
     if (_records.remove(id) == null) return;
+    _unknownFields.remove(id);
     _revs.remove(id);
     _tombstones[id] = clock.now();
     _changed();
@@ -150,6 +183,7 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     clock.observe(rev);
     if (data == null) {
       _records.remove(id);
+      _unknownFields.remove(id);
       _revs.remove(id);
       _tombstones[id] = rev;
     } else {
@@ -157,6 +191,7 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
       final existing = _records[id];
       if (existing != null) onReplace?.call(existing, record);
       _records[id] = record;
+      _keepUnknownFields(record, data);
       _revs[id] = rev;
       _tombstones.remove(id);
     }
@@ -177,9 +212,11 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     _dirty = false;
     try {
       await store.write(_folder, name, {
+        ..._unknownFileKeys,
         'schema': schemaVersion,
         'records': [
-          for (final r in _records.values) r.toJson(),
+          for (final r in _records.values)
+            withUnknownFields(r.toJson(), _unknownFields[r.id]),
           ..._unreadable,
         ],
         'revs': _revs,

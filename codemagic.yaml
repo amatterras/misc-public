@@ -1,0 +1,48 @@
+# Codemagic cloud build for THEapp on iPhone/iPad, without a Mac.
+#
+# What it does: compiles the iOS app on a Codemagic Mac (free personal tier:
+# 500 macOS M2 minutes per month) WITHOUT code signing, and packs it as an
+# unsigned .ipa. You then sign and install it from Windows with your own free
+# Apple ID (see ios/BUILD_WITHOUT_MAC.md).
+#
+# Safety:
+# - No secrets, certificates, Apple ID, App Store Connect key or hub token are
+#   used or needed here. Do not add any.
+# - No real app or hub data is in the repository; the app starts empty.
+# - There is no `triggering` section: builds run only when you press
+#   "Start new build" in Codemagic, so no minutes are used by accident.
+# - Billing stays off. If the free minutes run out, builds simply stop.
+
+workflows:
+  ios-unsigned:
+    name: THEapp iOS (unsigned, for sideloading)
+    instance_type: mac_mini_m2
+    max_build_duration: 30 # minutes; a normal build should need about 10
+    environment:
+      # This PC uses Flutter 3.47.7 (stable). "stable" is the newest stable
+      # release on Codemagic; replace with 3.47.7 if a newer one breaks.
+      flutter: stable
+      xcode: latest
+    scripts:
+      - name: Show tool versions
+        script: |
+          flutter --version
+          xcodebuild -version
+      - name: Get packages
+        script: flutter pub get
+      - name: Static analysis
+        script: flutter analyze
+      - name: Build iOS app without code signing
+        script: flutter build ios --release --no-codesign
+      - name: Pack unsigned IPA
+        script: |
+          set -e
+          cd build/ios/iphoneos
+          rm -rf Payload THEapp-unsigned.ipa
+          mkdir Payload
+          cp -R Runner.app Payload/
+          zip -qry THEapp-unsigned.ipa Payload
+          ls -la THEapp-unsigned.ipa
+    artifacts:
+      - build/ios/iphoneos/THEapp-unsigned.ipa
+      - /tmp/xcodebuild_logs/*.log

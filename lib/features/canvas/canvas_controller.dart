@@ -51,6 +51,9 @@ class CanvasController extends ChangeNotifier {
        _tombstones = {...document.tombstones},
        _metaRev = document.metaRev,
        _unknownItems = document.unknownItems,
+       _itemUnknownFields = {...document.itemUnknownFields},
+       _unknownKeys = document.unknownKeys,
+       _metaUnknownFields = document.metaUnknownFields,
        _savedTitle = document.title,
        _savedFolderId = document.folderId,
        _savedItems = {for (final i in document.items) i.id: i} {
@@ -1129,6 +1132,13 @@ class CanvasController extends ChangeNotifier {
   final Map<String, String> _itemRevs;
   final Map<String, String> _tombstones;
   final List<Map<String, dynamic>> _unknownItems;
+
+  // Fields this version does not know (from a newer version), kept and
+  // written back. Entries of deleted items are kept too, so undo restores
+  // them; only those of current items are saved.
+  final Map<String, Map<String, dynamic>> _itemUnknownFields;
+  final Map<String, dynamic> _unknownKeys;
+  Map<String, dynamic> _metaUnknownFields;
   String? _metaRev;
   Map<String, CanvasItem> _savedItems;
   String _savedTitle;
@@ -1160,6 +1170,8 @@ class CanvasController extends ChangeNotifier {
       title: _title,
       folderId: _folderId,
       metaRev: _metaRev,
+      itemUnknownFields: {..._itemUnknownFields},
+      metaUnknownFields: _metaUnknownFields,
     );
     final applied = applyCanvasChanges(state, _id, changes, (key, rev) {
       final itemId = key.substring(key.lastIndexOf('/') + 1);
@@ -1183,6 +1195,10 @@ class CanvasController extends ChangeNotifier {
     _title = _savedTitle = state.title;
     _folderId = _savedFolderId = state.folderId;
     _metaRev = state.metaRev;
+    _itemUnknownFields
+      ..clear()
+      ..addAll(state.itemUnknownFields);
+    _metaUnknownFields = state.metaUnknownFields;
     // Remote versions count as saved, so they are not stamped as local edits.
     _savedItems = {
       for (final i in _items)
@@ -1241,6 +1257,11 @@ class CanvasController extends ChangeNotifier {
     tombstones: Map.unmodifiable(_tombstones),
     metaRev: _metaRev,
     unknownItems: _unknownItems,
+    itemUnknownFields: {
+      for (final item in _items) item.id: ?_itemUnknownFields[item.id],
+    },
+    unknownKeys: _unknownKeys,
+    metaUnknownFields: _metaUnknownFields,
   );
 
   /// Saves immediately if there are unsaved changes.

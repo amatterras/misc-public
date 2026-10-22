@@ -66,10 +66,11 @@ Not covered by automated tests — try these by hand:
 
 Known limitations: images can't be copied *out* to other apps yet; no drag-and-drop
 from Explorer; no PDFs on the canvas; reminders don't notify; no version history;
-records written by a newer app version keep unknown *records* but not unknown *fields*
-inside a known record. Sync is now in use, so keep every device on the same app version
-until this is handled (an older version that edits a record drops fields it does not
-know).
+records and fields written by a newer app version are kept: unknown *records* are
+written back unchanged, and unknown *fields* inside known records, canvas items, canvas
+files and canvas metadata are kept, saved and synced with them
+(`lib/data/models/unknown_fields.dart`, `test/unknown_fields_test.dart`). An older
+version still cannot *edit* a newer field; it only leaves it untouched.
 
 ## Sync
 Implemented: Windows hub, sync engine, optional read-only mirror. See

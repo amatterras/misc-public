@@ -464,6 +464,9 @@ class AppState extends ChangeNotifier {
           tombstones: doc.tombstones,
           metaRev: doc.metaRev ?? stamp,
           unknownItems: doc.unknownItems,
+          itemUnknownFields: doc.itemUnknownFields,
+          unknownKeys: doc.unknownKeys,
+          metaUnknownFields: doc.metaUnknownFields,
         ),
       );
       migrated++;

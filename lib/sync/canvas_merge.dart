@@ -1,4 +1,5 @@
 import '../data/models/canvas_models.dart';
+import '../data/models/unknown_fields.dart';
 import 'protocol.dart';
 
 /// The parts of a canvas that sync, as plain mutable state.
@@ -10,7 +11,9 @@ class CanvasSyncState {
     required this.title,
     required this.folderId,
     required this.metaRev,
-  });
+    Map<String, Map<String, dynamic>>? itemUnknownFields,
+    this.metaUnknownFields = const {},
+  }) : itemUnknownFields = itemUnknownFields ?? {};
 
   List<CanvasItem> items;
   Map<String, String> itemRevs;
@@ -18,18 +21,27 @@ class CanvasSyncState {
   String title;
   String? folderId;
   String? metaRev;
+
+  /// Fields this version does not know, per item and for the metadata
+  /// (see `unknown_fields.dart`).
+  Map<String, Map<String, dynamic>> itemUnknownFields;
+  Map<String, dynamic> metaUnknownFields;
 }
 
-/// Data sent for a canvas's metadata record.
+const _metaKeys = {'title', 'folderId', 'order'};
+
+/// Data sent for a canvas's metadata record; [unknown] are metadata fields
+/// from a newer version, sent back unchanged.
 Map<String, dynamic> canvasMetaData(
   String title,
   String? folderId,
-  List<CanvasItem> items,
-) => {
+  List<CanvasItem> items, [
+  Map<String, dynamic>? unknown,
+]) => withUnknownFields({
   'title': title,
   'folderId': folderId,
   'order': [for (final i in items) i.id],
-};
+}, unknown);
 
 /// Applies incoming `canvases` / `canvas_items` changes for one canvas.
 ///
@@ -63,6 +75,7 @@ Set<String> applyCanvasChanges(
           if (i.id != itemId) i,
       ];
       s.itemRevs.remove(itemId);
+      s.itemUnknownFields.remove(itemId);
       s.tombstones[itemId] = c.rev;
     } else {
       final CanvasItem item;
@@ -73,6 +86,12 @@ Set<String> applyCanvasChanges(
       }
       final index = s.items.indexWhere((i) => i.id == itemId);
       s.items = index < 0 ? [...s.items, item] : ([...s.items]..[index] = item);
+      final unknown = unknownFields(c.data!, item.toJson().keys);
+      if (unknown.isEmpty) {
+        s.itemUnknownFields.remove(itemId);
+      } else {
+        s.itemUnknownFields[itemId] = unknown;
+      }
       s.itemRevs[itemId] = c.rev;
       s.tombstones.remove(itemId);
     }
@@ -86,6 +105,7 @@ Set<String> applyCanvasChanges(
       final data = meta.data!;
       s.title = data['title'] as String? ?? s.title;
       s.folderId = data['folderId'] as String?;
+      s.metaUnknownFields = unknownFields(data, _metaKeys);
       s.metaRev = meta.rev;
       final order = [...?(data['order'] as List?)?.cast<String>()];
       if (order.isNotEmpty) {

@@ -160,7 +160,8 @@ class SyncEngine {
           id: v.id,
           rev: v.rev,
           deleted: v.deleted,
-          data: record?.toJson(),
+          // Includes fields this version does not know (from a newer one).
+          data: v.deleted ? null : collection.jsonOf(v.id),
         );
       }
     }
@@ -173,7 +174,12 @@ class SyncEngine {
           id: doc.id,
           rev: doc.metaRev!,
           deleted: false,
-          data: canvasMetaData(doc.title, doc.folderId, doc.items),
+          data: canvasMetaData(
+            doc.title,
+            doc.folderId,
+            doc.items,
+            doc.metaUnknownFields,
+          ),
         );
       }
       for (final item in doc.items) {
@@ -184,7 +190,7 @@ class SyncEngine {
           id: '${doc.id}/${item.id}',
           rev: rev,
           deleted: false,
-          data: item.toJson(),
+          data: doc.itemJson(item),
         );
       }
       for (final t in doc.tombstones.entries) {
@@ -282,7 +288,7 @@ class SyncEngine {
   /// are missing. Uploads are checked by size and checksum on the hub.
   Future<void> _reconcileAttachments(SyncReport report) async {
     for (final a in workspace.assets.all.toList()) {
-      final data = a.toJson();
+      final data = workspace.assets.jsonOf(a.id) ?? a.toJson();
       await _uploadFiles(
         SyncChange(
           collection: 'assets',
@@ -452,6 +458,8 @@ class SyncEngine {
         title: doc?.title ?? 'Synced canvas',
         folderId: doc?.folderId,
         metaRev: doc?.metaRev,
+        itemUnknownFields: {...?doc?.itemUnknownFields},
+        metaUnknownFields: doc?.metaUnknownFields ?? const {},
       );
       applied = applyCanvasChanges(s, canvasId, changes, isPending);
       if (applied.isNotEmpty) {
@@ -467,6 +475,9 @@ class SyncEngine {
             tombstones: s.tombstones,
             metaRev: s.metaRev,
             unknownItems: doc?.unknownItems ?? const [],
+            itemUnknownFields: s.itemUnknownFields,
+            unknownKeys: doc?.unknownKeys ?? const {},
+            metaUnknownFields: s.metaUnknownFields,
           ),
         );
       }

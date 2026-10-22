@@ -80,13 +80,13 @@ empty and refuses 127.0.0.1 (that would be the iPad itself). **Untested on a
 device.**
 
 ## Checklist for the first run on a Mac
-Everything here needs macOS with Xcode (free); none of it can be done on the
-Windows PC.
+Without a Mac: [BUILD_WITHOUT_MAC.md](BUILD_WITHOUT_MAC.md) builds the app in
+the cloud (Codemagic, free tier) and installs it from Windows with a free Apple
+ID; steps 3 and 4 below then need the iPad instead of the Simulator. With a Mac:
 1. `flutter build ios --debug --no-codesign` — fix any Swift compile errors.
-2. Signing (free Apple ID, "Personal Team"): the bundle id is still Flutter's
-   default `com.example.flutterApplication1`, which is very likely already
-   taken; change it in Xcode → Runner → Signing to one of your own before
-   installing on the iPad.
+2. Signing (free Apple ID, "Personal Team"): the bundle id is
+   `com.amaterasu.theapp`; if Apple says it is taken, change it in Xcode →
+   Runner → Signing to one of your own.
 3. Run in the Simulator: open a canvas, draw, rotate (portrait/landscape),
    Split View on iPad.
 4. Sync — **TEST hub only** (port 47799, `tool\testenv.ps1 hub-start
