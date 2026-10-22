@@ -539,15 +539,48 @@ None of this has been tried. The mirror stays off until someone runs
 
 ## 17. Sync across different networks (remote) — status and design
 
-**Status: designed, code ready, not deployed (BLOCKED on one user action).**
+**Status (2026-10-22): works through this PC's Tailscale address; NOT yet
+verified across networks.** Tailscale is installed and signed in on the PC
+(one device in the tailnet; the Tailscale network is classed Private). The
+TEST hub listened on `127.0.0.1:47799` and the PC's Tailscale address only,
+and `tool/remote_check.dart` passed 11/11 checks through that address (see
+below) — all on this PC, so no data has crossed between networks yet. That
+needs a second device signed in to the same tailnet on another network.
 There is no cloud server. The Windows PC remains the only writable hub.
+
+### Capability audit
+| Capability | Status | Evidence |
+|---|---|---|
+| Sync on this PC (127.0.0.1), offline queue, retries, idempotency, conflicts, deletions, attachments | IMPLEMENTED AND VERIFIED | `sync_engine_test`, `sync_risks_test`, cross-process two-client runs on the disposable hub |
+| Hub listening on a private/Tailscale address (`serve --private-host`) | IMPLEMENTED AND VERIFIED (on this PC) | test hub bound to the PC's Tailscale address and loopback only (`netstat`, hub status); `remote_check`: tokens required, wrong tokens refused, admin refused from the Tailscale side even with the admin token, real hub port 47710 not reachable there, disposable device paired/sent/received/revoked through it |
+| Access from another device in the tailnet | VERIFIED (same home network) | 2026-10-22: an iPad in the tailnet opened the test hub's status page through `100.64.12.34:47799` (hub log shows the request; correct hub id reported by the user) and could not reach port 47710 (real hub). Tailscale showed the path as *direct via 192.168.1.x*, i.e. the iPad was on the same home network — so this is NOT a cross-network result. No firewall rule was added. |
+| Access from a different network | NOT VERIFIED | iPad status-page attempts all went over the home network |
+| THEapp sync between two devices on different networks | BLOCKED | needs a second device that runs THEapp (a second Windows PC/laptop, or an iOS build made on a Mac); the user has only an iPad and there is no iOS build (recorded 2026-10-22) |
+| Devices accepting Tailscale addresses (`100.64/10`, `fd7a:115c:a1e0::/48`, `*.ts.net`) | IMPLEMENTED AND VERIFIED (address rules) | `remote_readiness_test` |
+| Authentication and pairing | IMPLEMENTED AND VERIFIED | `hub_test`, `hub_auth_test` |
+| Revocation (`thehub revoke`) | IMPLEMENTED AND VERIFIED | revoked tokens refused for push, pull and attachments; the device stops automatic sync, says to pair again, keeps unsent edits and sends them after pairing again (`remote_sync_test`) |
+| Encrypted transport | PARTIAL | Tailscale (WireGuard) encrypts; plain home-network addresses are NOT encrypted — the app now warns before pairing with one (`remote_sync_test`) |
+| Test copies reaching a real hub | PREVENTED | test data mode pairs only with 127.0.0.1:47799 (`test_environment_test`) |
+| Sync between different networks | BLOCKED | Tailscale is set up on the PC and the iPad, but a real sync test needs a second device that runs THEapp (only an iPad is available; no iOS build) |
+| PC off | by design: no sync | devices keep working and queue changes |
+
+### Architecture choice
+- **Chosen: private Windows hub reached over Tailscale.** $0, nothing public,
+  no new server to run. Consequence: **the PC must be on, awake, signed in
+  (or the hub started at sign-in) and online** for devices to sync; while it
+  is off, each device keeps working and catches up later.
+- **Not chosen: an independent server** (VPS or always-on box acting as the
+  writable hub). It could sync while the PC is off, but costs money or needs
+  a machine running at home 24/7, adds maintenance and security work, and
+  would change which copy is authoritative — a design change that needs the
+  user's approval. The optional Raspberry Pi stays a read-only mirror.
 
 | Question | Answer (as implemented) |
 |---|---|
 | Authoritative data | The Windows hub (`%APPDATA%\THEapp-hub`). Devices hold full offline copies. |
 | PC off or unreachable | Devices keep working offline; changes stay queued on disk (verified across app restarts) and are sent when the hub is reachable again. Nothing syncs device-to-device in between. |
 | Reachability from another network | A private **Tailscale** network: the PC and the iPhone/iPad join the same tailnet; the hub listens on the PC's Tailscale address (`serve --private-host 100.x.y.z`). No router port is opened, nothing is public. |
-| Transport security | WireGuard encryption between devices (Tailscale). The hub itself speaks plain HTTP on that private link. |
+| Transport security | WireGuard encryption between devices (Tailscale). The hub itself speaks plain HTTP on that private link. A plain home-network address (e.g. `192.168.x.x`) is **not** encrypted; the pairing screen warns about it and the log records which kind of address was paired. |
 | Authentication / revocation | Per-device 256-bit tokens from one-time pairing codes; `thehub revoke <id>`; tokens stored with DPAPI (Windows) / Keychain (iOS). |
 | Offline, retries, idempotency, conflicts, deletions, attachments | Same protocol as on one PC (§10–§12); verified by automated and cross-process tests. |
 | Backups / recovery | Hub backups (§14) and the optional read-only mirror (§16). |
@@ -565,7 +598,15 @@ endpoint on the home router or a Raspberry Pi ($0 software, needs one router
 port forwarded — a network-security change that needs explicit approval);
 (3) a paid relay/VPS (rejected under the zero-cost rule).
 
-**Steps for the user when ready:** install Tailscale on the PC and the
-devices (free), note the PC's `100.x.y.z` address, start the hub with
-`dart run bin/thehub.dart serve --private-host 100.x.y.z`, run `thehub pair`,
-and pair the device with `http://100.x.y.z:47710`.
+**Steps for the user when ready (each is the user's own decision):**
+1. Create a free Tailscale account and install Tailscale on the PC; sign in.
+2. Install Tailscale on the iPhone/iPad (App Store, free) with the same
+   account. (The iOS app itself still needs a Mac to build.)
+3. Note the PC's Tailscale address (`100.x.y.z`, shown in the Tailscale app).
+4. Stop the hub and start it again with
+   `dart run bin/thehub.dart serve --private-host 100.x.y.z`. Windows may ask
+   whether to allow the hub on the network — allow it for **private
+   networks only**.
+5. Run `dart run bin/thehub.dart pair` and pair the device with
+   `http://100.x.y.z:47710` (no warning should appear for this address).
+6. First check: make a note on one device, wait a minute, see it on the other.

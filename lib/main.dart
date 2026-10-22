@@ -113,9 +113,9 @@ class _TheAppState extends State<TheApp> {
       },
       onInactive: () => unawaited(widget.state.flush()),
       onHide: () => unawaited(widget.state.flush()),
-      // iPhone/iPad: pick up items shared while the app was in the
-      // background (does nothing elsewhere).
-      onResume: () => unawaited(widget.state.importSharedItems()),
+      // Back in front: pick up items shared while away (iPhone/iPad) and
+      // sync if the last sync is not recent (timers stop in the background).
+      onResume: () => unawaited(widget.state.appResumed()),
     );
   }
 

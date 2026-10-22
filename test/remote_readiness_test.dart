@@ -34,6 +34,28 @@ void main() {
     }
   });
 
+  test('only this PC and Tailscale count as an encrypted route', () {
+    for (final yes in [
+      'http://127.0.0.1:47710',
+      'http://localhost:47710',
+      'http://100.64.0.1:47710',
+      'http://100.127.255.254:47710',
+      'http://pc.tail1234.ts.net:47710',
+      'http://[fd7a:115c:a1e0::1]:47710',
+    ]) {
+      expect(isEncryptedHubRoute(Uri.parse(yes)), isTrue, reason: yes);
+    }
+    for (final no in [
+      'http://192.168.1.20:47710',
+      'http://10.0.0.5:47710',
+      'http://172.16.4.2:47710',
+      'http://100.128.0.1:47710',
+      'http://[fd12::1]:47710',
+    ]) {
+      expect(isEncryptedHubRoute(Uri.parse(no)), isFalse, reason: no);
+    }
+  });
+
   test('a client refuses to be created for a public address', () {
     expect(
       () => SyncClient(Uri.parse('http://8.8.8.8:47710')),

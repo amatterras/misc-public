@@ -11,6 +11,8 @@
 //   touches Explorer's user-wide "Send to" menu.
 import 'dart:io';
 
+import '../sync/sync_client.dart' show isEncryptedHubRoute;
+
 class TestEnvironmentError implements Exception {
   const TestEnvironmentError(this.message);
   final String message;
@@ -28,6 +30,14 @@ abstract final class TestEnvironment {
 
   /// The active test data folder; null in normal use.
   static Directory? dataDir;
+
+  /// The only hub a test copy may pair with: the test hub's port, on this
+  /// PC or over a private Tailscale address (for cross-network tests).
+  static bool isTestHub(Uri url) =>
+      url.port == testHubPort &&
+      (url.host == '127.0.0.1' ||
+          url.host == 'localhost' ||
+          isEncryptedHubRoute(url));
 
   static bool get active => dataDir != null;
 

@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import '../data/models/canvas_models.dart';
-import '../hub/hub_server.dart' show defaultHubPort;
 
 import '../data/models/library_models.dart';
 import '../data/models/record.dart';
@@ -254,11 +253,29 @@ class AppState extends ChangeNotifier {
 
   bool get syncPaired => _sync != null;
 
+  /// The hub rejected this device's token; automatic sync is stopped until
+  /// the device is paired again.
+  bool syncNeedsPairing = false;
+
+  /// Whether automatic (timed) sync is currently scheduled.
+  bool get syncScheduled => _syncTimer?.isActive ?? false;
+
   Future<void> _startSyncIfPaired() async {
     final config = await workspace.store.read('sync', 'hub');
     final url = config?['url'] as String?;
     final token = await readSecret(_hubTokenFile);
-    if (url == null || token == null) return;
+    if (url == null) return;
+    if (token == null) {
+      // Paired before, but this device's key is gone, e.g. a backup restored
+      // onto another iPad (the Keychain entry stays on the old device).
+      hubUrl = url;
+      syncNeedsPairing = true;
+      syncStatus =
+          'This device needs to be paired again: its sync key is missing '
+          '(for example after restoring a backup). Your data here is safe.';
+      AppLog.warn('Sync not started: hub key missing; pair again');
+      return;
+    }
     try {
       _startSync(Uri.parse(url), token);
     } on SyncFailure catch (e) {
@@ -274,6 +291,7 @@ class AppState extends ChangeNotifier {
       openCanvas: _SyncBridge(this),
     );
     hubUrl = url.toString();
+    syncNeedsPairing = false;
     syncStatus = 'Waiting for first sync';
     _syncTimer?.cancel();
     _syncTimer = Timer.periodic(syncInterval, (_) => syncNow());
@@ -288,17 +306,40 @@ class AppState extends ChangeNotifier {
     if (uri == null || !isAllowedHubUrl(uri)) {
       return 'The hub address must be this PC (http://127.0.0.1:47710), your home network or Tailscale.';
     }
-    if (TestEnvironment.active && uri.port == defaultHubPort) {
+    // On iPhone/iPad, 127.0.0.1 is the iPad itself; the hub runs on the PC.
+    if (ios != null && isLoopbackHubUrl(uri)) {
+      return 'On iPhone/iPad, 127.0.0.1 is this device, not your PC. Enter '
+          'the PC’s Tailscale address, e.g. http://100.x.y.z:47710.';
+    }
+    // Test data mode talks only to the test hub (port 47799, on this PC or
+    // over Tailscale), so a test copy can never reach a real hub.
+    if (TestEnvironment.active && !TestEnvironment.isTestHub(uri)) {
       return 'Test data mode: pair only with the test hub '
           '(http://127.0.0.1:${TestEnvironment.testHubPort}), never the real hub.';
     }
     final client = SyncClient(uri);
     try {
       final device = workspace.device!;
-      final token = await client.register(code, device.id, device.name);
-      await writeSecret(_hubTokenFile, token);
+      final token = await client.register(
+        code,
+        device.id,
+        await _deviceLabel(device.name),
+      );
+      try {
+        await writeSecret(_hubTokenFile, token);
+      } catch (e, s) {
+        // Keychain / DPAPI refused: nothing is stored, nothing is synced.
+        AppLog.error('Could not store the hub key', e, s);
+        return 'Paired, but this device could not store its key securely, so '
+            'sync was not started. Try again; if it keeps failing, remove '
+            'this device on the hub ("thehub revoke").';
+      }
       await workspace.store.write('sync', 'hub', {'url': uri.toString()});
-      AppLog.info('Paired with a hub');
+      AppLog.info(
+        isEncryptedHubRoute(uri)
+            ? 'Paired with a hub (this PC or Tailscale)'
+            : 'Paired with a hub on the home network (unencrypted)',
+      );
       _startSync(uri, token);
       notifyListeners();
       return null;
@@ -309,8 +350,36 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Name shown in the hub's device list. iOS reports a generic host name
+  /// ("localhost"), so the device model ("iPad") is used there instead.
+  Future<String> _deviceLabel(String hostName) async =>
+      hubDeviceName(hostName, await ios?.deviceModel());
+
+  static String hubDeviceName(String hostName, String? model) {
+    if (model == null || model.isEmpty) return hostName;
+    return hostName.isEmpty || hostName == 'localhost'
+        ? model
+        : '$model ($hostName)';
+  }
+
+  /// Called when the app comes back to the front (iPhone/iPad: after being
+  /// in the background, where timers do not run). Imports shared items and
+  /// syncs if the last sync is more than [resumeSyncAfter] old.
+  Future<void> appResumed() async {
+    await importSharedItems();
+    final last = lastSynced;
+    if (_sync == null || syncNeedsPairing || syncing) return;
+    if (last != null && DateTime.now().difference(last) < resumeSyncAfter) {
+      return;
+    }
+    await syncNow();
+  }
+
+  static const resumeSyncAfter = Duration(seconds: 20);
+
   /// Stops syncing and forgets the hub (local data is untouched).
   Future<void> disconnectHub() async {
+    syncNeedsPairing = false;
     _syncTimer?.cancel();
     _firstSync?.cancel();
     _sync?.client.close();
@@ -343,8 +412,22 @@ class AppState extends ChangeNotifier {
       }
       await _refreshList();
     } on SyncFailure catch (e) {
-      syncStatus = e.retryable ? '${e.message} Will retry.' : e.message;
-      if (!e.retryable) AppLog.warn('Sync stopped: ${e.code}');
+      if (e.code == 'unauthorized') {
+        // Removed with `thehub revoke`, or the hub was replaced: retrying
+        // every minute cannot help. Nothing local is lost; unsent changes
+        // stay queued and go out after pairing again.
+        _syncTimer?.cancel();
+        _firstSync?.cancel();
+        syncNeedsPairing = true;
+        syncStatus =
+            'This hub no longer accepts this device (it was removed, or the '
+            'hub was reset). Your data here is safe. Disconnect, then pair '
+            'again with a new code.';
+        AppLog.warn('Sync stopped: device not accepted by the hub');
+      } else {
+        syncStatus = e.retryable ? '${e.message} Will retry.' : e.message;
+        if (!e.retryable) AppLog.warn('Sync stopped: ${e.code}');
+      }
     } catch (e, s) {
       syncStatus = 'Sync hit an unexpected error (see log).';
       AppLog.error('Sync error', e, s);

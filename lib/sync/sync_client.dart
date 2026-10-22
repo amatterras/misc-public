@@ -32,6 +32,36 @@ bool isAllowedHubUrl(Uri url) {
   return ip != null && isAllowedBindAddress(ip);
 }
 
+/// Whether [url] points at the device the app runs on (127.0.0.1, ::1,
+/// localhost).
+bool isLoopbackHubUrl(Uri url) {
+  if (url.host.toLowerCase() == 'localhost') return true;
+  return InternetAddress.tryParse(url.host)?.isLoopback ?? false;
+}
+
+/// Whether traffic to [url] is protected on the network: this PC itself
+/// (never leaves the computer) or a Tailscale address (encrypted by
+/// WireGuard). Other private addresses, e.g. home Wi-Fi `192.168.x.x`, carry
+/// plain HTTP that others on that network could read.
+bool isEncryptedHubRoute(Uri url) {
+  final host = url.host.toLowerCase();
+  if (host == 'localhost' || host.endsWith('.ts.net')) return true;
+  final ip = InternetAddress.tryParse(host);
+  if (ip == null) return false;
+  if (ip.isLoopback) return true;
+  final b = ip.rawAddress;
+  if (ip.type == InternetAddressType.IPv4) {
+    return b[0] == 100 && b[1] >= 64 && b[1] <= 127; // 100.64.0.0/10
+  }
+  // Tailscale's IPv6 range fd7a:115c:a1e0::/48.
+  return b[0] == 0xfd &&
+      b[1] == 0x7a &&
+      b[2] == 0x11 &&
+      b[3] == 0x5c &&
+      b[4] == 0xa1 &&
+      b[5] == 0xe0;
+}
+
 class SyncClient {
   SyncClient(
     this.base, {

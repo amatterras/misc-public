@@ -77,16 +77,25 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Automatic backups, recovery | P1 | W | VERIFIED | `workspace_test`, `json_file_store_test`, real-binary recovery | |
 | Safe attachment storage | P1 | W | VERIFIED | content-addressed, SHA-256 checks (`hub_test`, sync tests) | |
 | PC hub, offline editing, automatic sync, conflicts (local network) | P1 | W | VERIFIED | `sync_engine_test`, `sync_risks_test`, 11 cross-process checks | |
-| Sync across different networks (remote) | P1 | W,i | BLOCKED (code ready) | `SYNC_ARCHITECTURE.md` §17; `remote_readiness_test` (address rules) | Tailscale install/sign-in is a user action |
-| Security of tokens (DPAPI / Keychain) | P1 | W,i | VERIFIED (W) / UNVERIFIED (i) | `secret_store.dart`, `ios_bridge_test` | iOS device |
+| Sync across different networks (remote) | P1 | W,i | BLOCKED (no second device that runs THEapp; only an iPad, no iOS build). Done so far: test hub reachable and access-controlled through the PC's Tailscale address (11/11 `remote_check` on this PC; an iPad in the tailnet reached it, but on the same home network); never run across networks; THEapp sync from another device not run | `SYNC_ARCHITECTURE.md` §17; `tool/remote_check.dart`; `remote_readiness_test` | a second device that runs THEapp (second Windows PC/laptop, or a Mac-built iOS app), signed in to the same tailnet, on another network; Windows Firewall approval (Private only) |
+| Device revocation and re-pairing | P1 | W | VERIFIED | `remote_sync_test`: revoked token refused (push/pull/attachments); device stops retrying, keeps edits, sends them after pairing again | |
+| Encrypted transport | P1 | W,i | PARTIAL | Tailscale (WireGuard) by design, untested here; home-network addresses unencrypted — warning before pairing (`remote_sync_test`) | Tailscale |
+| Test copies can't reach real hubs | P1 | W | VERIFIED | test mode pairs only with 127.0.0.1:47799 (`test_environment_test`) | |
+| Security of tokens (DPAPI / Keychain) | P1 | W,i | VERIFIED (W) / IMPLEMENTED BUT UNVERIFIED (i: Keychain, this device only; removed on Disconnect) | `secret_store.dart`, `ios_bridge_test`, `ios_readiness_test` | iOS device |
 | Read-only mirror (Pi optional) | P3 | W | VERIFIED with local folders | `hub_mirror_test` | no Pi |
 | AI: none automatic | — | — | EXCLUDED until approved | — | |
 
 ## 7. iPhone/iPad
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
 |---|---|---|---|---|---|
-| iOS build and run | P2 | i | BLOCKED | `ios/README_IOS.md` | needs macOS + Xcode |
-| Share-menu link capture | P2 | i | PARTIAL (Dart side tested with simulated channel; Swift uncompiled) | `ios_bridge_test` | Mac; Share Extension needs paid account |
+| iOS build and run | P2 | i | BLOCKED | `ios/README_IOS.md` (Mac checklist) | needs macOS + Xcode; no Mac available (this PC is Windows only) |
+| iOS data folder (`Library/Application Support/THEapp`) | P1 | i | IMPLEMENTED BUT UNVERIFIED | `json_file_store.dart` `defaultDataDirectory` | iOS device |
+| iOS device identity after a restored backup (Keychain-bound id; restored copy gets a new id and asks to pair again) | P1 | i | IMPLEMENTED BUT UNVERIFIED (Dart logic tested with a simulated Keychain) | `ios_readiness_test` | iOS device |
+| iOS pairing: no 127.0.0.1 default, Tailscale address hint, clear refusal of loopback, key-store failure reported | P1 | i | IMPLEMENTED BUT UNVERIFIED (tested on Windows with simulated channel) | `ios_readiness_test` | iOS device + second network |
+| Sync when the app returns to the front | P1 | W,i | VERIFIED (W, in tests) / UNVERIFIED (i) | `ios_readiness_test` | iOS device |
+| `theapp://capture` links (Shortcut) | P2 | i | IMPLEMENTED BUT UNVERIFIED (Dart tested with simulated channel; Swift uncompiled) | `ios_bridge_test` | Mac |
+| Photo / PDF pickers (copies removed after import) | P2 | i | IMPLEMENTED BUT UNVERIFIED (Dart tested; Swift uncompiled) | `ios_bridge_test`, `ios_readiness_test` | Mac |
+| Share-menu link capture | P2 | i | PARTIAL (Dart side tested with simulated channel, shared text capped; Swift uncompiled; extension target not in the Xcode project) | `ios_bridge_test`, `ios_readiness_test` | Mac; Share Extension needs paid account (App Groups) |
 | Apple Pencil | P2 | i | UNVERIFIED | simulated tests | iPad + Pencil |
 
 ## Explicitly excluded (never implement)

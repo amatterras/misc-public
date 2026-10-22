@@ -24,7 +24,12 @@ being closed and are sent on the next sync (`test/sync_engine_test.dart`,
 | Pencil tilt, hover, double-tap | **not implemented** | — |
 | Opening web links | `lib/platform/ios_bridge.dart`, tested (only http/https/mailto) | `AppDelegate.swift`, untested |
 | Photo picker (PHPicker, saved as JPEG) | tested with simulated results | untested |
-| Hub token in the Keychain | tested with a fake Keychain; failure never falls back to plain text | untested |
+| Hub token in the Keychain | tested with a fake Keychain; failure never falls back to plain text, and pairing reports it instead of hanging | untested |
+| Device id kept in the Keychain ("this device only"): a backup restored onto another iPad gets a new id and asks to pair again | tested with a fake Keychain (`test/ios_readiness_test.dart`) | untested |
+| Pairing form on iPhone/iPad: empty address with a Tailscale hint; 127.0.0.1 refused (it is the iPad itself) | tested | — |
+| Device name on the hub ("iPad" instead of "localhost") | tested | `deviceModel` in `AppDelegate.swift`, untested |
+| Sync when the app returns to the front (timers stop in the background) | tested | — |
+| Picker copies in tmp deleted after import | tested | — |
 | `theapp://capture?url=…&text=…` links → Inbox | tested (also links that arrive before the app is ready) | `SceneDelegate.swift`, untested |
 | Share Extension → Inbox | import tested with files in the extension's format | `ShareExtension/`, untested, **needs paid account** |
 | Sync with the PC hub | same engine as Windows (tested) | network path from an iPhone untested |
@@ -67,13 +72,38 @@ Install the free Tailscale app on the PC and the iPhone, start the hub with
 `serve --private-host <PC's Tailscale address>`, and pair in THEapp →
 Settings → Sync hub with `http://<that address>:47710`. Traffic is encrypted by
 Tailscale. `NSLocalNetworkUsageDescription` is set in `Info.plist` in case iOS
-asks for local-network permission. **Untested.**
+asks for local-network permission. The app talks to the hub with Dart's own
+HTTP client, which does not go through App Transport Security, so no ATS
+exception is needed for `http://`. On iPhone/iPad the pairing form starts
+empty and refuses 127.0.0.1 (that would be the iPad itself). **Untested on a
+device.**
 
 ## Checklist for the first run on a Mac
+Everything here needs macOS with Xcode (free); none of it can be done on the
+Windows PC.
 1. `flutter build ios --debug --no-codesign` — fix any Swift compile errors.
-2. Run in the Simulator: open a canvas, draw, rotate (portrait/landscape).
-3. Settings → Sync hub → pair with the PC (simulator can reach the PC on the
-   same network); confirm a note arrives both ways.
-4. In Safari (simulator) open `theapp://capture?text=hello` → Inbox shows it.
-5. Add a photo from the picker → it appears on the canvas.
-6. On a real iPad: Apple Pencil drawing, palm resting on the screen, pinch.
+2. Signing (free Apple ID, "Personal Team"): the bundle id is still Flutter's
+   default `com.example.flutterApplication1`, which is very likely already
+   taken; change it in Xcode → Runner → Signing to one of your own before
+   installing on the iPad.
+3. Run in the Simulator: open a canvas, draw, rotate (portrait/landscape),
+   Split View on iPad.
+4. Sync — **TEST hub only** (port 47799, `tool\testenv.ps1 hub-start
+   -PrivateHost <PC's Tailscale address>`), never the real hub on 47710:
+   Settings → Sync hub → `http://<PC's Tailscale address>:47799` + code from
+   `tool\testenv.ps1 hub-pair`; create a synthetic note on each side and
+   confirm it arrives both ways. Check the hub lists the device as "iPad".
+   For the cross-network result, the iPad must be on another network (e.g.
+   a phone's hotspot) and Tailscale must not show a 192.168.x.x path.
+5. Send the app to the background for more than 20 s, edit on the PC test
+   copy, bring the app back → the change arrives without waiting a minute.
+6. In Safari (simulator) open `theapp://capture?text=hello` → Inbox shows it.
+7. Add a photo and a PDF from the pickers → they appear; open the PDF
+   (Quick Look). If it does not open, check the `/private/var` path prefix in
+   `openDocument` (`AppDelegate.swift`).
+8. Disconnect in Settings → the Keychain entry `THEapp.hub.token` is gone
+   (pairing again works).
+9. On a real iPad: Apple Pencil drawing, palm resting on the screen, pinch.
+10. Share Extension (paid account only): add the target as described in
+    `ShareExtension/README.md`, enable App Groups with a group id of your own
+    on both targets, and change `group.com.theapp.shared` in both Swift files.

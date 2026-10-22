@@ -47,6 +47,9 @@ class IosBridge implements KeychainBackend {
   /// paid Apple Developer Program.
   Future<String?> sharedContainerPath() => _invoke<String>('sharedContainer');
 
+  /// "iPad" or "iPhone" (iOS no longer gives apps the device's own name).
+  Future<String?> deviceModel() => _invoke<String>('deviceModel');
+
   /// Shows the system photo picker; returns copies of the chosen photos as
   /// JPEG files in the app's temporary folder (empty if cancelled).
   Future<List<String>> pickImageFiles() async {

@@ -8,7 +8,10 @@
     setup       create the test folders and marker files (no data copied)
     build       build a separate test copy of the app (profile build) into <root>\bin
     app         start the test app on the test data folder
-    hub-start   start the test hub (own folder, port 47799, this PC only)
+    hub-start   start the test hub (own folder, port 47799, this PC only;
+                add -PrivateHost 100.x.y.z to also listen on Tailscale)
+    ts-info     show this PC's Tailscale address and status (read-only)
+    remote-check -PrivateHost 100.x.y.z   check the test hub through Tailscale
     hub-status  status of the test hub
     hub-pair    one-time pairing code from the TEST hub
     hub-stop    stop the test hub
@@ -21,7 +24,9 @@
 #>
 param(
   [Parameter(Position = 0)][string]$Command = 'info',
-  [string]$Root = ''
+  [string]$Root = '',
+  # This PC's Tailscale address (100.x.y.z), for hub-start / remote-check.
+  [string]$PrivateHost = ''
 )
 $ErrorActionPreference = 'Stop'
 # Default: Documents\THEapp\THEapp-TESTENV (next to the project, outside the
@@ -51,6 +56,14 @@ foreach ($r in $real) {
         $b.StartsWith($a, [StringComparison]::OrdinalIgnoreCase)) {
       throw "Refusing: $p overlaps real data folder $r"
     }
+  }
+}
+
+# Only Tailscale addresses (100.64.0.0/10) — never a home-network or public one.
+function Assert-Tailscale([string]$ip) {
+  $p = $ip.Split('.')
+  if ($p.Count -ne 4 -or $p[0] -ne '100' -or [int]$p[1] -lt 64 -or [int]$p[1] -gt 127) {
+    throw "Refusing: $ip is not a Tailscale address (100.64.x.x - 100.127.x.x)."
   }
 }
 
@@ -93,9 +106,28 @@ switch ($Command) {
   }
   'hub-start' {
     Need-Setup
-    $cmd = "Set-Location '$Project'; & '$Dart' run bin/thehub.dart serve --data '$HubDir' --port $Port"
+    $extra = ''
+    if ($PrivateHost) {
+      Assert-Tailscale $PrivateHost
+      $extra = " --private-host $PrivateHost"
+    }
+    $cmd = "Set-Location '$Project'; & '$Dart' run bin/thehub.dart serve --data '$HubDir' --port $Port$extra"
     Start-Process powershell -ArgumentList '-NoProfile', '-Command', $cmd -WindowStyle Minimized
-    "Test hub starting on http://127.0.0.1:$Port (data: $HubDir). Check with: hub-status"
+    "Test hub starting on http://127.0.0.1:$Port$(if ($PrivateHost) { " and http://${PrivateHost}:$Port" }) (data: $HubDir). Check with: hub-status"
+  }
+  'ts-info' {
+    # Read-only: what Tailscale reports on this PC.
+    $ts = Get-Command tailscale -ErrorAction SilentlyContinue
+    if (-not $ts) { 'Tailscale is not installed on this PC.'; break }
+    "Tailscale IPv4: $(& $ts.Source ip -4)"
+    & $ts.Source status
+  }
+  'remote-check' {
+    Need-Setup
+    if (-not $PrivateHost) { throw 'Give this PC''s Tailscale address: -PrivateHost 100.x.y.z' }
+    Assert-Tailscale $PrivateHost
+    Push-Location $Project
+    try { & $Dart run tool/remote_check.dart --data $HubDir --address $PrivateHost } finally { Pop-Location }
   }
   'hub-status' { Hub @('status') }
   'hub-pair' { Hub @('pair') }

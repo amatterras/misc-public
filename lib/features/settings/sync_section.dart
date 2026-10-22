@@ -3,7 +3,19 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/test_environment.dart';
 import '../../app/theme.dart';
+import '../../sync/sync_client.dart';
 import '../../widgets/common.dart';
+
+/// Address pre-filled in the pairing form: the hub this device used before
+/// (when it must pair again), else this PC's hub. On iPhone/iPad 127.0.0.1
+/// would be the iPad itself, so the field starts empty there.
+String defaultHubAddress({required bool onPhoneOrTablet, String? previous}) {
+  if (previous != null) return previous;
+  if (onPhoneOrTablet) return '';
+  return TestEnvironment.active
+      ? 'http://127.0.0.1:${TestEnvironment.testHubPort}'
+      : 'http://127.0.0.1:47710';
+}
 
 /// Pairing with the PC sync hub, sync status, and conflict review.
 class SyncSection extends StatefulWidget {
@@ -16,10 +28,11 @@ class SyncSection extends StatefulWidget {
 }
 
 class _SyncSectionState extends State<SyncSection> {
-  final _url = TextEditingController(
-    text: TestEnvironment.active
-        ? 'http://127.0.0.1:${TestEnvironment.testHubPort}'
-        : 'http://127.0.0.1:47710',
+  late final _url = TextEditingController(
+    text: defaultHubAddress(
+      onPhoneOrTablet: widget.state.ios != null,
+      previous: widget.state.hubUrl,
+    ),
   );
   final _code = TextEditingController();
   String? _error;
@@ -52,14 +65,37 @@ class _SyncSectionState extends State<SyncSection> {
       listenable: Listenable.merge([s, s.workspace.conflicts]),
       builder: (context, _) {
         if (!s.syncPaired) {
+          final mobile = s.ios != null;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Optional. Start the hub on this PC (see SYNC_ARCHITECTURE.md), '
-                'run "thehub pair", and enter the code here. THEapp works the '
-                'same without it.',
-                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              if (s.syncNeedsPairing)
+                Padding(
+                  key: const ValueKey('repair-notice'),
+                  padding: const EdgeInsets.only(bottom: Space.sm),
+                  child: Text(
+                    s.syncStatus,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.danger,
+                    ),
+                  ),
+                ),
+              Text(
+                mobile
+                    ? 'Optional. On your PC, start the hub with Tailscale '
+                          '(see SYNC_ARCHITECTURE.md §17) and run "thehub '
+                          'pair". Enter the PC’s Tailscale address '
+                          '(http://100.x.y.z:47710) and the code here. '
+                          'THEapp works the same without it.'
+                    : 'Optional. Start the hub on this PC (see '
+                          'SYNC_ARCHITECTURE.md), run "thehub pair", and '
+                          'enter the code here. THEapp works the same '
+                          'without it.',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textMuted,
+                ),
               ),
               const SizedBox(height: Space.sm),
               // Address on its own line when the dialog is narrow.
@@ -67,7 +103,10 @@ class _SyncSectionState extends State<SyncSection> {
                 TextField(
                   controller: _url,
                   style: const TextStyle(fontSize: 13),
-                  decoration: const InputDecoration(labelText: 'Hub address'),
+                  decoration: const InputDecoration(
+                    labelText: 'Hub address',
+                    hintText: 'http://100.x.y.z:47710',
+                  ),
                 ),
                 const SizedBox(height: Space.sm),
               ],
@@ -80,6 +119,7 @@ class _SyncSectionState extends State<SyncSection> {
                         style: const TextStyle(fontSize: 13),
                         decoration: const InputDecoration(
                           labelText: 'Hub address',
+                          hintText: 'http://100.x.y.z:47710',
                         ),
                       ),
                     ),
@@ -103,6 +143,29 @@ class _SyncSectionState extends State<SyncSection> {
                     child: Text(_busy ? 'Pairing…' : 'Pair'),
                   ),
                 ],
+              ),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _url,
+                builder: (context, value, _) {
+                  final uri = Uri.tryParse(value.text.trim());
+                  final unencrypted =
+                      uri != null &&
+                      isAllowedHubUrl(uri) &&
+                      !isEncryptedHubRoute(uri);
+                  if (!unencrypted) return const SizedBox.shrink();
+                  return const Padding(
+                    key: ValueKey('unencrypted-warning'),
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      'This is a home-network address: the connection is not '
+                      'encrypted, so others on that network could read your '
+                      'notes and this device’s key. Use this PC '
+                      '(127.0.0.1) or a Tailscale address (100.x.y.z) instead '
+                      'where you can.',
+                      style: TextStyle(fontSize: 12, color: AppColors.danger),
+                    ),
+                  );
+                },
               ),
               if (_error != null)
                 Padding(

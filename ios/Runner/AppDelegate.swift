@@ -81,6 +81,8 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
         return
       }
       UIApplication.shared.open(url, options: [:]) { ok in result(ok) }
+    case "deviceModel":
+      result(UIDevice.current.model)
     case "pickDocuments":
       pickDocuments(result)
     case "openDocument":

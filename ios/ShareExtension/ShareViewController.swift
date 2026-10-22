@@ -34,7 +34,10 @@ class ShareViewController: UIViewController {
                     group.enter()
                     provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] data, _ in
                         defer { group.leave() }
-                        if let url = data as? URL, !url.isFileURL {
+                        // Some apps hand over the link as bytes, not a URL.
+                        let url = (data as? URL)
+                            ?? (data as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
+                        if let url = url, !url.isFileURL {
                             self?.saveRequest(type: "url", value: url.absoluteString)
                         }
                     }
@@ -50,7 +53,9 @@ class ShareViewController: UIViewController {
                     group.enter()
                     provider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { [weak self] data, _ in
                         defer { group.leave() }
-                        if let text = data as? String {
+                        let text = (data as? String)
+                            ?? (data as? Data).flatMap { String(data: $0, encoding: .utf8) }
+                        if let text = text {
                             self?.saveRequest(type: "text", value: text)
                         }
                     }

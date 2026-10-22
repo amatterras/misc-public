@@ -99,8 +99,8 @@ class SendToBridge {
   VoidCallback? onFocusRequested;
 
   /// Handles an inbound deep link URL (e.g. theapp://capture?url=... or theapp://share?text=...).
-  /// Works across platforms without extra plugins.
-  /// Not connected yet: no platform code delivers links here.
+  /// Works across platforms without extra plugins. On iPhone/iPad the links
+  /// arrive through `IosBridge.listenForLinks` (not yet run on a device).
   Future<List<InboxItem>> handleUri(Uri uri, CaptureService capture) async {
     if (uri.scheme != 'theapp') return const [];
     final host = uri.host.toLowerCase();
@@ -149,7 +149,12 @@ class SendToBridge {
             await entity.delete();
             continue;
           }
-          final value = json['value'] as String;
+          var value = json['value'] as String;
+          // Same limit as links from outside (a shared web page can be huge).
+          if (json['type'] != 'file' &&
+              value.length > CaptureService.maxInboundText) {
+            value = value.substring(0, CaptureService.maxInboundText);
+          }
           final ws = capture.workspace;
           final now = DateTime.now();
           switch (json['type']) {

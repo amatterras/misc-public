@@ -62,6 +62,27 @@ class CaptureService {
       native.readNativeClipboard;
   FutureOr<List<String>> Function() pickImageFiles = native.pickImageFiles;
 
+  /// Folder where the picker leaves its own copies of the chosen files
+  /// (iOS: the app's tmp folder), deleted once they are imported. Null on
+  /// Windows, where the picker returns the user's original files.
+  Directory? pickerCopies = Platform.isIOS ? Directory.systemTemp : null;
+
+  /// Deletes picked copies inside [pickerCopies]; never anything else.
+  Future<void> _removePickerCopies(Iterable<String> paths) async {
+    final dir = pickerCopies;
+    if (dir == null) return;
+    String norm(String p) => File(p).absolute.uri.normalizePath().toFilePath();
+    var base = norm('${dir.path}${Platform.pathSeparator}');
+    if (Platform.isWindows) base = base.toLowerCase();
+    for (final path in paths) {
+      final full = Platform.isWindows ? norm(path).toLowerCase() : norm(path);
+      if (!full.startsWith(base) || full.length <= base.length) continue;
+      try {
+        await File(path).delete();
+      } catch (_) {}
+    }
+  }
+
   /// Canvas items copied inside the app, plus the text we put on the
   /// system clipboard at the same time (to recognise our own copy).
   List<CanvasItem> internalItems = const [];
@@ -163,7 +184,11 @@ class CaptureService {
   /// Opens the Windows photo picker and imports the chosen files.
   Future<List<Asset>> pickImages() async {
     final paths = await pickImageFiles();
-    return imagesFromFiles(paths);
+    try {
+      return await imagesFromFiles(paths);
+    } finally {
+      await _removePickerCopies(paths);
+    }
   }
 
   /// PDF picker; replaceable in tests.
@@ -186,8 +211,14 @@ class CaptureService {
     return assets;
   }
 
-  Future<List<Asset>> pickDocuments() async =>
-      documentsFromFiles(await pickDocumentFiles());
+  Future<List<Asset>> pickDocuments() async {
+    final paths = await pickDocumentFiles();
+    try {
+      return await documentsFromFiles(paths);
+    } finally {
+      await _removePickerCopies(paths);
+    }
+  }
 
   /// Longest text accepted from outside the app (a link can be opened by any
   /// web page, so this is untrusted input).
@@ -197,8 +228,8 @@ class CaptureService {
   /// link, one for any text (also when it came with a link), and one per
   /// photo. Links reuse the existing record for the same URL.
   ///
-  /// Not connected yet: nothing calls this outside tests (see
-  /// ios/ShareExtension/README.md).
+  /// Called for `theapp://` links (iOS Shortcut, via [SendToBridge.handleUri]);
+  /// not yet run on a device.
   Future<List<InboxItem>> captureInbound({
     String? url,
     String? text,

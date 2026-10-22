@@ -77,6 +77,25 @@ void main() {
     );
   });
 
+  test('the test hub is port 47799 on this PC or over Tailscale only', () {
+    for (final ok in [
+      'http://127.0.0.1:47799',
+      'http://localhost:47799',
+      'http://100.101.102.103:47799', // the PC's Tailscale address
+      'http://pc.tail1234.ts.net:47799',
+    ]) {
+      expect(TestEnvironment.isTestHub(Uri.parse(ok)), isTrue, reason: ok);
+    }
+    for (final no in [
+      'http://127.0.0.1:47710', // the real hub
+      'http://100.101.102.103:47710',
+      'http://192.168.1.20:47799', // home network
+      'http://8.8.8.8:47799',
+    ]) {
+      expect(TestEnvironment.isTestHub(Uri.parse(no)), isFalse, reason: no);
+    }
+  });
+
   test('in test mode the app will not pair with the real hub port', () async {
     TestEnvironment.dataDir = testDir;
     final ws = Workspace(testDir);
@@ -89,6 +108,18 @@ void main() {
     await state.init();
     final error = await state.pairWithHub('http://127.0.0.1:47710', 'ABCD1234');
     expect(error, contains('test hub'));
+    // Any other port or machine is refused too, not only the real hub's.
+    for (final other in [
+      'http://127.0.0.1:47800',
+      'http://100.64.0.1:47710',
+      'http://192.168.1.20:47799',
+    ]) {
+      expect(
+        await state.pairWithHub(other, 'ABCD1234'),
+        contains('test hub'),
+        reason: other,
+      );
+    }
     expect(
       File('${testDir.path}${sep}sync${sep}hub.token').existsSync(),
       isFalse,
