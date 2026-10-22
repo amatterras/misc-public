@@ -5,6 +5,7 @@ import 'dart:ui' show AppExitResponse, PlatformDispatcher;
 import 'package:flutter/material.dart';
 
 import 'app/app_state.dart';
+import 'app/test_environment.dart';
 import 'app/shell.dart';
 import 'app/theme.dart';
 import 'data/repositories/canvas_repository.dart';
@@ -17,7 +18,29 @@ import 'sync/secret_store.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
-  final root = defaultDataDirectory();
+  // Normally %APPDATA%\THEapp. `--data-dir=<test folder>` switches to a
+  // prepared, disposable test folder (manual testing only).
+  final real = defaultDataDirectory();
+  final Directory root;
+  try {
+    TestEnvironment.dataDir = TestEnvironment.fromArgs(
+      args,
+      realDirs: [
+        real,
+        Directory('${real.parent.path}${Platform.pathSeparator}THEapp-hub'),
+      ],
+    );
+    root = TestEnvironment.dataDir ?? real;
+  } on TestEnvironmentError catch (e) {
+    // Nothing has been read or written yet.
+    runApp(
+      MaterialApp(
+        theme: buildAppTheme(),
+        home: _DataProblemPage(message: e.message),
+      ),
+    );
+    return;
+  }
   AppLog.init(root);
 
   // Unexpected errors are written to the local log instead of vanishing.
@@ -47,7 +70,9 @@ Future<void> main(List<String> args) async {
   }
   // iPhone/iPad keep the hub token in the Keychain.
   if (Platform.isIOS) secretKeychain = IosBridge.instance;
-  AppLog.info('Started (pid $pid)');
+  AppLog.info(
+    'Started (pid $pid)${TestEnvironment.active ? ' in TEST DATA mode' : ''}',
+  );
 
   final workspace = Workspace(root);
   final state = AppState(

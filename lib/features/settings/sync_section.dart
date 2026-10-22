@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/test_environment.dart';
 import '../../app/theme.dart';
 import '../../widgets/common.dart';
 
@@ -15,7 +16,11 @@ class SyncSection extends StatefulWidget {
 }
 
 class _SyncSectionState extends State<SyncSection> {
-  final _url = TextEditingController(text: 'http://127.0.0.1:47710');
+  final _url = TextEditingController(
+    text: TestEnvironment.active
+        ? 'http://127.0.0.1:${TestEnvironment.testHubPort}'
+        : 'http://127.0.0.1:47710',
+  );
   final _code = TextEditingController();
   String? _error;
   bool _busy = false;

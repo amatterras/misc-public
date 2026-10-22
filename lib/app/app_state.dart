@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import '../data/models/canvas_models.dart';
+import '../hub/hub_server.dart' show defaultHubPort;
+
 import '../data/models/record.dart';
 import '../data/repositories/canvas_repository.dart';
 import '../data/repositories/record_collection.dart';
@@ -20,6 +22,7 @@ import '../sync/protocol.dart';
 import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
+import 'test_environment.dart';
 
 enum AppPage { home, canvas, notes, calendar, tasks }
 
@@ -276,6 +279,10 @@ class AppState extends ChangeNotifier {
     final uri = Uri.tryParse(url.trim());
     if (uri == null || !isAllowedHubUrl(uri)) {
       return 'The hub address must be this PC (http://127.0.0.1:47710), your home network or Tailscale.';
+    }
+    if (TestEnvironment.active && uri.port == defaultHubPort) {
+      return 'Test data mode: pair only with the test hub '
+          '(http://127.0.0.1:${TestEnvironment.testHubPort}), never the real hub.';
     }
     final client = SyncClient(uri);
     try {
@@ -618,6 +625,8 @@ class AppState extends ChangeNotifier {
   Future<void> flush() async {
     await _canvas?.flush();
     await workspace.flush();
+    // Settings and any other direct writes still in flight.
+    await workspace.store.flush();
   }
 
   static List<CanvasItem> _welcomeItems() => [

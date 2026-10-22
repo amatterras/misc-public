@@ -40,7 +40,15 @@ Calendar grid labels are computed from `CalendarEntry` and `Task` records
   picker, open URL) via `dart:ffi`, because Flutter plugins need Developer Mode.
 
 ## Testing
-- `flutter test` runs everything that is safe to run anytime (81 tests): data layer,
+- **Manual testing never uses real data.** `tool/testenv.ps1` manages a separate
+  environment in `Documents\THEapp\THEapp-TESTENV` (`app\`, `hub\`, `bin\`): `setup`,
+  `build` (profile build copied to `bin\`), `hub-start` (port 47799, own folder),
+  `hub-pair`, `hub-status`, `hub-stop`, `app`, `info`, `clean` (type DELETE). The test
+  app is started with `--data-dir=<folder>` and only accepts a folder holding the
+  `.theapp-test-data` marker and outside `%APPDATA%\THEapp` / `THEapp-hub`
+  (`lib/app/test_environment.dart`). In that mode it shows a red TEST DATA banner,
+  refuses to pair with port 47710 and leaves the Explorer "Send to" menu alone.
+- `flutter test` runs everything that is safe to run anytime: data layer,
   migrations, backups, sync preparation, and end-to-end interaction tests
   (`test/interaction_test.dart`) that drive the real widgets with simulated mouse and
   keyboard, save to real files and restart the app.

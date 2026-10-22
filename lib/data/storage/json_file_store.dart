@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -31,7 +32,8 @@ Directory defaultDataDirectory() {
 ///
 /// Every write goes to a temporary file first and is then renamed over the
 /// real file, so a crash mid-write never leaves a half-written document.
-/// The previous version is kept as `<name>.bak` and used automatically if
+/// The previous readable version (or, after the first save, a copy of the
+/// file itself) is kept as `<name>.bak` and used automatically if
 /// the main file is ever unreadable.
 class JsonFileStore {
   JsonFileStore(this.root);
@@ -66,14 +68,51 @@ class JsonFileStore {
     });
   }
 
+  /// Waits until every write started so far is on disk (used before the
+  /// app closes, so e.g. a settings change made a moment earlier is kept).
+  /// Gives up after [limit] so closing never hangs on a stuck file; every
+  /// write is atomic, so an unfinished one leaves the old version intact.
+  Future<void> flush({Duration limit = const Duration(seconds: 3)}) async {
+    final deadline = DateTime.now().add(limit);
+    while (_pending.isNotEmpty) {
+      final left = deadline.difference(DateTime.now());
+      if (left <= Duration.zero) {
+        AppLog.warn('${_pending.length} save(s) still running when closing');
+        return;
+      }
+      try {
+        await Future.wait(_pending.values.map((f) => f.catchError((_) {})))
+            .timeout(left);
+      } on TimeoutException {
+        AppLog.warn('${_pending.length} save(s) still running when closing');
+        return;
+      }
+    }
+  }
+
   Future<void> _writeNow(File file, String text) async {
     await file.parent.create(recursive: true);
     final tmp = File('${file.path}.tmp');
+    final bak = File('${file.path}.bak');
     await tmp.writeAsString(text, flush: true);
+    // Only a readable previous version may become the backup: a file
+    // damaged on disk is moved aside (kept), never copied over a good .bak.
+    var backupIsGood = false;
     if (await file.exists()) {
-      await _retry(() => file.copy('${file.path}.bak'));
+      if (await _tryRead(file) != null) {
+        await _retry(() => file.copy(bak.path));
+        backupIsGood = true;
+      } else {
+        await _quarantine(file);
+      }
     }
     await _retry(() => tmp.rename(file.path));
+    // First save (or the previous version was damaged): copy what was just
+    // written, so a file is never without a readable backup.
+    if (!backupIsGood && await _tryRead(bak) == null) {
+      if (await bak.exists()) await _quarantine(bak);
+      await _retry(() => file.copy(bak.path));
+    }
   }
 
   /// Antivirus or search indexing can briefly lock a file on Windows;

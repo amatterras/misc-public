@@ -13,6 +13,7 @@ import 'package:flutter_application_1/features/canvas/canvas_page.dart';
 import 'package:flutter_application_1/features/capture/capture_dialog.dart';
 import 'package:flutter_application_1/features/search/search_dialog.dart';
 import 'package:flutter_application_1/main.dart';
+import 'package:flutter_application_1/sync/hlc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Boots the real app on a temporary data folder.
@@ -263,6 +264,48 @@ void main() {
       find.widgetWithText(FilledButton, 'New Habits entry'),
     );
     expect(button.onPressed, isNull);
+    await shutDown(tester, s);
+  });
+
+  testWidgets('calendar: a category over the limit after a sync is warned '
+      'about, never archived automatically', (tester) async {
+    addTearDown(tester.view.reset);
+    final s = await boot(tester, dir);
+    // Six active habits arriving from two devices (as a sync merge would).
+    for (var i = 0; i < 6; i++) {
+      s.workspace.entries.applyRemote(
+        'h$i',
+        SyncClock(deviceId: 'ipad').now(),
+        CalendarEntry(
+          id: 'h$i',
+          category: CalendarCategory.habits,
+          name: 'Habit $i',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          startDate: s.calendarStart,
+        ).toJson(),
+      );
+    }
+    await tester.tap(find.text('Calendar').last);
+    await tester.pump();
+    await tester.pump();
+    final warning = find.byKey(const ValueKey('over-limit-warning'));
+    expect(warning, findsOneWidget);
+    expect(
+      find.descendant(
+        of: warning,
+        matching: find.textContaining('Habits (6 active)'),
+      ),
+      findsOneWidget,
+    );
+    expect(s.workspace.activeCount(CalendarCategory.habits), 6);
+    expect(s.workspace.entries.all.where((e) => e.archived), isEmpty);
+
+    // The user archives one; the warning goes away.
+    s.workspace.setArchived('h5', true);
+    await tester.pump();
+    await tester.pump();
+    expect(warning, findsNothing);
     await shutDown(tester, s);
   });
 

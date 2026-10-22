@@ -13,6 +13,7 @@ import '../features/settings/settings_dialog.dart';
 import '../features/tasks/tasks_page.dart';
 import 'app_state.dart';
 import 'sidebar.dart';
+import 'test_environment.dart';
 import 'theme.dart';
 
 /// Opens Quick Add, pre-filled when the clipboard holds a link or image.
@@ -118,6 +119,7 @@ class _AppShellState extends State<AppShell> {
                       ],
                     ),
                   _Toast(state: state, bottomOffset: isCompact ? 72 : 28),
+                  if (TestEnvironment.active) const _TestDataBanner(),
                 ],
               ),
             );
@@ -310,6 +312,42 @@ class _CompactBottomNav extends StatelessWidget {
                   ),
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown on every page in test data mode, so test and real windows can't be
+/// confused.
+class _TestDataBanner extends StatelessWidget {
+  const _TestDataBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            decoration: const BoxDecoration(
+              color: AppColors.danger,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(6)),
+            ),
+            child: Text(
+              'TEST DATA — ${TestEnvironment.dataDir?.path ?? ''}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
           ),
         ),
       ),

@@ -123,6 +123,7 @@ class _CalendarPageState extends State<CalendarPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _header(),
+            ..._overLimitWarning(),
             const SizedBox(height: Space.lg),
             _tabs(),
             const SizedBox(height: Space.md),
@@ -158,6 +159,51 @@ class _CalendarPageState extends State<CalendarPage> {
         ),
       ),
     );
+  }
+
+  /// Shown when a sync merged entries from several devices and a category
+  /// now has more active entries than allowed. Nothing is archived
+  /// automatically: the user decides which ones to archive.
+  List<Widget> _overLimitWarning() {
+    final over = ws.overLimitCategories;
+    if (over.isEmpty) return const [];
+    const max = CalendarEntry.maxActivePerCategory;
+    final which = [
+      for (final c in over) '${c.label} (${ws.activeCount(c)} active)',
+    ].join(', ');
+    return [
+      const SizedBox(height: Space.md),
+      Container(
+        key: const ValueKey('over-limit-warning'),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: OrganizerColors.amber.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: OrganizerColors.amber.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.warning_amber_rounded,
+              size: 18,
+              color: OrganizerColors.amber,
+            ),
+            const SizedBox(width: Space.sm),
+            Expanded(
+              child: Text(
+                'More than $max active entries in $which after syncing '
+                'another device. Nothing was archived; archive entries until '
+                'each category has $max again. New entries there are paused '
+                'until then.',
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
   Widget _header() {

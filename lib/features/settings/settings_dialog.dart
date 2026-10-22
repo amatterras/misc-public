@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/test_environment.dart';
 import '../../app/theme.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
@@ -155,7 +156,11 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               ),
               const SizedBox(height: Space.sm),
               OutlinedButton.icon(
-                onPressed: _busy || !Platform.isWindows ? null : _toggleSendTo,
+                // The menu entry is user-wide, so test data mode leaves it alone.
+                onPressed:
+                    _busy || !Platform.isWindows || TestEnvironment.active
+                    ? null
+                    : _toggleSendTo,
                 icon: Icon(
                   SendToBridge.isInstalled
                       ? Icons.remove_circle_outline
