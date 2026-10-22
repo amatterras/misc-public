@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/test_environment.dart';
 import '../../app/theme.dart';
+import '../../platform/input_hints.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../capture/send_to.dart';
@@ -117,7 +118,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             children: [
               const _Heading('Your data'),
               Text(
-                'Everything is stored only on this PC, in:\n$dataPath',
+                'Everything is stored only on $thisDevice, in:\n$dataPath',
                 style: const TextStyle(
                   fontSize: 13,
                   color: AppColors.textMuted,
@@ -146,33 +147,36 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
               ),
-              const _Heading('Send to THEapp'),
-              const Text(
-                'Adds “THEapp” to the right-click “Send to” menu in File Explorer. '
-                'Photos and files you send land in the Inbox on Home, where you '
-                'choose Canvas, Notes or Calendar. (Sharing from iPhone/iPad needs '
-                'the future iOS app.)',
-                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
-              ),
-              const SizedBox(height: Space.sm),
-              OutlinedButton.icon(
-                // The menu entry is user-wide, so test data mode leaves it alone.
-                onPressed:
-                    _busy || !Platform.isWindows || TestEnvironment.active
-                    ? null
-                    : _toggleSendTo,
-                icon: Icon(
-                  SendToBridge.isInstalled
-                      ? Icons.remove_circle_outline
-                      : Icons.add_circle_outline,
-                  size: 16,
+              // Windows File Explorer only; on iPhone/iPad, sharing goes
+              // through the Share menu / Shortcut (see ios/README_IOS.md).
+              if (!touchFirst) ...[
+                const _Heading('Send to THEapp'),
+                const Text(
+                  'Adds “THEapp” to the right-click “Send to” menu in File Explorer. '
+                  'Photos and files you send land in the Inbox on Home, where you '
+                  'choose Canvas, Notes or Calendar.',
+                  style: TextStyle(fontSize: 13, color: AppColors.textMuted),
                 ),
-                label: Text(
-                  SendToBridge.isInstalled
-                      ? 'Remove from Send to menu'
-                      : 'Add to Send to menu',
+                const SizedBox(height: Space.sm),
+                OutlinedButton.icon(
+                  // The menu entry is user-wide, so test data mode leaves it alone.
+                  onPressed:
+                      _busy || !Platform.isWindows || TestEnvironment.active
+                      ? null
+                      : _toggleSendTo,
+                  icon: Icon(
+                    SendToBridge.isInstalled
+                        ? Icons.remove_circle_outline
+                        : Icons.add_circle_outline,
+                    size: 16,
+                  ),
+                  label: Text(
+                    SendToBridge.isInstalled
+                        ? 'Remove from Send to menu'
+                        : 'Add to Send to menu',
+                  ),
                 ),
-              ),
+              ],
               const _Heading('Sync hub'),
               SyncSection(state: s),
               const _Heading('Backups'),

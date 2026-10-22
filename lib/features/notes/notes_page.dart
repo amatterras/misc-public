@@ -5,6 +5,7 @@ import '../../app/shell.dart';
 import '../../app/theme.dart';
 import '../../data/models/library_models.dart';
 import '../../data/workspace.dart';
+import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 
 /// Which notes the middle column shows.
@@ -189,6 +190,7 @@ class _NotesPageState extends State<NotesPage> {
         for (final (folder, depth) in ws.folderTree())
           GestureDetector(
             onSecondaryTapUp: (d) => _folderMenu(folder, d.globalPosition),
+            onLongPressStart: (d) => _folderMenu(folder, d.globalPosition),
             child: item(
               folder.name,
               Icons.folder_outlined,
@@ -372,11 +374,16 @@ class _NotesPageState extends State<NotesPage> {
                 ),
               for (final n in notes) _noteTile(n),
               if (notes.isEmpty && canvases.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(Space.xl),
+                Padding(
+                  padding: const EdgeInsets.all(Space.xl),
                   child: Text(
-                    'No notes here yet. Click New, or use Quick Add (Ctrl+N).',
-                    style: TextStyle(fontSize: 13, color: AppColors.textFaint),
+                    touchFirst
+                        ? 'No notes here yet. Tap New, or use Quick Add.'
+                        : 'No notes here yet. Click New, or use Quick Add (Ctrl+N).',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textFaint,
+                    ),
                   ),
                 ),
             ],

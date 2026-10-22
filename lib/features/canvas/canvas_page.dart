@@ -8,6 +8,7 @@ import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
+import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import 'canvas_controller.dart';
 import 'canvas_painter.dart';
@@ -716,6 +717,18 @@ class _TitleChip extends StatelessWidget {
         ),
       );
       if (ok == true) await state.moveCanvasToFolder(controller.id, folderId);
+    } else if (choice == 'delete') {
+      // Also here, not only in the sidebar's right-click menu: on a phone
+      // or a touch-only iPad this is the way to remove a canvas.
+      final ok = await confirm(
+        context,
+        title: 'Move “${controller.title}” to trash?',
+        message:
+            'The file is moved to a trash folder inside your data folder, '
+            'not erased.',
+        action: 'Move to trash',
+      );
+      if (ok) await state.deleteCanvas(controller.id);
     }
   }
 
@@ -732,6 +745,11 @@ class _TitleChip extends StatelessWidget {
           value: 'folder',
           height: 36,
           child: Text('Move to folder…'),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          height: 36,
+          child: Text('Move to trash'),
         ),
       ],
       child: Container(
@@ -781,7 +799,7 @@ class _SaveIndicator extends StatelessWidget {
     final (icon, label, color) = switch (state) {
       SaveState.saved => (
         Icons.cloud_done_outlined,
-        'Saved on this PC',
+        'Saved on $thisDevice',
         AppColors.textFaint,
       ),
       SaveState.pending ||
@@ -885,11 +903,11 @@ class _EmptyHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const IgnorePointer(
+    return IgnorePointer(
       child: Center(
         child: Text(
-          'Double-click anywhere to write  ·  Ctrl+V to paste text, links or images  ·  P to draw',
-          style: TextStyle(color: AppColors.textFaint, fontSize: 13),
+          touchFirst ? 'Double-tap anywhere to write  ·  pick the pen to draw' : 'Double-click anywhere to write  ·  Ctrl+V to paste text, links or images  ·  P to draw',
+          style: const TextStyle(color: AppColors.textFaint, fontSize: 13),
         ),
       ),
     );

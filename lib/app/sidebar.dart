@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/models/canvas_models.dart';
 import '../features/search/search_dialog.dart';
 import '../features/settings/settings_dialog.dart';
+import '../platform/input_hints.dart';
 import '../widgets/common.dart';
 import 'app_state.dart';
 import 'shell.dart' show openQuickAdd;
@@ -160,10 +161,12 @@ class Sidebar extends StatelessWidget {
           _NavItem(
             icon: Icons.search,
             label: 'Search',
-            trailing: const Text(
-              'Ctrl K',
-              style: TextStyle(fontSize: 11, color: AppColors.textFaint),
-            ),
+            trailing: touchFirst
+                ? null
+                : const Text(
+                    'Ctrl K',
+                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                  ),
             active: false,
             onTap: () => showSearchDialog(context, state),
           ),
@@ -425,6 +428,8 @@ class _CanvasList extends StatelessWidget {
           for (final canvas in state.canvasList)
             GestureDetector(
               onSecondaryTapUp: (d) => _menu(context, canvas, d.globalPosition),
+              // Touch (iPad/iPhone): press and hold opens the same menu.
+              onLongPressStart: (d) => _menu(context, canvas, d.globalPosition),
               child: InkWell(
                 borderRadius: BorderRadius.circular(6),
                 hoverColor: AppColors.hover,

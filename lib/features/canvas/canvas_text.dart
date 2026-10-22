@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
+import '../../platform/input_hints.dart';
 
 /// Padding between a text box's edge and its text, in world units.
 const double kTextPadding = 10;
@@ -176,7 +177,7 @@ CardLayout layoutLinkCard(
   if (asset?.kind == AssetKind.document) {
     add(
       TextSpan(
-        text: 'PDF document · double-click to open',
+        text: 'PDF document · ${doubleClickWord.toLowerCase()} to open',
         style: canvasTextStyle(12, color: AppColors.textMuted),
       ),
       1,

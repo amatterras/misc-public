@@ -8,6 +8,7 @@ import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
+import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import 'capture_service.dart';
 
@@ -493,7 +494,9 @@ class _CaptureDialogState extends State<CaptureDialog> {
           ),
           FilledButton(
             onPressed: _canSave ? _save : null,
-            child: Text(_saving ? 'Saving…' : 'Save  (Ctrl+Enter)'),
+            child: Text(
+              _saving ? 'Saving…' : withShortcut('Save', 'Ctrl+Enter'),
+            ),
           ),
         ],
       ),

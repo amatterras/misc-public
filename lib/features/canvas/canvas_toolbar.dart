@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
+import '../../platform/input_hints.dart';
 import 'canvas_controller.dart';
 
 const organizerColorNames = [
@@ -85,7 +86,9 @@ class CanvasToolbar extends StatelessWidget {
             toolButton(
               CanvasTool.text,
               const Icon(Icons.title, size: 18),
-              'Note  (T, or double-click)',
+              touchFirst
+                  ? 'Note  (or double-tap)'
+                  : 'Note  (T, or double-click)',
             ),
             toolButton(
               CanvasTool.connect,

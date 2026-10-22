@@ -35,8 +35,9 @@ being closed and are sent on the next sync (`test/sync_engine_test.dart`,
 | Sync with the PC hub | same engine as Windows (tested) | network path from an iPhone untested |
 | PDFs: pick (document picker) and open (Quick Look) | tested with a simulated channel; only `.pdf` passed on | `AppDelegate.swift`, untested; the "inside this app" path check may need adjusting for `/private/var` |
 | Mind-map connections, version history | shared Dart code (tested on Windows) | — |
-| Task reminders | in-app notice while the app is open (shared code) | no iOS notification when the app is closed (would need `UNUserNotificationCenter`; not written) |
-| Channel contract | every Dart method has a Swift case and vice versa (checked by reading, 2026-10-22) | — |
+| Task reminders | in-app notice while open; next 60 upcoming reminders handed to iOS when they change (tested with a simulated channel) | `scheduleReminders` in `AppDelegate.swift` (`UNUserNotificationCenter`, local only), untested |
+| Channel contract | every Dart call has a Swift `case` and back, checked by a test that reads both files (`test/ipad_touch_test.dart`) | — |
+| Touch-only use: press and hold for menus, canvas "Move to trash" in its title menu, 44 px resize target, double-tap tolerance, "tap" wording, no Windows-only settings | tested with simulated touch and `TargetPlatform.iOS` | — |
 
 ## Free ways to capture from other apps
 1. **iOS Shortcut (free account is enough):** in the Shortcuts app create
@@ -103,7 +104,13 @@ Windows PC.
    `openDocument` (`AppDelegate.swift`).
 8. Disconnect in Settings → the Keychain entry `THEapp.hub.token` is gone
    (pairing again works).
-9. On a real iPad: Apple Pencil drawing, palm resting on the screen, pinch.
+9. On a real iPad: Apple Pencil drawing, palm resting on the screen, pinch;
+   without a keyboard: press and hold a canvas / project for its menu,
+   double-tap to write, drag the resize handle with a finger, move a canvas
+   to trash from its title menu.
+9a. Reminders: give a synthetic task a reminder 2 minutes ahead, allow
+   notifications when asked, close THEapp → the notification appears; mark
+   the task done → no notification.
 10. Share Extension (paid account only): add the target as described in
     `ShareExtension/README.md`, enable App Groups with a group id of your own
     on both targets, and change `group.com.theapp.shared` in both Swift files.

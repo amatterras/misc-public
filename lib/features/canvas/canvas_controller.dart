@@ -660,17 +660,30 @@ class CanvasController extends ChangeNotifier {
   /// Size of the resize handle on screen, in logical pixels.
   static const double handleSize = 10;
 
+  /// Area around the resize handle that grabs it: a finger or pen needs a
+  /// bigger target than a mouse (Apple's guideline is 44 points).
+  static double handleHitSize(PointerDeviceKind kind) =>
+      kind == PointerDeviceKind.mouse || kind == PointerDeviceKind.trackpad
+      ? handleSize + 8
+      : 44;
+
+  /// How far apart two taps may be and still count as a double tap.
+  static double doubleTapSlop(PointerDeviceKind kind) =>
+      kind == PointerDeviceKind.mouse || kind == PointerDeviceKind.trackpad
+      ? 6
+      : 24;
+
   /// The single selected item whose resize handle is under [screen].
-  CanvasItem? resizeHandleAt(Offset screen) {
+  CanvasItem? resizeHandleAt(
+    Offset screen, {
+    PointerDeviceKind kind = PointerDeviceKind.mouse,
+  }) {
     if (_tool != CanvasTool.select || _selection.length != 1) return null;
     final item = itemById(_selection.first);
     if (item == null || item is ConnectorItem) return null;
     final corner = toScreen(itemBounds(item).bottomRight);
-    final hit = Rect.fromCenter(
-      center: corner,
-      width: handleSize + 8,
-      height: handleSize + 8,
-    );
+    final size = handleHitSize(kind);
+    final hit = Rect.fromCenter(center: corner, width: size, height: size);
     return hit.contains(screen) ? item : null;
   }
 
@@ -723,7 +736,7 @@ class CanvasController extends ChangeNotifier {
         _lastDownTime != null &&
         _lastDownPos != null &&
         timeStamp - _lastDownTime! < doubleClickTime &&
-        (screen - _lastDownPos!).distance < 6;
+        (screen - _lastDownPos!).distance < doubleTapSlop(kind);
     _lastDownTime = isDouble ? null : timeStamp;
     _lastDownPos = screen;
 
@@ -757,6 +770,7 @@ class CanvasController extends ChangeNotifier {
           shift: shift,
           ctrl: ctrl,
           isDouble: isDouble,
+          kind: kind,
         );
       case CanvasTool.lasso:
         // Pressing on the lassoed items moves them, as with the select tool.
@@ -840,8 +854,9 @@ class CanvasController extends ChangeNotifier {
     required bool shift,
     required bool ctrl,
     required bool isDouble,
+    PointerDeviceKind kind = PointerDeviceKind.mouse,
   }) {
-    final handle = resizeHandleAt(screen);
+    final handle = resizeHandleAt(screen, kind: kind);
     if (handle != null) {
       endEditing();
       _beginTransaction();

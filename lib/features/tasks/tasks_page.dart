@@ -7,6 +7,7 @@ import '../../data/models/canvas_models.dart' show newId;
 import '../../data/models/record.dart';
 import '../../data/models/task_models.dart';
 import '../../data/workspace.dart';
+import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 
 sealed class TaskList {
@@ -273,6 +274,8 @@ class _TasksPageState extends State<TasksPage> {
 
     Widget projectItem(Project p) => GestureDetector(
       onSecondaryTapUp: (d) => _projectMenu(p, d.globalPosition),
+      // Touch: press and hold (there is no other way to these options).
+      onLongPressStart: (d) => _projectMenu(p, d.globalPosition),
       child: item(
         p.name,
         p.kind == ProjectKind.subject
@@ -339,11 +342,13 @@ class _TasksPageState extends State<TasksPage> {
           'New subject',
         ),
         for (final p in subjects) projectItem(p),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(10, 24, 10, 0),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 24, 10, 0),
           child: Text(
-            'Right-click a project to rename or archive it.',
-            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+            touchFirst
+                ? 'Press and hold a project to rename or archive it.'
+                : 'Right-click a project to rename or archive it.',
+            style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),
         ),
       ],

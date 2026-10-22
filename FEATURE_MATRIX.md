@@ -63,7 +63,7 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
 |---|---|---|---|---|---|
 | Tasks, projects, subtasks, deadlines, priorities, completion | P1 | W | VERIFIED | `spec_coverage_test`, `workspace_test` | |
-| Reminders | P1 | W | VERIFIED in-app (notice + taskbar flash while running; missed ones at next start; follow recurring tasks) | `Task.remindBefore`, `reminders_test` | no Windows notification while THEapp is closed (needs a background process) |
+| Reminders | P1 | W,i | VERIFIED in-app (notice + taskbar flash while running; missed ones at next start; follow recurring tasks). iOS notifications while closed: IMPLEMENTED BUT UNVERIFIED (Dart tested with simulated channel; Swift uncompiled) | `Task.remindBefore`, `reminders_test`, `ipad_touch_test` | no Windows notification while THEapp is closed (needs a background process); iOS needs a Mac build |
 | Recurring tasks | P1 | W | VERIFIED | `workspace_test` recurring task moves | |
 | Subjects, revision tasks, exam dates, preparation materials (same task system) | P1 | W | VERIFIED (data) | `spec_coverage_test` exams/subtasks | |
 | Deadlines on Calendar as the original task record | P1 | W | VERIFIED | `workspace_test`, `interaction_test` | |
@@ -97,6 +97,9 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Photo / PDF pickers (copies removed after import) | P2 | i | IMPLEMENTED BUT UNVERIFIED (Dart tested; Swift uncompiled) | `ios_bridge_test`, `ios_readiness_test` | Mac |
 | Share-menu link capture | P2 | i | PARTIAL (Dart side tested with simulated channel, shared text capped; Swift uncompiled; extension target not in the Xcode project) | `ios_bridge_test`, `ios_readiness_test` | Mac; Share Extension needs paid account (App Groups) |
 | Apple Pencil | P2 | i | UNVERIFIED | simulated tests | iPad + Pencil |
+| Touch-only use (no mouse/keyboard): every menu reachable by press and hold, canvas trash in the title menu, 44 px resize target, double-tap tolerance, touch wording | P1 | i | VERIFIED in simulated touch tests / NOT VERIFIED on an iPad | `ipad_touch_test` | iPad |
+| Dart ↔ Swift channel contract | P1 | i | VERIFIED by source check (every Dart call has a Swift case and back); Swift not compiled | `ipad_touch_test` | Mac |
+| iOS sync compatibility (same Dart engine and protocol v1 as Windows) | P1 | i | IMPLEMENTED BUT UNVERIFIED on iOS | `sync_engine_test`, `ios_readiness_test` | Mac build + device |
 
 ## Explicitly excluded (never implement)
 Separate Tracker page · Projects category in Calendar · time blocking ·

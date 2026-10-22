@@ -12,6 +12,14 @@ import 'package:flutter/services.dart';
 
 import '../sync/secret_store.dart';
 
+/// A task reminder to show at [at] (local time).
+class ScheduledReminder {
+  const ScheduledReminder(this.id, this.title, this.at);
+  final String id;
+  final String title;
+  final DateTime at;
+}
+
 class IosBridge implements KeychainBackend {
   IosBridge([MethodChannel? channel])
     : _channel = channel ?? const MethodChannel(channelName);
@@ -49,6 +57,22 @@ class IosBridge implements KeychainBackend {
 
   /// "iPad" or "iPhone" (iOS no longer gives apps the device's own name).
   Future<String?> deviceModel() => _invoke<String>('deviceModel');
+
+  /// Replaces THEapp's pending reminder notifications with [reminders]
+  /// (local notifications; no server, no paid account). iOS asks the user
+  /// for permission the first time there is something to schedule. Returns
+  /// false if notifications are not allowed or not available.
+  Future<bool> scheduleReminders(List<ScheduledReminder> reminders) async {
+    try {
+      return await _invoke<bool>('scheduleReminders', [
+            for (final r in reminders)
+              {'id': r.id, 'title': r.title, 'at': r.at.millisecondsSinceEpoch},
+          ]) ??
+          false;
+    } on PlatformException {
+      return false;
+    }
+  }
 
   /// Shows the system photo picker; returns copies of the chosen photos as
   /// JPEG files in the app's temporary folder (empty if cancelled).

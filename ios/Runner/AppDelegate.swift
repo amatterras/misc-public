@@ -4,6 +4,7 @@ import QuickLook
 import Security
 import UIKit
 import UniformTypeIdentifiers
+import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -23,8 +24,9 @@ import UniformTypeIdentifiers
 }
 
 /// Native half of lib/platform/ios_bridge.dart (method channel "theapp/ios"):
-/// incoming theapp:// links, the App Group folder, opening web links, the
-/// photo picker and the Keychain. No plugins, no paid services.
+/// incoming theapp:// links, the App Group folder, opening web links, task
+/// reminder notifications, the photo and PDF pickers, Quick Look and the
+/// Keychain. No plugins, no paid services.
 ///
 /// UNTESTED: written on Windows and never compiled or run. See
 /// ios/README_IOS.md for how to check it on a Mac.
@@ -83,6 +85,8 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       UIApplication.shared.open(url, options: [:]) { ok in result(ok) }
     case "deviceModel":
       result(UIDevice.current.model)
+    case "scheduleReminders":
+      scheduleReminders(call.arguments as? [[String: Any]] ?? [], result)
     case "pickDocuments":
       pickDocuments(result)
     case "openDocument":
@@ -134,6 +138,48 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
   private func keychainDelete(_ key: String) -> Bool {
     let status = SecItemDelete(query(key) as CFDictionary)
     return status == errSecSuccess || status == errSecItemNotFound
+  }
+
+  // MARK: Task reminders (local notifications; no server, free account is fine)
+
+  private static let reminderPrefix = "theapp.reminder."
+
+  /// Replaces all of THEapp's pending reminders with `items`
+  /// ([{id, title, at (ms since 1970)}]). Permission is asked only once
+  /// there is something to schedule.
+  private func scheduleReminders(_ items: [[String: Any]], _ result: @escaping FlutterResult) {
+    let center = UNUserNotificationCenter.current()
+    center.getPendingNotificationRequests { pending in
+      let old = pending.map { $0.identifier }.filter { $0.hasPrefix(Self.reminderPrefix) }
+      center.removePendingNotificationRequests(withIdentifiers: old)
+      guard !items.isEmpty else {
+        DispatchQueue.main.async { result(true) }
+        return
+      }
+      center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        guard granted else {
+          DispatchQueue.main.async { result(false) }
+          return
+        }
+        for item in items.prefix(60) {
+          guard let id = item["id"] as? String,
+            let title = item["title"] as? String,
+            let at = (item["at"] as? NSNumber)?.doubleValue
+          else { continue }
+          let seconds = Date(timeIntervalSince1970: at / 1000).timeIntervalSinceNow
+          guard seconds > 1 else { continue }
+          let content = UNMutableNotificationContent()
+          content.title = "Reminder"
+          content.body = title
+          content.sound = .default
+          let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
+          center.add(
+            UNNotificationRequest(
+              identifier: Self.reminderPrefix + id, content: content, trigger: trigger))
+        }
+        DispatchQueue.main.async { result(true) }
+      }
+    }
   }
 
   // MARK: Photo picker (PHPicker needs no photo-library permission)

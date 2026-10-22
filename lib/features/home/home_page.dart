@@ -6,6 +6,7 @@ import '../../app/theme.dart';
 import '../../data/models/calendar_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
+import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import '../../widgets/page_scaffold.dart';
 import '../capture/capture_dialog.dart';
@@ -131,7 +132,7 @@ class HomePage extends StatelessWidget {
           trailing: FilledButton.icon(
             onPressed: () => openQuickAdd(context, state),
             icon: const Icon(Icons.bolt_outlined, size: 16),
-            label: const Text('Quick Add  (Ctrl+N)'),
+            label: Text(withShortcut('Quick Add', 'Ctrl+N')),
           ),
           child: SingleChildScrollView(
             padding: const EdgeInsets.only(bottom: Space.xxl),

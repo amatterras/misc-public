@@ -18,6 +18,7 @@ import '../features/canvas/canvas_resources.dart';
 import '../features/capture/capture_service.dart';
 import '../features/capture/send_to.dart';
 import '../platform/ios_bridge.dart';
+import '../platform/input_hints.dart';
 import '../platform/platform.dart' as native;
 import '../sync/protocol.dart';
 import '../sync/secret_store.dart';
@@ -510,8 +511,39 @@ class AppState extends ChangeNotifier {
     ...?settings.get<Map<String, dynamic>>('remindersDismissed'),
   };
 
+  /// Reminders still to come, soonest first, at most [limit] (iOS keeps at
+  /// most 64 pending notifications per app).
+  List<ScheduledReminder> upcomingReminders({int limit = 60}) {
+    final now = clock();
+    final list = [
+      for (final t in workspace.tasks.all)
+        if (!t.done && t.reminderTime != null && t.reminderTime!.isAfter(now))
+          ScheduledReminder(t.id, t.title, t.reminderTime!),
+    ]..sort((a, b) => a.at.compareTo(b.at));
+    return list.take(limit).toList();
+  }
+
+  String? _scheduledSignature;
+
+  /// iPhone/iPad: hands the upcoming reminders to the system, so they
+  /// appear as notifications even when THEapp is closed. Sent only when the
+  /// list changed. Not yet run on a device.
+  void _scheduleSystemReminders() {
+    final ios = this.ios;
+    if (ios == null) return;
+    final upcoming = upcomingReminders();
+    final signature = [
+      for (final r in upcoming)
+        '${r.id}|${r.title}|${r.at.millisecondsSinceEpoch}',
+    ].join('\n');
+    if (signature == _scheduledSignature) return;
+    _scheduledSignature = signature;
+    unawaited(ios.scheduleReminders(upcoming));
+  }
+
   /// Updates [dueReminders] from the tasks and the clock.
   void checkReminders() {
+    _scheduleSystemReminders();
     final now = clock();
     final dismissed = _dismissedReminders;
     final due = [
@@ -802,15 +834,23 @@ class AppState extends ChangeNotifier {
       width: 460,
       minHeight: 0,
       fontSize: 16,
-      text:
-          '# Welcome to your canvas\n'
-          '- Double-click empty space to write a note\n'
-          '- Drag to move, use the corner handle to resize\n'
-          '- Select a note to change size, **bold**, colours\n'
-          '- **P** draws, **E** erases drawings, **V** selects\n'
-          '- Scroll to zoom, hold **Space** or middle mouse to pan\n'
-          '- **Ctrl+V** pastes text, links and images here\n'
-          '- **Ctrl+N** opens Quick Add from anywhere',
+      text: touchFirst
+          ? '# Welcome to your canvas\n'
+                '- Double-tap empty space to write a note\n'
+                '- Drag to move, use the corner handle to resize\n'
+                '- Select a note to change size, **bold**, colours\n'
+                '- Pick the pen to draw; while Apple Pencil touches the '
+                'screen, your hand is ignored\n'
+                '- Pinch with two fingers to zoom and move around\n'
+                '- **Quick Add** captures text, links and photos from anywhere'
+          : '# Welcome to your canvas\n'
+                '- Double-click empty space to write a note\n'
+                '- Drag to move, use the corner handle to resize\n'
+                '- Select a note to change size, **bold**, colours\n'
+                '- **P** draws, **E** erases drawings, **V** selects\n'
+                '- Scroll to zoom, hold **Space** or middle mouse to pan\n'
+                '- **Ctrl+V** pastes text, links and images here\n'
+                '- **Ctrl+N** opens Quick Add from anywhere',
     ),
   ];
 
