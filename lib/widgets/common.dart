@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../app/theme.dart';
 import '../data/models/library_models.dart';
 import '../data/workspace.dart';
-import '../platform/windows_native.dart' as native;
+import '../platform/platform.dart' as native;
 
 const _weekdays = [
   'Monday',

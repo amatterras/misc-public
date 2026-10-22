@@ -4,7 +4,7 @@ import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
-import '../../platform/windows_native.dart' as native;
+import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 
 class SearchResult {

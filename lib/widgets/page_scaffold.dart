@@ -21,43 +21,50 @@ class PageScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Less padding, and the trailing controls move under the title, on
+    // phone-width screens.
+    final narrow = MediaQuery.sizeOf(context).width < 640;
+    final pad = narrow ? Space.lg : Space.page;
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.4,
+          ),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: Space.xs),
+          Text(
+            subtitle!,
+            style: const TextStyle(fontSize: 14, color: AppColors.textMuted),
+          ),
+        ],
+      ],
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(Space.page, 40, Space.page, 0),
+      padding: EdgeInsets.fromLTRB(pad, narrow ? Space.xl : 40, pad, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: Space.xs),
-                      Text(
-                        subtitle!,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              ?trailing,
+          if (narrow) ...[
+            heading,
+            if (trailing != null) ...[
+              const SizedBox(height: Space.md),
+              trailing!,
             ],
-          ),
-          const SizedBox(height: Space.xxl),
+          ] else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(child: heading),
+                ?trailing,
+              ],
+            ),
+          SizedBox(height: narrow ? Space.xl : Space.xxl),
           Expanded(child: child),
         ],
       ),

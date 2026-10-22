@@ -55,6 +55,11 @@ class CanvasToolbar extends StatelessWidget {
               'Select & move  (V)',
             ),
             toolButton(
+              CanvasTool.lasso,
+              const Icon(Icons.gesture, size: 18),
+              'Lasso select  (L)',
+            ),
+            toolButton(
               CanvasTool.pan,
               const Icon(Icons.pan_tool_outlined, size: 17),
               'Pan  (H, or hold Space / middle mouse)',
@@ -64,6 +69,11 @@ class CanvasToolbar extends StatelessWidget {
               CanvasTool.pen,
               const Icon(Icons.draw_outlined, size: 18),
               'Draw  (P)',
+            ),
+            toolButton(
+              CanvasTool.highlighter,
+              const Icon(Icons.highlight, size: 18),
+              'Highlighter',
             ),
             toolButton(
               CanvasTool.eraser,
@@ -124,6 +134,15 @@ class CanvasContextBar extends StatelessWidget {
 
   static const _penColors = [AppColors.text, ...OrganizerColors.all];
   static const _penWidths = [1.5, 2.5, 5.0, 9.0];
+  static const _highlighterColors = [
+    Color(0xFFFFD54F), // Amber/Yellow
+    Color(0xFF81C784), // Light Green
+    Color(0xFF64B5F6), // Light Blue
+    Color(0xFFFF8A65), // Coral/Orange
+    Color(0xFFBA68C8), // Purple
+    Color(0xFFF06292), // Pink
+  ];
+  static const _highlighterWidths = [12.0, 18.0, 26.0, 36.0];
   static const _fontSizes = {'S': 13.0, 'M': 16.0, 'L': 22.0, 'XL': 32.0};
 
   @override
@@ -157,8 +176,37 @@ class CanvasContextBar extends StatelessWidget {
         ],
       );
     }
+    if (c.tool == CanvasTool.highlighter) {
+      return ToolPanel(
+        horizontal: true,
+        children: [
+          for (final color in _highlighterColors)
+            _Swatch(
+              color: color,
+              active: c.highlighterColor == color,
+              onTap: () => c.setHighlighter(color: color),
+            ),
+          const _PanelDivider(vertical: true),
+          for (final width in _highlighterWidths)
+            ToolButton(
+              tooltip: 'Highlighter width',
+              active: c.highlighterWidth == width,
+              onPressed: () => c.setHighlighter(width: width),
+              icon: Container(
+                width: 14,
+                height: (width / 2.5).clamp(4.0, 14.0),
+                decoration: BoxDecoration(
+                  color: c.highlighterColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
     final selected = c.selectedItems;
-    if (c.tool != CanvasTool.select || selected.isEmpty || c.isDragging) {
+    final selecting = c.tool == CanvasTool.select || c.tool == CanvasTool.lasso;
+    if (!selecting || selected.isEmpty || c.isDragging) {
       return const SizedBox.shrink();
     }
     final texts = selected.whereType<TextItem>().toList();

@@ -221,6 +221,46 @@ void main() {
   );
 
   test(
+    'changes made offline survive an app restart and are sent afterwards',
+    () async {
+      final ipad = await device('ipad');
+      final keep = ipad.ws.createNote(title: 'Keep', body: 'v1');
+      final gone = ipad.ws.createNote(title: 'Delete me', body: '');
+      await ipad.sync();
+      final pc = await device('pc');
+      await pc.sync();
+
+      await hub.stop();
+      ipad.ws.notes.put(ipad.ws.notes[keep.id]!.copyWith(body: 'v2 offline'));
+      ipad.ws.notes.remove(gone.id);
+      await expectLater(ipad.sync(), throwsA(isA<SyncFailure>()));
+      // The app is closed while still offline.
+      await ipad.ws.flush();
+      final token = ipad.engine.client.token;
+      ipad.ws.dispose();
+
+      // Reopened from disk; the hub is back.
+      hub = await startHub();
+      final ws = Workspace(
+        Directory('${root.path}${Platform.pathSeparator}ipad'),
+      );
+      await ws.load();
+      final engine = SyncEngine(
+        workspace: ws,
+        canvases: FileCanvasRepository(ws.store),
+        client: SyncClient(Uri.parse('http://127.0.0.1:$port'), token: token),
+      );
+      final report = await engine.syncOnce();
+      expect(report.pushed, 2, reason: 'the edit and the deletion were queued');
+      await pc.sync();
+      expect(pc.ws.notes[keep.id]!.body, 'v2 offline');
+      expect(pc.ws.notes[gone.id], isNull);
+      expect((await engine.syncOnce()).pushed, 0, reason: 'sent exactly once');
+      ws.dispose();
+    },
+  );
+
+  test(
     'concurrent edits keep one version and preserve the other on both devices',
     () async {
       final pc = await device('pc');

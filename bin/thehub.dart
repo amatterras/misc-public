@@ -13,6 +13,7 @@ import 'dart:io';
 
 import 'package:flutter_application_1/hub/hub_auth.dart';
 import 'package:flutter_application_1/hub/hub_backup.dart';
+import 'package:flutter_application_1/hub/hub_mirror.dart';
 import 'package:flutter_application_1/hub/hub_server.dart';
 import 'package:flutter_application_1/sync/secret_store.dart';
 
@@ -93,6 +94,20 @@ Future<void> main(List<String> args) async {
         );
       case 'startup':
         await _startup(options.positional.firstOrNull ?? 'status');
+      case 'mirror-pair':
+        await _mirrorPair(options);
+      case 'mirror-run':
+        await _mirrorRun(
+          options,
+          reseed: args.contains('--reseed'),
+          repair: args.contains('--repair'),
+        );
+      case 'mirror-status':
+        await _mirrorStatus(options);
+      case 'mirror-verify':
+        await _mirrorVerify(options);
+      case 'restore-from-mirror':
+        await _restoreFromMirror(options.positional);
       default:
         throw _UsageError('unknown command "${args.first}"');
     }
@@ -128,6 +143,14 @@ THEapp sync hub
   compact                Shrink the journal (makes a backup first).
   restore-to <backup> <emptyDir>   Restore a backup into a NEW folder.
   startup enable|disable|status    Start the hub at Windows sign-in (optional).
+Read-only mirror (e.g. on a second machine; always its OWN folder):
+  mirror-pair --hub <URL> --code <CODE> --data <DIR>   Pair once (code from "pair").
+  mirror-run --data <DIR> [--reseed] [--repair]
+        Copy new changes and photos from the hub. --repair re-hashes every
+        copied photo and downloads damaged ones again (old copies kept in "damaged").
+  mirror-status --data <DIR>           Health, position and missing files.
+  mirror-verify --data <DIR>           Check the copy loads as a hub; re-hash photos.
+  restore-from-mirror <mirrorDir> <emptyDir>   Rebuild a hub folder from the mirror.
 ''');
 
 class _UsageError implements Exception {
@@ -334,4 +357,83 @@ class _HubLog {
       _file.writeAsStringSync('$text\n', mode: FileMode.append, flush: true);
     } catch (_) {}
   }
+}
+
+/// Mirror commands always need their own folder (never the hub's).
+Directory _mirrorDir(_Options options) {
+  final data = options.value('--data');
+  if (data == null) {
+    throw const _UsageError(
+      'mirror commands need --data <a separate mirror folder>',
+    );
+  }
+  return Directory(data);
+}
+
+Future<void> _mirrorPair(_Options options) async {
+  final hub = options.value('--hub');
+  final code = options.value('--code');
+  if (hub == null || code == null) {
+    throw const _UsageError(
+      'mirror-pair --hub <URL> --code <CODE> --data <DIR>',
+    );
+  }
+  await MirrorEngine(_mirrorDir(options)).pair(Uri.parse(hub), code);
+  stdout.writeln('Mirror paired. Run: mirror-run --data <DIR>');
+}
+
+Future<void> _mirrorRun(
+  _Options options, {
+  required bool reseed,
+  required bool repair,
+}) async {
+  final report = await MirrorEngine(_mirrorDir(options))
+      .replicateOnce(reseed: reseed, repair: repair);
+  stdout.writeln('Mirror: $report');
+  if (report.status != MirrorStatus.inSync) exitCode = 1;
+}
+
+Future<void> _mirrorStatus(_Options options) async {
+  final state = await MirrorEngine(_mirrorDir(options)).loadState();
+  if (state == null) {
+    stdout.writeln('Not paired yet.');
+    return;
+  }
+  stdout.writeln('Health: ${state.health()}');
+  stdout.writeln(
+    'Hub: ${state.primaryUrl}  (hub id ${state.hubId ?? 'not seen yet'})',
+  );
+  if (state.lastError != null) {
+    stdout.writeln(
+      'Last attempt ${state.lastAttemptAt ?? '?'}: ${state.lastError}',
+    );
+  }
+  stdout.writeln(
+    'Complete up to change #${state.cursor}; last run ${state.replicatedAt ?? 'never'}',
+  );
+  stdout.writeln(
+    'Attachments still missing: ${state.missingAttachments.length}',
+  );
+}
+
+Future<void> _mirrorVerify(_Options options) async {
+  final r = await MirrorEngine(_mirrorDir(options)).verify();
+  stdout.writeln('Mirror check: $r');
+  if (!r.valid) exitCode = 1;
+}
+
+Future<void> _restoreFromMirror(List<String> positional) async {
+  if (positional.length != 2) {
+    throw const _UsageError('restore-from-mirror <mirrorDir> <emptyDir>');
+  }
+  await MirrorEngine.restoreToCleanHub(
+    mirrorDir: Directory(positional[0]),
+    target: Directory(positional[1]),
+  );
+  stdout.writeln(
+    'Restored into ${positional[1]}. It gets a new hub id when it starts;',
+  );
+  stdout.writeln(
+    'pair your devices with it again. The live hub was not touched.',
+  );
 }

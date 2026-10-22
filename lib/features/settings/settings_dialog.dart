@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
-import '../../platform/windows_native.dart' as native;
+import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../capture/send_to.dart';
 import 'sync_section.dart';
@@ -124,7 +124,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               ),
               const SizedBox(height: Space.sm),
               OutlinedButton.icon(
-                onPressed: () => native.openFolder(dataPath),
+                onPressed: native.canOpenFolders
+                    ? () => native.openFolder(dataPath)
+                    : null,
                 icon: const Icon(Icons.folder_open, size: 16),
                 label: const Text('Open data folder'),
               ),

@@ -52,6 +52,16 @@ class _CanvasViewState extends State<CanvasView> {
   bool _showMinimap = true;
   bool _wasVisible = false;
 
+  // Touch and stylus tracking for iPad / iPhone and Apple Pencil
+  final Map<int, Offset> _touchPointers = {};
+  double? _initialPinchDistance;
+  double? _initialPinchScale;
+  Offset? _lastPinchFocal;
+  int? _activeStylusPointer;
+
+  /// The pointer whose stroke or drag the controller is handling.
+  int? _drawingPointer;
+
   @override
   void initState() {
     super.initState();
@@ -234,8 +244,10 @@ class _CanvasViewState extends State<CanvasView> {
 
     final tools = {
       LogicalKeyboardKey.keyV: CanvasTool.select,
+      LogicalKeyboardKey.keyL: CanvasTool.lasso,
       LogicalKeyboardKey.keyH: CanvasTool.pan,
       LogicalKeyboardKey.keyP: CanvasTool.pen,
+      LogicalKeyboardKey.keyI: CanvasTool.highlighter,
       LogicalKeyboardKey.keyE: CanvasTool.eraser,
       LogicalKeyboardKey.keyT: CanvasTool.text,
     };
@@ -259,7 +271,39 @@ class _CanvasViewState extends State<CanvasView> {
 
   void _onPointerDown(PointerDownEvent e) {
     _focusNode.requestFocus();
+    final isStylus =
+        e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus;
+    if (isStylus) {
+      // The pen wins: keep a finger stroke already drawn, end any pinch, and
+      // ignore the fingers (the palm) until the pen lifts.
+      if (_drawingPointer != null) c.pointerUp();
+      _drawingPointer = null;
+      _touchPointers.clear();
+      _endPinch();
+      _activeStylusPointer = e.pointer;
+    } else if (e.kind == PointerDeviceKind.touch) {
+      if (_activeStylusPointer != null) {
+        // Palm rejection: finger touches are ignored while stylus is in contact.
+        return;
+      }
+      _touchPointers[e.pointer] = e.localPosition;
+      if (_touchPointers.length == 2) {
+        // Multi-touch gesture started: cancel active single pointer drawing
+        if (_drawingPointer != null) c.pointerCancel();
+        _drawingPointer = null;
+        final points = _touchPointers.values.toList();
+        _initialPinchDistance = (points[0] - points[1]).distance;
+        _initialPinchScale = c.scale;
+        _lastPinchFocal = (points[0] + points[1]) / 2;
+        return;
+      } else if (_touchPointers.length > 2) {
+        return;
+      }
+    }
+
     final keyboard = HardwareKeyboard.instance;
+    _drawingPointer = e.pointer;
     c.pointerDown(
       e.localPosition,
       buttons: e.buttons,
@@ -269,6 +313,67 @@ class _CanvasViewState extends State<CanvasView> {
       ctrl: keyboard.isControlPressed,
       timeStamp: e.timeStamp,
     );
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    if (e.kind == PointerDeviceKind.touch && _activeStylusPointer != null) {
+      return; // Palm rejection
+    }
+    if (_touchPointers.containsKey(e.pointer)) {
+      _touchPointers[e.pointer] = e.localPosition;
+      if (_touchPointers.length >= 2) {
+        final pts = _touchPointers.values.take(2).toList();
+        final focal = (pts[0] + pts[1]) / 2;
+        final dist = (pts[0] - pts[1]).distance;
+        if (_lastPinchFocal != null) {
+          c.panBy(focal - _lastPinchFocal!);
+        }
+        _lastPinchFocal = focal;
+        if (_initialPinchDistance != null &&
+            _initialPinchDistance! > 10 &&
+            _initialPinchScale != null) {
+          final factor =
+              (dist / _initialPinchDistance!) * (_initialPinchScale! / c.scale);
+          c.zoomAt(focal, factor);
+        }
+        return;
+      }
+    }
+    if (e.pointer != _drawingPointer) return;
+    c.pointerMove(
+      e.localPosition,
+      pressure: e.kind == PointerDeviceKind.mouse ? 0.5 : e.pressure,
+    );
+  }
+
+  void _onPointerUp(PointerUpEvent e) {
+    _releasePointer(e.pointer);
+    // Only the pointer that started the stroke may finish it (a lifted palm
+    // must not end the pen stroke).
+    if (e.pointer == _drawingPointer) {
+      _drawingPointer = null;
+      c.pointerUp();
+    }
+  }
+
+  void _onPointerCancel(PointerCancelEvent e) {
+    _releasePointer(e.pointer);
+    if (e.pointer == _drawingPointer) {
+      _drawingPointer = null;
+      c.pointerCancel();
+    }
+  }
+
+  void _releasePointer(int pointer) {
+    if (_activeStylusPointer == pointer) _activeStylusPointer = null;
+    _touchPointers.remove(pointer);
+    if (_touchPointers.length < 2) _endPinch();
+  }
+
+  void _endPinch() {
+    _initialPinchDistance = null;
+    _initialPinchScale = null;
+    _lastPinchFocal = null;
   }
 
   void _onPointerSignal(PointerSignalEvent e) {
@@ -298,7 +403,10 @@ class _CanvasViewState extends State<CanvasView> {
       return SystemMouseCursors.grab;
     }
     switch (c.tool) {
-      case CanvasTool.pen || CanvasTool.eraser:
+      case CanvasTool.pen ||
+          CanvasTool.highlighter ||
+          CanvasTool.eraser ||
+          CanvasTool.lasso:
         return SystemMouseCursors.precise;
       case CanvasTool.text:
         return SystemMouseCursors.text;
@@ -344,14 +452,9 @@ class _CanvasViewState extends State<CanvasView> {
                       child: Listener(
                         behavior: HitTestBehavior.opaque,
                         onPointerDown: _onPointerDown,
-                        onPointerMove: (e) => c.pointerMove(
-                          e.localPosition,
-                          pressure: e.kind == PointerDeviceKind.mouse
-                              ? 0.5
-                              : e.pressure,
-                        ),
-                        onPointerUp: (_) => c.pointerUp(),
-                        onPointerCancel: (_) => c.pointerCancel(),
+                        onPointerMove: _onPointerMove,
+                        onPointerUp: _onPointerUp,
+                        onPointerCancel: _onPointerCancel,
                         onPointerHover: (e) => c.pointerHover(e.localPosition),
                         onPointerSignal: _onPointerSignal,
                         onPointerPanZoomStart: _onPanZoomStart,
@@ -401,10 +504,13 @@ class _CanvasViewState extends State<CanvasView> {
                   top: 0,
                   bottom: 0,
                   child: Center(
-                    child: CanvasToolbar(
-                      controller: c,
-                      onAddImage: _addImages,
-                      onAddLink: _addLink,
+                    // Scrolls on short screens (e.g. iPhone landscape).
+                    child: SingleChildScrollView(
+                      child: CanvasToolbar(
+                        controller: c,
+                        onAddImage: _addImages,
+                        onAddLink: _addLink,
+                      ),
                     ),
                   ),
                 ),

@@ -61,17 +61,22 @@ from Explorer; no PDFs on the canvas; reminders don't notify; no version history
 records written by a newer app version keep unknown *records* but not unknown *fields*
 inside a known record (needed before sync ships).
 
-## Sync (not implemented yet)
-See [SYNC_ARCHITECTURE.md](SYNC_ARCHITECTURE.md) for the options, costs, conflict rules and
-the recommended design. The data layer already stores per-record and per-canvas-item
-revision stamps, tombstones and a device identity (`sync` folder).
+## Sync
+Implemented: Windows hub, sync engine, optional read-only mirror. See
+[SYNC_ARCHITECTURE.md](SYNC_ARCHITECTURE.md) for the protocol, conflict rules,
+security, backups and commands.
+
+## Platform-specific code
+Pages never call operating-system APIs directly; they use `lib/platform/platform.dart`,
+which picks `windows_native.dart` (dart:ffi, Windows) or `ios_bridge.dart` (method
+channel "theapp/ios", Swift in `ios/Runner/AppDelegate.swift`). Elsewhere these calls
+do nothing. Windows-only start-up steps (single-window guard, Explorer "Send to") run
+only on Windows.
 
 ## iOS / iPad
-Building for iPhone/iPad requires a Mac with Xcode (and an Apple Developer account for
-installing on devices long-term). The canvas already records pointer type and pen
-pressure, so Apple Pencil drawing can be routed in later; it is **not** implemented or
-tested yet. The iOS Share Sheet needs a native Share Extension that would write into
-the same Inbox.
+Dart side implemented and tested on Windows with a simulated native channel; Swift side
+written but **never compiled or run** (no Mac). Status, blockers and free test options:
+[ios/README_IOS.md](ios/README_IOS.md).
 
 ## AI
 Not implemented. Any future AI feature must only send content the user selects, after

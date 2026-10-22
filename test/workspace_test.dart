@@ -7,6 +7,7 @@ import 'package:flutter_application_1/data/models/canvas_models.dart'
 import 'package:flutter_application_1/data/models/library_models.dart';
 import 'package:flutter_application_1/data/models/record.dart';
 import 'package:flutter_application_1/data/models/task_models.dart';
+import 'package:flutter_application_1/data/storage/backup_service.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/capture/link_preview.dart';
 import 'package:flutter_application_1/features/capture/send_to.dart';
@@ -380,6 +381,22 @@ void main() {
       expect(items.any((i) => i.text == 'just text'), isTrue);
       expect(await bridge.requestsDir.list().isEmpty, isTrue);
     });
+  });
+
+  test('the before-first-sync backup is never pruned', () async {
+    ws.createNote(title: 'Before sync');
+    await ws.flush();
+    final keep = await ws.backups.snapshot('before-first-sync');
+    for (var i = 0; i < BackupService.keepOther + 3; i++) {
+      await ws.backups.snapshot('manual');
+    }
+    final names = (await ws.backups.list()).map((d) => d.path).toList();
+    expect(names, contains(keep.path));
+    expect(
+      names.where((p) => p.contains('-manual')),
+      hasLength(BackupService.keepOther),
+      reason: 'other backups are still trimmed',
+    );
   });
 
   test('backups: automatic daily snapshot and restore', () async {

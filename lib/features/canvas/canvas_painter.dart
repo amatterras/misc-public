@@ -325,6 +325,22 @@ class CanvasPainter extends CustomPainter {
       canvas.drawRect(marquee, Paint()..color = const Color(0x1A4D8FD6));
       canvas.drawRect(marquee, outline..strokeWidth = 1 / scale);
     }
+
+    final lasso = controller.lassoPoints;
+    if (lasso.length >= 2) {
+      final lassoPath = Path()..moveTo(lasso.first.dx, lasso.first.dy);
+      for (var i = 1; i < lasso.length; i++) {
+        lassoPath.lineTo(lasso[i].dx, lasso[i].dy);
+      }
+      lassoPath.close();
+      canvas.drawPath(lassoPath, Paint()..color = const Color(0x1A4D8FD6));
+      canvas.drawPath(
+        lassoPath,
+        outline
+          ..strokeWidth = 1.2 / scale
+          ..style = PaintingStyle.stroke,
+      );
+    }
   }
 
   @override

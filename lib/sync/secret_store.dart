@@ -10,6 +10,21 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
+/// Secure storage provided by the operating system (the iOS Keychain).
+/// Kept as an interface so this file stays plain Dart for the hub.
+abstract interface class KeychainBackend {
+  Future<String?> read(String key);
+  Future<void> write(String key, String value);
+  Future<void> delete(String key);
+}
+
+/// Set by the app at start-up on iPhone/iPad. When set, secrets go to the
+/// Keychain and the file only records where (it never holds the secret).
+KeychainBackend? secretKeychain;
+
+/// Keychain entry name for [file], e.g. `THEapp.hub.token`.
+String _keychainKey(File file) => 'THEapp.${file.uri.pathSegments.last}';
+
 final class _Blob extends Struct {
   @Uint32()
   external int cbData;
@@ -119,7 +134,12 @@ Uint8List? _dpapi(Uint8List input, {required bool protect}) {
 Future<void> writeSecret(File file, String secret) async {
   final bytes = Uint8List.fromList(utf8.encode(secret));
   final Map<String, String> json;
-  if (Platform.isWindows) {
+  final keychain = secretKeychain;
+  if (keychain != null) {
+    final key = _keychainKey(file);
+    await keychain.write(key, secret);
+    json = {'keychain': key};
+  } else if (Platform.isWindows) {
     final protected = _dpapi(bytes, protect: true);
     if (protected == null) {
       throw const FileSystemException('Could not encrypt secret');
@@ -131,7 +151,26 @@ Future<void> writeSecret(File file, String secret) async {
   await file.parent.create(recursive: true);
   final tmp = File('${file.path}.tmp');
   await tmp.writeAsString(jsonEncode(json), flush: true);
+  if (Platform.isLinux || Platform.isMacOS) {
+    // No DPAPI here (e.g. a mirror on a Raspberry Pi): readable by this user
+    // only, set before the file gets its real name.
+    final r = await Process.run('chmod', ['600', tmp.path]);
+    if (r.exitCode != 0) {
+      await tmp.delete();
+      throw FileSystemException('Could not protect secret file', file.path);
+    }
+  }
   await tmp.rename(file.path);
+}
+
+/// Removes a secret written by [writeSecret] (file and Keychain entry).
+Future<void> deleteSecret(File file) async {
+  if (secretKeychain != null) {
+    try {
+      await secretKeychain!.delete(_keychainKey(file));
+    } catch (_) {}
+  }
+  if (await file.exists()) await file.delete();
 }
 
 /// Reads a secret written by [writeSecret]; null if missing or unreadable.
@@ -139,6 +178,9 @@ Future<String?> readSecret(File file) async {
   try {
     if (!await file.exists()) return null;
     final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+    if (json['keychain'] is String) {
+      return await secretKeychain?.read(json['keychain'] as String);
+    }
     if (json['dpapi'] is String) {
       if (!Platform.isWindows) return null;
       final plain = _dpapi(

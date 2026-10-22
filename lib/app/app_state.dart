@@ -14,7 +14,8 @@ import '../features/canvas/canvas_controller.dart';
 import '../features/canvas/canvas_resources.dart';
 import '../features/capture/capture_service.dart';
 import '../features/capture/send_to.dart';
-import '../platform/windows_native.dart' as native;
+import '../platform/ios_bridge.dart';
+import '../platform/platform.dart' as native;
 import '../sync/protocol.dart';
 import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
@@ -84,10 +85,17 @@ class AppState extends ChangeNotifier {
     required this.settings,
     required this.workspace,
     this.enableSendTo = true,
+    IosBridge? ios,
   }) : capture = CaptureService(workspace),
-       sendTo = SendToBridge(workspace.root) {
+       sendTo = SendToBridge(workspace.root),
+       ios = ios ?? (Platform.isIOS ? IosBridge.instance : null) {
     resources = WorkspaceCanvasResources(workspace);
   }
+
+  /// iPhone/iPad services (links opened from outside, shared items); null
+  /// on other platforms. Replaceable in tests.
+  final IosBridge? ios;
+  SendToBridge? _sharedInbox;
 
   final CanvasRepository canvases;
   final SettingsRepository settings;
@@ -207,6 +215,7 @@ class AppState extends ChangeNotifier {
       sendTo.onFocusRequested = native.focusMainWindow;
       sendTo.start(capture);
     }
+    if (ios != null) await _startIosCapture(ios!);
     final recoveries = workspace.store.recoveries;
     if (recoveries.isNotEmpty) {
       // Shown once the window is up; details are in the log.
@@ -292,7 +301,7 @@ class AppState extends ChangeNotifier {
     _sync = null;
     hubUrl = null;
     syncStatus = 'Not set up';
-    if (await _hubTokenFile.exists()) await _hubTokenFile.delete();
+    await deleteSecret(_hubTokenFile);
     final sync =
         '${workspace.root.path}${Platform.pathSeparator}sync${Platform.pathSeparator}';
     for (final name in ['hub.json', 'client_state.json']) {
@@ -366,6 +375,32 @@ class AppState extends ChangeNotifier {
   Future<void> _refreshList() async {
     _canvasList = await canvases.listCanvases();
     notifyListeners();
+  }
+
+  // ------------------------------------------------------- iPhone / iPad --
+
+  /// Links opened from outside (e.g. an iOS Shortcut opening
+  /// `theapp://capture?url=...`) and requests left by the Share Extension
+  /// go to the Inbox, through the same code as Windows "Send to". Only ever
+  /// adds Inbox items. Not yet verified on a device.
+  Future<void> _startIosCapture(IosBridge ios) async {
+    final shared = await ios.sharedContainerPath();
+    _sharedInbox = shared == null ? null : SendToBridge(Directory(shared));
+    await importSharedItems();
+    await ios.listenForLinks((uri) async {
+      final items = await sendTo.handleUri(uri, capture);
+      if (items.isEmpty) return;
+      await workspace.flush();
+      showToast('Added ${items.length} item(s) to the Inbox');
+    });
+  }
+
+  /// Imports items shared through the Share Extension (at start and when
+  /// the app comes back to the front). Returns how many were added.
+  Future<int> importSharedItems() async {
+    final count = await _sharedInbox?.processRequests(capture) ?? 0;
+    if (count > 0) showToast('Added $count shared item(s) to the Inbox');
+    return count;
   }
 
   void showToast(String message) {

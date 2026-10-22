@@ -12,6 +12,8 @@ import 'data/storage/app_log.dart';
 import 'data/storage/json_file_store.dart';
 import 'data/workspace.dart';
 import 'features/capture/send_to.dart';
+import 'platform/ios_bridge.dart';
+import 'sync/secret_store.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,16 +31,22 @@ Future<void> main(List<String> args) async {
     return true;
   };
 
-  final bridge = SendToBridge(root);
-  // Launched from Explorer's "Send to": hand the files to the running
-  // window (if there is one) and quit.
-  if (await bridge.forward(args)) exit(0);
-  // Only one THEapp window may use the data folder at a time; two would
-  // overwrite each other's changes. Bring the open one forward instead.
-  if (await bridge.isAnotherInstanceRunning()) {
-    await bridge.requestFocus();
-    exit(0);
+  if (Platform.isWindows) {
+    final bridge = SendToBridge(root);
+    // Launched from Explorer's "Send to": hand the files to the running
+    // window (if there is one) and quit.
+    if (await bridge.forward(args)) exit(0);
+    // Only one THEapp window may use the data folder at a time; two would
+    // overwrite each other's changes. Bring the open one forward instead.
+    // (iOS runs one copy by itself; there, an old heartbeat file would make
+    // a quick relaunch quit at once.)
+    if (await bridge.isAnotherInstanceRunning()) {
+      await bridge.requestFocus();
+      exit(0);
+    }
   }
+  // iPhone/iPad keep the hub token in the Keychain.
+  if (Platform.isIOS) secretKeychain = IosBridge.instance;
   AppLog.info('Started (pid $pid)');
 
   final workspace = Workspace(root);
@@ -46,6 +54,7 @@ Future<void> main(List<String> args) async {
     canvases: FileCanvasRepository(workspace.store),
     settings: SettingsRepository(workspace.store),
     workspace: workspace,
+    enableSendTo: Platform.isWindows,
   );
   await state.init();
   runApp(TheApp(state: state));
@@ -79,6 +88,9 @@ class _TheAppState extends State<TheApp> {
       },
       onInactive: () => unawaited(widget.state.flush()),
       onHide: () => unawaited(widget.state.flush()),
+      // iPhone/iPad: pick up items shared while the app was in the
+      // background (does nothing elsewhere).
+      onResume: () => unawaited(widget.state.importSharedItems()),
     );
   }
 

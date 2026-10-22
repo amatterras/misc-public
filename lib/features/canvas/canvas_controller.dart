@@ -16,12 +16,12 @@ import 'canvas_text.dart';
 
 export 'canvas_text.dart' show kTextPadding, canvasTextStyle;
 
-enum CanvasTool { select, pan, pen, eraser, text }
+enum CanvasTool { select, lasso, pan, pen, highlighter, eraser, text }
 
 enum SaveState { saved, pending, saving, failed }
 
 /// What the current pointer drag is doing.
-enum _Drag { none, pan, move, resize, marquee, draw, erase }
+enum _Drag { none, pan, move, resize, marquee, lasso, draw, erase }
 
 /// Owns the state of one open canvas: its items, camera, selection, current
 /// tool, undo/redo history and autosave.
@@ -217,7 +217,9 @@ class CanvasController extends ChangeNotifier {
     if (value == _tool) return;
     endEditing();
     _tool = value;
-    if (value != CanvasTool.select) _selection = const {};
+    if (value != CanvasTool.select && value != CanvasTool.lasso) {
+      _selection = const {};
+    }
     notifyListeners();
   }
 
@@ -227,6 +229,15 @@ class CanvasController extends ChangeNotifier {
   void setPen({Color? color, double? width}) {
     penColor = color ?? penColor;
     penWidth = width ?? penWidth;
+    notifyListeners();
+  }
+
+  Color highlighterColor = const Color(0xFFFFD54F);
+  double highlighterWidth = 18.0;
+
+  void setHighlighter({Color? color, double? width}) {
+    highlighterColor = color ?? highlighterColor;
+    highlighterWidth = width ?? highlighterWidth;
     notifyListeners();
   }
 
@@ -613,6 +624,9 @@ class CanvasController extends ChangeNotifier {
   StrokeItem? get liveStroke => _liveStroke;
   List<StrokePoint> _livePoints = [];
 
+  List<Offset> _lassoPoints = [];
+  List<Offset> get lassoPoints => _lassoPoints;
+
   Rect? _marquee;
   Rect? get marquee => _marquee;
 
@@ -667,6 +681,16 @@ class CanvasController extends ChangeNotifier {
     }
     if (buttons & kPrimaryButton == 0) return;
 
+    // Inverted stylus tip (e.g. Apple Pencil / digital pen eraser end)
+    if (kind == PointerDeviceKind.invertedStylus) {
+      endEditing();
+      _beginTransaction();
+      _drag = _Drag.erase;
+      _eraseAt(world, world);
+      notifyListeners();
+      return;
+    }
+
     switch (_tool) {
       case CanvasTool.pan:
         break;
@@ -678,6 +702,22 @@ class CanvasController extends ChangeNotifier {
           ctrl: ctrl,
           isDouble: isDouble,
         );
+      case CanvasTool.lasso:
+        // Pressing on the lassoed items moves them, as with the select tool.
+        final hit = hitTest(world);
+        if (hit != null && _selection.contains(hit.id)) {
+          _selectDown(
+            screen,
+            world,
+            shift: false,
+            ctrl: false,
+            isDouble: false,
+          );
+        } else {
+          endEditing();
+          _drag = _Drag.lasso;
+          _lassoPoints = [world];
+        }
       case CanvasTool.text:
         final hit = hitTest(world);
         if (hit is TextItem) {
@@ -685,7 +725,7 @@ class CanvasController extends ChangeNotifier {
         } else {
           createText(world);
         }
-      case CanvasTool.pen:
+      case CanvasTool.pen || CanvasTool.highlighter:
         endEditing();
         _beginTransaction();
         _drag = _Drag.draw;
@@ -783,6 +823,12 @@ class CanvasController extends ChangeNotifier {
           for (final item in _items)
             if (_marquee!.overlaps(itemBounds(item))) item.id,
         });
+      case _Drag.lasso:
+        final last = _lassoPoints.last;
+        // Sample points spaced at least 2 pixels apart on screen for efficiency.
+        if ((world - last).distance * _scale >= 2.0) {
+          _lassoPoints.add(world);
+        }
       case _Drag.draw:
         final last = _livePoints.last.offset;
         // Skip points closer than half a screen pixel to keep files small.
@@ -806,6 +852,17 @@ class CanvasController extends ChangeNotifier {
         _endTransaction();
       case _Drag.marquee:
         _marquee = null;
+      case _Drag.lasso:
+        if (_lassoPoints.length >= 3) {
+          final hits = <String>{};
+          for (final item in _items) {
+            if (_lassoContainsOrIntersects(itemBounds(item), _lassoPoints)) {
+              hits.add(item.id);
+            }
+          }
+          select(hits);
+        }
+        _lassoPoints = [];
       case _Drag.pan || _Drag.none:
         break;
     }
@@ -856,6 +913,7 @@ class CanvasController extends ChangeNotifier {
 
   void pointerCancel() {
     if (_drag == _Drag.draw) _liveStroke = null;
+    if (_drag == _Drag.lasso) _lassoPoints = [];
     pointerUp();
   }
 
@@ -866,11 +924,14 @@ class CanvasController extends ChangeNotifier {
   }
 
   void _updateLiveStroke() {
+    final isHighlighter = _tool == CanvasTool.highlighter;
     _liveStroke = StrokeItem(
       id: _liveStroke?.id ?? newId(),
       points: List.unmodifiable(_livePoints),
-      color: penColor,
-      strokeWidth: penWidth,
+      color: isHighlighter
+          ? highlighterColor.withValues(alpha: 0.38)
+          : penColor,
+      strokeWidth: isHighlighter ? highlighterWidth : penWidth,
     );
   }
 
@@ -889,6 +950,49 @@ class CanvasController extends ChangeNotifier {
           item,
     ];
     if (remaining.length != _items.length) _setItems(remaining);
+  }
+
+  /// Whether [poly] contains or intersects [bounds].
+  static bool _lassoContainsOrIntersects(Rect bounds, List<Offset> poly) {
+    if (poly.isEmpty) return false;
+    var minX = poly.first.dx, maxX = poly.first.dx;
+    var minY = poly.first.dy, maxY = poly.first.dy;
+    for (final p in poly) {
+      if (p.dx < minX) minX = p.dx;
+      if (p.dx > maxX) maxX = p.dx;
+      if (p.dy < minY) minY = p.dy;
+      if (p.dy > maxY) maxY = p.dy;
+    }
+    final polyBounds = Rect.fromLTRB(minX, minY, maxX, maxY);
+    if (!polyBounds.overlaps(bounds)) return false;
+
+    // Center or corners inside polygon
+    if (_pointInPolygon(bounds.center, poly) ||
+        _pointInPolygon(bounds.topLeft, poly) ||
+        _pointInPolygon(bounds.topRight, poly) ||
+        _pointInPolygon(bounds.bottomLeft, poly) ||
+        _pointInPolygon(bounds.bottomRight, poly)) {
+      return true;
+    }
+
+    // Any polygon vertex inside bounds
+    for (final p in poly) {
+      if (bounds.contains(p)) return true;
+    }
+    return false;
+  }
+
+  static bool _pointInPolygon(Offset p, List<Offset> poly) {
+    var inside = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      final xi = poly[i].dx, yi = poly[i].dy;
+      final xj = poly[j].dx, yj = poly[j].dy;
+      final intersect =
+          ((yi > p.dy) != (yj > p.dy)) &&
+          (p.dx < (xj - xi) * (p.dy - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
   }
 
   // ------------------------------------------------------------- autosave --

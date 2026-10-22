@@ -164,65 +164,85 @@ class _CalendarPageState extends State<CalendarPage> {
     final start = s.calendarStart;
     final end = addDays(start, s.calendarDays - 1);
     final archived = ws.entries.all.where((e) => e.archived).length;
-    return Row(
+    // Wraps onto two lines in narrower windows instead of overflowing.
+    return Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: Space.md,
+      runSpacing: Space.sm,
       children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: const Icon(
-            Icons.calendar_today_outlined,
-            size: 18,
-            color: AppColors.textMuted,
-          ),
-        ),
-        const SizedBox(width: Space.md),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Calendar',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Icon(
+                Icons.calendar_today_outlined,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
             ),
-            InkWell(
-              onTap: _pickRange,
-              child: Row(
+            const SizedBox(width: Space.md),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '${formatShortDate(start)} – ${formatShortDate(end)} ${end.year}  ·  ${s.calendarDays} days',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textMuted,
-                    ),
+                  const Text(
+                    'Calendar',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                   ),
-                  const SizedBox(width: 4),
-                  const Icon(
-                    Icons.edit_calendar_outlined,
-                    size: 14,
-                    color: AppColors.textFaint,
+                  InkWell(
+                    onTap: _pickRange,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            '${formatShortDate(start)} – ${formatShortDate(end)} ${end.year}  ·  ${s.calendarDays} days',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.edit_calendar_outlined,
+                          size: 14,
+                          color: AppColors.textFaint,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
           ],
         ),
-        const Spacer(),
-        _colorFilter(),
-        const SizedBox(width: Space.md),
-        FilledButton.icon(
-          onPressed: () => _newEntry(),
-          icon: const Icon(Icons.add, size: 16),
-          label: const Text('Quick Add'),
-        ),
-        const SizedBox(width: Space.sm),
-        OutlinedButton.icon(
-          onPressed: () => showArchive(context, s),
-          icon: const Icon(Icons.inventory_2_outlined, size: 16),
-          label: Text('Archive  $archived'),
+        Wrap(
+          spacing: Space.sm,
+          runSpacing: Space.sm,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _colorFilter(),
+            FilledButton.icon(
+              onPressed: () => _newEntry(),
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Quick Add'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => showArchive(context, s),
+              icon: const Icon(Icons.inventory_2_outlined, size: 16),
+              label: Text('Archive  $archived'),
+            ),
+          ],
         ),
       ],
     );
@@ -237,6 +257,7 @@ class _CalendarPageState extends State<CalendarPage> {
         border: Border.all(color: AppColors.border),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Tooltip(
             message: 'All colours',
@@ -364,35 +385,41 @@ class _CalendarPageState extends State<CalendarPage> {
       crossAxisAlignment: WrapCrossAlignment.center,
       runSpacing: Space.sm,
       children: [
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Row(
-            children: [
-              tab(
-                '${s.calendarDays}-Day Grid',
-                _tab == null,
-                () => setState(() => _tab = null),
-                icon: Icons.grid_on,
-              ),
-              for (final c in CalendarCategory.values)
+        // Scrolls sideways when the window is too narrow for all tabs.
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 tab(
-                  c.label,
-                  _tab == c,
-                  () => setState(() => _tab = c),
-                  count:
-                      '${ws.activeCount(c)}/${CalendarEntry.maxActivePerCategory}',
+                  '${s.calendarDays}-Day Grid',
+                  _tab == null,
+                  () => setState(() => _tab = null),
+                  icon: Icons.grid_on,
                 ),
-            ],
+                for (final c in CalendarCategory.values)
+                  tab(
+                    c.label,
+                    _tab == c,
+                    () => setState(() => _tab = c),
+                    count:
+                        '${ws.activeCount(c)}/${CalendarEntry.maxActivePerCategory}',
+                  ),
+              ],
+            ),
           ),
         ),
         if (_tab == null)
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 4,
             children: [
               const Text(
                 'Show',

@@ -391,7 +391,7 @@ yet).
 | Aspect | What the code does |
 |---|---|
 | Listening addresses | Always `127.0.0.1` (this PC). Optionally **one** extra address via `--private-host`, which must belong to this PC and be private (10/8, 172.16/12, 192.168/16, Tailscale 100.64/10, IPv6 fc00::/7). `0.0.0.0`, `::` and public addresses are refused. Firewall rules are not changed. |
-| Device tokens | 256-bit random, shown once at pairing. The hub stores only their SHA-256 (`devices.json`) and compares in constant time. Revocable (`thehub revoke`). On the PC app, the token is stored in `sync\hub.token`, encrypted with Windows DPAPI. |
+| Device tokens | 256-bit random, shown once at pairing. The hub stores only their SHA-256 (`devices.json`) and compares in constant time. Revocable (`thehub revoke`). On the PC app, the token is stored in `sync\hub.token`, encrypted with Windows DPAPI. On iPhone/iPad it goes to the Keychain (this device only) and `hub.token` only names the Keychain entry; if the Keychain write fails, pairing fails rather than storing the token in plain text (iOS part not yet run on a device). |
 | Pairing codes | 8 characters, single use, valid 10 minutes, made only through the admin endpoint. 5 wrong codes per address in 10 minutes → blocked. |
 | Admin token | A new random token every time the hub starts, saved in `admin.token` encrypted with DPAPI (readable only by your Windows account). Admin endpoints also require the request to come from this PC. |
 | Revisions | A device can only push *edits* (with a base) under its own device id. Base-less re-offers may carry other devices' revisions, so a restore can refill the hub; they follow the normal rules and never overwrite newer data. |
@@ -466,3 +466,70 @@ THEapp → Settings → Sync hub, enter `http://127.0.0.1:47710` and the code.
 - a real second device
 - long-running memory use: one short run used about 100 MB, mostly the Dart
   runtime
+
+## 16. Read-only mirror copy (`thehub mirror-*`) — experimental
+
+A mirror is a **second, read-only copy** of the hub's history, kept in its own
+folder (for example on another disk, or later on a Raspberry Pi). It is a
+backup of the hub, not a second hub: devices never sync with it.
+
+```
+dart run bin/thehub.dart pair                                   # on the hub: get a code
+dart run bin/thehub.dart mirror-pair   --hub http://127.0.0.1:47710 --code <code> --data D:\THEapp-mirror
+dart run bin/thehub.dart mirror-run    --data D:\THEapp-mirror     # copy new changes + photos
+dart run bin/thehub.dart mirror-status --data D:\THEapp-mirror
+dart run bin/thehub.dart mirror-verify --data D:\THEapp-mirror     # opens the copy like a hub would
+dart run bin/thehub.dart restore-from-mirror D:\THEapp-mirror <empty folder>
+```
+
+- `--data` is **required** and must not be a hub folder (one holding `hub-id`,
+  `devices.json` or `admin.token`). The first version defaulted to the live hub
+  folder and appended to the running hub's journal (fixed in the October 2026
+  audit).
+- The mirror pairs like a device (its own token, stored encrypted in
+  `mirror.token`), then pulls `/v1/changes` page by page and writes the hub's own
+  journal format, so `mirror-verify` and a restore open it with the normal hub
+  code. Gaps in change numbers are normal (edits replace older versions).
+- Photos referenced by any asset (`fileSha256`, `previewSha256`) are downloaded
+  and checked by SHA-256.
+- If the hub was replaced or restored from an older backup (different hub id,
+  or its history is shorter than the copy), `mirror-run` **stops** and changes
+  nothing. `--reseed` moves the old copy aside to `previous-<time>` (never
+  deletes it) and starts again.
+- `restore-from-mirror` refuses a non-empty target and an incomplete or
+  damaged copy. The restored hub gets a **new hub id**, so every device must
+  pair again. Nothing ever copies mirror data into the live hub
+  automatically: there is one writable hub, so no split-brain.
+
+**Failures and recovery** (each covered by `test/hub_mirror_test.dart`):
+
+| Situation | What happens |
+|---|---|
+| Hub off / network down | `networkError`; position kept; next run continues |
+| Crash or power cut while writing | the unfinished batch is cut off at the start of the next run (bytes kept as `journal.jsonl.tail-<time>`), so damage never sits mid-journal |
+| Disk full / folder not writable | `storageError`; a failed append is cut back; the position does not move, so nothing is skipped |
+| Interrupted photo download | written to a temporary file and checked by SHA-256 before it gets its real name; retried next run |
+| Damaged photo copy (bit rot) | `mirror-verify` reports it; `mirror-run --repair` moves it to `damaged\` and downloads it again |
+| Hub replaced or restored | stops (see above) |
+
+**Health:** `mirror-status` prints `ok`, `ok, but N attachment(s) missing`,
+`failing: <reason>` (last run failed) or `stale` (no good run for 48 hours),
+plus the last error. `mirror.json` holds the same fields for scripts.
+
+**Storage:** each photo is stored once, named by its SHA-256 (no duplicates).
+The journal holds every version the hub still has, like the hub's own.
+
+**Security:** the mirror has its own device token (revocable with
+`thehub revoke`); on Windows it is DPAPI-encrypted, on Linux/macOS the file is
+readable by its owner only (`chmod 600`). It only needs to reach the hub over
+the Tailscale address (`serve --private-host`), which is encrypted by
+WireGuard; neither side listens on public addresses.
+
+**Raspberry Pi (optional, not done):** no Pi was available, so everything
+above was tested with a second folder on this PC (simulated, not on a Pi).
+On a Pi it would need: a free 64-bit OS, the free Flutter/Dart SDK (the hub
+code lives in this Flutter project), Tailscale's free personal plan, and a
+timer such as `crontab -e` →
+`*/15 * * * * cd ~/theapp && dart run bin/thehub.dart mirror-run --data ~/THEapp-mirror`.
+None of this has been tried. The mirror stays off until someone runs
+`mirror-pair`.

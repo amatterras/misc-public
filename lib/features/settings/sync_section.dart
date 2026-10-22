@@ -57,25 +57,38 @@ class _SyncSectionState extends State<SyncSection> {
                 style: TextStyle(fontSize: 13, color: AppColors.textMuted),
               ),
               const SizedBox(height: Space.sm),
+              // Address on its own line when the dialog is narrow.
+              if (MediaQuery.sizeOf(context).width < 640) ...[
+                TextField(
+                  controller: _url,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: const InputDecoration(labelText: 'Hub address'),
+                ),
+                const SizedBox(height: Space.sm),
+              ],
               Row(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _url,
-                      style: const TextStyle(fontSize: 13),
-                      decoration: const InputDecoration(
-                        labelText: 'Hub address',
+                  if (MediaQuery.sizeOf(context).width >= 640) ...[
+                    Expanded(
+                      child: TextField(
+                        controller: _url,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: const InputDecoration(
+                          labelText: 'Hub address',
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: Space.sm),
-                  SizedBox(
-                    width: 150,
-                    child: TextField(
-                      controller: _code,
-                      style: const TextStyle(fontSize: 13),
-                      decoration: const InputDecoration(
-                        labelText: 'Pairing code',
+                    const SizedBox(width: Space.sm),
+                  ],
+                  Flexible(
+                    child: SizedBox(
+                      width: 150,
+                      child: TextField(
+                        controller: _code,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: const InputDecoration(
+                          labelText: 'Pairing code',
+                        ),
                       ),
                     ),
                   ),

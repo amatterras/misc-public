@@ -16,6 +16,11 @@ Directory defaultDataDirectory() {
     base = env['APPDATA'] ?? env['USERPROFILE'] ?? Directory.current.path;
   } else if (Platform.isMacOS) {
     base = '${env['HOME']}/Library/Application Support';
+  } else if (Platform.isIOS) {
+    // In iOS sandbox containers, env['HOME'] points to the application container.
+    // Library/Application Support is durable and excluded from user Document browsing.
+    final home = env['HOME'] ?? '.';
+    base = '$home/Library/Application Support';
   } else {
     base = env['XDG_DATA_HOME'] ?? '${env['HOME']}/.local/share';
   }

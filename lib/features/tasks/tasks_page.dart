@@ -125,25 +125,31 @@ class _TasksPageState extends State<TasksPage> {
     }
     return WorkspaceBuilder(
       state: s,
-      builder: (context) => Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(width: 230, child: _lists()),
-          const VerticalDivider(width: 1),
-          Expanded(child: _tasks()),
-          if (ws.tasks[_selectedId] != null) ...[
-            const VerticalDivider(width: 1),
+      // Side panels shrink in narrow windows so the task list keeps room.
+      builder: (context) => LayoutBuilder(
+        builder: (context, box) => Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             SizedBox(
-              width: 380,
-              child: TaskDetail(
-                key: ValueKey(_selectedId),
-                state: s,
-                taskId: _selectedId!,
-                onClose: () => setState(() => _selectedId = null),
-              ),
+              width: (box.maxWidth * 0.22).clamp(110, 230),
+              child: _lists(),
             ),
+            const VerticalDivider(width: 1),
+            Expanded(child: _tasks()),
+            if (ws.tasks[_selectedId] != null) ...[
+              const VerticalDivider(width: 1),
+              SizedBox(
+                width: (box.maxWidth * 0.34).clamp(200, 380),
+                child: TaskDetail(
+                  key: ValueKey(_selectedId),
+                  state: s,
+                  taskId: _selectedId!,
+                  onClose: () => setState(() => _selectedId = null),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -393,16 +399,16 @@ class _TasksPageState extends State<TasksPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: Space.md,
+            runSpacing: Space.sm,
             children: [
-              Expanded(
-                child: Text(
-                  _title,
-                  style: const TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w600,
-                  ),
+              Text(
+                _title,
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               FocusTimerCard(state: s),

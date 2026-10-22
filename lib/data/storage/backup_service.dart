@@ -125,10 +125,17 @@ class BackupService {
   String _name(Directory d) =>
       d.uri.pathSegments.where((s) => s.isNotEmpty).last;
 
-  /// Keeps a bounded number of backups. The newest pre-upgrade backup is
-  /// never removed.
+  /// Backups that are never removed automatically, by reason (the end of the
+  /// folder name): the state before the first sync with a hub.
+  static const protectedReasons = {'before-first-sync'};
+
+  bool _isProtected(Directory d) =>
+      protectedReasons.any((r) => RegExp('-$r(-\\d+)?\$').hasMatch(_name(d)));
+
+  /// Keeps a bounded number of backups. The newest pre-upgrade backup and
+  /// [protectedReasons] backups are never removed.
   Future<void> _prune() async {
-    final all = await list();
+    final all = (await list()).where((d) => !_isProtected(d)).toList();
     final autos = all.where((d) => _name(d).endsWith('-auto')).toList();
     for (final old in autos.skip(keepAutomatic)) {
       await old.delete(recursive: true);

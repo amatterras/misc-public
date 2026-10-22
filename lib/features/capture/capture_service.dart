@@ -9,7 +9,7 @@ import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/storage/attachment_store.dart';
 import '../../data/workspace.dart';
-import '../../platform/windows_native.dart' as native;
+import '../../platform/platform.dart' as native;
 import 'link_preview.dart';
 
 /// What was found on the clipboard, before anything is saved.
@@ -55,11 +55,12 @@ class CaptureService {
   final LinkPreviewFetcher _fetcher;
   final Set<String> _fetching = {};
 
-  /// Windows clipboard (images, copied files) and photo picker; replaceable
-  /// in tests so they never touch the real clipboard or open dialogs.
+  /// Windows clipboard (images, copied files) and photo picker (Windows or
+  /// iOS); replaceable in tests so they never touch the real clipboard or
+  /// open dialogs.
   native.NativeClipboard Function() readNativeClipboard =
       native.readNativeClipboard;
-  List<String> Function() pickImageFiles = native.pickImageFiles;
+  FutureOr<List<String>> Function() pickImageFiles = native.pickImageFiles;
 
   /// Canvas items copied inside the app, plus the text we put on the
   /// system clipboard at the same time (to recognise our own copy).
@@ -161,8 +162,53 @@ class CaptureService {
 
   /// Opens the Windows photo picker and imports the chosen files.
   Future<List<Asset>> pickImages() async {
-    final paths = pickImageFiles();
+    final paths = await pickImageFiles();
     return imagesFromFiles(paths);
+  }
+
+  /// Longest text accepted from outside the app (a link can be opened by any
+  /// web page, so this is untrusted input).
+  static const maxInboundText = 20000;
+
+  /// Puts content shared from outside the app into the Inbox: one item for a
+  /// link, one for any text (also when it came with a link), and one per
+  /// photo. Links reuse the existing record for the same URL.
+  ///
+  /// Not connected yet: nothing calls this outside tests (see
+  /// ios/ShareExtension/README.md).
+  Future<List<InboxItem>> captureInbound({
+    String? url,
+    String? text,
+    String? title,
+    List<String> files = const [],
+  }) async {
+    final cleanUrl = url != null ? extractUrl(url) : null;
+    var bodyText = (text ?? '').trim();
+    if (bodyText.length > maxInboundText) {
+      bodyText = bodyText.substring(0, maxInboundText);
+    }
+    // Text that only repeats the link adds nothing.
+    if (bodyText == cleanUrl || bodyText == url?.trim()) bodyText = '';
+    final created = <InboxItem>[];
+    void add({String? text, String? assetId}) {
+      final item = InboxItem(
+        id: newId(),
+        text: text,
+        assetId: assetId,
+        createdAt: DateTime.now().toUtc(),
+      );
+      workspace.inbox.put(item);
+      created.add(item);
+    }
+
+    if (cleanUrl != null) add(assetId: link(cleanUrl, title: title).id);
+    if (bodyText.isNotEmpty) add(text: bodyText);
+    if (files.isNotEmpty) {
+      for (final asset in await imagesFromFiles(files)) {
+        add(assetId: asset.id);
+      }
+    }
+    return created;
   }
 
   static Future<Uint8List?> _toPng(Uint8List bytes) async {

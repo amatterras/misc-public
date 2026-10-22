@@ -98,6 +98,21 @@ class SendToBridge {
   /// Called when another launch asked this window to come forward.
   VoidCallback? onFocusRequested;
 
+  /// Handles an inbound deep link URL (e.g. theapp://capture?url=... or theapp://share?text=...).
+  /// Works across platforms without extra plugins.
+  /// Not connected yet: no platform code delivers links here.
+  Future<List<InboxItem>> handleUri(Uri uri, CaptureService capture) async {
+    if (uri.scheme != 'theapp') return const [];
+    final host = uri.host.toLowerCase();
+    if (host == 'capture' || host == 'share' || uri.path.contains('capture')) {
+      final url = uri.queryParameters['url'];
+      final text = uri.queryParameters['text'] ?? uri.queryParameters['body'];
+      final title = uri.queryParameters['title'];
+      return capture.captureInbound(url: url, text: text, title: title);
+    }
+    return const [];
+  }
+
   /// Starts the heartbeat and polls for requests from other launches.
   void start(CaptureService capture) {
     Future<void> beat() async {
@@ -160,7 +175,20 @@ class SendToBridge {
               ws.inbox.put(InboxItem(id: newId(), text: value, createdAt: now));
           }
           count++;
+          // The request is only removed once its Inbox item is on disk, so a
+          // crash in between can at worst import it twice, never lose it.
+          await ws.flush();
           await entity.delete();
+          // A photo the iOS Share Extension copied into the shared folder
+          // has been copied into the app now. Never touches files outside
+          // that folder (Windows "Send to" passes the user's own files).
+          final copy = File(value);
+          if (json['type'] == 'file' &&
+              json['temporary'] == true &&
+              _isInside(root, copy) &&
+              await copy.exists()) {
+            await copy.delete();
+          }
         } catch (e) {
           debugPrint('Bad send-to request ${entity.path}: $e');
           await entity.rename('${entity.path}.failed');
@@ -170,6 +198,17 @@ class SendToBridge {
       _busy = false;
     }
     return count;
+  }
+
+  /// Whether [file] lies inside [dir] (after resolving `..`).
+  static bool _isInside(Directory dir, File file) {
+    var base = dir.absolute.uri.normalizePath().toFilePath();
+    var target = file.absolute.uri.normalizePath().toFilePath();
+    if (Platform.isWindows) {
+      base = base.toLowerCase();
+      target = target.toLowerCase();
+    }
+    return target.startsWith(base) && target.length > base.length;
   }
 
   // ------------------------------------------------- Send To menu entry --

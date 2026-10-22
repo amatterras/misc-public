@@ -57,15 +57,24 @@ class _NotesPageState extends State<NotesPage> {
     }
     return WorkspaceBuilder(
       state: s,
-      builder: (context) => Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(width: 230, child: _buildFolders(context)),
-          const VerticalDivider(width: 1),
-          SizedBox(width: 320, child: _buildList(context)),
-          const VerticalDivider(width: 1),
-          Expanded(child: _buildEditor(context)),
-        ],
+      // Side columns shrink in narrow windows so the editor keeps room.
+      builder: (context) => LayoutBuilder(
+        builder: (context, box) => Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: (box.maxWidth * 0.22).clamp(110, 230),
+              child: _buildFolders(context),
+            ),
+            const VerticalDivider(width: 1),
+            SizedBox(
+              width: (box.maxWidth * 0.3).clamp(130, 320),
+              child: _buildList(context),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(child: _buildEditor(context)),
+          ],
+        ),
       ),
     );
   }
@@ -325,11 +334,19 @@ class _NotesPageState extends State<NotesPage> {
                 ),
               ),
               const SizedBox(width: Space.sm),
-              FilledButton.icon(
-                onPressed: _newNote,
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('New'),
-              ),
+              // Icon only when the list column is narrow.
+              if (MediaQuery.sizeOf(context).width < 1000)
+                IconButton.filled(
+                  onPressed: _newNote,
+                  tooltip: 'New note',
+                  icon: const Icon(Icons.add, size: 16),
+                )
+              else
+                FilledButton.icon(
+                  onPressed: _newNote,
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('New'),
+                ),
             ],
           ),
         ),
