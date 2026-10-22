@@ -263,6 +263,31 @@ void main() {
       expect(ws.assets.length, 1);
     });
 
+    test('spellings of the same address are one link record', () {
+      final a = ws.linkAsset('https://example.com/a');
+      for (final same in [
+        'https://Example.COM/a',
+        'HTTPS://example.com/a',
+        'https://example.com:443/a',
+      ]) {
+        expect(ws.linkAsset(same).id, a.id, reason: same);
+      }
+      expect(
+        ws.linkAsset('https://example.com').id,
+        ws.linkAsset('https://example.com/').id,
+      );
+      // Different pages stay different (paths are case-sensitive).
+      expect(ws.linkAsset('https://example.com/b').id, isNot(a.id));
+      expect(ws.linkAsset('https://example.com/A').id, isNot(a.id));
+      expect(ws.linkAsset('https://example.com:8443/a').id, isNot(a.id));
+      expect(ws.linkAsset('https://example.com/a?x=1').id, isNot(a.id));
+      expect(
+        ws.assets[a.id]!.url,
+        'https://example.com/a',
+        reason: 'kept as first captured',
+      );
+    });
+
     test('nested folders: tree, descendants and safe delete', () {
       final school = ws.createFolder('School');
       final maths = ws.createFolder('Maths', parentId: school.id);

@@ -2,9 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
+import 'package:flutter_application_1/data/models/library_models.dart';
 import 'package:flutter_application_1/data/models/record.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
@@ -76,6 +78,39 @@ void main() {
       expect(find.text(c), findsWidgets);
     }
     expect(find.text('Projects'), findsNothing);
+    await shutDown(tester, s);
+  });
+
+  testWidgets('canvas: letter keys typed into a note never switch tools', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    final s = await boot(tester, dir);
+    await tester.tap(find.text('Canvas').last);
+    await tester.pump();
+    await tester.pump();
+    final view = find.byType(CanvasView);
+    final spot = tester.getTopLeft(view) + const Offset(900, 600);
+    await tester.tapAt(spot, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.tapAt(spot, kind: PointerDeviceKind.mouse);
+    await tester.pump();
+    expect(s.canvas!.editingItem, isNotNull);
+    final toolBefore = s.canvas!.tool;
+    // Real key events, as a keyboard sends them (tool keys: V L H P I E T C).
+    for (final key in [
+      LogicalKeyboardKey.keyC,
+      LogicalKeyboardKey.keyH,
+      LogicalKeyboardKey.keyE,
+      LogicalKeyboardKey.keyP,
+      LogicalKeyboardKey.keyV,
+      LogicalKeyboardKey.keyT,
+    ]) {
+      await tester.sendKeyEvent(key);
+      await tester.pump();
+    }
+    expect(s.canvas!.tool, toolBefore, reason: 'typing, not tool switching');
+    expect(s.canvas!.editingItem, isNotNull, reason: 'still editing');
     await shutDown(tester, s);
   });
 
@@ -306,6 +341,81 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(warning, findsNothing);
+    await shutDown(tester, s);
+  });
+
+  testWidgets('Inbox: dismissing a typed thought asks first; a link does not', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    final s = await boot(tester, dir);
+    final ws = s.workspace;
+    ws.inbox.put(
+      InboxItem(
+        id: 'th',
+        text: 'Only copy of this idea',
+        createdAt: DateTime.now(),
+      ),
+    );
+    s.goTo(AppPage.home);
+    await tester.pump();
+    await tester.pump();
+    Finder dismissOf(String text) => find.descendant(
+      of: find.ancestor(of: find.text(text), matching: find.byType(Row)).first,
+      matching: find.byTooltip('Dismiss'),
+    );
+
+    await tester.tap(dismissOf('Only copy of this idea'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Delete this thought?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(ws.inbox['th'], isNotNull, reason: 'cancel keeps it');
+
+    await tester.tap(dismissOf('Only copy of this idea'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(ws.inbox['th'], isNull);
+
+    // A link keeps its own record, so it is dismissed without a question.
+    final link = s.capture.link('https://example.com/kept');
+    ws.inbox.put(
+      InboxItem(id: 'ln', assetId: link.id, createdAt: DateTime.now()),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byTooltip('Dismiss').first);
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Delete this thought?'), findsNothing);
+    expect(ws.inbox['ln'], isNull);
+    expect(ws.assets[link.id], isNotNull, reason: 'the link record stays');
+    await shutDown(tester, s);
+  });
+
+  testWidgets('a failing save shows a notice until it is saved', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    final s = await boot(tester, dir);
+    final notice = find.byKey(const ValueKey('unsaved-notice'));
+    expect(notice, findsNothing);
+    s.workspace.unsaved.value = {'notes'};
+    await tester.pump();
+    expect(notice, findsOneWidget);
+    s.workspace.unsaved.value = const {};
+    await tester.pump();
+    expect(notice, findsNothing);
     await shutDown(tester, s);
   });
 

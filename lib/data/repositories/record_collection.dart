@@ -98,11 +98,16 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     return jsonEncode(json);
   }
 
+  /// Told before an existing record is replaced, by a local edit or by a
+  /// change from another device (e.g. to keep a version history).
+  void Function(T previous, T next)? onReplace;
+
   bool _store(T record) {
     final existing = _records[record.id];
     if (existing != null && _content(existing) == _content(record)) {
       return false;
     }
+    if (existing != null) onReplace?.call(existing, record);
     _records[record.id] = record;
     _revs[record.id] = clock.now();
     _tombstones.remove(record.id);
@@ -149,6 +154,8 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
       _tombstones[id] = rev;
     } else {
       final record = fromJson(data);
+      final existing = _records[id];
+      if (existing != null) onReplace?.call(existing, record);
       _records[id] = record;
       _revs[id] = rev;
       _tombstones.remove(id);
@@ -159,7 +166,8 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
   void _changed() {
     _dirty = true;
     _timer?.cancel();
-    _timer = Timer(saveDelay, () => unawaited(flush()));
+    // A failure is logged and retried inside flush().
+    _timer = Timer(saveDelay, () => unawaited(flush().catchError((_) {})));
     notifyListeners();
   }
 
@@ -177,12 +185,25 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
         'revs': _revs,
         'tombstones': _tombstones,
       });
+      onSaveResult?.call(name, true);
     } catch (e) {
       _dirty = true;
-      debugPrint('Saving $name failed: $e');
+      onSaveResult?.call(name, false);
+      AppLog.error('Saving $name failed; will retry', e);
+      // Try again by itself (e.g. once a locked file is free), rather than
+      // only at the next edit, so no change is left unsaved.
+      _timer?.cancel();
+      _timer = Timer(retryDelay, () => unawaited(flush().catchError((_) {})));
       rethrow;
     }
   }
+
+  /// Wait before retrying a failed save.
+  static Duration retryDelay = const Duration(seconds: 5);
+
+  /// Told after every save attempt (collection name, whether it worked), so
+  /// the app can show that changes are not on disk yet.
+  void Function(String name, bool saved)? onSaveResult;
 
   @override
   void dispose() {

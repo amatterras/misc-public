@@ -7,7 +7,9 @@ import 'package:flutter/painting.dart';
 import '../data/models/canvas_models.dart';
 import '../hub/hub_server.dart' show defaultHubPort;
 
+import '../data/models/library_models.dart';
 import '../data/models/record.dart';
+import '../data/models/task_models.dart';
 import '../data/repositories/canvas_repository.dart';
 import '../data/repositories/record_collection.dart';
 import '../data/storage/app_log.dart';
@@ -111,6 +113,9 @@ class AppState extends ChangeNotifier {
 
   /// Opens a link in the browser; replaceable in tests.
   bool Function(String url) openUrl = native.openUrl;
+
+  /// Opens a stored document file; replaceable in tests.
+  bool Function(String path) openDocument = native.openDocument;
 
   AppPage _page = AppPage.home;
   AppPage get page => _page;
@@ -225,6 +230,7 @@ class AppState extends ChangeNotifier {
       Timer(const Duration(seconds: 1), () => showToast(recoveries.join('  ')));
     }
     await _startSyncIfPaired();
+    _startReminders();
   }
 
   // ---------------------------------------------------------------- sync --
@@ -236,6 +242,7 @@ class AppState extends ChangeNotifier {
   static const syncInterval = Duration(minutes: 1);
   SyncEngine? _sync;
   Timer? _syncTimer;
+  Timer? _firstSync;
   bool syncing = false;
   String? hubUrl;
   String syncStatus = 'Not set up';
@@ -270,7 +277,8 @@ class AppState extends ChangeNotifier {
     syncStatus = 'Waiting for first sync';
     _syncTimer?.cancel();
     _syncTimer = Timer.periodic(syncInterval, (_) => syncNow());
-    Timer(const Duration(seconds: 3), syncNow);
+    _firstSync?.cancel();
+    _firstSync = Timer(const Duration(seconds: 3), syncNow);
   }
 
   /// Pairs this app with a hub using a code from `thehub pair`. Returns an
@@ -304,6 +312,7 @@ class AppState extends ChangeNotifier {
   /// Stops syncing and forgets the hub (local data is untouched).
   Future<void> disconnectHub() async {
     _syncTimer?.cancel();
+    _firstSync?.cancel();
     _sync?.client.close();
     _sync = null;
     hubUrl = null;
@@ -382,6 +391,70 @@ class AppState extends ChangeNotifier {
   Future<void> _refreshList() async {
     _canvasList = await canvases.listCanvases();
     notifyListeners();
+  }
+
+  // ----------------------------------------------------------- reminders --
+  //
+  // While THEapp runs, a task whose reminder time has passed is listed in
+  // [dueReminders] (shown on every page) until dismissed. Reminders missed
+  // while the app was closed appear at the next start. Which reminders were
+  // dismissed is kept per device (settings), not synced.
+
+  /// Due, undismissed reminders, oldest first.
+  final ValueNotifier<List<Task>> dueReminders = ValueNotifier(const []);
+
+  /// Current time; replaceable in tests.
+  DateTime Function() clock = DateTime.now;
+
+  /// Draws attention to the window; replaceable in tests (and never touches
+  /// a real window while `flutter test` runs).
+  void Function() attention = Platform.environment.containsKey('FLUTTER_TEST')
+      ? () {}
+      : native.flashMainWindow;
+
+  Timer? _reminderTimer;
+
+  void _startReminders() {
+    workspace.tasks.addListener(checkReminders);
+    _reminderTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => checkReminders(),
+    );
+    checkReminders();
+  }
+
+  Map<String, dynamic> get _dismissedReminders => {
+    ...?settings.get<Map<String, dynamic>>('remindersDismissed'),
+  };
+
+  /// Updates [dueReminders] from the tasks and the clock.
+  void checkReminders() {
+    final now = clock();
+    final dismissed = _dismissedReminders;
+    final due = [
+      for (final t in workspace.tasks.all)
+        if (!t.done &&
+            t.reminderTime != null &&
+            !t.reminderTime!.isAfter(now) &&
+            dismissed[t.id] != t.reminderTime!.toIso8601String())
+          t,
+    ]..sort((a, b) => a.reminderTime!.compareTo(b.reminderTime!));
+    final before = {for (final t in dueReminders.value) t.id};
+    final ids = [for (final t in due) t.id];
+    if (listEquals([for (final t in dueReminders.value) t.id], ids)) return;
+    dueReminders.value = due;
+    if (ids.any((id) => !before.contains(id))) attention();
+  }
+
+  /// Hides a reminder on this device until its next occurrence (a
+  /// recurring task's next date gives a new reminder time).
+  void dismissReminder(String taskId) {
+    final when = workspace.tasks[taskId]?.reminderTime;
+    final dismissed = _dismissedReminders
+      ..removeWhere((id, _) => !workspace.tasks.contains(id));
+    if (when != null) dismissed[taskId] = when.toIso8601String();
+    settings.set('remindersDismissed', dismissed);
+    checkReminders();
   }
 
   // ------------------------------------------------------- iPhone / iPad --
@@ -498,7 +571,17 @@ class AppState extends ChangeNotifier {
   void _activateCanvasItem(CanvasItem item) {
     switch (item) {
       case LinkItem():
-        final url = workspace.assets[item.assetId]?.url;
+        final asset = workspace.assets[item.assetId];
+        if (asset?.kind == AssetKind.document) {
+          final file = workspace.documentFile(asset!);
+          if (file == null) {
+            showToast('This document is not on this device yet.');
+          } else if (!openDocument(file.path)) {
+            showToast('No app could open ${asset.label}.');
+          }
+          return;
+        }
+        final url = asset?.url;
         if (url != null && !openUrl(url)) {
           showToast('Could not open $url');
         }
@@ -508,7 +591,7 @@ class AppState extends ChangeNotifier {
         } else {
           showToast('That note no longer exists.');
         }
-      case TextItem() || ImageItem() || StrokeItem():
+      case TextItem() || ImageItem() || StrokeItem() || ConnectorItem():
         break;
     }
   }
@@ -651,6 +734,9 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _syncTimer?.cancel();
+    _firstSync?.cancel();
+    _reminderTimer?.cancel();
+    workspace.tasks.removeListener(checkReminders);
     _sync?.client.close();
     sendTo.dispose();
     timer.dispose();

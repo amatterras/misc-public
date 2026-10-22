@@ -4,6 +4,7 @@ import '../../app/app_state.dart';
 import '../../app/shell.dart';
 import '../../app/theme.dart';
 import '../../data/models/library_models.dart';
+import '../../data/workspace.dart';
 import '../../widgets/common.dart';
 
 /// Which notes the middle column shows.
@@ -557,6 +558,12 @@ class _NoteEditorState extends State<NoteEditor> {
     }
   }
 
+  Future<void> _addDocuments() async {
+    for (final a in await s.capture.pickDocuments()) {
+      s.workspace.attachToNote(widget.noteId, a.id);
+    }
+  }
+
   Future<void> _paste() async {
     final clip = await s.capture.readClipboard();
     if (clip.imageBytes != null) {
@@ -679,6 +686,11 @@ class _NoteEditorState extends State<NoteEditor> {
               onTap: _placeOnCanvas,
             ),
             GhostIconButton(
+              icon: Icons.history,
+              tooltip: 'Version history',
+              onTap: () => showNoteHistory(context, ws, n.id),
+            ),
+            GhostIconButton(
               icon: Icons.delete_outline,
               tooltip: 'Delete note',
               onTap: () async {
@@ -786,6 +798,11 @@ class _NoteEditorState extends State<NoteEditor> {
               icon: const Icon(Icons.add_photo_alternate_outlined, size: 15),
               label: const Text('Photos'),
             ),
+            TextButton.icon(
+              onPressed: _addDocuments,
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
+              label: const Text('PDF'),
+            ),
           ],
         ),
         Wrap(
@@ -845,4 +862,66 @@ class _NoteEditorState extends State<NoteEditor> {
       ],
     );
   }
+}
+
+/// Earlier versions of a note, newest first; restoring one keeps the
+/// current text as a version too, so it can be undone.
+Future<void> showNoteHistory(
+  BuildContext context,
+  Workspace ws,
+  String noteId,
+) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) {
+      final versions = ws.versionsOf(noteId);
+      return AlertDialog(
+        title: const Text('Version history', style: TextStyle(fontSize: 16)),
+        content: SizedBox(
+          width: 460,
+          child: versions.isEmpty
+              ? const Text(
+                  'No earlier versions yet. A version is kept when you change '
+                  'this note (at most one per 10 minutes of editing).',
+                  style: TextStyle(color: AppColors.textMuted),
+                )
+              : ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final v in versions)
+                      ListTile(
+                        dense: true,
+                        title: Text(
+                          v.title.isEmpty ? 'Untitled note' : v.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${formatShortDate(v.savedAt)} '
+                          '${v.savedAt.hour.toString().padLeft(2, '0')}:'
+                          '${v.savedAt.minute.toString().padLeft(2, '0')}'
+                          ' · ${v.body.split('\n').first}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: TextButton(
+                          onPressed: () {
+                            ws.restoreNoteVersion(v.id);
+                            Navigator.pop(context);
+                          },
+                          child: const Text('Restore'),
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      );
+    },
+  );
 }

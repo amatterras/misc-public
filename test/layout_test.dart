@@ -59,9 +59,19 @@ void main() {
         await tester.pumpWidget(TheApp(state: state));
         await tester.pump();
 
+        // A task with a long date and a reminder, so the task panel is
+        // laid out too (it once overflowed in narrow windows).
+        final task = state.workspace.createTask(
+          'Revise organic chemistry before the mock exam',
+          dueDate: DateTime(2026, 9, 30),
+        );
         for (final page in AppPage.values) {
           where = page.name;
-          state.goTo(page);
+          if (page == AppPage.tasks) {
+            state.openTask(task.id);
+          } else {
+            state.goTo(page);
+          }
           await tester.pump();
           await tester.pump();
         }

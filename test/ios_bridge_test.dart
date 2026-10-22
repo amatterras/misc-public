@@ -229,11 +229,38 @@ void main() {
     },
   );
 
+  test(
+    'PDFs: picker results are imported; only PDFs are passed to preview',
+    () async {
+      final pdf = File('${dir.path}${sep}Picked.pdf')
+        ..writeAsStringSync('%PDF-1.4\n% synthetic\n');
+      answers['pickDocuments'] = (_) => [pdf.path];
+      final ws = Workspace(dir);
+      await ws.load();
+      final bridge = IosBridge();
+      final capture = CaptureService(ws, fetchPreviews: false)
+        ..pickDocumentFiles = bridge.pickDocumentFiles;
+      final docs = await capture.pickDocuments();
+      expect(docs.single.kind, AssetKind.document);
+      expect(docs.single.label, 'Picked.pdf');
+
+      expect(bridge.openDocument('/x/report.exe'), isFalse);
+      expect(bridge.openDocument(ws.documentFile(docs.single)!.path), isTrue);
+      await Future<void>.delayed(Duration.zero);
+      final previews = calls.where((c) => c.method == 'openDocument');
+      expect(previews.map((c) => c.arguments), [
+        ws.documentFile(docs.single)!.path,
+      ]);
+      ws.dispose();
+    },
+  );
+
   test('no native side (other platforms): calls fail softly', () async {
     messenger.setMockMethodCallHandler(channel, null);
     final bridge = IosBridge();
     expect(await bridge.sharedContainerPath(), isNull);
     expect(await bridge.pickImageFiles(), isEmpty);
+    expect(await bridge.pickDocumentFiles(), isEmpty);
     expect(await bridge.read('k'), isNull);
   });
 

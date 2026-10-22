@@ -1,6 +1,8 @@
 import 'record.dart';
 
-enum AssetKind { link, image }
+/// `document` (PDF) files are stored and synced like photos and open in
+/// the default viewer; older app versions skip them as unreadable records.
+enum AssetKind { link, image, document }
 
 /// A captured link or image, stored once and referenced from anywhere
 /// (canvas cards, notes, calendar days and entries) by its id.
@@ -59,7 +61,7 @@ class Asset implements Record {
   String get label {
     if (title != null && title!.trim().isNotEmpty) return title!.trim();
     if (url != null) return displayUrl(url!);
-    return 'Image';
+    return kind == AssetKind.document ? 'Document' : 'Image';
   }
 
   Asset copyWith({
@@ -191,6 +193,47 @@ class Folder implements Record {
     name: j['name'] as String,
     parentId: j['parentId'] as String?,
     updatedAt: parseDate(j['updatedAt']) ?? DateTime.now(),
+  );
+}
+
+/// An earlier version of a note (version history). Kept on this device:
+/// made whenever the note's text is replaced, here or by a synced change.
+class NoteVersion implements Record {
+  const NoteVersion({
+    required this.id,
+    required this.noteId,
+    required this.title,
+    required this.body,
+    required this.savedAt,
+  });
+
+  @override
+  final String id;
+  final String noteId;
+  final String title;
+  final String body;
+
+  /// When this version was set aside.
+  final DateTime savedAt;
+
+  @override
+  DateTime get updatedAt => savedAt;
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'noteId': noteId,
+    'title': title,
+    'body': body,
+    'savedAt': utcIso(savedAt),
+  };
+
+  factory NoteVersion.fromJson(Map<String, dynamic> j) => NoteVersion(
+    id: j['id'] as String,
+    noteId: j['noteId'] as String,
+    title: j['title'] as String? ?? '',
+    body: j['body'] as String? ?? '',
+    savedAt: parseDate(j['savedAt']) ?? DateTime.now(),
   );
 }
 

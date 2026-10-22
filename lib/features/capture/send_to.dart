@@ -154,7 +154,10 @@ class SendToBridge {
           final now = DateTime.now();
           switch (json['type']) {
             case 'file':
-              final assets = await capture.imagesFromFiles([value]);
+              final assets = [
+                ...await capture.imagesFromFiles([value]),
+                ...await capture.documentsFromFiles([value]),
+              ];
               for (final a in assets) {
                 ws.inbox.put(
                   InboxItem(id: newId(), assetId: a.id, createdAt: now),

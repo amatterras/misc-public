@@ -10,6 +10,7 @@ import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'dart:typed_data';
 
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
+import 'package:flutter_application_1/data/models/library_models.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/hub/hub_server.dart';
 import 'package:flutter_application_1/sync/sync_client.dart';
@@ -219,6 +220,23 @@ void main() {
       expect(ipad.ws.notes[note.id]!.body, 'Milk, eggs');
     },
   );
+
+  test('a PDF document arrives on the other device unchanged', () async {
+    final pc = await device('pc');
+    final ipad = await device('ipad');
+    final source = File('${root.path}${Platform.pathSeparator}Syllabus.pdf')
+      ..writeAsStringSync('%PDF-1.4\n% synthetic test document\n');
+    final doc = await pc.ws.documentAssetFromFile(source);
+    pc.ws.createNote(title: 'Course', assetIds: [doc.id]);
+    await pc.sync();
+    final r = await ipad.sync();
+    expect(r.downloaded, greaterThanOrEqualTo(1));
+    final there = ipad.ws.assets[doc.id]!;
+    expect(there.kind, AssetKind.document);
+    expect(there.label, 'Syllabus.pdf');
+    final file = ipad.ws.documentFile(there)!;
+    expect(file.readAsStringSync(), source.readAsStringSync());
+  });
 
   test(
     'changes made offline survive an app restart and are sent afterwards',

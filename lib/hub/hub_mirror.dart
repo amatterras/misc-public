@@ -31,7 +31,13 @@ enum MirrorStatus {
   /// is kept; the run can simply be repeated.
   storageError,
   notPaired,
+
+  /// Another run is still working on this mirror folder; nothing was done.
+  busy,
 }
+
+/// A lock older than this is treated as left behind by a crashed run.
+const mirrorLockStaleAfter = Duration(hours: 2);
 
 /// How long a copy may go without a successful run before it counts as stale.
 const mirrorStaleAfter = Duration(hours: 48);
@@ -157,6 +163,31 @@ class MirrorEngine {
   File get stateFile => File('${dir.path}${_sep}mirror.json');
   File get tokenFile => File('${dir.path}${_sep}mirror.token');
   File get journal => File('${dir.path}${_sep}journal.jsonl');
+  File get lockFile => File('${dir.path}${_sep}mirror.lock');
+
+  /// Takes the folder's run lock; false if another run holds a fresh one.
+  Future<bool> _lock() async {
+    try {
+      await lockFile.create(exclusive: true);
+    } on FileSystemException {
+      final age = DateTime.now().difference(await lockFile.lastModified());
+      if (age < mirrorLockStaleAfter) return false;
+      // Left behind by a run that crashed: take it over.
+      await lockFile.setLastModified(DateTime.now());
+    }
+    await lockFile.writeAsString(
+      jsonEncode({'pid': pid, 'at': DateTime.now().toUtc().toIso8601String()}),
+      flush: true,
+    );
+    return true;
+  }
+
+  Future<void> _unlock() async {
+    try {
+      await lockFile.delete();
+    } catch (_) {}
+  }
+
   Directory get attachmentsDir => Directory('${dir.path}${_sep}attachments');
 
   /// Refuses a folder that holds a hub, so a mirror can never write into it.
@@ -218,11 +249,30 @@ class MirrorEngine {
   /// restored hub is accepted: the old copy is moved aside, not deleted.
   /// With [repair], every copied attachment is re-hashed first and damaged
   /// ones are set aside and downloaded again.
+  /// Only one run works on a mirror folder at a time (a scheduled run may
+  /// overlap a slow or manual one); a second run returns [MirrorStatus.busy].
   Future<MirrorReport> replicateOnce({
     bool reseed = false,
     bool repair = false,
   }) async {
     await checkNotAHub(dir);
+    if (!await dir.exists()) return _replicate(reseed: reseed, repair: repair);
+    if (!await _lock()) {
+      return MirrorReport()
+        ..status = MirrorStatus.busy
+        ..message = 'Another mirror run is still working on this folder.';
+    }
+    try {
+      return await _replicate(reseed: reseed, repair: repair);
+    } finally {
+      await _unlock();
+    }
+  }
+
+  Future<MirrorReport> _replicate({
+    required bool reseed,
+    required bool repair,
+  }) async {
     final report = MirrorReport();
     final state = await loadState();
     final token = await readSecret(tokenFile);

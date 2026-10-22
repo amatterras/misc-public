@@ -76,6 +76,19 @@ List<SearchResult> searchEverything(AppState s, String query) {
           open: () => native.openUrl(a.url!),
         ),
       );
+    } else if (a.kind == AssetKind.document && has(a.title)) {
+      results.add(
+        SearchResult(
+          icon: Icons.picture_as_pdf_outlined,
+          kind: 'Document',
+          title: a.label,
+          subtitle: 'PDF',
+          open: () {
+            final file = ws.documentFile(a);
+            if (file != null) s.openDocument(file.path);
+          },
+        ),
+      );
     }
   }
   for (final e in ws.entries.all) {

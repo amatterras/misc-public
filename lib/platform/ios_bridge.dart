@@ -59,6 +59,28 @@ class IosBridge implements KeychainBackend {
     }
   }
 
+  /// Shows the system document picker for PDFs; returns copies of the
+  /// chosen files in the app's temporary folder (empty if cancelled).
+  Future<List<String>> pickDocumentFiles() async {
+    try {
+      return await _channel.invokeListMethod<String>('pickDocuments') ??
+          const [];
+    } on PlatformException {
+      return const [];
+    } on MissingPluginException {
+      return const [];
+    }
+  }
+
+  /// Shows a stored PDF with the system previewer (Quick Look). Only paths
+  /// ending in `.pdf` are passed on; the caller gives files from THEapp's
+  /// attachments folder (`Workspace.documentFile`).
+  bool openDocument(String path) {
+    if (!path.toLowerCase().endsWith('.pdf')) return false;
+    unawaited(_invoke<bool>('openDocument', path));
+    return true;
+  }
+
   /// Opens an http(s) or mailto link in Safari / Mail. Returns false for any
   /// other kind of link (a stored link can never start something else).
   bool openUrl(String url) {

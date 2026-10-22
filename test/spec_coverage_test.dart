@@ -2,7 +2,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
+
 import 'package:flutter_application_1/app/app_state.dart';
+import 'package:flutter_application_1/app/theme.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/models/task_models.dart';
@@ -10,10 +13,13 @@ import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/canvas/canvas_controller.dart';
 import 'package:flutter_application_1/features/search/search_dialog.dart';
+import 'package:flutter_application_1/main.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  calendarCellAndColourTests();
+  focusTimerTests();
   late Directory dir;
   setUp(() => dir = Directory.systemTemp.createTempSync('theapp_spec_'));
   tearDown(() => dir.deleteSync(recursive: true));
@@ -136,5 +142,114 @@ void main() {
       ['Revise optics'],
     );
     again.dispose();
+  });
+}
+
+void calendarCellAndColourTests() {
+  test('the ten organizer colours are exactly the specified ones', () {
+    expect(
+      [for (final c in OrganizerColors.all) c.toARGB32() & 0xFFFFFF],
+      [
+        0xE76F51, // coral
+        0xE9A23B, // amber
+        0xE8D45B, // yellow
+        0x79B85A, // green
+        0x35A99A, // teal
+        0x4D8FD6, // blue
+        0x6965C9, // indigo
+        0xA56BC4, // purple
+        0xD86D9C, // pink
+        0x9A9A9A, // grey
+      ],
+    );
+  });
+
+  testWidgets('calendar cells: date top-left, weekday top-right, labels '
+      'bottom-left', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final dir = Directory.systemTemp.createTempSync('theapp_cells_');
+    addTearDown(() {
+      try {
+        dir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final ws = Workspace(dir);
+    final s = AppState(
+      canvases: FileCanvasRepository(ws.store),
+      settings: SettingsRepository(ws.store),
+      workspace: ws,
+      enableSendTo: false,
+    );
+    await tester.runAsync(s.init);
+    final start = DateTime(2026, 11, 10); // a Tuesday
+    await tester.runAsync(() => s.setCalendarRange(start, 14));
+    ws.saveEntry(
+      CalendarEntry(
+        id: newId(),
+        category: CalendarCategory.events,
+        name: 'Zebra talk',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        startDate: start,
+      ),
+    );
+    s.goTo(AppPage.calendar);
+    await tester.pumpWidget(TheApp(state: s));
+    await tester.pump();
+    await tester.pump();
+
+    final date = tester.getRect(find.text('10'));
+    final label = tester.getRect(find.text('Zebra talk').first);
+    final weekday = find
+        .text('TUE')
+        .evaluate()
+        .map((e) => tester.getRect(find.byWidget(e.widget)))
+        .firstWhere((r) => (r.top - date.top).abs() < 12);
+    expect(
+      weekday.center.dx,
+      greaterThan(date.center.dx + 60),
+      reason: 'weekday on the right of the same top row',
+    );
+    expect(
+      label.top,
+      greaterThan(date.bottom + 30),
+      reason: 'entry labels near the bottom',
+    );
+    expect(
+      (label.left - date.left).abs(),
+      lessThan(16),
+      reason: 'entry labels start at the left',
+    );
+
+    await tester.runAsync(s.flush);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 4));
+    s.dispose();
+  });
+}
+
+void focusTimerTests() {
+  testWidgets('focus timer: 25 min focus, then a 5 min break; pause works', (
+    tester,
+  ) async {
+    final t = FocusTimer();
+    expect(t.label, '25:00');
+    t.start();
+    await tester.pump(const Duration(seconds: 61));
+    expect(t.label, '23:59');
+    t.pause();
+    await tester.pump(const Duration(minutes: 5));
+    expect(t.label, '23:59', reason: 'paused');
+    t.start();
+    await tester.pump(const Duration(minutes: 24));
+    expect(t.onBreak, isTrue, reason: 'focus finished: break starts');
+    expect(t.running, isFalse);
+    expect(t.label, '05:00');
+    t.reset();
+    expect(t.onBreak, isFalse);
+    expect(t.label, '25:00');
+    t.dispose();
   });
 }

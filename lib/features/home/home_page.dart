@@ -272,7 +272,20 @@ class _InboxRow extends StatelessWidget {
             icon: Icons.close,
             tooltip: 'Dismiss',
             size: 14,
-            onTap: () => ws.inbox.remove(item.id),
+            onTap: () async {
+              // A typed thought exists only here; links and photos keep
+              // their own records, so only thoughts need a confirmation.
+              final onlyCopy = asset == null && (item.text ?? '').isNotEmpty;
+              if (onlyCopy &&
+                  !await confirm(
+                    context,
+                    title: 'Delete this thought?',
+                    message: 'It is only in the Inbox. File it to keep it.',
+                  )) {
+                return;
+              }
+              ws.inbox.remove(item.id);
+            },
           ),
         ],
       ),

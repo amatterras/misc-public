@@ -67,7 +67,9 @@ Not covered by automated tests — try these by hand:
 Known limitations: images can't be copied *out* to other apps yet; no drag-and-drop
 from Explorer; no PDFs on the canvas; reminders don't notify; no version history;
 records written by a newer app version keep unknown *records* but not unknown *fields*
-inside a known record (needed before sync ships).
+inside a known record. Sync is now in use, so keep every device on the same app version
+until this is handled (an older version that edits a record drops fields it does not
+know).
 
 ## Sync
 Implemented: Windows hub, sync engine, optional read-only mirror. See

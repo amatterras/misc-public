@@ -31,7 +31,25 @@ class CanvasPainter extends CustomPainter {
     canvas.translate(controller.offset.dx, controller.offset.dy);
     canvas.scale(scale);
 
+    // Mind-map connections first, so they run underneath the items.
+    final selectedIds = controller.selection;
+    for (final c in controller.items.whereType<ConnectorItem>()) {
+      final ends = controller.connectorEnds(c);
+      if (ends == null) continue;
+      _paintConnector(
+        canvas,
+        ends,
+        scale,
+        selected: selectedIds.contains(c.id),
+      );
+    }
+    final liveConnection = controller.liveConnection;
+    if (liveConnection != null) {
+      _paintConnector(canvas, liveConnection, scale, selected: true);
+    }
+
     for (final item in controller.items) {
+      if (item is ConnectorItem) continue;
       final bounds = controller.itemBounds(item);
       if (!bounds.overlaps(visible)) continue;
       switch (item) {
@@ -45,6 +63,8 @@ class CanvasPainter extends CustomPainter {
           _paintLink(canvas, item, bounds);
         case NoteCardItem():
           _paintNoteCard(canvas, item, bounds);
+        case ConnectorItem():
+          break; // drawn above
       }
     }
     final live = controller.liveStroke;
@@ -288,12 +308,32 @@ class CanvasPainter extends CustomPainter {
     return path;
   }
 
+  /// A connection: a line with small dots where it meets the two items.
+  void _paintConnector(
+    Canvas canvas,
+    (Offset, Offset) ends,
+    double scale, {
+    required bool selected,
+  }) {
+    final color = selected ? AppColors.accent : const Color(0xFF8A8A8A);
+    final line = Paint()
+      ..color = color
+      ..strokeWidth = (selected ? 2.5 : 1.6) / scale
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(ends.$1, ends.$2, line);
+    final dot = Paint()..color = color;
+    canvas.drawCircle(ends.$1, 3 / scale, dot);
+    canvas.drawCircle(ends.$2, 3 / scale, dot);
+  }
+
   void _paintSelection(Canvas canvas, double scale) {
     final outline = Paint()
       ..color = AppColors.accent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5 / scale;
-    final selected = controller.selectedItems;
+    final selected = controller.selectedItems
+        .where((i) => i is! ConnectorItem)
+        .toList();
     for (final item in selected) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(

@@ -99,7 +99,18 @@ class HubAuth {
     _adminHash = hash(admin);
   }
 
-  Future<void> _save() async {
+  /// Saves run one at a time (pairings and revocations can arrive together;
+  /// two writers on the same temporary file would fail or garble the
+  /// registry). Each save writes the registry as it is when it runs.
+  Future<void> _saving = Future.value();
+
+  Future<void> _save() {
+    final next = _saving.catchError((_) {}).then((_) => _writeDevices());
+    _saving = next;
+    return next;
+  }
+
+  Future<void> _writeDevices() async {
     final tmp = File('${_devicesFile.path}.tmp');
     await tmp.writeAsString(
       const JsonEncoder.withIndent(' ').convert({

@@ -28,6 +28,10 @@ being closed and are sent on the next sync (`test/sync_engine_test.dart`,
 | `theapp://capture?url=…&text=…` links → Inbox | tested (also links that arrive before the app is ready) | `SceneDelegate.swift`, untested |
 | Share Extension → Inbox | import tested with files in the extension's format | `ShareExtension/`, untested, **needs paid account** |
 | Sync with the PC hub | same engine as Windows (tested) | network path from an iPhone untested |
+| PDFs: pick (document picker) and open (Quick Look) | tested with a simulated channel; only `.pdf` passed on | `AppDelegate.swift`, untested; the "inside this app" path check may need adjusting for `/private/var` |
+| Mind-map connections, version history | shared Dart code (tested on Windows) | — |
+| Task reminders | in-app notice while the app is open (shared code) | no iOS notification when the app is closed (would need `UNUserNotificationCenter`; not written) |
+| Channel contract | every Dart method has a Swift case and vice versa (checked by reading, 2026-10-22) | — |
 
 ## Free ways to capture from other apps
 1. **iOS Shortcut (free account is enough):** in the Shortcuts app create

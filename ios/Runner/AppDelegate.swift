@@ -1,7 +1,9 @@
 import Flutter
 import PhotosUI
+import QuickLook
 import Security
 import UIKit
+import UniformTypeIdentifiers
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -26,7 +28,9 @@ import UIKit
 ///
 /// UNTESTED: written on Windows and never compiled or run. See
 /// ios/README_IOS.md for how to check it on a Mac.
-final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate {
+final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
+  UIDocumentPickerDelegate, QLPreviewControllerDataSource
+{
   static let shared = TheAppIosBridge()
 
   /// Only usable with the paid Apple Developer Program; without it the
@@ -37,6 +41,8 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate {
   private var dartReady = false
   private var pendingLinks: [String] = []
   private var pickResult: FlutterResult?
+  private var documentResult: FlutterResult?
+  private var previewURL: URL?
 
   func attach(messenger: FlutterBinaryMessenger) {
     let channel = FlutterMethodChannel(name: "theapp/ios", binaryMessenger: messenger)
@@ -75,6 +81,10 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate {
         return
       }
       UIApplication.shared.open(url, options: [:]) { ok in result(ok) }
+    case "pickDocuments":
+      pickDocuments(result)
+    case "openDocument":
+      openDocument(call.arguments as? String, result)
     case "pickImages":
       pickImages(result)
     case "keychainRead":
@@ -165,6 +175,61 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate {
       }
     }
     group.notify(queue: .main) { finish?(paths.compactMap { $0 }) }
+  }
+
+  // MARK: PDF documents (document picker + Quick Look; no permission needed)
+
+  private func pickDocuments(_ result: @escaping FlutterResult) {
+    guard documentResult == nil, let top = topViewController() else {
+      result([String]())
+      return
+    }
+    // asCopy: the app receives its own copies in its sandbox.
+    let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.pdf], asCopy: true)
+    picker.allowsMultipleSelection = true
+    picker.delegate = self
+    documentResult = result
+    top.present(picker, animated: true)
+  }
+
+  func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    let finish = documentResult
+    documentResult = nil
+    finish?(urls.map { $0.path })
+  }
+
+  func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    let finish = documentResult
+    documentResult = nil
+    finish?([String]())
+  }
+
+  /// Shows a PDF stored by the app. Only `.pdf` files inside this app's own
+  /// container are accepted.
+  private func openDocument(_ path: String?, _ result: @escaping FlutterResult) {
+    guard let path = path, path.lowercased().hasSuffix(".pdf"),
+      path.hasPrefix(NSHomeDirectory()),
+      FileManager.default.fileExists(atPath: path),
+      let top = topViewController()
+    else {
+      result(false)
+      return
+    }
+    previewURL = URL(fileURLWithPath: path)
+    let preview = QLPreviewController()
+    preview.dataSource = self
+    top.present(preview, animated: true)
+    result(true)
+  }
+
+  func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+    return previewURL == nil ? 0 : 1
+  }
+
+  func previewController(_ controller: QLPreviewController, previewItemAt index: Int)
+    -> QLPreviewItem
+  {
+    return previewURL! as NSURL
   }
 
   private func topViewController() -> UIViewController? {

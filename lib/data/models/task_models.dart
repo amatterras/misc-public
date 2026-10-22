@@ -70,6 +70,7 @@ class Task implements Record {
     this.isExam = false,
     this.recurrence = Recurrence.none,
     this.assetIds = const [],
+    this.remindBefore,
   });
 
   @override
@@ -92,6 +93,26 @@ class Task implements Record {
   final bool isExam;
   final Recurrence recurrence;
   final List<String> assetIds;
+
+  /// Reminder, in minutes before the due time (0 = at the due time); null
+  /// = no reminder. Relative, so a recurring task's reminder moves with it.
+  final int? remindBefore;
+
+  /// Tasks with a date but no time are reminded at this time of day.
+  static const defaultReminderMinutes = 9 * 60;
+
+  /// When to remind (local time), or null without a reminder or due date.
+  DateTime? get reminderTime {
+    final due = dueDate, before = remindBefore;
+    if (due == null || before == null) return null;
+    final minutes = dueMinutes ?? defaultReminderMinutes;
+    return DateTime(
+      due.year,
+      due.month,
+      due.day,
+    ).add(Duration(minutes: minutes - before));
+  }
+
   final DateTime createdAt;
   @override
   final DateTime updatedAt;
@@ -109,6 +130,7 @@ class Task implements Record {
     bool? isExam,
     Recurrence? recurrence,
     List<String>? assetIds,
+    int? Function()? remindBefore,
   }) => Task(
     id: id,
     title: title ?? this.title,
@@ -123,6 +145,7 @@ class Task implements Record {
     isExam: isExam ?? this.isExam,
     recurrence: recurrence ?? this.recurrence,
     assetIds: assetIds ?? this.assetIds,
+    remindBefore: remindBefore != null ? remindBefore() : this.remindBefore,
     createdAt: createdAt,
     updatedAt: DateTime.now(),
   );
@@ -158,6 +181,7 @@ class Task implements Record {
     'isExam': isExam,
     'recurrence': recurrence.name,
     'assetIds': assetIds,
+    'remindBefore': remindBefore,
     'createdAt': utcIso(createdAt),
     'updatedAt': utcIso(updatedAt),
   };
@@ -178,6 +202,7 @@ class Task implements Record {
     isExam: j['isExam'] as bool? ?? false,
     recurrence: Recurrence.values.byName(j['recurrence'] as String? ?? 'none'),
     assetIds: [...?(j['assetIds'] as List?)?.cast<String>()],
+    remindBefore: j['remindBefore'] as int?,
     createdAt: parseDate(j['createdAt']) ?? DateTime.now(),
     updatedAt: parseDate(j['updatedAt']) ?? DateTime.now(),
   );

@@ -61,6 +61,65 @@ void main() {
       },
     );
 
+    test('a failed save is retried by itself until it succeeds', () async {
+      RecordCollection.retryDelay = const Duration(milliseconds: 100);
+      addTearDown(
+        () => RecordCollection.retryDelay = const Duration(seconds: 5),
+      );
+      // A file where the data folder should be: every write fails.
+      final blocker = File(p('data'))..writeAsStringSync('in the way');
+      final c = RecordCollection<Note>(
+        store: JsonFileStore(dir),
+        name: 'notes',
+        fromJson: Note.fromJson,
+        saveDelay: const Duration(milliseconds: 10),
+      );
+      await c.load();
+      final now = DateTime.now();
+      c.put(
+        Note(
+          id: 'n1',
+          title: 'Keep me',
+          body: '',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(File(p('data/notes.json')).existsSync(), isFalse);
+      // The obstacle goes away; no further edit is made.
+      blocker.deleteSync();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      final saved = File(p('data/notes.json'));
+      expect(saved.existsSync(), isTrue, reason: 'retried without a new edit');
+      expect(saved.readAsStringSync(), contains('Keep me'));
+      c.dispose();
+    });
+
+    test(
+      'the workspace reports unsaved changes until a retry succeeds',
+      () async {
+        RecordCollection.retryDelay = const Duration(milliseconds: 100);
+        addTearDown(
+          () => RecordCollection.retryDelay = const Duration(seconds: 5),
+        );
+        final ws = Workspace(dir);
+        await ws.load();
+        final blocker = File(p('data'))..writeAsStringSync('in the way');
+        ws.createNote(title: 'Not lost');
+        await expectLater(ws.flush(), throwsA(isA<FileSystemException>()));
+        expect(ws.unsaved.value, contains('notes'));
+        blocker.deleteSync();
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        expect(ws.unsaved.value, isEmpty, reason: 'retry saved it');
+        final again = Workspace(dir);
+        await again.load();
+        expect(again.notes.all.map((n) => n.title), ['Not lost']);
+        again.dispose();
+        ws.dispose();
+      },
+    );
+
     test('unreadable records survive load and save', () async {
       Directory(p('data')).createSync(recursive: true);
       File(p('data/notes.json')).writeAsStringSync(

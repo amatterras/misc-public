@@ -166,6 +166,29 @@ class CaptureService {
     return imagesFromFiles(paths);
   }
 
+  /// PDF picker; replaceable in tests.
+  FutureOr<List<String>> Function() pickDocumentFiles =
+      native.pickDocumentFiles;
+
+  /// Copies existing PDF files in as document records (others are skipped).
+  Future<List<Asset>> documentsFromFiles(Iterable<String> paths) async {
+    final assets = <Asset>[];
+    for (final path in paths) {
+      final file = File(path);
+      if (!await file.exists()) continue;
+      if (!Workspace.documentExtensions.contains(
+        AttachmentStore.extensionOf(path),
+      )) {
+        continue;
+      }
+      assets.add(await workspace.documentAssetFromFile(file));
+    }
+    return assets;
+  }
+
+  Future<List<Asset>> pickDocuments() async =>
+      documentsFromFiles(await pickDocumentFiles());
+
   /// Longest text accepted from outside the app (a link can be opened by any
   /// web page, so this is untrusted input).
   static const maxInboundText = 20000;

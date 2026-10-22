@@ -44,6 +44,8 @@ sealed class CanvasItem {
         return LinkItem.fromJson(json);
       case 'noteCard':
         return NoteCardItem.fromJson(json);
+      case 'connector':
+        return ConnectorItem.fromJson(json);
       default:
         throw FormatException('Unknown canvas item type: ${json['type']}');
     }
@@ -350,6 +352,62 @@ class NoteCardItem extends BoxItem {
   );
 }
 
+/// Shortest distance from [p] to the segment [a]–[b].
+double distanceToSegment(Offset p, Offset a, Offset b) {
+  final ab = b - a;
+  final lengthSquared = ab.dx * ab.dx + ab.dy * ab.dy;
+  if (lengthSquared == 0) return (p - a).distance;
+  final ap = p - a;
+  final t = ((ap.dx * ab.dx + ap.dy * ab.dy) / lengthSquared).clamp(0.0, 1.0);
+  return (p - (a + ab * t)).distance;
+}
+
+/// A mind-map connection between two items on the same canvas. It stores
+/// only the two item ids (never copies), so it follows them when they move;
+/// it is hidden while either end is missing.
+class ConnectorItem extends CanvasItem {
+  const ConnectorItem({
+    required super.id,
+    required this.fromId,
+    required this.toId,
+  });
+
+  final String fromId;
+  final String toId;
+
+  /// The line's real extent depends on the two items; the controller
+  /// computes it (see `CanvasController.itemBounds`).
+  @override
+  Rect get bounds => Rect.zero;
+
+  /// Moves with its ends, not by itself.
+  @override
+  ConnectorItem translated(Offset delta) => this;
+
+  @override
+  ConnectorItem withId(String id) =>
+      ConnectorItem(id: id, fromId: fromId, toId: toId);
+
+  bool touches(String itemId) => fromId == itemId || toId == itemId;
+
+  bool joins(String a, String b) =>
+      (fromId == a && toId == b) || (fromId == b && toId == a);
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'connector',
+    'id': id,
+    'from': fromId,
+    'to': toId,
+  };
+
+  factory ConnectorItem.fromJson(Map<String, dynamic> j) => ConnectorItem(
+    id: j['id'] as String,
+    fromId: j['from'] as String,
+    toId: j['to'] as String,
+  );
+}
+
 /// One sampled point of a freehand stroke.
 ///
 /// [pressure] is stored now so pen/stylus input (e.g. Apple Pencil) can use
@@ -435,14 +493,8 @@ class StrokeItem extends CanvasItem {
     return false;
   }
 
-  static double _distanceToSegment(Offset p, Offset a, Offset b) {
-    final ab = b - a;
-    final lengthSquared = ab.dx * ab.dx + ab.dy * ab.dy;
-    if (lengthSquared == 0) return (p - a).distance;
-    final ap = p - a;
-    final t = ((ap.dx * ab.dx + ap.dy * ab.dy) / lengthSquared).clamp(0.0, 1.0);
-    return (p - (a + ab * t)).distance;
-  }
+  static double _distanceToSegment(Offset p, Offset a, Offset b) =>
+      distanceToSegment(p, a, b);
 
   @override
   Map<String, dynamic> toJson() => {

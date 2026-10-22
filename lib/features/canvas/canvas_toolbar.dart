@@ -24,11 +24,13 @@ class CanvasToolbar extends StatelessWidget {
     required this.controller,
     required this.onAddImage,
     required this.onAddLink,
+    this.onAddDocument,
   });
 
   final CanvasController controller;
   final VoidCallback onAddImage;
   final VoidCallback onAddLink;
+  final VoidCallback? onAddDocument;
 
   @override
   Widget build(BuildContext context) {
@@ -85,12 +87,23 @@ class CanvasToolbar extends StatelessWidget {
               const Icon(Icons.title, size: 18),
               'Note  (T, or double-click)',
             ),
+            toolButton(
+              CanvasTool.connect,
+              const Icon(Icons.share_outlined, size: 18),
+              'Connect — drag from one item to another  (C)',
+            ),
             const _PanelDivider(),
             ToolButton(
               icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
               tooltip: 'Add photos from this PC',
               onPressed: onAddImage,
             ),
+            if (onAddDocument != null)
+              ToolButton(
+                icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                tooltip: 'Add PDF documents from this PC',
+                onPressed: onAddDocument!,
+              ),
             ToolButton(
               icon: const Icon(Icons.add_link, size: 18),
               tooltip: 'Add link  (or paste a URL with Ctrl+V)',

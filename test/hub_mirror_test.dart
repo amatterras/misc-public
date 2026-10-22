@@ -312,6 +312,35 @@ void main() {
     expect((await mirror.verify()).valid, isTrue);
   });
 
+  test('overlapping runs: only one works, the other changes nothing', () async {
+    await device.push([note('n1', 'one'), note('n2', 'two')]);
+    final mirror = await pairedMirror();
+    final results = await Future.wait([
+      mirror.replicateOnce(),
+      mirror.replicateOnce(),
+    ]);
+    final statuses = results.map((r) => r.status).toList();
+    expect(statuses, containsAll([MirrorStatus.inSync, MirrorStatus.busy]));
+    expect(mirror.lockFile.existsSync(), isFalse, reason: 'lock released');
+    final check = await mirror.verify();
+    expect(check.valid, isTrue, reason: '$check');
+    expect(check.records, 2, reason: 'no batch copied twice');
+  });
+
+  test('a lock left by a crashed run is taken over once stale', () async {
+    await device.push([note('n1', 'one')]);
+    final mirror = await pairedMirror();
+    mirror.lockFile.writeAsStringSync('{}');
+    expect((await mirror.replicateOnce()).status, MirrorStatus.busy);
+    mirror.lockFile.setLastModifiedSync(
+      DateTime.now().subtract(
+        mirrorLockStaleAfter + const Duration(minutes: 1),
+      ),
+    );
+    expect((await mirror.replicateOnce()).status, MirrorStatus.inSync);
+    expect(mirror.lockFile.existsSync(), isFalse);
+  });
+
   test('the mirror token is stored encrypted, not passed around', () async {
     final mirror = await pairedMirror();
     final text = File('${mirror.dir.path}${sep}mirror.token')

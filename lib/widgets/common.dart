@@ -178,21 +178,30 @@ class LabeledField extends StatelessWidget {
   final String label;
   final Widget child;
 
+  /// Below this width the label goes above the field, so narrow panels
+  /// (phone width, side panels) keep room for the control itself.
+  static const stackBelow = 300.0;
+
   @override
   Widget build(BuildContext context) {
+    final text = Text(
+      label,
+      style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 96,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-            ),
-          ),
-          Expanded(child: child),
-        ],
+      child: LayoutBuilder(
+        builder: (context, box) => box.maxWidth < stackBelow
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [text, child],
+              )
+            : Row(
+                children: [
+                  SizedBox(width: 96, child: text),
+                  Expanded(child: child),
+                ],
+              ),
       ),
     );
   }
@@ -247,6 +256,31 @@ class FolderDropdown extends StatelessWidget {
 
 /// A compact link or image attachment. Links open in the browser on click;
 /// images show a thumbnail.
+/// Opens a stored PDF in its default app, or says why it can't.
+void openDocumentAsset(BuildContext context, Workspace ws, Asset asset) {
+  final file = ws.documentFile(asset);
+  if (file != null && native.openDocument(file.path)) return;
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(asset.label, style: const TextStyle(fontSize: 16)),
+      content: Text(
+        file == null
+            ? 'This document is not on this device yet. It arrives with the '
+                  'next sync.'
+            : 'No app on this device could open it.',
+        style: const TextStyle(color: AppColors.textMuted),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+}
+
 class AssetChip extends StatelessWidget {
   const AssetChip({
     super.key,
@@ -262,9 +296,16 @@ class AssetChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isLink = asset.kind == AssetKind.link;
+    final isDocument = asset.kind == AssetKind.document;
     final Widget leading;
     if (isLink) {
       leading = const Icon(Icons.link, size: 16, color: OrganizerColors.blue);
+    } else if (isDocument) {
+      leading = const Icon(
+        Icons.picture_as_pdf_outlined,
+        size: 16,
+        color: OrganizerColors.coral,
+      );
     } else {
       leading = ClipRRect(
         borderRadius: BorderRadius.circular(4),
@@ -289,6 +330,8 @@ class AssetChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: isLink && asset.url != null
             ? () => native.openUrl(asset.url!)
+            : isDocument
+            ? () => openDocumentAsset(context, workspace, asset)
             : () => showImageViewer(context, workspace, asset),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -300,7 +343,7 @@ class AssetChip extends StatelessWidget {
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 220),
                 child: Text(
-                  isLink ? asset.label : 'Image',
+                  isLink || isDocument ? asset.label : 'Image',
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 12),
                 ),

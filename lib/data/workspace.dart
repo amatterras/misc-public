@@ -73,6 +73,9 @@ class Workspace {
     tasks = _c('tasks', Task.fromJson);
     projects = _c('projects', Project.fromJson);
     conflicts = _c('conflicts', SyncConflict.fromJson);
+    // Version history stays on this device (not in [syncCollections]).
+    noteVersions = _c('note_versions', NoteVersion.fromJson);
+    notes.onReplace = _keepNoteVersion;
   }
 
   final Directory root;
@@ -82,6 +85,7 @@ class Workspace {
 
   late final RecordCollection<Asset> assets;
   late final RecordCollection<Note> notes;
+  late final RecordCollection<NoteVersion> noteVersions;
   late final RecordCollection<Folder> folders;
   late final RecordCollection<InboxItem> inbox;
   late final RecordCollection<CalendarEntry> entries;
@@ -124,9 +128,19 @@ class Workspace {
       name: name,
       fromJson: fromJson,
       clock: clock,
-    );
+    )..onSaveResult = _noteSaveResult;
     _all.add(c);
     return c;
+  }
+
+  /// Collections whose latest changes could not be saved yet (they keep
+  /// retrying). Empty when everything is on disk.
+  final ValueNotifier<Set<String>> unsaved = ValueNotifier(const {});
+
+  void _noteSaveResult(String name, bool saved) {
+    final now = {...unsaved.value};
+    final changed = saved ? now.remove(name) : now.add(name);
+    if (changed) unsaved.value = now;
   }
 
   /// Fires when any record anywhere changes.
@@ -179,11 +193,30 @@ class Workspace {
 
   // --------------------------------------------------------------- assets --
 
+  /// Comparison form of a link: spellings of the same address
+  /// (`HTTPS://Example.com:443` and `https://example.com/`) match. Paths,
+  /// queries and fragments are kept as they are (they can be case-sensitive).
+  static String linkKey(String url) {
+    final u = Uri.tryParse(url.trim());
+    if (u == null || u.host.isEmpty) return url.trim();
+    final defaultPort =
+        (u.scheme == 'https' && u.port == 443) ||
+        (u.scheme == 'http' && u.port == 80);
+    final port = u.hasPort && !defaultPort ? ':${u.port}' : '';
+    final path = u.path.isEmpty ? '/' : u.path;
+    return '${u.scheme.toLowerCase()}://${u.host.toLowerCase()}$port$path'
+        '${u.hasQuery ? '?${u.query}' : ''}'
+        '${u.hasFragment ? '#${u.fragment}' : ''}';
+  }
+
   /// Returns the existing link asset for [url] or creates one, so the same
   /// link captured twice is still one record.
   Asset linkAsset(String url, {String? title}) {
+    final key = linkKey(url);
     for (final a in assets.all) {
-      if (a.kind == AssetKind.link && a.url == url) return a;
+      if (a.kind == AssetKind.link && a.url != null && linkKey(a.url!) == key) {
+        return a;
+      }
     }
     final now = DateTime.now();
     final asset = Asset(
@@ -201,6 +234,44 @@ class Workspace {
   Future<Asset> imageAssetFromFile(File file) async {
     final name = await attachments.importFile(file);
     return _imageAsset(name);
+  }
+
+  /// File types kept as documents (opened in the default viewer).
+  static const documentExtensions = {'pdf'};
+
+  /// Copies a PDF into the attachments and records it by its file name.
+  Future<Asset> documentAssetFromFile(File file) async {
+    final ext = AttachmentStore.extensionOf(file.path);
+    if (!documentExtensions.contains(ext)) {
+      throw ArgumentError('Not a supported document: .$ext');
+    }
+    final name = await attachments.importFile(file);
+    final now = DateTime.now();
+    final asset = Asset(
+      id: newId(),
+      kind: AssetKind.document,
+      file: name,
+      title: file.uri.pathSegments.last,
+      createdAt: now,
+      updatedAt: now,
+    );
+    assets.put(asset);
+    return asset;
+  }
+
+  /// The stored file of a document asset, or null if it is not one, is
+  /// missing (e.g. not synced yet), or lies outside the attachments folder.
+  File? documentFile(Asset asset) {
+    final name = asset.file;
+    if (asset.kind != AssetKind.document || name == null) return null;
+    if (name.contains('/') || name.contains(r'\') || name.contains('..')) {
+      return null;
+    }
+    if (!documentExtensions.contains(AttachmentStore.extensionOf(name))) {
+      return null;
+    }
+    final f = attachments.fileFor(name);
+    return f.existsSync() ? f : null;
   }
 
   Future<Asset> imageAssetFromBytes(Uint8List bytes, String extension) async {
@@ -242,6 +313,70 @@ class Workspace {
     } catch (_) {
       return null;
     }
+  }
+
+  // ------------------------------------------------------ version history --
+
+  /// Edits within this long of the last kept version count as one session,
+  /// so typing does not create a version per keystroke.
+  static const versionInterval = Duration(minutes: 10);
+
+  /// Versions kept per note (oldest go first).
+  static const versionsPerNote = 30;
+
+  /// Current time; replaceable in tests.
+  DateTime Function() now = DateTime.now;
+
+  /// Earlier versions of [noteId], newest first.
+  List<NoteVersion> versionsOf(String noteId) =>
+      noteVersions.all.where((v) => v.noteId == noteId).toList()
+        ..sort((a, b) => b.savedAt.compareTo(a.savedAt));
+
+  void _keepNoteVersion(Note previous, Note next) {
+    if (previous.title == next.title && previous.body == next.body) return;
+    if (previous.title.isEmpty && previous.body.isEmpty) return;
+    final versions = versionsOf(previous.id);
+    final latest = versions.firstOrNull;
+    if (latest != null &&
+        now().difference(latest.savedAt) < versionInterval &&
+        latest.body != next.body) {
+      // Still the same editing session: the version kept at its start
+      // already holds the text from before it. (Going back to exactly that
+      // version — a restore — always keeps the replaced text, so a restore
+      // can itself be undone.)
+      return;
+    }
+    noteVersions.put(
+      NoteVersion(
+        id: newId(),
+        noteId: previous.id,
+        title: previous.title,
+        body: previous.body,
+        savedAt: now(),
+      ),
+    );
+    for (final old in versions.skip(versionsPerNote - 1)) {
+      noteVersions.remove(old.id);
+    }
+  }
+
+  /// Puts an earlier version back as a new edit (so the replaced text
+  /// becomes a version itself). Also brings back a deleted note.
+  Note? restoreNoteVersion(String versionId) {
+    final v = noteVersions[versionId];
+    if (v == null) return null;
+    final current = notes[v.noteId];
+    final restored = current != null
+        ? current.copyWith(title: v.title, body: v.body)
+        : Note(
+            id: v.noteId,
+            title: v.title,
+            body: v.body,
+            createdAt: v.savedAt,
+            updatedAt: now(),
+          );
+    notes.put(restored);
+    return restored;
   }
 
   // ---------------------------------------------------------------- notes --

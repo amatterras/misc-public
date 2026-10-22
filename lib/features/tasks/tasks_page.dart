@@ -33,6 +33,15 @@ const priorityColors = [
 ];
 const priorityNames = ['No priority', 'Low', 'Medium', 'High'];
 
+/// Reminder choices: minutes before the due time (date-only tasks: 09:00).
+const reminderChoices = <(int?, String)>[
+  (null, 'No reminder'),
+  (0, 'At the due time'),
+  (15, '15 minutes before'),
+  (60, '1 hour before'),
+  (24 * 60, '1 day before'),
+];
+
 class TasksPage extends StatefulWidget {
   const TasksPage({super.key, required this.state});
 
@@ -43,6 +52,9 @@ class TasksPage extends StatefulWidget {
 }
 
 class _TasksPageState extends State<TasksPage> {
+  /// Below this width only one of list and details is shown.
+  static const narrowWidth = 700.0;
+
   TaskList _list = const SmartTaskList(SmartList.open);
   String? _selectedId;
   final _newTask = TextEditingController();
@@ -126,30 +138,37 @@ class _TasksPageState extends State<TasksPage> {
     return WorkspaceBuilder(
       state: s,
       // Side panels shrink in narrow windows so the task list keeps room.
+      // Below [narrowWidth] the selected task's details replace the list
+      // (close them to go back) instead of squeezing three columns.
       builder: (context) => LayoutBuilder(
-        builder: (context, box) => Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              width: (box.maxWidth * 0.22).clamp(110, 230),
-              child: _lists(),
-            ),
-            const VerticalDivider(width: 1),
-            Expanded(child: _tasks()),
-            if (ws.tasks[_selectedId] != null) ...[
-              const VerticalDivider(width: 1),
+        builder: (context, box) {
+          final selected = ws.tasks[_selectedId] != null;
+          Widget detail() => TaskDetail(
+            key: ValueKey(_selectedId),
+            state: s,
+            taskId: _selectedId!,
+            onClose: () => setState(() => _selectedId = null),
+          );
+          if (box.maxWidth < narrowWidth && selected) return detail();
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               SizedBox(
-                width: (box.maxWidth * 0.34).clamp(200, 380),
-                child: TaskDetail(
-                  key: ValueKey(_selectedId),
-                  state: s,
-                  taskId: _selectedId!,
-                  onClose: () => setState(() => _selectedId = null),
-                ),
+                width: (box.maxWidth * 0.22).clamp(110, 230),
+                child: _lists(),
               ),
+              const VerticalDivider(width: 1),
+              Expanded(child: _tasks()),
+              if (selected) ...[
+                const VerticalDivider(width: 1),
+                SizedBox(
+                  width: (box.maxWidth * 0.34).clamp(200, 380),
+                  child: detail(),
+                ),
+              ],
             ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -647,20 +666,25 @@ class _TaskDetailState extends State<TaskDetail> {
           label: 'Due',
           child: Row(
             children: [
-              TextButton.icon(
-                icon: const Icon(Icons.event, size: 16),
-                label: Text(
-                  t.dueDate == null ? 'No date' : formatLongDate(t.dueDate!),
+              // The long date may not fit a narrow panel: it shortens.
+              Flexible(
+                child: TextButton.icon(
+                  icon: const Icon(Icons.event, size: 16),
+                  label: Text(
+                    t.dueDate == null ? 'No date' : formatLongDate(t.dueDate!),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed: () async {
+                    final d = await showDatePicker(
+                      context: context,
+                      initialDate: t.dueDate ?? DateTime.now(),
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+                    if (d != null) _update((x) => x.copyWith(dueDate: () => d));
+                  },
                 ),
-                onPressed: () async {
-                  final d = await showDatePicker(
-                    context: context,
-                    initialDate: t.dueDate ?? DateTime.now(),
-                    firstDate: DateTime(2000),
-                    lastDate: DateTime(2100),
-                  );
-                  if (d != null) _update((x) => x.copyWith(dueDate: () => d));
-                },
               ),
               if (t.dueDate != null)
                 GhostIconButton(
@@ -722,6 +746,23 @@ class _TaskDetailState extends State<TaskDetail> {
               style: TextStyle(fontSize: 11, color: AppColors.textFaint),
             ),
           ),
+        LabeledField(
+          label: 'Reminder',
+          child: DropdownButton<int?>(
+            key: const ValueKey('reminder'),
+            isExpanded: true,
+            value: t.remindBefore,
+            // A reminder needs a date to count from.
+            onChanged: t.dueDate == null
+                ? null
+                : (v) => _update((x) => x.copyWith(remindBefore: () => v)),
+            disabledHint: const Text('Set a due date first'),
+            items: [
+              for (final (minutes, label) in reminderChoices)
+                DropdownMenuItem(value: minutes, child: Text(label)),
+            ],
+          ),
+        ),
         LabeledField(
           label: 'Repeat',
           child: DropdownButton<Recurrence>(

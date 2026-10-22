@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/models/library_models.dart';
+import '../data/models/task_models.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/canvas/canvas_page.dart';
 import '../features/capture/capture_dialog.dart';
@@ -11,6 +12,7 @@ import '../features/notes/notes_page.dart';
 import '../features/search/search_dialog.dart';
 import '../features/settings/settings_dialog.dart';
 import '../features/tasks/tasks_page.dart';
+import '../widgets/common.dart' show GhostIconButton;
 import 'app_state.dart';
 import 'sidebar.dart';
 import 'test_environment.dart';
@@ -120,6 +122,8 @@ class _AppShellState extends State<AppShell> {
                     ),
                   _Toast(state: state, bottomOffset: isCompact ? 72 : 28),
                   if (TestEnvironment.active) const _TestDataBanner(),
+                  _UnsavedNotice(state: state),
+                  _ReminderNotice(state: state),
                 ],
               ),
             );
@@ -351,6 +355,130 @@ class _TestDataBanner extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Stays visible while some changes could not be written to disk (the app
+/// keeps retrying), so a failing save is never silent.
+class _UnsavedNotice extends StatelessWidget {
+  const _UnsavedNotice({required this.state});
+
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: state.workspace.unsaved,
+      builder: (context, unsaved, _) {
+        if (unsaved.isEmpty) return const SizedBox.shrink();
+        return Positioned(
+          left: 0,
+          right: 0,
+          bottom: 72,
+          child: Center(
+            child: Container(
+              key: const ValueKey('unsaved-notice'),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.danger,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'Some changes are not saved yet. THEapp keeps retrying — '
+                'keep the app open (details in the log).',
+                style: TextStyle(fontSize: 13, color: Colors.white),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Task reminders that came due (also ones missed while THEapp was closed).
+/// They stay until opened or dismissed.
+class _ReminderNotice extends StatelessWidget {
+  const _ReminderNotice({required this.state});
+
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<List<Task>>(
+      valueListenable: state.dueReminders,
+      builder: (context, due, _) {
+        if (due.isEmpty) return const SizedBox.shrink();
+        // Inside the workspace, never over the sidebar's own controls.
+        final compact = MediaQuery.sizeOf(context).width < 640;
+        final sidebar = compact
+            ? 0.0
+            : state.sidebarCollapsed
+            ? Sidebar.collapsedWidth
+            : Sidebar.expandedWidth;
+        return Positioned(
+          top: compact ? 56 : 28,
+          right: sidebar + 16,
+          child: Container(
+            key: const ValueKey('reminders'),
+            width: 320,
+            padding: const EdgeInsets.all(Space.md),
+            decoration: BoxDecoration(
+              color: AppColors.cardRaised,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.accent),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  due.length == 1 ? 'Reminder' : '${due.length} reminders',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+                for (final t in due.take(3))
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          t.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          state.dismissReminder(t.id);
+                          state.openTask(t.id);
+                        },
+                        child: const Text('Open'),
+                      ),
+                      GhostIconButton(
+                        icon: Icons.close,
+                        tooltip: 'Dismiss reminder',
+                        size: 14,
+                        onTap: () => state.dismissReminder(t.id),
+                      ),
+                    ],
+                  ),
+                if (due.length > 3)
+                  Text(
+                    '+ ${due.length - 3} more',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

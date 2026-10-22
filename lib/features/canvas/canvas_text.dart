@@ -173,6 +173,15 @@ CardLayout layoutLinkCard(
     ),
     2,
   );
+  if (asset?.kind == AssetKind.document) {
+    add(
+      TextSpan(
+        text: 'PDF document · double-click to open',
+        style: canvasTextStyle(12, color: AppColors.textMuted),
+      ),
+      1,
+    );
+  }
   final url = asset?.url;
   if (url != null && title != displayUrl(url)) {
     add(

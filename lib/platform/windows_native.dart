@@ -84,6 +84,10 @@ class _Win {
         .lookupFunction<Int32 Function(IntPtr), int Function(int)>(
           'SetForegroundWindow',
         );
+    flashWindow = user32
+        .lookupFunction<Int32 Function(IntPtr, Int32), int Function(int, int)>(
+          'FlashWindow',
+        );
     findWindow = user32
         .lookupFunction<
           IntPtr Function(Pointer<Utf16>, Pointer<Utf16>),
@@ -141,6 +145,7 @@ class _Win {
   late final int Function(Pointer<Utf16>, Pointer<Utf16>) findWindow;
   late final int Function(int, int) showWindow;
   late final int Function(int) setForegroundWindow;
+  late final int Function(int, int) flashWindow;
   late final Pointer<Uint8> Function(int) globalLock;
   late final int Function(int) globalUnlock;
   late final int Function(int) globalSize;
@@ -275,15 +280,23 @@ List<int> _u32(int v) => [
 
 /// Shows the standard Windows "Open" dialog for images. Returns the chosen
 /// paths (empty if cancelled).
-List<String> pickImageFiles() {
+List<String> pickImageFiles() => _pickFiles(
+  'Images\u0000*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp\u0000All files\u0000*.*\u0000\u0000',
+  'Add photos to THEapp',
+);
+
+/// The same dialog for PDF documents.
+List<String> pickDocumentFiles() =>
+    _pickFiles('PDF documents\u0000*.pdf\u0000\u0000', 'Add PDFs to THEapp');
+
+List<String> _pickFiles(String filterSpec, String dialogTitle) {
   final w = _win;
   if (w == null) return const [];
   const bufferChars = 32768;
   final ofn = calloc<_OpenFileNameW>();
   final buffer = calloc<Uint16>(bufferChars);
-  final filter = 'Images\u0000*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp\u0000All files\u0000*.*\u0000\u0000'
-      .toNativeUtf16();
-  final title = 'Add photos to THEapp'.toNativeUtf16();
+  final filter = filterSpec.toNativeUtf16();
+  final title = dialogTitle.toNativeUtf16();
   final windowClass = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
   try {
     ofn.ref
@@ -341,6 +354,22 @@ bool openUrl(String url) {
   }
 }
 
+/// Opens a stored document (e.g. a PDF) in its default app. Callers pass
+/// only files from THEapp's own attachments folder (`Workspace.documentFile`).
+bool openFileWithDefaultApp(String path) {
+  final w = _win;
+  if (w == null || !File(path).existsSync()) return false;
+  final op = 'open'.toNativeUtf16();
+  final file = path.toNativeUtf16();
+  try {
+    return w.shellExecute(0, op, file, nullptr, nullptr, 1) > 32;
+  } finally {
+    calloc
+      ..free(op)
+      ..free(file);
+  }
+}
+
 /// Restores THEapp's window and brings it to the front.
 void focusMainWindow() {
   final w = _win;
@@ -352,6 +381,23 @@ void focusMainWindow() {
     if (hwnd == 0) return;
     w.showWindow(hwnd, 9); // SW_RESTORE
     w.setForegroundWindow(hwnd);
+  } finally {
+    calloc
+      ..free(cls)
+      ..free(title);
+  }
+}
+
+/// Flashes THEapp's taskbar button once to draw attention (e.g. a task
+/// reminder came due while the window is in the background).
+void flashMainWindow() {
+  final w = _win;
+  if (w == null) return;
+  final cls = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
+  final title = 'THEapp'.toNativeUtf16();
+  try {
+    final hwnd = w.findWindow(cls, title);
+    if (hwnd != 0) w.flashWindow(hwnd, 1);
   } finally {
     calloc
       ..free(cls)

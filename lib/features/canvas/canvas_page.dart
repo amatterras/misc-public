@@ -177,6 +177,18 @@ class _CanvasViewState extends State<CanvasView> {
     await _insertImages(assets, _centerPoint);
   }
 
+  /// PDFs become document cards (the link card) that open in the default
+  /// PDF viewer.
+  Future<void> _addDocuments() async {
+    final assets = await s.capture.pickDocuments();
+    if (!mounted || assets.isEmpty) return;
+    var at = _centerPoint;
+    for (final a in assets) {
+      c.insertLink(a, at);
+      at += const Offset(32, 32);
+    }
+  }
+
   Future<void> _addLink() async {
     final input = await promptText(
       context,
@@ -250,6 +262,7 @@ class _CanvasViewState extends State<CanvasView> {
       LogicalKeyboardKey.keyI: CanvasTool.highlighter,
       LogicalKeyboardKey.keyE: CanvasTool.eraser,
       LogicalKeyboardKey.keyT: CanvasTool.text,
+      LogicalKeyboardKey.keyC: CanvasTool.connect,
     };
     if (tools.containsKey(key)) {
       c.tool = tools[key]!;
@@ -406,7 +419,8 @@ class _CanvasViewState extends State<CanvasView> {
       case CanvasTool.pen ||
           CanvasTool.highlighter ||
           CanvasTool.eraser ||
-          CanvasTool.lasso:
+          CanvasTool.lasso ||
+          CanvasTool.connect:
         return SystemMouseCursors.precise;
       case CanvasTool.text:
         return SystemMouseCursors.text;
@@ -510,6 +524,7 @@ class _CanvasViewState extends State<CanvasView> {
                         controller: c,
                         onAddImage: _addImages,
                         onAddLink: _addLink,
+                        onAddDocument: _addDocuments,
                       ),
                     ),
                   ),

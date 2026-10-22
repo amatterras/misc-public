@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
+import '../../data/storage/app_log.dart';
 import '../../data/sync/sync_clock.dart';
 import '../../sync/canvas_merge.dart';
 import '../../sync/protocol.dart';
@@ -16,12 +17,12 @@ import 'canvas_text.dart';
 
 export 'canvas_text.dart' show kTextPadding, canvasTextStyle;
 
-enum CanvasTool { select, lasso, pan, pen, highlighter, eraser, text }
+enum CanvasTool { select, lasso, pan, pen, highlighter, eraser, text, connect }
 
 enum SaveState { saved, pending, saving, failed }
 
 /// What the current pointer drag is doing.
-enum _Drag { none, pan, move, resize, marquee, lasso, draw, erase }
+enum _Drag { none, pan, move, resize, marquee, lasso, draw, erase, connect }
 
 /// Owns the state of one open canvas: its items, camera, selection, current
 /// tool, undo/redo history and autosave.
@@ -266,9 +267,12 @@ class CanvasController extends ChangeNotifier {
 
   void deleteSelection() {
     if (_selection.isEmpty) return;
+    // Connections go with the items they join (one undo step).
     _commit([
       for (final i in _items)
-        if (!_selection.contains(i.id)) i,
+        if (!_selection.contains(i.id) &&
+            !(i is ConnectorItem && _selection.any(i.touches)))
+          i,
     ]);
     _selection = const {};
     notifyListeners();
@@ -290,12 +294,21 @@ class CanvasController extends ChangeNotifier {
 
   /// Copies of the selected items, offset slightly, become the selection.
   void duplicateSelection() {
-    final copies = [
-      for (final item in selectedItems)
-        item.withId(newId()).translated(const Offset(24, 24)),
-    ];
-    if (copies.isEmpty) return;
-    addItems(copies);
+    addItems(_copies(selectedItems, const Offset(24, 24)));
+  }
+
+  /// New copies of [items] moved by [delta]. Connections are copied only
+  /// when both their ends are copied, and then join the copies.
+  static List<CanvasItem> _copies(List<CanvasItem> items, Offset delta) {
+    final newIds = <String, String>{};
+    final copies = <CanvasItem>[];
+    for (final item in items) {
+      if (item is ConnectorItem) continue;
+      final id = newId();
+      newIds[item.id] = id;
+      copies.add(item.withId(id).translated(delta));
+    }
+    return [...copies, ..._remapConnectors(items, newIds)];
   }
 
   /// Adds [items] as one undo step and selects them.
@@ -310,12 +323,12 @@ class CanvasController extends ChangeNotifier {
 
   /// Pastes copies of [items] centred on [world].
   void pasteItems(List<CanvasItem> items, Offset world) {
-    if (items.isEmpty) return;
-    final bounds = items
+    final placed = items.where((i) => i is! ConnectorItem);
+    if (placed.isEmpty) return;
+    final bounds = placed
         .map((i) => i.bounds)
         .reduce((a, b) => a.expandToInclude(b));
-    final delta = world - bounds.center;
-    addItems([for (final i in items) i.withId(newId()).translated(delta)]);
+    addItems(_copies(items, world - bounds.center));
   }
 
   void bringToFront() {
@@ -582,8 +595,45 @@ class CanvasController extends ChangeNotifier {
         return item.bounds;
       case StrokeItem():
         return item.bounds;
+      case ConnectorItem():
+        final ends = connectorEnds(item);
+        return ends == null ? Rect.zero : Rect.fromPoints(ends.$1, ends.$2);
     }
   }
+
+  /// Where [c]'s line starts and ends: on the edges of the two connected
+  /// items, along the line between their centres. Null while an end is
+  /// missing (deleted, or not synced yet), so the line is not drawn.
+  (Offset, Offset)? connectorEnds(ConnectorItem c) {
+    final a = itemById(c.fromId), b = itemById(c.toId);
+    if (a is! BoxItem || b is! BoxItem) return null;
+    final ra = itemBounds(a), rb = itemBounds(b);
+    return (_edgePoint(ra, rb.center), _edgePoint(rb, ra.center));
+  }
+
+  /// Point where the line from [r]'s centre towards [target] leaves [r].
+  static Offset _edgePoint(Rect r, Offset target) {
+    final d = target - r.center;
+    if (d.dx == 0 && d.dy == 0) return r.center;
+    final sx = d.dx == 0 ? double.infinity : (r.width / 2) / d.dx.abs();
+    final sy = d.dy == 0 ? double.infinity : (r.height / 2) / d.dy.abs();
+    final t = math.min(1.0, math.min(sx, sy));
+    return r.center + d * t;
+  }
+
+  /// Connections whose ends are both among [ids]' items, given new ids.
+  static List<ConnectorItem> _remapConnectors(
+    Iterable<CanvasItem> items,
+    Map<String, String> newIds,
+  ) => [
+    for (final c in items.whereType<ConnectorItem>())
+      if (newIds.containsKey(c.fromId) && newIds.containsKey(c.toId))
+        ConnectorItem(
+          id: newId(),
+          fromId: newIds[c.fromId]!,
+          toId: newIds[c.toId]!,
+        ),
+  ];
 
   // --------------------------------------------------------- hit testing --
 
@@ -596,6 +646,12 @@ class CanvasController extends ChangeNotifier {
           if (itemBounds(item).contains(world)) return item;
         case StrokeItem():
           if (item.hitTest(world, tolerance)) return item;
+        case ConnectorItem():
+          final ends = connectorEnds(item);
+          if (ends != null &&
+              distanceToSegment(world, ends.$1, ends.$2) <= tolerance) {
+            return item;
+          }
       }
     }
     return null;
@@ -608,7 +664,7 @@ class CanvasController extends ChangeNotifier {
   CanvasItem? resizeHandleAt(Offset screen) {
     if (_tool != CanvasTool.select || _selection.length != 1) return null;
     final item = itemById(_selection.first);
-    if (item == null) return null;
+    if (item == null || item is ConnectorItem) return null;
     final corner = toScreen(itemBounds(item).bottomRight);
     final hit = Rect.fromCenter(
       center: corner,
@@ -736,8 +792,46 @@ class CanvasController extends ChangeNotifier {
         _beginTransaction();
         _drag = _Drag.erase;
         _eraseAt(world, world);
+      case CanvasTool.connect:
+        endEditing();
+        final hit = hitTest(world);
+        if (hit is BoxItem) {
+          _drag = _Drag.connect;
+          _connectFrom = hit.id;
+          _connectEnd = world;
+        }
     }
     notifyListeners();
+  }
+
+  String? _connectFrom;
+  Offset? _connectEnd;
+
+  /// Line being drawn with the connect tool (start item edge → pointer).
+  (Offset, Offset)? get liveConnection {
+    final from = _connectFrom == null ? null : itemById(_connectFrom!);
+    final end = _connectEnd;
+    if (from == null || end == null) return null;
+    return (_edgePoint(itemBounds(from), end), end);
+  }
+
+  /// Finishes a connect drag: joins the two items unless the target is
+  /// empty space, the same item, or they are already joined.
+  void _finishConnect() {
+    final fromId = _connectFrom, end = _connectEnd;
+    _connectFrom = null;
+    _connectEnd = null;
+    if (fromId == null || end == null) return;
+    final target = hitTest(end);
+    if (target is! BoxItem || target.id == fromId) return;
+    final exists = _items.any(
+      (i) => i is ConnectorItem && i.joins(fromId, target.id),
+    );
+    if (exists) return;
+    _commit([
+      ..._items,
+      ConnectorItem(id: newId(), fromId: fromId, toId: target.id),
+    ]);
   }
 
   void _selectDown(
@@ -837,6 +931,8 @@ class CanvasController extends ChangeNotifier {
         _updateLiveStroke();
       case _Drag.erase:
         _eraseAt(toWorld(screen - delta), world);
+      case _Drag.connect:
+        _connectEnd = world;
     }
     notifyListeners();
   }
@@ -863,6 +959,8 @@ class CanvasController extends ChangeNotifier {
           select(hits);
         }
         _lassoPoints = [];
+      case _Drag.connect:
+        _finishConnect();
       case _Drag.pan || _Drag.none:
         break;
     }
@@ -889,7 +987,7 @@ class CanvasController extends ChangeNotifier {
           width: math.max(160, corner.dx - box.position.dx),
           minHeight: math.max(0, corner.dy - box.position.dy),
         );
-      case LinkItem() || NoteCardItem():
+      case LinkItem() || NoteCardItem() || ConnectorItem():
         return original;
       case StrokeItem():
         final b = original.bounds;
@@ -914,6 +1012,7 @@ class CanvasController extends ChangeNotifier {
   void pointerCancel() {
     if (_drag == _Drag.draw) _liveStroke = null;
     if (_drag == _Drag.lasso) _lassoPoints = [];
+    if (_drag == _Drag.connect) _connectFrom = _connectEnd = null;
     pointerUp();
   }
 
@@ -1145,7 +1244,7 @@ class CanvasController extends ChangeNotifier {
       // Changes made while saving leave the state as pending.
       if (_saveState == SaveState.saving) _setSaveState(SaveState.saved);
     } catch (e) {
-      debugPrint('Canvas save failed: $e');
+      AppLog.error('Canvas save failed', e);
       _setSaveState(SaveState.failed);
     } finally {
       _inFlight = null;

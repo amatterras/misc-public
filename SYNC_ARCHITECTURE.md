@@ -453,8 +453,10 @@ Run every command from the project folder
 | Backup now / shrink journal | `… thehub.dart backup`  /  `… thehub.dart compact` |
 | Optional start at sign-in (reversible) | `C:\src\flutter\bin\dart compile exe bin/thehub.dart -o build/hub/thehub.exe`, then `… thehub.dart startup enable` (undo: `startup disable`) |
 
-**Pairing the Windows app** (not done yet): start the hub, run `pair`, then in
-THEapp → Settings → Sync hub, enter `http://127.0.0.1:47710` and the code.
+**Pairing the Windows app** (done on 2026-10-22 for this PC's app): start the
+hub, run `pair`, then in THEapp → Settings → Sync hub, enter
+`http://127.0.0.1:47710` and the code. For testing, use the separate test hub
+and test app from `tool\testenv.ps1` (port 47799), never this one.
 
 **Hub folder contents:** `journal.jsonl` (data), `devices.json`, `admin.token`,
 `hub-id`, `hub.json` (only while running), `attachments\`, `backups\`,
@@ -511,6 +513,7 @@ dart run bin/thehub.dart restore-from-mirror D:\THEapp-mirror <empty folder>
 | Interrupted photo download | written to a temporary file and checked by SHA-256 before it gets its real name; retried next run |
 | Damaged photo copy (bit rot) | `mirror-verify` reports it; `mirror-run --repair` moves it to `damaged\` and downloads it again |
 | Hub replaced or restored | stops (see above) |
+| Two runs at once (e.g. a timer overlapping a slow run) | `mirror.lock`: the second run reports `busy` and changes nothing; a lock older than 2 hours (crashed run) is taken over |
 
 **Health:** `mirror-status` prints `ok`, `ok, but N attachment(s) missing`,
 `failing: <reason>` (last run failed) or `stale` (no good run for 48 hours),
@@ -533,3 +536,36 @@ timer such as `crontab -e` →
 `*/15 * * * * cd ~/theapp && dart run bin/thehub.dart mirror-run --data ~/THEapp-mirror`.
 None of this has been tried. The mirror stays off until someone runs
 `mirror-pair`.
+
+## 17. Sync across different networks (remote) — status and design
+
+**Status: designed, code ready, not deployed (BLOCKED on one user action).**
+There is no cloud server. The Windows PC remains the only writable hub.
+
+| Question | Answer (as implemented) |
+|---|---|
+| Authoritative data | The Windows hub (`%APPDATA%\THEapp-hub`). Devices hold full offline copies. |
+| PC off or unreachable | Devices keep working offline; changes stay queued on disk (verified across app restarts) and are sent when the hub is reachable again. Nothing syncs device-to-device in between. |
+| Reachability from another network | A private **Tailscale** network: the PC and the iPhone/iPad join the same tailnet; the hub listens on the PC's Tailscale address (`serve --private-host 100.x.y.z`). No router port is opened, nothing is public. |
+| Transport security | WireGuard encryption between devices (Tailscale). The hub itself speaks plain HTTP on that private link. |
+| Authentication / revocation | Per-device 256-bit tokens from one-time pairing codes; `thehub revoke <id>`; tokens stored with DPAPI (Windows) / Keychain (iOS). |
+| Offline, retries, idempotency, conflicts, deletions, attachments | Same protocol as on one PC (§10–§12); verified by automated and cross-process tests. |
+| Backups / recovery | Hub backups (§14) and the optional read-only mirror (§16). |
+| Allowed addresses | Devices accept only this PC, private ranges, `100.64.0.0/10` and `*.ts.net`; the hub refuses `0.0.0.0`, `::` and public addresses (`test/remote_readiness_test.dart`, `hub_test`). |
+| Recurring cost | $0 on Tailscale's free Personal plan today. A free plan can change; it is not assumed permanent. |
+
+**What blocks it:** installing Tailscale on the PC and the iPhone/iPad and
+signing in is a user action (and an account decision) that was not
+authorized; the iOS app itself also needs a Mac to build. Until then, sync
+works on this PC and on the home network.
+
+**Least-cost alternatives if Tailscale stops being free:** (1) home-network
+only sync (works today, $0, only at home); (2) a self-hosted WireGuard
+endpoint on the home router or a Raspberry Pi ($0 software, needs one router
+port forwarded — a network-security change that needs explicit approval);
+(3) a paid relay/VPS (rejected under the zero-cost rule).
+
+**Steps for the user when ready:** install Tailscale on the PC and the
+devices (free), note the PC's `100.x.y.z` address, start the hub with
+`dart run bin/thehub.dart serve --private-host 100.x.y.z`, run `thehub pair`,
+and pair the device with `http://100.x.y.z:47710`.
