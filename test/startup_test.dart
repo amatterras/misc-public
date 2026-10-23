@@ -142,6 +142,63 @@ void main() {
     expect(find.textContaining('synthetic build error'), findsOneWidget);
   });
 
+  group('iOS app folders (iOS does not set HOME for apps)', () {
+    const support = 'Library/Application Support';
+
+    test('the first iPad build failed: no HOME gave a relative path', () {
+      // Before the fix: '${env['HOME'] ?? '.'}/Library/...' → './Library/...'
+      // which iOS refused ("Operation not permitted"). Now: never relative.
+      expect(
+        () => iosFolder(support, home: null, systemTemp: null),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(
+        () => iosFolder(support, home: '.', systemTemp: 'tmp'),
+        throwsA(isA<FileSystemException>()),
+      );
+    });
+
+    test('the folder iOS reports is used first', () {
+      expect(
+        iosFolder(
+          support,
+          reported:
+              '/var/mobile/Containers/Data/Application/X/Library/'
+              'Application Support',
+          home: '/elsewhere',
+        ),
+        '/var/mobile/Containers/Data/Application/X/Library/Application Support',
+      );
+    });
+
+    test('fallbacks: HOME, then the container around tmp', () {
+      expect(iosFolder(support, home: '/c/App'), '/c/App/$support');
+      expect(
+        iosFolder(support, systemTemp: '/private/var/mobile/App/tmp/'),
+        '/private/var/mobile/App/$support',
+      );
+      expect(
+        iosFolder('Documents', systemTemp: '/private/var/mobile/App/tmp'),
+        '/private/var/mobile/App/Documents',
+      );
+    });
+
+    test('the native side reports the folders over the channel', () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'appFolders') {
+          return {
+            'applicationSupport': '/c/App/Library/Application Support',
+            'documents': '/c/App/Documents',
+          };
+        }
+        return null;
+      });
+      final folders = await IosBridge().appFolders();
+      expect(folders?['applicationSupport'], '/c/App/$support');
+      expect(folders?['documents'], '/c/App/Documents');
+    });
+  });
+
   test('the log copy gets the same lines', () {
     final copy = File('${dir.path}${sep}Documents${sep}THEapp-log.txt');
     AppLog.init(dir, copy: copy);

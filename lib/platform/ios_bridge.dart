@@ -55,6 +55,13 @@ class IosBridge implements KeychainBackend {
   /// paid Apple Developer Program.
   Future<String?> sharedContainerPath() => _invoke<String>('sharedContainer');
 
+  /// The app's own folders as iOS reports them: `applicationSupport` (for
+  /// THEapp's data) and `documents` (shown in the Files app). Needed because
+  /// iOS does not set HOME for apps. Null if the native side did not answer.
+  Future<Map<String, String>?> appFolders() async =>
+      (await _invoke<Map<Object?, Object?>>('appFolders'))
+          ?.map((k, v) => MapEntry(k.toString(), v.toString()));
+
   /// "iPad" or "iPhone" (iOS no longer gives apps the device's own name).
   Future<String?> deviceModel() => _invoke<String>('deviceModel');
 

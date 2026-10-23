@@ -32,6 +32,17 @@ Future<void> main(List<String> args) async {
 }
 
 Future<void> _start(List<String> args, StartupProgress progress) async {
+  if (Platform.isIOS) {
+    // iOS does not set HOME for apps: ask iOS for the app's real folders
+    // (without this the data folder was a relative path iOS refused).
+    try {
+      final folders = await IosBridge.instance.appFolders();
+      iosApplicationSupport = folders?['applicationSupport'];
+      iosDocuments = folders?['documents'];
+    } catch (e) {
+      debugPrint('App folders not reported by iOS ($e); using fallbacks');
+    }
+  }
   // Normally %APPDATA%\THEapp. `--data-dir=<test folder>` switches to a
   // prepared, disposable test folder (manual testing only).
   final real = defaultDataDirectory();
@@ -57,10 +68,20 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
   }
   // iPhone/iPad: a copy of the log in the app's Documents folder, readable
   // in the Files app (On My iPad → THEapp), unlike the data folder.
-  final home = Platform.environment['HOME'];
-  final logCopy = Platform.isIOS && home != null
-      ? File('$home/Documents/THEapp-log.txt')
-      : null;
+  File? logCopy;
+  if (Platform.isIOS) {
+    try {
+      final documents = iosFolder(
+        'Documents',
+        reported: iosDocuments,
+        home: Platform.environment['HOME'],
+        systemTemp: Directory.systemTemp.path,
+      );
+      logCopy = File('$documents/THEapp-log.txt');
+    } on FileSystemException catch (e) {
+      debugPrint('No Documents folder for the log copy: $e');
+    }
+  }
   if (logCopy != null) {
     startupLogHint =
         'Full log on the iPad: Files → On My iPad → THEapp → THEapp-log.txt';

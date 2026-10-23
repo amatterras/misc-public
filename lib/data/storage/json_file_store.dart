@@ -18,14 +18,48 @@ Directory defaultDataDirectory() {
   } else if (Platform.isMacOS) {
     base = '${env['HOME']}/Library/Application Support';
   } else if (Platform.isIOS) {
-    // In iOS sandbox containers, env['HOME'] points to the application container.
-    // Library/Application Support is durable and excluded from user Document browsing.
-    final home = env['HOME'] ?? '.';
-    base = '$home/Library/Application Support';
+    base = iosFolder(
+      'Library/Application Support',
+      reported: iosApplicationSupport,
+      home: env['HOME'],
+      systemTemp: Directory.systemTemp.path,
+    );
   } else {
     base = env['XDG_DATA_HOME'] ?? '${env['HOME']}/.local/share';
   }
   return Directory('$base${Platform.pathSeparator}THEapp');
+}
+
+/// iPhone/iPad: the app's folders as iOS reports them (set at start-up from
+/// the native side; iOS does not set HOME for apps).
+String? iosApplicationSupport;
+String? iosDocuments;
+
+/// An iOS app folder ([relative] inside the app's container, e.g.
+/// `Library/Application Support`): the path iOS [reported] if any, else
+/// derived from HOME, else from the temporary folder (`<container>/tmp`).
+/// Never a relative path: a relative path resolves against `/`, where iOS
+/// refuses to write (the cause of the first iPad build's start-up failure).
+String iosFolder(
+  String relative, {
+  String? reported,
+  String? home,
+  String? systemTemp,
+}) {
+  bool absolute(String? p) => p != null && p.startsWith('/') && p.length > 1;
+  if (absolute(reported)) return reported!;
+  if (absolute(home)) return '$home/$relative';
+  if (absolute(systemTemp)) {
+    final tmp = systemTemp!.endsWith('/')
+        ? systemTemp.substring(0, systemTemp.length - 1)
+        : systemTemp;
+    if (tmp.endsWith('/tmp')) {
+      return '${tmp.substring(0, tmp.length - 4)}/$relative';
+    }
+  }
+  throw const FileSystemException(
+    'Could not find this app\'s folder on the iPhone/iPad',
+  );
 }
 
 /// Stores JSON documents as individual files with crash-safe writes.

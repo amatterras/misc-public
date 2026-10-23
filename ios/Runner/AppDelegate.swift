@@ -85,6 +85,17 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       UIApplication.shared.open(url, options: [:]) { ok in result(ok) }
     case "deviceModel":
       result(UIDevice.current.model)
+    case "appFolders":
+      // HOME is not set for iOS apps, so Dart asks here for the real folders.
+      let fm = FileManager.default
+      var folders: [String: String] = [:]
+      if let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+        folders["applicationSupport"] = support.path
+      }
+      if let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
+        folders["documents"] = documents.path
+      }
+      result(folders)
     case "scheduleReminders":
       scheduleReminders(call.arguments as? [[String: Any]] ?? [], result)
     case "pickDocuments":
