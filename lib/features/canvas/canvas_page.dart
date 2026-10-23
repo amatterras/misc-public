@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -14,6 +15,7 @@ import 'canvas_controller.dart';
 import 'canvas_painter.dart';
 import 'canvas_text.dart';
 import 'canvas_toolbar.dart';
+import '../ink/stroke_geometry.dart';
 
 class CanvasPage extends StatelessWidget {
   const CanvasPage({super.key, required this.state});
@@ -63,15 +65,40 @@ class _CanvasViewState extends State<CanvasView> {
   /// The pointer whose stroke or drag the controller is handling.
   int? _drawingPointer;
 
+  // Apple Pencil Pro squeeze (iPhone/iPad): eraser while squeezed.
+  StreamSubscription<String>? _squeeze;
+  AppLifecycleListener? _lifecycle;
+
   @override
   void initState() {
     super.initState();
     _focusWhenShown();
+    final ios = s.ios;
+    if (ios != null) {
+      _squeeze = ios.pencilSqueeze.listen(_onSqueeze);
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => unawaited(ios.enablePencilSqueeze()),
+      );
+      // Leaving the app ends a squeeze too: the tool must not stay eraser.
+      _lifecycle = AppLifecycleListener(onInactive: () => c.squeezeEnded());
+    }
+  }
+
+  void _onSqueeze(String phase) {
+    if (phase == 'began') {
+      if (s.page == AppPage.canvas) c.squeezeBegan();
+    } else {
+      c.squeezeEnded(); // ended or cancelled
+    }
   }
 
   @override
   void didUpdateWidget(CanvasView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.squeezeEnded();
+    }
+    if (s.page != AppPage.canvas) c.squeezeEnded();
     _focusWhenShown();
   }
 
@@ -95,6 +122,9 @@ class _CanvasViewState extends State<CanvasView> {
 
   @override
   void dispose() {
+    _squeeze?.cancel();
+    _lifecycle?.dispose();
+    c.squeezeEnded();
     _focusNode.dispose();
     super.dispose();
   }
@@ -323,7 +353,7 @@ class _CanvasViewState extends State<CanvasView> {
       e.localPosition,
       buttons: e.buttons,
       kind: e.kind,
-      pressure: e.kind == PointerDeviceKind.mouse ? 0.5 : e.pressure,
+      pressure: _pressure(e),
       shift: keyboard.isShiftPressed,
       ctrl: keyboard.isControlPressed,
       timeStamp: e.timeStamp,
@@ -357,9 +387,18 @@ class _CanvasViewState extends State<CanvasView> {
     if (e.pointer != _drawingPointer) return;
     c.pointerMove(
       e.localPosition,
-      pressure: e.kind == PointerDeviceKind.mouse ? 0.5 : e.pressure,
+      pressure: _pressure(e),
+      timeStamp: e.timeStamp,
     );
   }
+
+  /// Pen pressure as 0..1 (Apple Pencil reports a raw force on iOS);
+  /// fingers and mice have none, so they draw at the middle value.
+  static double _pressure(PointerEvent e) =>
+      e.kind == PointerDeviceKind.stylus ||
+          e.kind == PointerDeviceKind.invertedStylus
+      ? normalizedPressure(e.pressure, e.pressureMax)
+      : 0.5;
 
   void _onPointerUp(PointerUpEvent e) {
     _releasePointer(e.pointer);
@@ -475,9 +514,25 @@ class _CanvasViewState extends State<CanvasView> {
                         onPointerSignal: _onPointerSignal,
                         onPointerPanZoomStart: _onPanZoomStart,
                         onPointerPanZoomUpdate: _onPanZoomUpdate,
-                        child: CustomPaint(
-                          painter: CanvasPainter(c),
-                          size: Size.infinite,
+                        // Two layers: the canvas repaints when items change;
+                        // the stroke being drawn repaints on its own, so a
+                        // pen movement does not redraw everything.
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            RepaintBoundary(
+                              child: CustomPaint(
+                                painter: CanvasPainter(c),
+                                size: Size.infinite,
+                              ),
+                            ),
+                            RepaintBoundary(
+                              child: CustomPaint(
+                                painter: LiveInkPainter(c),
+                                size: Size.infinite,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -552,6 +607,40 @@ class _CanvasViewState extends State<CanvasView> {
                   ),
                 ),
                 if (c.items.isEmpty) const _EmptyHint(),
+                if (c.squeezeEraser)
+                  const Positioned(
+                    bottom: Space.md,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: Center(
+                        key: ValueKey('squeeze-eraser'),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppColors.cardRaised,
+                            borderRadius: BorderRadius.all(Radius.circular(8)),
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.auto_fix_normal, size: 14),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Eraser (squeeze)',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 if (c.tool == CanvasTool.connect && c.connectSource != null)
                   const Positioned(
                     top: Space.md,

@@ -1,4 +1,5 @@
 import Flutter
+import PDFKit
 import PhotosUI
 import QuickLook
 import Security
@@ -31,7 +32,7 @@ import UserNotifications
 /// UNTESTED: written on Windows and never compiled or run. See
 /// ios/README_IOS.md for how to check it on a Mac.
 final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
-  UIDocumentPickerDelegate, QLPreviewControllerDataSource
+  UIDocumentPickerDelegate, QLPreviewControllerDataSource, UIPencilInteractionDelegate
 {
   static let shared = TheAppIosBridge()
 
@@ -45,6 +46,7 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
   private var pickResult: FlutterResult?
   private var documentResult: FlutterResult?
   private var previewURL: URL?
+  private var pencilInteraction: UIPencilInteraction?
 
   func attach(messenger: FlutterBinaryMessenger) {
     let channel = FlutterMethodChannel(name: "theapp/ios", binaryMessenger: messenger)
@@ -83,6 +85,16 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
         return
       }
       UIApplication.shared.open(url, options: [:]) { ok in result(ok) }
+    case "pdfInfo":
+      pdfInfo(call.arguments as? String, result)
+    case "pdfRenderPage":
+      pdfRenderPage(call.arguments as? [String: Any] ?? [:], result)
+    case "pdfExport":
+      pdfExport(call.arguments as? [String: Any] ?? [:], result)
+    case "shareFile":
+      shareFile(call.arguments as? String, result)
+    case "enablePencilSqueeze":
+      result(installPencilInteraction())
     case "deviceModel":
       result(UIDevice.current.model)
     case "appFolders":
@@ -149,6 +161,175 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
   private func keychainDelete(_ key: String) -> Bool {
     let status = SecItemDelete(query(key) as CFDictionary)
     return status == errSecSuccess || status == errSecItemNotFound
+  }
+
+  // MARK: PDFs in notes (PDFKit, part of iOS; the original file is never changed)
+
+  /// Page sizes in points, after each page's rotation.
+  private func pdfInfo(_ path: String?, _ result: @escaping FlutterResult) {
+    guard let path = path, let doc = PDFDocument(url: URL(fileURLWithPath: path)) else {
+      result(nil)
+      return
+    }
+    var sizes: [[Double]] = []
+    for i in 0..<doc.pageCount {
+      guard let page = doc.page(at: i) else { continue }
+      let box = page.bounds(for: .cropBox)
+      let turned = page.rotation % 180 != 0
+      sizes.append(
+        turned
+          ? [Double(box.height), Double(box.width)] : [Double(box.width), Double(box.height)])
+    }
+    result(sizes)
+  }
+
+  /// One page as PNG, [width] pixels wide, rendered off the main thread so
+  /// long PDFs load page by page as they scroll into view.
+  private func pdfRenderPage(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let path = args["path"] as? String, let index = args["page"] as? Int,
+      let width = args["width"] as? Int, width > 0, width <= 4096
+    else {
+      result(nil)
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+      var data: Data?
+      if let doc = PDFDocument(url: URL(fileURLWithPath: path)), let page = doc.page(at: index) {
+        let box = page.bounds(for: .cropBox)
+        let turned = page.rotation % 180 != 0
+        let w = turned ? box.height : box.width
+        let h = turned ? box.width : box.height
+        if w > 0 {
+          let size = CGSize(width: CGFloat(width), height: CGFloat(width) * h / w)
+          data = page.thumbnail(of: size, for: .cropBox).pngData()
+        }
+      }
+      DispatchQueue.main.async {
+        result(data.map { FlutterStandardTypedData(bytes: $0) })
+      }
+    }
+  }
+
+  /// Writes a copy of the PDF with the note's ink drawn on its pages.
+  /// Strokes come in PDF points from the top-left: [[x, y, width], …].
+  private func pdfExport(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let source = args["source"] as? String, let target = args["target"] as? String,
+      let doc = PDFDocument(url: URL(fileURLWithPath: source))
+    else {
+      result(false)
+      return
+    }
+    var ink: [Int: [[String: Any]]] = [:]
+    for page in args["pages"] as? [[String: Any]] ?? [] {
+      if let index = page["page"] as? Int {
+        ink[index] = page["strokes"] as? [[String: Any]] ?? []
+      }
+    }
+    let renderer = UIGraphicsPDFRenderer(bounds: .zero)
+    do {
+      try renderer.writePDF(to: URL(fileURLWithPath: target)) { ctx in
+        for i in 0..<doc.pageCount {
+          guard let page = doc.page(at: i) else { continue }
+          let box = page.bounds(for: .cropBox)
+          let turned = page.rotation % 180 != 0
+          let size = turned ? CGSize(width: box.height, height: box.width) : box.size
+          ctx.beginPage(withBounds: CGRect(origin: .zero, size: size), pageInfo: [:])
+          let cg = ctx.cgContext
+          cg.saveGState()
+          // PDF space has its origin at the bottom left.
+          cg.translateBy(x: 0, y: size.height)
+          cg.scaleBy(x: 1, y: -1)
+          page.draw(with: .cropBox, to: cg)
+          cg.restoreGState()
+          for stroke in ink[i] ?? [] {
+            Self.drawStroke(stroke, in: cg)
+          }
+        }
+      }
+      result(true)
+    } catch {
+      NSLog("THEapp: PDF export failed: \(error)")
+      result(false)
+    }
+  }
+
+  private static func drawStroke(_ stroke: [String: Any], in cg: CGContext) {
+    guard let points = stroke["points"] as? [[Double]], let first = points.first,
+      first.count >= 3
+    else { return }
+    let argb = (stroke["color"] as? NSNumber)?.uint32Value ?? 0xFF00_0000
+    let color = UIColor(
+      red: CGFloat((argb >> 16) & 0xFF) / 255, green: CGFloat((argb >> 8) & 0xFF) / 255,
+      blue: CGFloat(argb & 0xFF) / 255, alpha: CGFloat((argb >> 24) & 0xFF) / 255)
+    cg.setStrokeColor(color.cgColor)
+    cg.setFillColor(color.cgColor)
+    cg.setLineCap(.round)
+    cg.setLineJoin(.round)
+    if points.count == 1 {
+      let r = first[2] / 2
+      cg.fillEllipse(in: CGRect(x: first[0] - r, y: first[1] - r, width: r * 2, height: r * 2))
+      return
+    }
+    for i in 1..<points.count {
+      let a = points[i - 1]
+      let b = points[i]
+      guard a.count >= 3, b.count >= 3 else { continue }
+      cg.setLineWidth(CGFloat((a[2] + b[2]) / 2))
+      cg.move(to: CGPoint(x: a[0], y: a[1]))
+      cg.addLine(to: CGPoint(x: b[0], y: b[1]))
+      cg.strokePath()
+    }
+  }
+
+  /// Share sheet for a file (Save to Files, AirDrop, Mail…).
+  private func shareFile(_ path: String?, _ result: @escaping FlutterResult) {
+    guard let path = path, FileManager.default.fileExists(atPath: path),
+      let top = topViewController()
+    else {
+      result(false)
+      return
+    }
+    let sheet = UIActivityViewController(
+      activityItems: [URL(fileURLWithPath: path)], applicationActivities: nil)
+    if let popover = sheet.popoverPresentationController {
+      popover.sourceView = top.view
+      popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 1, height: 1)
+      popover.permittedArrowDirections = []
+    }
+    top.present(sheet, animated: true)
+    result(true)
+  }
+
+  // MARK: Apple Pencil Pro squeeze (iOS 17.5+; other Pencils never send it)
+
+  /// Adds one UIPencilInteraction to the app window so squeezes reach
+  /// THEapp. Returns false if there is no window yet.
+  private func installPencilInteraction() -> Bool {
+    if pencilInteraction != nil { return true }
+    guard let view = topViewController()?.view.window ?? topViewController()?.view
+    else { return false }
+    let interaction = UIPencilInteraction()
+    interaction.delegate = self
+    view.addInteraction(interaction)
+    pencilInteraction = interaction
+    return true
+  }
+
+  /// Squeeze phases: began (eraser on), changed (ignored), ended or
+  /// cancelled (previous tool back). Sent to Dart as "pencilSqueeze".
+  @available(iOS 17.5, *)
+  func pencilInteraction(
+    _ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze
+  ) {
+    let phase: String
+    switch squeeze.phase {
+    case .began: phase = "began"
+    case .changed: return
+    case .ended: phase = "ended"
+    case .cancelled: phase = "cancelled"
+    @unknown default: phase = "cancelled"
+    }
+    channel?.invokeMethod("pencilSqueeze", arguments: phase)
   }
 
   // MARK: Task reminders (local notifications; no server, free account is fine)

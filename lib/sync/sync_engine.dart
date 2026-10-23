@@ -19,15 +19,19 @@ import 'canvas_merge.dart';
 import 'protocol.dart';
 import 'sync_client.dart';
 
-/// Lets the engine reach the canvas that is open on screen.
+/// Lets the engine reach the canvas documents open on screen (the canvas
+/// and an open note's handwriting), so remote changes merge into them
+/// instead of being overwritten by their next save.
 abstract class OpenCanvasBridge {
-  String? get openCanvasId;
+  /// Whether the document [canvasId] is open in an editor.
+  bool isOpen(String canvasId);
 
-  /// Saves the open canvas so its edits are visible in its file.
+  /// Saves the open documents so their edits are visible in their files.
   Future<void> flushOpenCanvas();
 
-  /// Applies changes to the open canvas; returns the applied keys.
+  /// Applies changes to the open document [canvasId]; returns the keys.
   Set<String> applyToOpenCanvas(
+    String canvasId,
     List<SyncChange> changes,
     bool Function(String key, String? localRev) isPending,
   );
@@ -179,6 +183,8 @@ class SyncEngine {
             doc.folderId,
             doc.items,
             doc.metaUnknownFields,
+            doc.kind,
+            doc.pageBackgrounds,
           ),
         );
       }
@@ -438,7 +444,7 @@ class SyncEngine {
         report.skipped++;
         return;
       }
-      if (openCanvas?.openCanvasId != canvasId) {
+      if (openCanvas?.isOpen(canvasId) != true) {
         await canvases.delete(canvasId); // moved to trash, not erased
       }
       await workspace.recordCanvasDeletion(canvasId, rev: meta.rev);
@@ -447,8 +453,8 @@ class SyncEngine {
       return;
     }
     Set<String> applied;
-    if (openCanvas?.openCanvasId == canvasId) {
-      applied = openCanvas!.applyToOpenCanvas(changes, isPending);
+    if (openCanvas?.isOpen(canvasId) == true) {
+      applied = openCanvas!.applyToOpenCanvas(canvasId, changes, isPending);
     } else {
       final doc = await canvases.load(canvasId);
       final s = CanvasSyncState(
@@ -460,6 +466,8 @@ class SyncEngine {
         metaRev: doc?.metaRev,
         itemUnknownFields: {...?doc?.itemUnknownFields},
         metaUnknownFields: doc?.metaUnknownFields ?? const {},
+        kind: doc?.kind,
+        pageBackgrounds: doc?.pageBackgrounds ?? const [],
       );
       applied = applyCanvasChanges(s, canvasId, changes, isPending);
       if (applied.isNotEmpty) {
@@ -478,6 +486,8 @@ class SyncEngine {
             itemUnknownFields: s.itemUnknownFields,
             unknownKeys: doc?.unknownKeys ?? const {},
             metaUnknownFields: s.metaUnknownFields,
+            kind: s.kind,
+            pageBackgrounds: s.pageBackgrounds,
           ),
         );
       }

@@ -38,7 +38,7 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Search across the app | P1 | W | VERIFIED | `spec_coverage_test` search; `interaction_test` Ctrl+K | |
 | Quick capture | P1 | W | VERIFIED | `interaction_test`, `widget_test` Quick Add | |
 | Images and URLs in notes | P1 | W | VERIFIED | `workspace_test`, capture tests | |
-| PDFs in notes ("where practical") | P2 | W | PARTIAL (attach + open; no in-app pages) | `notes_page.dart` PDF button, `documents_test` | as canvas PDFs |
+| PDFs in notes ("where practical") | P2 | W,i | PARTIAL: import into a note or as a note, write on pages, export annotated copy (iOS, PDFKit; Swift unverified); Windows: attach + open | `phase2_test` (coordinates, pages, bridge simulated) | iPad run |
 | Canvas objects reference notes, no duplicates | P1 | W | VERIFIED | `NoteCardItem.noteId`; `interaction_test` filing reuses records | |
 
 ## 4. Calendar (Calendar + Tracker merged)
@@ -88,7 +88,8 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 ## 7. iPhone/iPad
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
 |---|---|---|---|---|---|
-| iOS build and run | P2 | i | BLOCKED | `ios/README_IOS.md` (Mac checklist) | needs macOS + Xcode; no Mac available (this PC is Windows only) |
+| iOS build (compile) | P2 | i | VERIFIED (2026-10-23): Codemagic cloud build of `371c6ca`, Release, no code signing; Swift and Dart compiled without errors; `Runner.app` 18.6 MB, `THEapp-unsigned.ipa` 7.52 MB | `codemagic.yaml`, `ios/BUILD_WITHOUT_MAC.md` | — |
+| iOS install and run | P2 | i | NOT VERIFIED: not yet signed or installed | `ios/BUILD_WITHOUT_MAC.md` | Sideloadly + free Apple ID on Windows; the iPad |
 | iOS data folder (`Library/Application Support/THEapp`) | P1 | i | IMPLEMENTED BUT UNVERIFIED | `json_file_store.dart` `defaultDataDirectory` | iOS device |
 | iOS device identity after a restored backup (Keychain-bound id; restored copy gets a new id and asks to pair again) | P1 | i | IMPLEMENTED BUT UNVERIFIED (Dart logic tested with a simulated Keychain) | `ios_readiness_test` | iOS device |
 | iOS pairing: no 127.0.0.1 default, Tailscale address hint, clear refusal of loopback, key-store failure reported | P1 | i | IMPLEMENTED BUT UNVERIFIED (tested on Windows with simulated channel) | `ios_readiness_test` | iOS device + second network |
@@ -96,7 +97,8 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | `theapp://capture` links (Shortcut) | P2 | i | IMPLEMENTED BUT UNVERIFIED (Dart tested with simulated channel; Swift uncompiled) | `ios_bridge_test` | Mac |
 | Photo / PDF pickers (copies removed after import) | P2 | i | IMPLEMENTED BUT UNVERIFIED (Dart tested; Swift uncompiled) | `ios_bridge_test`, `ios_readiness_test` | Mac |
 | Share-menu link capture | P2 | i | PARTIAL (Dart side tested with simulated channel, shared text capped; Swift uncompiled; extension target not in the Xcode project) | `ios_bridge_test`, `ios_readiness_test` | Mac; Share Extension needs paid account (App Groups) |
-| Apple Pencil | P2 | i | UNVERIFIED | simulated tests | iPad + Pencil |
+| Apple Pencil (pressure, low-latency live layer, prediction, squeeze to erase, hold to straighten) | P2 | i | IMPLEMENTED BUT UNVERIFIED (logic tested; feel needs a device) | `phase2_test` | iPad + Pencil (Pro for squeeze) |
+| Notes as full pages with lazy handwriting pages | P1 | W,i | VERIFIED (logic, widget tests) | `phase2_test`, `widget_test`, `version_history_test` | |
 | Touch-only use (no mouse/keyboard): every menu reachable by press and hold, canvas trash in the title menu, 44 px resize target, double-tap tolerance, touch wording | P1 | i | VERIFIED in simulated touch tests / NOT VERIFIED on an iPad | `ipad_touch_test` | iPad |
 | Dart ↔ Swift channel contract | P1 | i | VERIFIED by source check (every Dart call has a Swift case and back); Swift not compiled | `ipad_touch_test` | Mac |
 | iOS sync compatibility (same Dart engine and protocol v1 as Windows) | P1 | i | IMPLEMENTED BUT UNVERIFIED on iOS | `sync_engine_test`, `ios_readiness_test` | Mac build + device |

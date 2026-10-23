@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
@@ -7,6 +9,7 @@ import '../../data/models/library_models.dart';
 import '../../data/workspace.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
+import 'note_page.dart';
 
 /// Which notes the middle column shows.
 sealed class NoteFilter {
@@ -56,6 +59,12 @@ class _NotesPageState extends State<NotesPage> {
       s.selectedNoteId = null;
       final note = s.workspace.notes[requested];
       if (note != null && !_matchesFilter(note)) _filter = const AllNotes();
+      // Notes open as their own page.
+      if (note != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _open(requested);
+        });
+      }
     }
     return WorkspaceBuilder(
       state: s,
@@ -69,12 +78,8 @@ class _NotesPageState extends State<NotesPage> {
               child: _buildFolders(context),
             ),
             const VerticalDivider(width: 1),
-            SizedBox(
-              width: (box.maxWidth * 0.3).clamp(130, 320),
-              child: _buildList(context),
-            ),
-            const VerticalDivider(width: 1),
-            Expanded(child: _buildEditor(context)),
+            // The library; a note opens as its own page ([NotePage]).
+            Expanded(child: _buildList(context)),
           ],
         ),
       ),
@@ -337,6 +342,12 @@ class _NotesPageState extends State<NotesPage> {
                 ),
               ),
               const SizedBox(width: Space.sm),
+              IconButton(
+                onPressed: _importPdf,
+                tooltip: 'Import a PDF as a note',
+                icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+              ),
+              const SizedBox(width: Space.sm),
               // Icon only when the list column is narrow.
               if (MediaQuery.sizeOf(context).width < 1000)
                 IconButton.filled(
@@ -403,7 +414,7 @@ class _NotesPageState extends State<NotesPage> {
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: () => setState(() => _selectedId = n.id),
+          onTap: () => _open(n.id),
           child: Padding(
             padding: const EdgeInsets.all(Space.md),
             child: Column(
@@ -482,28 +493,22 @@ class _NotesPageState extends State<NotesPage> {
     if (filter is FavoriteNotes) {
       s.workspace.notes.put(note.copyWith(favorite: true));
     }
-    setState(() => _selectedId = note.id);
+    _open(note.id);
   }
 
-  // ------------------------------------------------------------- editor --
+  /// Opens a note as its own page (Back returns to the library).
+  void _open(String id) {
+    setState(() => _selectedId = id);
+    unawaited(openNotePage(context, s, id));
+  }
 
-  Widget _buildEditor(BuildContext context) {
-    final note = s.workspace.notes[_selectedId];
-    if (note == null) {
-      return const Center(
-        child: Text(
-          'Select a note, or create a new one.',
-          style: TextStyle(color: AppColors.textFaint),
-        ),
-      );
-    }
-    return NoteEditor(
-      key: ValueKey(note.id),
-      state: s,
-      noteId: note.id,
-      onOpenNote: (id) => setState(() => _selectedId = id),
-      onDeleted: () => setState(() => _selectedId = null),
+  Future<void> _importPdf() async {
+    final filter = _filter;
+    final id = await importPdfAsNote(
+      s,
+      folderId: filter is FolderNotes ? filter.folderId : null,
     );
+    if (id != null && mounted) _open(id);
   }
 }
 
@@ -514,12 +519,20 @@ class NoteEditor extends StatefulWidget {
     required this.noteId,
     required this.onOpenNote,
     required this.onDeleted,
+    this.pageCount = 0,
+    this.pageBuilder,
+    this.scrollController,
   });
 
   final AppState state;
   final String noteId;
   final ValueChanged<String> onOpenNote;
   final VoidCallback onDeleted;
+
+  /// Notebook pages shown after the note's details (full-page editor).
+  final int pageCount;
+  final IndexedWidgetBuilder? pageBuilder;
+  final ScrollController? scrollController;
 
   @override
   State<NoteEditor> createState() => _NoteEditorState();
@@ -666,207 +679,214 @@ class _NoteEditorState extends State<NoteEditor> {
         )
         .toList();
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(40, 28, 40, 40),
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: FolderDropdown(
-                workspace: ws,
-                value: n.folderId,
-                onChanged: (v) => _update((x) => x.copyWith(folderId: () => v)),
+    final header = <Widget>[
+      Row(
+        children: [
+          Expanded(
+            child: FolderDropdown(
+              workspace: ws,
+              value: n.folderId,
+              onChanged: (v) => _update((x) => x.copyWith(folderId: () => v)),
+            ),
+          ),
+          const SizedBox(width: Space.md),
+          GhostIconButton(
+            icon: n.favorite ? Icons.star : Icons.star_outline,
+            tooltip: n.favorite ? 'Remove from favorites' : 'Add to favorites',
+            active: n.favorite,
+            onTap: () => _update((x) => x.copyWith(favorite: !x.favorite)),
+          ),
+          GhostIconButton(
+            icon: Icons.grid_view,
+            tooltip: 'Place on canvas (as a reference)',
+            onTap: _placeOnCanvas,
+          ),
+          GhostIconButton(
+            icon: Icons.history,
+            tooltip: 'Version history',
+            onTap: () => showNoteHistory(context, ws, n.id),
+          ),
+          GhostIconButton(
+            icon: Icons.delete_outline,
+            tooltip: 'Delete note',
+            onTap: () async {
+              final ok = await confirm(
+                context,
+                title: 'Delete “${n.displayTitle}”?',
+                message:
+                    'Canvas cards that show this note will say it was deleted. '
+                    'The note stays in your backups.',
+              );
+              if (ok) {
+                ws.notes.remove(n.id);
+                // Its handwriting goes to the trash folder too (recoverable).
+                unawaited(s.trashNotebookOf(n.id));
+                widget.onDeleted();
+              }
+            },
+          ),
+        ],
+      ),
+      TextField(
+        controller: _title,
+        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w600),
+        decoration: const InputDecoration(
+          hintText: 'Untitled note',
+          filled: false,
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+        ),
+        onChanged: (v) => _update((x) => x.copyWith(title: v)),
+      ),
+      Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (final t in n.tags)
+            InputChip(
+              label: Text('#$t', style: const TextStyle(fontSize: 12)),
+              onDeleted: () =>
+                  _update((x) => x.copyWith(tags: [...x.tags]..remove(t))),
+              visualDensity: VisualDensity.compact,
+            ),
+          SizedBox(
+            width: 140,
+            child: TextField(
+              controller: _tag,
+              style: const TextStyle(fontSize: 12),
+              decoration: const InputDecoration(
+                hintText: '+ add tag',
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
               ),
-            ),
-            const SizedBox(width: Space.md),
-            GhostIconButton(
-              icon: n.favorite ? Icons.star : Icons.star_outline,
-              tooltip: n.favorite
-                  ? 'Remove from favorites'
-                  : 'Add to favorites',
-              active: n.favorite,
-              onTap: () => _update((x) => x.copyWith(favorite: !x.favorite)),
-            ),
-            GhostIconButton(
-              icon: Icons.grid_view,
-              tooltip: 'Place on canvas (as a reference)',
-              onTap: _placeOnCanvas,
-            ),
-            GhostIconButton(
-              icon: Icons.history,
-              tooltip: 'Version history',
-              onTap: () => showNoteHistory(context, ws, n.id),
-            ),
-            GhostIconButton(
-              icon: Icons.delete_outline,
-              tooltip: 'Delete note',
-              onTap: () async {
-                final ok = await confirm(
-                  context,
-                  title: 'Delete “${n.displayTitle}”?',
-                  message:
-                      'Canvas cards that show this note will say it was deleted. '
-                      'The note stays in your backups.',
-                );
-                if (ok) {
-                  ws.notes.remove(n.id);
-                  widget.onDeleted();
+              onSubmitted: (v) {
+                final tag = v.trim().replaceAll('#', '').replaceAll(' ', '-');
+                if (tag.isNotEmpty && !n.tags.contains(tag)) {
+                  _update((x) => x.copyWith(tags: [...x.tags, tag]));
                 }
+                _tag.clear();
               },
             ),
-          ],
-        ),
-        TextField(
-          controller: _title,
-          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w600),
-          decoration: const InputDecoration(
-            hintText: 'Untitled note',
-            filled: false,
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
           ),
-          onChanged: (v) => _update((x) => x.copyWith(title: v)),
+        ],
+      ),
+      const SizedBox(height: Space.md),
+      TextField(
+        controller: _body,
+        maxLines: null,
+        minLines: 12,
+        style: const TextStyle(fontSize: 15, height: 1.6),
+        decoration: const InputDecoration(
+          hintText: 'Write here…  Link another note with [[Its title]].',
+          filled: false,
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
         ),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            for (final t in n.tags)
-              InputChip(
-                label: Text('#$t', style: const TextStyle(fontSize: 12)),
-                onDeleted: () =>
-                    _update((x) => x.copyWith(tags: [...x.tags]..remove(t))),
-                visualDensity: VisualDensity.compact,
-              ),
-            SizedBox(
-              width: 140,
-              child: TextField(
-                controller: _tag,
-                style: const TextStyle(fontSize: 12),
-                decoration: const InputDecoration(
-                  hintText: '+ add tag',
-                  filled: false,
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                ),
-                onSubmitted: (v) {
-                  final tag = v.trim().replaceAll('#', '').replaceAll(' ', '-');
-                  if (tag.isNotEmpty && !n.tags.contains(tag)) {
-                    _update((x) => x.copyWith(tags: [...x.tags, tag]));
-                  }
-                  _tag.clear();
-                },
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: Space.md),
-        TextField(
-          controller: _body,
-          maxLines: null,
-          minLines: 12,
-          style: const TextStyle(fontSize: 15, height: 1.6),
-          decoration: const InputDecoration(
-            hintText: 'Write here…  Link another note with [[Its title]].',
-            filled: false,
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-          ),
-          onChanged: (v) => _update((x) => x.copyWith(body: v)),
-        ),
-        const Divider(),
-        const SizedBox(height: Space.md),
-        Row(
-          children: [
-            const Text(
-              'ATTACHMENTS',
-              style: TextStyle(
-                fontSize: 11,
-                letterSpacing: 0.6,
-                color: AppColors.textFaint,
-              ),
-            ),
-            const Spacer(),
-            TextButton.icon(
-              onPressed: _paste,
-              icon: const Icon(Icons.content_paste, size: 15),
-              label: const Text('Paste'),
-            ),
-            TextButton.icon(
-              onPressed: _addLink,
-              icon: const Icon(Icons.add_link, size: 15),
-              label: const Text('Link'),
-            ),
-            TextButton.icon(
-              onPressed: _addPhotos,
-              icon: const Icon(Icons.add_photo_alternate_outlined, size: 15),
-              label: const Text('Photos'),
-            ),
-            TextButton.icon(
-              onPressed: _addDocuments,
-              icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
-              label: const Text('PDF'),
-            ),
-          ],
-        ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final a in assets)
-              AssetChip(
-                workspace: ws,
-                asset: a,
-                onRemove: () => _update(
-                  (x) => x.copyWith(assetIds: [...x.assetIds]..remove(a.id)),
-                ),
-              ),
-          ],
-        ),
-        if (linked.isNotEmpty || backlinks.isNotEmpty) ...[
-          const SizedBox(height: Space.xl),
+        onChanged: (v) => _update((x) => x.copyWith(body: v)),
+      ),
+      const Divider(),
+      const SizedBox(height: Space.md),
+      Row(
+        children: [
           const Text(
-            'LINKED NOTES',
+            'ATTACHMENTS',
             style: TextStyle(
               fontSize: 11,
               letterSpacing: 0.6,
               color: AppColors.textFaint,
             ),
           ),
-          const SizedBox(height: Space.sm),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final t in linked)
-                ActionChip(
-                  avatar: Icon(
-                    ws.noteByTitle(t) == null ? Icons.add : Icons.north_east,
-                    size: 14,
-                  ),
-                  label: Text(t, style: const TextStyle(fontSize: 12)),
-                  tooltip: ws.noteByTitle(t) == null
-                      ? 'Create this note'
-                      : 'Open',
-                  onPressed: () => _openLinked(t),
-                ),
-              for (final b in backlinks)
-                ActionChip(
-                  avatar: const Icon(Icons.subdirectory_arrow_left, size: 14),
-                  label: Text(
-                    b.displayTitle,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  tooltip: 'Links here',
-                  onPressed: () => widget.onOpenNote(b.id),
-                ),
-            ],
+          const Spacer(),
+          TextButton.icon(
+            onPressed: _paste,
+            icon: const Icon(Icons.content_paste, size: 15),
+            label: const Text('Paste'),
+          ),
+          TextButton.icon(
+            onPressed: _addLink,
+            icon: const Icon(Icons.add_link, size: 15),
+            label: const Text('Link'),
+          ),
+          TextButton.icon(
+            onPressed: _addPhotos,
+            icon: const Icon(Icons.add_photo_alternate_outlined, size: 15),
+            label: const Text('Photos'),
+          ),
+          TextButton.icon(
+            onPressed: _addDocuments,
+            icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
+            label: const Text('PDF'),
           ),
         ],
+      ),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final a in assets)
+            AssetChip(
+              workspace: ws,
+              asset: a,
+              onRemove: () => _update(
+                (x) => x.copyWith(assetIds: [...x.assetIds]..remove(a.id)),
+              ),
+            ),
+        ],
+      ),
+      if (linked.isNotEmpty || backlinks.isNotEmpty) ...[
+        const SizedBox(height: Space.xl),
+        const Text(
+          'LINKED NOTES',
+          style: TextStyle(
+            fontSize: 11,
+            letterSpacing: 0.6,
+            color: AppColors.textFaint,
+          ),
+        ),
+        const SizedBox(height: Space.sm),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final t in linked)
+              ActionChip(
+                avatar: Icon(
+                  ws.noteByTitle(t) == null ? Icons.add : Icons.north_east,
+                  size: 14,
+                ),
+                label: Text(t, style: const TextStyle(fontSize: 12)),
+                tooltip: ws.noteByTitle(t) == null
+                    ? 'Create this note'
+                    : 'Open',
+                onPressed: () => _openLinked(t),
+              ),
+            for (final b in backlinks)
+              ActionChip(
+                avatar: const Icon(Icons.subdirectory_arrow_left, size: 14),
+                label: Text(
+                  b.displayTitle,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                tooltip: 'Links here',
+                onPressed: () => widget.onOpenNote(b.id),
+              ),
+          ],
+        ),
       ],
+    ];
+    // Notebook pages (full-page note): built only when scrolled into view.
+    final pages = widget.pageBuilder == null ? 0 : widget.pageCount;
+    return ListView.builder(
+      controller: widget.scrollController,
+      padding: const EdgeInsets.fromLTRB(40, 28, 40, 40),
+      itemCount: header.length + pages,
+      itemBuilder: (context, i) => i < header.length
+          ? header[i]
+          : widget.pageBuilder!(context, i - header.length),
     );
   }
 }

@@ -14,6 +14,7 @@ import '../../sync/canvas_merge.dart';
 import '../../sync/protocol.dart';
 import 'canvas_resources.dart';
 import 'canvas_text.dart';
+import '../ink/stroke_geometry.dart';
 
 export 'canvas_text.dart' show kTextPadding, canvasTextStyle;
 
@@ -66,6 +67,8 @@ class CanvasController extends ChangeNotifier {
        _itemUnknownFields = {...document.itemUnknownFields},
        _unknownKeys = document.unknownKeys,
        _metaUnknownFields = document.metaUnknownFields,
+       _docKind = document.kind,
+       _pageBackgrounds = document.pageBackgrounds,
        _savedTitle = document.title,
        _savedFolderId = document.folderId,
        _savedItems = {for (final i in document.items) i.id: i} {
@@ -157,6 +160,14 @@ class CanvasController extends ChangeNotifier {
     toWorld(viewport.bottomRight(Offset.zero)),
   );
 
+  /// Sets the camera directly without saving it (notebook pages: offset 0
+  /// and the page zoom, so screen-pixel tolerances stay right).
+  void setView(Offset offset, double scale) {
+    if (_offset == offset && _scale == scale) return;
+    _offset = offset;
+    _scale = scale;
+  }
+
   void panBy(Offset screenDelta) {
     _offset += screenDelta;
     _markDirty();
@@ -233,6 +244,8 @@ class CanvasController extends ChangeNotifier {
     if (value == _tool) return;
     endEditing();
     _pendingFrom = null;
+    // A tool picked by hand during a squeeze stays after the squeeze.
+    _toolBeforeSqueeze = null;
     _tool = value;
     if (value != CanvasTool.select && value != CanvasTool.lasso) {
       _selection = const {};
@@ -709,6 +722,87 @@ class CanvasController extends ChangeNotifier {
   StrokeItem? get liveStroke => _liveStroke;
   List<StrokePoint> _livePoints = [];
 
+  /// Repaints only the stroke being drawn. Drawing does not notify the
+  /// controller's own listeners (which rebuild and repaint the whole
+  /// canvas) on every pen movement; that was the main source of lag.
+  final ChangeNotifier liveInk = _Ping();
+
+  /// The live stroke comes from Apple Pencil: width follows pressure.
+  bool _livePressure = false;
+
+  // Short look-ahead of the pen tip (drawn, never stored): velocity of the
+  // last movement, in world units per millisecond.
+  Duration? _lastMoveTime;
+  Offset? _velocity;
+
+  /// How far ahead the live stroke is drawn (0 turns it off).
+  static Duration predictionHorizon = const Duration(milliseconds: 12);
+
+  /// Where the pen is expected to be next, or null.
+  Offset? get predictedPoint {
+    final v = _velocity;
+    if (_drag != _Drag.draw || _straight || v == null || _livePoints.isEmpty) {
+      return null;
+    }
+    var ahead = v * (predictionHorizon.inMicroseconds / 1000);
+    final maxAhead = 12 / _scale; // never more than 12 screen pixels
+    if (ahead.distance > maxAhead) ahead = ahead / ahead.distance * maxAhead;
+    return _livePoints.last.offset + ahead;
+  }
+
+  // Draw-and-hold: a stroke held still at its end becomes a straight line.
+  static Duration holdToStraighten = const Duration(milliseconds: 500);
+
+  /// Pen movement (screen pixels) that still counts as holding still.
+  static double holdTolerance = 4;
+  Timer? _holdTimer;
+  Offset? _holdAnchor;
+  bool _straight = false;
+
+  /// The live stroke has been straightened (its end follows the pen).
+  bool get liveStrokeIsStraight => _straight;
+
+  void _restartHold(Offset screen) {
+    _holdTimer?.cancel();
+    _holdAnchor = screen;
+    _holdTimer = Timer(holdToStraighten, holdElapsed);
+  }
+
+  /// Called when the pen has been still for [holdToStraighten].
+  @visibleForTesting
+  void holdElapsed() {
+    if (_drag != _Drag.draw || _straight) return;
+    if (!looksLikeLine(_livePoints, _scale)) return;
+    _livePoints = straightened(_livePoints);
+    _straight = true;
+    _updateLiveStroke();
+    (liveInk as _Ping).ping();
+  }
+
+  // Apple Pencil Pro squeeze: eraser while squeezed, then the tool before.
+  CanvasTool? _toolBeforeSqueeze;
+
+  /// The eraser is on only because the Pencil is being squeezed.
+  bool get squeezeEraser => _toolBeforeSqueeze != null;
+
+  void squeezeBegan() {
+    if (_toolBeforeSqueeze != null || _tool == CanvasTool.eraser) return;
+    final before = _tool;
+    tool = CanvasTool.eraser;
+    _toolBeforeSqueeze = before;
+    notifyListeners();
+  }
+
+  /// Squeeze released or cancelled (also when the view goes away).
+  void squeezeEnded() {
+    final before = _toolBeforeSqueeze;
+    if (before == null) return;
+    _toolBeforeSqueeze = null;
+    if (_disposed) return;
+    tool = before;
+    notifyListeners();
+  }
+
   List<Offset> _lassoPoints = [];
   List<Offset> get lassoPoints => _lassoPoints;
 
@@ -817,8 +911,13 @@ class CanvasController extends ChangeNotifier {
         endEditing();
         _beginTransaction();
         _drag = _Drag.draw;
+        _livePressure = kind == PointerDeviceKind.stylus;
+        _straight = false;
+        _velocity = null;
+        _lastMoveTime = timeStamp;
         _livePoints = [StrokePoint(world.dx, world.dy, pressure)];
         _updateLiveStroke();
+        _restartHold(screen);
       case CanvasTool.eraser:
         endEditing();
         _beginTransaction();
@@ -971,7 +1070,11 @@ class CanvasController extends ChangeNotifier {
     }
   }
 
-  void pointerMove(Offset screen, {double pressure = 0.5}) {
+  void pointerMove(
+    Offset screen, {
+    double pressure = 0.5,
+    Duration? timeStamp,
+  }) {
     final delta = screen - _lastScreen;
     _lastScreen = screen;
     lastPointer = screen;
@@ -1007,11 +1110,34 @@ class CanvasController extends ChangeNotifier {
           _lassoPoints.add(world);
         }
       case _Drag.draw:
+        // Only the live stroke repaints (see [liveInk]); no full rebuild.
+        if (_straight) {
+          // Straightened by a hold: the end follows the pen, still straight.
+          _livePoints = straightened([
+            _livePoints.first,
+            StrokePoint(world.dx, world.dy, _livePoints.last.pressure),
+          ]);
+          _updateLiveStroke();
+          (liveInk as _Ping).ping();
+          return;
+        }
         final last = _livePoints.last.offset;
         // Skip points closer than half a screen pixel to keep files small.
         if ((world - last).distance * _scale < 0.5) return;
+        final before = _lastMoveTime;
+        if (timeStamp != null && before != null && timeStamp > before) {
+          final ms = (timeStamp - before).inMicroseconds / 1000;
+          _velocity = (world - last) / ms;
+        }
+        _lastMoveTime = timeStamp ?? _lastMoveTime;
         _livePoints.add(StrokePoint(world.dx, world.dy, pressure));
         _updateLiveStroke();
+        final anchor = _holdAnchor;
+        if (anchor == null || (screen - anchor).distance > holdTolerance) {
+          _restartHold(screen);
+        }
+        (liveInk as _Ping).ping();
+        return;
       case _Drag.erase:
         _eraseAt(toWorld(screen - delta), world);
       case _Drag.connect:
@@ -1038,10 +1164,14 @@ class CanvasController extends ChangeNotifier {
   }
 
   void pointerUp() {
+    _holdTimer?.cancel();
     switch (_drag) {
       case _Drag.draw:
         final stroke = _liveStroke;
         _liveStroke = null;
+        _velocity = null;
+        _straight = false;
+        (liveInk as _Ping).ping();
         if (stroke != null) _setItems([..._items, stroke]);
         _endTransaction();
       case _Drag.move || _Drag.resize || _Drag.erase:
@@ -1099,6 +1229,7 @@ class CanvasController extends ChangeNotifier {
           id: original.id,
           color: original.color,
           strokeWidth: original.strokeWidth,
+          pressureWidth: original.pressureWidth,
           points: [
             for (final p in original.points)
               StrokePoint(
@@ -1112,6 +1243,7 @@ class CanvasController extends ChangeNotifier {
   }
 
   void pointerCancel() {
+    _holdTimer?.cancel();
     if (_drag == _Drag.draw) _liveStroke = null;
     if (_drag == _Drag.lasso) _lassoPoints = [];
     if (_drag == _Drag.connect) _connectFrom = _connectEnd = null;
@@ -1135,6 +1267,7 @@ class CanvasController extends ChangeNotifier {
           ? highlighterColor.withValues(alpha: 0.38)
           : penColor,
       strokeWidth: isHighlighter ? highlighterWidth : penWidth,
+      pressureWidth: _livePressure && !isHighlighter,
     );
   }
 
@@ -1226,6 +1359,24 @@ class CanvasController extends ChangeNotifier {
   final Map<String, dynamic> _unknownKeys;
   Map<String, dynamic> _metaUnknownFields;
   String? _metaRev;
+
+  // Notebook fields (a note's handwriting); see [CanvasDocument.kind].
+  final String? _docKind;
+  List<PageBackground> _pageBackgrounds;
+  bool _metaChanged = false;
+
+  bool get isNotebook => isNotebookId(_id, _docKind);
+  List<PageBackground> get pageBackgrounds => _pageBackgrounds;
+
+  /// Puts PDF pages under notebook pages (saved and synced with the
+  /// document's metadata).
+  void setPageBackgrounds(List<PageBackground> backgrounds) {
+    _pageBackgrounds = List.unmodifiable(backgrounds);
+    _metaChanged = true;
+    _markDirty();
+    notifyListeners();
+  }
+
   Map<String, CanvasItem> _savedItems;
   String _savedTitle;
   String? _savedFolderId;
@@ -1248,7 +1399,8 @@ class CanvasController extends ChangeNotifier {
         if (!identical(_savedItems[i.id], i)) i.id,
     };
     if (_editingId != null) unsaved.add(_editingId!);
-    final metaUnsaved = _title != _savedTitle || _folderId != _savedFolderId;
+    final metaUnsaved =
+        _title != _savedTitle || _folderId != _savedFolderId || _metaChanged;
     final state = CanvasSyncState(
       items: [..._items],
       itemRevs: {..._itemRevs},
@@ -1258,6 +1410,8 @@ class CanvasController extends ChangeNotifier {
       metaRev: _metaRev,
       itemUnknownFields: {..._itemUnknownFields},
       metaUnknownFields: _metaUnknownFields,
+      kind: _docKind,
+      pageBackgrounds: _pageBackgrounds,
     );
     final applied = applyCanvasChanges(state, _id, changes, (key, rev) {
       final itemId = key.substring(key.lastIndexOf('/') + 1);
@@ -1285,6 +1439,7 @@ class CanvasController extends ChangeNotifier {
       ..clear()
       ..addAll(state.itemUnknownFields);
     _metaUnknownFields = state.metaUnknownFields;
+    _pageBackgrounds = state.pageBackgrounds;
     // Remote versions count as saved, so they are not stamped as local edits.
     _savedItems = {
       for (final i in _items)
@@ -1324,9 +1479,11 @@ class CanvasController extends ChangeNotifier {
     }
     if (_title != _savedTitle ||
         _folderId != _savedFolderId ||
+        _metaChanged ||
         _metaRev == null) {
       _metaRev = clock.now();
     }
+    _metaChanged = false;
     _savedItems = current;
     _savedTitle = _title;
     _savedFolderId = _folderId;
@@ -1348,6 +1505,8 @@ class CanvasController extends ChangeNotifier {
     },
     unknownKeys: _unknownKeys,
     metaUnknownFields: _metaUnknownFields,
+    kind: _docKind,
+    pageBackgrounds: _pageBackgrounds,
   );
 
   /// Saves immediately if there are unsaved changes.
@@ -1382,6 +1541,8 @@ class CanvasController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _saveTimer?.cancel();
+    _holdTimer?.cancel();
+    liveInk.dispose();
     resources?.removeListener(_onResourcesChanged);
     for (final layout in _layouts.values) {
       layout.painter.dispose();
@@ -1389,4 +1550,9 @@ class CanvasController extends ChangeNotifier {
     _clearCardLayouts();
     super.dispose();
   }
+}
+
+/// A ChangeNotifier that can be told to notify from outside.
+class _Ping extends ChangeNotifier {
+  void ping() => notifyListeners();
 }

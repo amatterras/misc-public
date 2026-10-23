@@ -13,6 +13,8 @@ class CanvasSyncState {
     required this.metaRev,
     Map<String, Map<String, dynamic>>? itemUnknownFields,
     this.metaUnknownFields = const {},
+    this.kind,
+    this.pageBackgrounds = const [],
   }) : itemUnknownFields = itemUnknownFields ?? {};
 
   List<CanvasItem> items;
@@ -26,9 +28,13 @@ class CanvasSyncState {
   /// (see `unknown_fields.dart`).
   Map<String, Map<String, dynamic>> itemUnknownFields;
   Map<String, dynamic> metaUnknownFields;
+
+  /// Notebook fields (see [CanvasDocument.kind]).
+  String? kind;
+  List<PageBackground> pageBackgrounds;
 }
 
-const _metaKeys = {'title', 'folderId', 'order'};
+const _metaKeys = {'title', 'folderId', 'order', 'kind', 'backgrounds'};
 
 /// Data sent for a canvas's metadata record; [unknown] are metadata fields
 /// from a newer version, sent back unchanged.
@@ -37,10 +43,15 @@ Map<String, dynamic> canvasMetaData(
   String? folderId,
   List<CanvasItem> items, [
   Map<String, dynamic>? unknown,
+  String? kind,
+  List<PageBackground> backgrounds = const [],
 ]) => withUnknownFields({
   'title': title,
   'folderId': folderId,
   'order': [for (final i in items) i.id],
+  'kind': ?kind,
+  if (backgrounds.isNotEmpty)
+    'backgrounds': [for (final b in backgrounds) b.toJson()],
 }, unknown);
 
 /// Applies incoming `canvases` / `canvas_items` changes for one canvas.
@@ -105,6 +116,11 @@ Set<String> applyCanvasChanges(
       final data = meta.data!;
       s.title = data['title'] as String? ?? s.title;
       s.folderId = data['folderId'] as String?;
+      s.kind = data['kind'] as String? ?? s.kind;
+      s.pageBackgrounds = [
+        for (final b in data['backgrounds'] as List? ?? const [])
+          PageBackground.fromJson((b as Map).cast<String, dynamic>()),
+      ];
       s.metaUnknownFields = unknownFields(data, _metaKeys);
       s.metaRev = meta.rev;
       final order = [...?(data['order'] as List?)?.cast<String>()];

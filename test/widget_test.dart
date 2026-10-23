@@ -430,6 +430,7 @@ void main() {
       s.openNote(note.id);
       await tester.pump();
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500)); // page slides in
       final bodyField = find.byWidgetPredicate(
         (w) => w is TextField && w.controller?.text == 'Milk',
       );

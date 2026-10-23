@@ -115,6 +115,7 @@ void main() {
     await tester.pumpWidget(TheApp(state: s));
     await tester.pump();
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500)); // page slides in
     await tester.tap(find.byTooltip('Version history'));
     for (var i = 0; i < 5; i++) {
       await tester.pump(const Duration(milliseconds: 100));

@@ -36,17 +36,46 @@ class IosBridge implements KeychainBackend {
   /// that arrived before Flutter was ready (including the launch link); the
   /// native side holds them until this asks for them.
   Future<void> listenForLinks(FutureOr<void> Function(Uri) onLink) async {
-    _channel.setMethodCallHandler((call) async {
-      if (call.method == 'openedUrl' && call.arguments is String) {
-        final uri = Uri.tryParse(call.arguments as String);
-        if (uri != null) await onLink(uri);
-      }
-      return null;
-    });
+    _onLink = onLink;
+    _ensureHandler();
     final waiting = await _invoke<List<Object?>>('initialLinks') ?? const [];
     for (final link in waiting.whereType<String>()) {
       final uri = Uri.tryParse(link);
       if (uri != null) await onLink(uri);
+    }
+  }
+
+  FutureOr<void> Function(Uri)? _onLink;
+  bool _handlerSet = false;
+  final _squeeze = StreamController<String>.broadcast();
+
+  /// One handler for everything the native side sends.
+  void _ensureHandler() {
+    if (_handlerSet) return;
+    _handlerSet = true;
+    _channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'openedUrl' when call.arguments is String:
+          final uri = Uri.tryParse(call.arguments as String);
+          if (uri != null) await _onLink?.call(uri);
+        case 'pencilSqueeze' when call.arguments is String:
+          _squeeze.add(call.arguments as String);
+      }
+      return null;
+    });
+  }
+
+  /// Apple Pencil Pro squeeze phases: "began", then "ended" or "cancelled".
+  /// Nothing arrives on other Pencils or before iPadOS 17.5.
+  Stream<String> get pencilSqueeze => _squeeze.stream;
+
+  /// Asks iOS to report Pencil squeezes. False if not possible yet.
+  Future<bool> enablePencilSqueeze() async {
+    _ensureHandler();
+    try {
+      return await _invoke<bool>('enablePencilSqueeze') ?? false;
+    } on Exception {
+      return false;
     }
   }
 
@@ -61,6 +90,47 @@ class IosBridge implements KeychainBackend {
   Future<Map<String, String>?> appFolders() async =>
       (await _invoke<Map<Object?, Object?>>('appFolders'))
           ?.map((k, v) => MapEntry(k.toString(), v.toString()));
+
+  /// Page sizes (points, after the page's rotation) of the PDF at [path],
+  /// or null if it cannot be read (or on other platforms).
+  Future<List<Size>?> pdfPageSizes(String path) async {
+    final result = await _invoke<List<Object?>>('pdfInfo', path);
+    if (result == null) return null;
+    return [
+      for (final s in result.whereType<List<Object?>>())
+        Size((s[0]! as num).toDouble(), (s[1]! as num).toDouble()),
+    ];
+  }
+
+  /// PNG of page [page] (0-based) of the PDF at [path], [width] pixels wide.
+  /// Pages are rendered one at a time as they scroll into view.
+  Future<Uint8List?> renderPdfPage(String path, int page, int width) =>
+      _invoke<Uint8List>('pdfRenderPage', {
+        'path': path,
+        'page': page,
+        'width': width,
+      }, true);
+
+  /// Writes a copy of the PDF at [source] to [target] with [pages] drawn
+  /// on top (the original file is not changed). Each page entry:
+  /// {page, strokes: [{color, width, points: [[x, y, w], …]}]} in PDF
+  /// points from the top-left. Returns true when written.
+  Future<bool> exportAnnotatedPdf(
+    String source,
+    String target,
+    List<Map<String, Object>> pages,
+  ) async =>
+      await _invoke<bool>('pdfExport', {
+        'source': source,
+        'target': target,
+        'pages': pages,
+      }, true) ??
+      false;
+
+  /// Shows the share sheet for a file (save to Files, AirDrop, Mail…).
+  Future<void> shareFile(String path) async {
+    await _invoke<bool>('shareFile', path, true);
+  }
 
   /// "iPad" or "iPhone" (iOS no longer gives apps the device's own name).
   Future<String?> deviceModel() => _invoke<String>('deviceModel');

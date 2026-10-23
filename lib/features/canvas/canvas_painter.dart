@@ -6,6 +6,7 @@ import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import 'canvas_controller.dart';
 import 'canvas_text.dart';
+import '../ink/stroke_geometry.dart';
 
 /// Paints the whole canvas: dot grid, items, selection and live drawing.
 ///
@@ -13,22 +14,36 @@ import 'canvas_text.dart';
 /// separate widgets, so the space is truly unbounded and stays fast with
 /// many items (anything off-screen is skipped).
 class CanvasPainter extends CustomPainter {
-  CanvasPainter(this.controller) : super(repaint: controller);
+  CanvasPainter(this.controller, {this.page, this.pageScale = 1})
+    : super(repaint: controller);
 
   final CanvasController controller;
+
+  /// Notebook page: only this world rectangle is drawn, at [pageScale],
+  /// with no grid (the page widget draws the paper). Null for a canvas.
+  final Rect? page;
+  final double pageScale;
 
   static final Expando<Path> _pathCache = Expando();
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.canvas);
-    _paintGrid(canvas, size);
-
-    final scale = controller.scale;
-    final visible = controller.visibleWorld(size).inflate(20 / scale);
-
+    final page = this.page;
+    final double scale;
+    final Rect visible;
     canvas.save();
-    canvas.translate(controller.offset.dx, controller.offset.dy);
+    if (page == null) {
+      canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.canvas);
+      _paintGrid(canvas, size);
+      scale = controller.scale;
+      visible = controller.visibleWorld(size).inflate(20 / scale);
+      canvas.translate(controller.offset.dx, controller.offset.dy);
+    } else {
+      scale = pageScale;
+      visible = page;
+      canvas.clipRect(Offset.zero & size);
+      canvas.translate(-page.left * scale, -page.top * scale);
+    }
     canvas.scale(scale);
 
     // Mind-map connections first, so they run underneath the items.
@@ -67,9 +82,6 @@ class CanvasPainter extends CustomPainter {
           break; // drawn above
       }
     }
-    final live = controller.liveStroke;
-    if (live != null) _paintStroke(canvas, live, cache: false);
-
     _paintSelection(canvas, scale);
     canvas.restore();
   }
@@ -272,41 +284,11 @@ class CanvasPainter extends CustomPainter {
     painter.dispose();
   }
 
-  void _paintStroke(Canvas canvas, StrokeItem stroke, {bool cache = true}) {
-    final paint = Paint()
-      ..color = stroke.color
-      ..strokeWidth = stroke.strokeWidth
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..isAntiAlias = true;
-    final points = stroke.points;
-    if (points.length == 1) {
-      canvas.drawCircle(
-        points.first.offset,
-        stroke.strokeWidth / 2,
-        paint..style = PaintingStyle.fill,
-      );
-      return;
-    }
-    final path = cache
-        ? (_pathCache[stroke] ??= _smoothPath(points))
-        : _smoothPath(points);
-    canvas.drawPath(path, paint);
-  }
-
-  /// Quadratic curves through segment midpoints give smooth lines from
-  /// coarse mouse samples.
-  static Path _smoothPath(List<StrokePoint> points) {
-    final path = Path()..moveTo(points.first.x, points.first.y);
-    for (var i = 1; i < points.length - 1; i++) {
-      final p = points[i].offset;
-      final mid = Offset.lerp(p, points[i + 1].offset, 0.5)!;
-      path.quadraticBezierTo(p.dx, p.dy, mid.dx, mid.dy);
-    }
-    path.lineTo(points.last.x, points.last.y);
-    return path;
-  }
+  void _paintStroke(Canvas canvas, StrokeItem stroke) => paintStroke(
+    canvas,
+    stroke,
+    cachedPath: _pathCache[stroke] ??= strokePath(stroke),
+  );
 
   /// A connection: a line with small dots where it meets the two items.
   void _paintConnector(
@@ -400,7 +382,9 @@ class CanvasPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(CanvasPainter oldDelegate) =>
-      oldDelegate.controller != controller;
+      oldDelegate.controller != controller ||
+      oldDelegate.page != page ||
+      oldDelegate.pageScale != pageScale;
 }
 
 /// A small overview of the whole canvas with the visible area marked.
@@ -475,4 +459,41 @@ class MinimapPainter extends CustomPainter {
   @override
   bool shouldRepaint(MinimapPainter old) =>
       old.controller != controller || old.viewport != viewport;
+}
+
+/// Paints only the stroke being drawn, plus a short predicted tip. It
+/// repaints on [CanvasController.liveInk], so each pen movement redraws one
+/// stroke instead of the whole canvas.
+class LiveInkPainter extends CustomPainter {
+  LiveInkPainter(this.controller, {this.page, this.pageScale = 1})
+    : super(repaint: controller.liveInk);
+
+  final CanvasController controller;
+  final Rect? page;
+  final double pageScale;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final live = controller.liveStroke;
+    if (live == null) return;
+    final page = this.page;
+    if (page != null && !live.bounds.overlaps(page)) return;
+    canvas.save();
+    if (page == null) {
+      canvas.translate(controller.offset.dx, controller.offset.dy);
+      canvas.scale(controller.scale);
+    } else {
+      canvas.clipRect(Offset.zero & size);
+      canvas.translate(-page.left * pageScale, -page.top * pageScale);
+      canvas.scale(pageScale);
+    }
+    paintStroke(canvas, live, predicted: controller.predictedPoint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(LiveInkPainter oldDelegate) =>
+      oldDelegate.controller != controller ||
+      oldDelegate.page != page ||
+      oldDelegate.pageScale != pageScale;
 }

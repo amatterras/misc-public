@@ -419,8 +419,10 @@ void main() {
     };
     expect(dartCalls, isNotEmpty);
     expect(swiftCases, dartCalls, reason: 'Dart and Swift must match');
-    // Swift → Dart: the only call the native side makes.
+    // Swift → Dart: links opened from outside, and Pencil squeezes.
     expect(swift, contains('invokeMethod("openedUrl"'));
-    expect(dart, contains("call.method == 'openedUrl'"));
+    expect(dart, contains("case 'openedUrl'"));
+    expect(swift, contains('invokeMethod("pencilSqueeze"'));
+    expect(dart, contains("case 'pencilSqueeze'"));
   });
 }

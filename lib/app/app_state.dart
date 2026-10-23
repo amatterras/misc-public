@@ -129,6 +129,10 @@ class AppState extends ChangeNotifier {
   CanvasController? _canvas;
   CanvasController? get canvas => _canvas;
 
+  /// The handwriting of the note open in the note editor, if any (set by
+  /// the editor), so sync merges remote changes into it.
+  CanvasController? openNotebook;
+
   /// Note to show when the Notes page opens (set by "open note" links).
   String? selectedNoteId;
 
@@ -491,6 +495,8 @@ class AppState extends ChangeNotifier {
           itemUnknownFields: doc.itemUnknownFields,
           unknownKeys: doc.unknownKeys,
           metaUnknownFields: doc.metaUnknownFields,
+          kind: doc.kind,
+          pageBackgrounds: doc.pageBackgrounds,
         ),
       );
       migrated++;
@@ -500,7 +506,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _refreshList() async {
-    _canvasList = await canvases.listCanvases();
+    // Note handwriting is stored like a canvas but is not one.
+    _canvasList = [
+      for (final c in await canvases.listCanvases())
+        if (!c.isNotebook) c,
+    ];
     notifyListeners();
   }
 
@@ -834,6 +844,15 @@ class AppState extends ChangeNotifier {
   }
 
   /// Moves the canvas file to a trash folder (it is not erased).
+  /// Moves the handwriting of a deleted note to the trash folder (never
+  /// erased) and tells other devices, like a deleted canvas.
+  Future<void> trashNotebookOf(String noteId) async {
+    final id = notebookIdFor(noteId);
+    if (await canvases.load(id) == null) return;
+    await canvases.delete(id);
+    await workspace.recordCanvasDeletion(id);
+  }
+
   Future<void> deleteCanvas(String id) async {
     if (_canvas?.id == id) await _closeCanvas();
     await canvases.delete(id);
@@ -902,15 +921,25 @@ class _SyncBridge implements OpenCanvasBridge {
 
   final AppState state;
 
-  @override
-  String? get openCanvasId => state._canvas?.id;
+  CanvasController? _open(String id) {
+    if (state._canvas?.id == id) return state._canvas;
+    if (state.openNotebook?.id == id) return state.openNotebook;
+    return null;
+  }
 
   @override
-  Future<void> flushOpenCanvas() async => state._canvas?.flush();
+  bool isOpen(String canvasId) => _open(canvasId) != null;
+
+  @override
+  Future<void> flushOpenCanvas() async {
+    await state._canvas?.flush();
+    await state.openNotebook?.flush();
+  }
 
   @override
   Set<String> applyToOpenCanvas(
+    String canvasId,
     List<SyncChange> changes,
     bool Function(String key, String? localRev) isPending,
-  ) => state._canvas?.applyRemote(changes, isPending) ?? const {};
+  ) => _open(canvasId)?.applyRemote(changes, isPending) ?? const {};
 }

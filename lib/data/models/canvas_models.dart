@@ -437,11 +437,16 @@ class StrokeItem extends CanvasItem {
     required this.points,
     required this.color,
     required this.strokeWidth,
-  }) : bounds = _computeBounds(points, strokeWidth);
+    this.pressureWidth = false,
+  }) : bounds = _computeBounds(points, strokeWidth * (pressureWidth ? 1.6 : 1));
 
   final List<StrokePoint> points;
   final Color color;
   final double strokeWidth;
+
+  /// Drawn with a width that follows the pen pressure (Apple Pencil strokes
+  /// from Phase 2 on; pressure stored 0..1). Older strokes keep one width.
+  final bool pressureWidth;
 
   @override
   final Rect bounds;
@@ -468,6 +473,7 @@ class StrokeItem extends CanvasItem {
     ],
     color: color,
     strokeWidth: strokeWidth,
+    pressureWidth: pressureWidth,
   );
 
   @override
@@ -476,6 +482,7 @@ class StrokeItem extends CanvasItem {
     points: points,
     color: color,
     strokeWidth: strokeWidth,
+    pressureWidth: pressureWidth,
   );
 
   /// Whether [point] lies within [tolerance] of any segment of this stroke.
@@ -504,12 +511,14 @@ class StrokeItem extends CanvasItem {
     'color': color.toARGB32(),
     'width': strokeWidth,
     'points': [for (final p in points) p.toJson()],
+    if (pressureWidth) 'pw': true,
   };
 
   factory StrokeItem.fromJson(Map<String, dynamic> json) => StrokeItem(
     id: json['id'] as String,
     color: Color(json['color'] as int),
     strokeWidth: (json['width'] as num).toDouble(),
+    pressureWidth: json['pw'] == true,
     points: [
       for (final p in json['points'] as List) StrokePoint.fromJson(p as List),
     ],
@@ -556,6 +565,8 @@ class CanvasDocument {
     this.itemUnknownFields = const {},
     this.unknownKeys = const {},
     this.metaUnknownFields = const {},
+    this.kind,
+    this.pageBackgrounds = const [],
   });
 
   /// 2: note styling, images, link and note cards.
@@ -599,6 +610,17 @@ class CanvasDocument {
   /// version does not know; sent back with it.
   final Map<String, dynamic> metaUnknownFields;
 
+  /// "notebook" for a note's handwriting (stored like a canvas, not shown
+  /// as one); null for an ordinary canvas.
+  final String? kind;
+
+  /// Notebook pages that show a PDF page underneath (see [PageBackground]).
+  final List<PageBackground> pageBackgrounds;
+
+  /// Whether this document is a note's handwriting. The id prefix also
+  /// counts, in case a version that drops [kind] passed it on.
+  bool get isNotebook => isNotebookId(id, kind);
+
   static const _knownKeys = {
     'schema',
     'id',
@@ -611,6 +633,8 @@ class CanvasDocument {
     'tombstones',
     'metaRev',
     'metaUnknownFields',
+    'kind',
+    'pageBackgrounds',
   };
 
   /// [item] as stored and synced, including fields this version does not
@@ -639,6 +663,8 @@ class CanvasDocument {
       itemUnknownFields: itemUnknownFields,
       unknownKeys: unknownKeys,
       metaUnknownFields: metaUnknownFields,
+      kind: kind,
+      pageBackgrounds: pageBackgrounds,
     );
   }
 
@@ -655,6 +681,9 @@ class CanvasDocument {
     if (tombstones.isNotEmpty) 'tombstones': tombstones,
     'metaRev': ?metaRev,
     if (metaUnknownFields.isNotEmpty) 'metaUnknownFields': metaUnknownFields,
+    'kind': ?kind,
+    if (pageBackgrounds.isNotEmpty)
+      'pageBackgrounds': [for (final b in pageBackgrounds) b.toJson()],
   };
 
   factory CanvasDocument.fromJson(Map<String, dynamic> json) {
@@ -691,6 +720,11 @@ class CanvasDocument {
       metaUnknownFields: {
         ...?(json['metaUnknownFields'] as Map?)?.cast<String, dynamic>(),
       },
+      kind: json['kind'] as String?,
+      pageBackgrounds: [
+        for (final b in json['pageBackgrounds'] as List? ?? const [])
+          PageBackground.fromJson(b as Map<String, dynamic>),
+      ],
     );
   }
 }
@@ -703,6 +737,7 @@ class CanvasSummary {
     required this.updatedAt,
     this.folderId,
     this.searchText = '',
+    this.isNotebook = false,
   });
 
   final String id;
@@ -712,4 +747,55 @@ class CanvasSummary {
 
   /// All text on the canvas, for global search.
   final String searchText;
+
+  /// A note's handwriting, not a canvas of its own.
+  final bool isNotebook;
+}
+
+/// Id of the handwriting document of note [noteId]. Fixed, so two devices
+/// writing in the same note fill one document instead of making two.
+String notebookIdFor(String noteId) => 'nb-$noteId';
+
+/// Whether a canvas document is a note's handwriting.
+bool isNotebookId(String id, [String? kind]) =>
+    kind == 'notebook' || id.startsWith('nb-');
+
+/// A PDF page shown underneath one page of a notebook. The PDF stays an
+/// unchanged attachment (asset [assetId]); ink on the page is stored as
+/// ordinary strokes in the page's coordinates, so nothing drifts.
+class PageBackground {
+  const PageBackground({
+    required this.pageIndex,
+    required this.assetId,
+    required this.pdfPage,
+    required this.width,
+    required this.height,
+  });
+
+  /// Notebook page (0-based) this PDF page sits under.
+  final int pageIndex;
+  final String assetId;
+
+  /// Page in the PDF (0-based).
+  final int pdfPage;
+
+  /// The PDF page's size in points (its aspect ratio sets the page shape).
+  final double width;
+  final double height;
+
+  Map<String, dynamic> toJson() => {
+    'at': pageIndex,
+    'asset': assetId,
+    'page': pdfPage,
+    'w': width,
+    'h': height,
+  };
+
+  factory PageBackground.fromJson(Map<String, dynamic> j) => PageBackground(
+    pageIndex: (j['at'] as num).toInt(),
+    assetId: j['asset'] as String,
+    pdfPage: (j['page'] as num).toInt(),
+    width: (j['w'] as num).toDouble(),
+    height: (j['h'] as num).toDouble(),
+  );
 }

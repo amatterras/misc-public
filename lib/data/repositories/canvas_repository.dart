@@ -46,6 +46,7 @@ class FileCanvasRepository implements CanvasRepository {
           updatedAt: DateTime.parse(json['updatedAt'] as String).toLocal(),
           folderId: json['folderId'] as String?,
           searchText: text.toString(),
+          isNotebook: isNotebookId(id, json['kind'] as String?),
         ),
       );
     }
