@@ -69,22 +69,32 @@ class _TasksPageState extends State<TasksPage> {
     super.dispose();
   }
 
+  /// Which tasks a list shows. Completing a task never removes it from the
+  /// list it is in: it stays, ticked and struck through, below the open
+  /// ones (sorted in [_tasks]). It is the same record, only marked done.
   bool _inList(Task t) {
     if (t.parentId != null) return false; // subtasks show under their parent
     final today = dateOnly(DateTime.now());
+    final due = t.dueDate;
+    final completedToday =
+        t.completedAt != null && daysBetween(t.completedAt!, today) == 0;
     switch (_list) {
       case SmartTaskList(:final kind):
         return switch (kind) {
-          SmartList.open => !t.done,
+          SmartList.open => true,
+          // Done ones stay for the day they are due or were ticked off, so
+          // old finished tasks do not pile up under "overdue".
           SmartList.today =>
-            !t.done && t.dueDate != null && daysBetween(t.dueDate!, today) >= 0,
-          SmartList.upcoming =>
-            !t.done && t.dueDate != null && daysBetween(today, t.dueDate!) > 0,
-          SmartList.exams => t.isExam && !t.done,
+            due != null &&
+                (t.done
+                    ? daysBetween(due, today) == 0 || completedToday
+                    : daysBetween(due, today) >= 0),
+          SmartList.upcoming => due != null && daysBetween(today, due) > 0,
+          SmartList.exams => t.isExam,
           SmartList.done => t.done,
         };
       case ProjectTaskList(:final projectId):
-        return t.projectId == projectId && !t.done;
+        return t.projectId == projectId;
     }
   }
 
@@ -298,7 +308,7 @@ class _TasksPageState extends State<TasksPage> {
           ),
         ),
         item(
-          'All open',
+          'All tasks',
           Icons.inbox_outlined,
           const SmartTaskList(SmartList.open),
           count: countOf((t) => !t.done),
@@ -396,7 +406,7 @@ class _TasksPageState extends State<TasksPage> {
 
   String get _title => switch (_list) {
     SmartTaskList(:final kind) => switch (kind) {
-      SmartList.open => 'All open tasks',
+      SmartList.open => 'All tasks',
       SmartList.today => 'Today & overdue',
       SmartList.upcoming => 'Upcoming',
       SmartList.exams => 'Exams',
@@ -515,7 +525,9 @@ class TaskRow extends StatelessWidget {
             children: [
               Checkbox(
                 value: t.done,
-                activeColor: priorityColors[t.priority],
+                // Done: a clear green tick, whatever the priority colour.
+                activeColor: OrganizerColors.green,
+                checkColor: Colors.white,
                 side: BorderSide(color: priorityColors[t.priority], width: 1.5),
                 onChanged: (_) => ws.toggleTask(t.id),
               ),

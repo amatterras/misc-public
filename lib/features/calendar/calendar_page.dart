@@ -26,7 +26,10 @@ class CalendarPage extends StatefulWidget {
   final AppState state;
 
   static const double cellWidth = 196;
-  static const double cellHeight = 156;
+
+  /// Twice the earlier 156, so a day shows up to [DayCell.maxLabels] items
+  /// instead of 5. The grid pans and zooms, so taller weeks scroll.
+  static const double cellHeight = 312;
 
   @override
   State<CalendarPage> createState() => _CalendarPageState();
@@ -594,7 +597,8 @@ class DayCell extends StatelessWidget {
   final VoidCallback onTap;
   final ValueChanged<DayItem> onEditItem;
 
-  static const maxLabels = 5;
+  /// Labels that fit in a cell (20 px each) below the date and a note line.
+  static const maxLabels = 11;
 
   @override
   Widget build(BuildContext context) {
@@ -736,7 +740,8 @@ class DayLabel extends StatelessWidget {
     final color = organizerColor(item.colorIndex);
     final isHabit =
         item is EntryOnDay && item.entry.category == CalendarCategory.habits;
-    final checked = isHabit && item.entry.isCheckedOn(day);
+    final taskDone = item is TaskOnDay && item.task.done;
+    final checked = (isHabit && item.entry.isCheckedOn(day)) || taskDone;
     final time = switch (item) {
       EntryOnDay(:final entry) => entry.timeLabel,
       TaskOnDay(:final task) =>
@@ -767,9 +772,9 @@ class DayLabel extends StatelessWidget {
             InkWell(
               onTap: () => state.workspace.toggleTask(item.task.id),
               child: Icon(
-                Icons.check_box_outline_blank,
+                taskDone ? Icons.check_box : Icons.check_box_outline_blank,
                 size: 12,
-                color: color,
+                color: taskDone ? OrganizerColors.green : color,
               ),
             )
           else
@@ -1100,10 +1105,19 @@ class _DayPanelState extends State<DayPanel> {
           contentPadding: EdgeInsets.zero,
           leading: Checkbox(
             value: task.done,
-            activeColor: color,
+            activeColor: OrganizerColors.green,
+            checkColor: Colors.white,
             onChanged: (_) => ws.toggleTask(task.id),
           ),
-          title: Text(item.label),
+          title: Text(
+            item.label,
+            style: task.done
+                ? const TextStyle(
+                    decoration: TextDecoration.lineThrough,
+                    color: AppColors.textFaint,
+                  )
+                : null,
+          ),
           subtitle: const Text(
             'Task (from Tasks)',
             style: TextStyle(fontSize: 11, color: AppColors.textFaint),

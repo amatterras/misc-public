@@ -331,6 +331,21 @@ class CanvasPainter extends CustomPainter {
       ..color = AppColors.accent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5 / scale;
+    // The item a connection is being made from (connect tool).
+    final sourceId = controller.connectSource;
+    final source = sourceId == null ? null : controller.itemById(sourceId);
+    if (source != null) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          controller.itemBounds(source).inflate(4 / scale),
+          Radius.circular(8 / scale),
+        ),
+        Paint()
+          ..color = AppColors.accent
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5 / scale,
+      );
+    }
     final selected = controller.selectedItems
         .where((i) => i is! ConnectorItem)
         .toList();

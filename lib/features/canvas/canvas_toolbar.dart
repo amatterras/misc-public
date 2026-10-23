@@ -93,7 +93,9 @@ class CanvasToolbar extends StatelessWidget {
             toolButton(
               CanvasTool.connect,
               const Icon(Icons.share_outlined, size: 18),
-              'Connect — drag from one item to another  (C)',
+              touchFirst
+                  ? 'Connect — tap one item, then another (or drag)'
+                  : 'Connect — click one item, then another, or drag  (C)',
             ),
             const _PanelDivider(),
             ToolButton(

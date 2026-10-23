@@ -579,8 +579,9 @@ class Workspace {
     }
     if (includeTasks) {
       for (final t in tasks.all) {
+        // Done tasks stay on their day (shown ticked), like in Tasks.
         final due = t.dueDate;
-        if (due == null || t.done || daysBetween(due, day) != 0) continue;
+        if (due == null || daysBetween(due, day) != 0) continue;
         final color = projects[t.projectId]?.colorIndex ?? 9;
         if (colors != null && !colors.contains(color)) continue;
         result.add(TaskOnDay(t, color));
@@ -590,7 +591,12 @@ class Workspace {
       EntryOnDay(:final entry) => entry.startMinutes ?? -1,
       TaskOnDay(:final task) => task.dueMinutes ?? 24 * 60,
     };
-    result.sort((a, b) => minutes(a).compareTo(minutes(b)));
+    bool done(DayItem i) => i is TaskOnDay && i.task.done;
+    // Open items first (by time), finished tasks after them.
+    result.sort((a, b) {
+      if (done(a) != done(b)) return done(a) ? 1 : -1;
+      return minutes(a).compareTo(minutes(b));
+    });
     return result;
   }
 

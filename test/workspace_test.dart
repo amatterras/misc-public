@@ -203,7 +203,10 @@ void main() {
         // Checking it off from the calendar completes the task itself.
         ws.toggleTask(shown.task.id);
         expect(ws.tasks[t.id]!.done, isTrue);
-        expect(ws.itemsOn(DateTime(2026, 10, 24)), isEmpty);
+        // It stays on its day, ticked: still the one record, not removed.
+        final after = ws.itemsOn(DateTime(2026, 10, 24)).single as TaskOnDay;
+        expect(after.task.id, t.id);
+        expect(after.task.done, isTrue);
         expect(ws.tasks.length, 1);
         // Moving it on the grid changes the task's due date.
         ws.toggleTask(t.id);

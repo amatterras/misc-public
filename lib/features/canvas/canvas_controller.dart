@@ -22,7 +22,19 @@ enum CanvasTool { select, lasso, pan, pen, highlighter, eraser, text, connect }
 enum SaveState { saved, pending, saving, failed }
 
 /// What the current pointer drag is doing.
-enum _Drag { none, pan, move, resize, marquee, lasso, draw, erase, connect }
+enum _Drag {
+  none,
+  pan,
+  move,
+  resize,
+  marquee,
+  lasso,
+  draw,
+  erase,
+  connect,
+  // Connect tool, second tap (choosing the target of a tapped source).
+  connectTap,
+}
 
 /// Owns the state of one open canvas: its items, camera, selection, current
 /// tool, undo/redo history and autosave.
@@ -220,6 +232,7 @@ class CanvasController extends ChangeNotifier {
   set tool(CanvasTool value) {
     if (value == _tool) return;
     endEditing();
+    _pendingFrom = null;
     _tool = value;
     if (value != CanvasTool.select && value != CanvasTool.lasso) {
       _selection = const {};
@@ -717,6 +730,7 @@ class CanvasController extends ChangeNotifier {
   CanvasItem? _resizeOriginal;
   Duration? _lastDownTime;
   Offset? _lastDownPos;
+  PointerDeviceKind _kind = PointerDeviceKind.mouse;
 
   bool get isPanning => _drag == _Drag.pan;
   bool get isDragging => _drag != _Drag.none;
@@ -732,6 +746,7 @@ class CanvasController extends ChangeNotifier {
   }) {
     _lastScreen = screen;
     lastPointer = screen;
+    _kind = kind;
     final world = toWorld(screen);
     _dragStartWorld = world;
 
@@ -811,11 +826,20 @@ class CanvasController extends ChangeNotifier {
         _eraseAt(world, world);
       case CanvasTool.connect:
         endEditing();
-        final hit = hitTest(world);
-        if (hit is BoxItem) {
-          _drag = _Drag.connect;
-          _connectFrom = hit.id;
-          _connectEnd = world;
+        if (_pendingFrom != null) {
+          // Second tap: the target is chosen when the finger lifts, so a
+          // pinch or pan in between (to reach a far item) cancels nothing.
+          _drag = _Drag.connectTap;
+          _tapAt = world;
+          _tapScreen = screen;
+          _tapMoved = false;
+        } else {
+          final hit = hitTest(world);
+          if (hit is BoxItem) {
+            _drag = _Drag.connect;
+            _connectFrom = hit.id;
+            _connectEnd = world;
+          }
         }
     }
     notifyListeners();
@@ -824,30 +848,71 @@ class CanvasController extends ChangeNotifier {
   String? _connectFrom;
   Offset? _connectEnd;
 
+  /// Source item chosen with a tap (touch): the next tap on another item
+  /// connects the two. Tapping it again or empty space cancels.
+  String? _pendingFrom;
+  Offset? _tapAt;
+  Offset? _tapScreen;
+  bool _tapMoved = false;
+
+  /// The item a connection is being made from (highlighted on screen).
+  String? get connectSource => _connectFrom ?? _pendingFrom;
+
+  /// Cancels a connection waiting for its second tap.
+  void cancelConnect() {
+    if (_pendingFrom == null) return;
+    _pendingFrom = null;
+    notifyListeners();
+  }
+
   /// Line being drawn with the connect tool (start item edge → pointer).
   (Offset, Offset)? get liveConnection {
-    final from = _connectFrom == null ? null : itemById(_connectFrom!);
-    final end = _connectEnd;
+    final fromId = _connectFrom ?? _pendingFrom;
+    final from = fromId == null ? null : itemById(fromId);
+    // While waiting for the second tap, a mouse shows the line to the
+    // pointer; on touch there is no hover, so the source is highlighted.
+    final end =
+        _connectEnd ??
+        (_pendingFrom != null && _hover != null ? toWorld(_hover!) : null);
     if (from == null || end == null) return null;
     return (_edgePoint(itemBounds(from), end), end);
   }
 
-  /// Finishes a connect drag: joins the two items unless the target is
-  /// empty space, the same item, or they are already joined.
+  /// Finishes a connect drag: joins the two items. Released on the same
+  /// item (a tap), it waits for a tap on the target instead.
   void _finishConnect() {
     final fromId = _connectFrom, end = _connectEnd;
     _connectFrom = null;
     _connectEnd = null;
     if (fromId == null || end == null) return;
     final target = hitTest(end);
-    if (target is! BoxItem || target.id == fromId) return;
+    if (target is BoxItem && target.id == fromId) {
+      _pendingFrom = fromId;
+      return;
+    }
+    if (target is BoxItem) _connect(fromId, target.id);
+  }
+
+  /// Second tap of a tap-tap connection.
+  void _finishConnectTap() {
+    final fromId = _pendingFrom, at = _tapAt;
+    _tapAt = _tapScreen = null;
+    if (fromId == null || at == null || _tapMoved) return;
+    _pendingFrom = null;
+    final target = hitTest(at);
+    if (target is BoxItem && target.id != fromId) _connect(fromId, target.id);
+  }
+
+  /// Joins two items unless one is gone or they are already joined.
+  void _connect(String fromId, String toId) {
+    if (itemById(fromId) == null || itemById(toId) == null) return;
     final exists = _items.any(
-      (i) => i is ConnectorItem && i.joins(fromId, target.id),
+      (i) => i is ConnectorItem && i.joins(fromId, toId),
     );
     if (exists) return;
     _commit([
       ..._items,
-      ConnectorItem(id: newId(), fromId: fromId, toId: target.id),
+      ConnectorItem(id: newId(), fromId: fromId, toId: toId),
     ]);
   }
 
@@ -951,6 +1016,23 @@ class CanvasController extends ChangeNotifier {
         _eraseAt(toWorld(screen - delta), world);
       case _Drag.connect:
         _connectEnd = world;
+      case _Drag.connectTap:
+        // Moving means a drag, not a tap: from an item it is an ordinary
+        // connect drag from there (the waiting source is dropped); from
+        // empty space it does nothing and the source keeps waiting.
+        final start = _tapScreen, at = _tapAt;
+        if (start != null && (screen - start).distance > doubleTapSlop(_kind)) {
+          final hit = at == null ? null : hitTest(at);
+          if (hit is BoxItem) {
+            _pendingFrom = null;
+            _tapAt = _tapScreen = null;
+            _drag = _Drag.connect;
+            _connectFrom = hit.id;
+            _connectEnd = world;
+          } else {
+            _tapMoved = true;
+          }
+        }
     }
     notifyListeners();
   }
@@ -979,6 +1061,8 @@ class CanvasController extends ChangeNotifier {
         _lassoPoints = [];
       case _Drag.connect:
         _finishConnect();
+      case _Drag.connectTap:
+        _finishConnectTap();
       case _Drag.pan || _Drag.none:
         break;
     }
@@ -1031,6 +1115,8 @@ class CanvasController extends ChangeNotifier {
     if (_drag == _Drag.draw) _liveStroke = null;
     if (_drag == _Drag.lasso) _lassoPoints = [];
     if (_drag == _Drag.connect) _connectFrom = _connectEnd = null;
+    // A pinch started during the second tap: keep waiting for the target.
+    if (_drag == _Drag.connectTap) _tapMoved = true;
     pointerUp();
   }
 

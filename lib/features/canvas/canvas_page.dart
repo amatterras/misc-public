@@ -271,6 +271,7 @@ class _CanvasViewState extends State<CanvasView> {
         key == LogicalKeyboardKey.backspace) {
       c.deleteSelection();
     } else if (key == LogicalKeyboardKey.escape) {
+      c.cancelConnect();
       c.select(const []);
     } else if (key == LogicalKeyboardKey.enter && c.selection.length == 1) {
       final item = c.selectedItems.first;
@@ -551,6 +552,34 @@ class _CanvasViewState extends State<CanvasView> {
                   ),
                 ),
                 if (c.items.isEmpty) const _EmptyHint(),
+                if (c.tool == CanvasTool.connect && c.connectSource != null)
+                  const Positioned(
+                    top: Space.md,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: Center(
+                        key: ValueKey('connect-hint'),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppColors.cardRaised,
+                            borderRadius: BorderRadius.all(Radius.circular(8)),
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            child: Text(
+                              'Now tap the item to connect to '
+                              '(tap empty space to cancel)',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             );
           },
