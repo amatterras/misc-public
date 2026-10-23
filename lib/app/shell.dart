@@ -9,6 +9,7 @@ import '../features/capture/capture_dialog.dart';
 import '../features/capture/capture_service.dart';
 import '../features/home/home_page.dart';
 import '../features/notes/notes_page.dart';
+import '../features/links/links_page.dart';
 import '../features/search/search_dialog.dart';
 import '../features/settings/settings_dialog.dart';
 import '../features/tasks/tasks_page.dart';
@@ -41,6 +42,7 @@ Future<void> openQuickAdd(BuildContext context, AppState state) async {
       AppPage.tasks => CaptureDestination.task,
       AppPage.home => CaptureDestination.inbox,
       AppPage.canvas => CaptureDestination.canvas,
+      AppPage.links => CaptureDestination.links,
     },
   );
 }
@@ -87,6 +89,7 @@ class _AppShellState extends State<AppShell> {
                   HomePage(state: state),
                   CanvasPage(state: state),
                   NotesPage(state: state),
+                  LinksPage(state: state),
                   CalendarPage(state: state),
                   TasksPage(state: state),
                 ],
@@ -145,6 +148,7 @@ class _CompactTopBar extends StatelessWidget {
       AppPage.home => 'Home',
       AppPage.canvas => state.canvas?.title ?? 'Canvas',
       AppPage.notes => 'Notes',
+      AppPage.links => 'Links',
       AppPage.calendar => 'Calendar',
       AppPage.tasks => 'Tasks',
     };
@@ -236,6 +240,7 @@ class _CompactBottomNav extends StatelessWidget {
       (AppPage.home, Icons.home_outlined, 'Home'),
       (AppPage.canvas, Icons.grid_view, 'Canvas'),
       (AppPage.notes, Icons.description_outlined, 'Notes'),
+      (AppPage.links, Icons.bookmarks_outlined, 'Links'),
       (AppPage.calendar, Icons.calendar_today_outlined, 'Calendar'),
       (AppPage.tasks, Icons.check_box_outlined, 'Tasks'),
     ];

@@ -12,7 +12,7 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
 |---|---|---|---|---|---|
 | Dark, minimal design; collapsible right sidebar | P1 | W | VERIFIED | `lib/app/shell.dart`, `sidebar.dart`; `widget_test` "every page opens from the sidebar"; `spec_coverage_test` sidebar persistence | click-through on real binary not automated |
-| Navigation Home/Canvas/Notes/Calendar/Tasks | P1 | W,i | VERIFIED | `widget_test`, `layout_test` (8 sizes incl. phone/iPad) | |
+| Navigation Home/Canvas/Notes/Links/Calendar/Tasks | P1 | W,i | VERIFIED | `widget_test`, `layout_test` (8 sizes incl. phone/iPad) | |
 | Home: today's tasks, priorities, upcoming deadlines, quick capture, recent/favorite notes | P1 | W | VERIFIED (screenshot of real binary on test data + widget tests) | `lib/features/home/home_page.dart` | |
 
 ## 2. Canvas (highest priority)
@@ -99,6 +99,10 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Share-menu link capture | P2 | i | PARTIAL (Dart side tested with simulated channel, shared text capped; Swift uncompiled; extension target not in the Xcode project) | `ios_bridge_test`, `ios_readiness_test` | Mac; Share Extension needs paid account (App Groups) |
 | Apple Pencil (pressure, low-latency live layer, prediction, squeeze to erase, hold to straighten) | P2 | i | IMPLEMENTED BUT UNVERIFIED (logic tested; feel needs a device) | `phase2_test` | iPad + Pencil (Pro for squeeze) |
 | Notes as full pages with lazy handwriting pages | P1 | W,i | VERIFIED (logic, widget tests) | `phase2_test`, `widget_test`, `version_history_test` | |
+| Links library: board of link cards (preview, title, tags), Pencil ink on the board, filter by tag | P1 | W,i | VERIFIED (logic, widget tests incl. phone width); iPad not run | `phase3_test` | |
+| Link tags Resource/Projects/Other/Shopping/Second-brain (blue/red/yellow/green/pink), synced | P1 | W,i | VERIFIED (two devices via local hub) | `phase3_test` | |
+| Share a link into Links (Quick Add, paste, `theapp://capture?to=links` Shortcut) | P1 | W,i | VERIFIED on Windows; iOS Shortcut path UNVERIFIED | `phase3_test`, `widget_test` | iPad |
+| Home-screen widgets: today + tomorrow tasks and events, +N more, deep links, light/dark | P2 | i | IMPLEMENTED BUT UNVERIFIED (snapshot and deep links tested; Swift cloud-compiled only; App Group with free signing unknown) | `phase3_test` | iPad; App Group via sideloader |
 | Touch-only use (no mouse/keyboard): every menu reachable by press and hold, canvas trash in the title menu, 44 px resize target, double-tap tolerance, touch wording | P1 | i | VERIFIED in simulated touch tests / NOT VERIFIED on an iPad | `ipad_touch_test` | iPad |
 | Dart ↔ Swift channel contract | P1 | i | VERIFIED by source check (every Dart call has a Swift case and back); Swift not compiled | `ipad_touch_test` | Mac |
 | iOS sync compatibility (same Dart engine and protocol v1 as Windows) | P1 | i | IMPLEMENTED BUT UNVERIFIED on iOS | `sync_engine_test`, `ios_readiness_test` | Mac build + device |

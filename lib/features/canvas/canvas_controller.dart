@@ -779,6 +779,15 @@ class CanvasController extends ChangeNotifier {
     (liveInk as _Ping).ping();
   }
 
+  /// Items drawn faded, e.g. links outside the chosen tag in the Links
+  /// library. Display only; nothing is changed or saved.
+  bool Function(CanvasItem item)? get dimmed => _dimmed;
+  bool Function(CanvasItem item)? _dimmed;
+  set dimmed(bool Function(CanvasItem item)? value) {
+    _dimmed = value;
+    notifyListeners();
+  }
+
   // Apple Pencil Pro squeeze: eraser while squeezed, then the tool before.
   CanvasTool? _toolBeforeSqueeze;
 

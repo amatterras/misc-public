@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
+import '../links/link_tags.dart';
 import '../../platform/input_hints.dart';
 
 /// Padding between a text box's edge and its text, in world units.
@@ -126,6 +127,7 @@ class CardLayout {
     required this.height,
     required this.lines,
     this.previewHeight = 0,
+    this.chips = const [],
   });
 
   final double height;
@@ -136,8 +138,14 @@ class CardLayout {
   /// Height of the image strip at the top (0 if none).
   final double previewHeight;
 
+  /// Coloured tag labels (Links library), relative to the card's top-left.
+  final List<(Rect, Color, TextPainter)> chips;
+
   void dispose() {
     for (final (_, p) in lines) {
+      p.dispose();
+    }
+    for (final (_, _, p) in chips) {
       p.dispose();
     }
   }
@@ -174,6 +182,32 @@ CardLayout layoutLinkCard(
     ),
     2,
   );
+  final chips = <(Rect, Color, TextPainter)>[];
+  final tags = LinkTag.of(asset?.linkTags ?? const []);
+  if (tags.isNotEmpty) {
+    y += 2;
+    var x = kCardPadding + 22;
+    var rowHeight = 0.0;
+    for (final tag in tags) {
+      final p = layoutText(
+        TextSpan(
+          text: tag.label,
+          style: canvasTextStyle(11, bold: true, color: tag.color),
+        ),
+        inner,
+        maxLines: 1,
+      );
+      final size = Size(p.width + 14, p.height + 6);
+      if (x + size.width > item.width - kCardPadding && x > kCardPadding + 22) {
+        x = kCardPadding + 22;
+        y += rowHeight + 4;
+      }
+      chips.add((Offset(x, y) & size, tag.color, p));
+      x += size.width + 6;
+      rowHeight = size.height;
+    }
+    y += rowHeight + 6;
+  }
   if (asset?.kind == AssetKind.document) {
     add(
       TextSpan(
@@ -211,6 +245,7 @@ CardLayout layoutLinkCard(
     height: math.max(item.minHeight, y + kCardPadding - 2),
     lines: lines,
     previewHeight: preview,
+    chips: chips,
   );
 }
 

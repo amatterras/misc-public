@@ -621,6 +621,9 @@ class CanvasDocument {
   /// counts, in case a version that drops [kind] passed it on.
   bool get isNotebook => isNotebookId(id, kind);
 
+  /// Whether this document is the Links library board.
+  bool get isLinksBoard => isLinksBoardId(id, kind);
+
   static const _knownKeys = {
     'schema',
     'id',
@@ -738,6 +741,7 @@ class CanvasSummary {
     this.folderId,
     this.searchText = '',
     this.isNotebook = false,
+    this.isLinksBoard = false,
   });
 
   final String id;
@@ -750,6 +754,12 @@ class CanvasSummary {
 
   /// A note's handwriting, not a canvas of its own.
   final bool isNotebook;
+
+  /// The Links library board, not a canvas of its own.
+  final bool isLinksBoard;
+
+  /// Shown in the Canvas list (notebooks and the Links board are not).
+  bool get isCanvas => !isNotebook && !isLinksBoard;
 }
 
 /// Id of the handwriting document of note [noteId]. Fixed, so two devices
@@ -759,6 +769,14 @@ String notebookIdFor(String noteId) => 'nb-$noteId';
 /// Whether a canvas document is a note's handwriting.
 bool isNotebookId(String id, [String? kind]) =>
     kind == 'notebook' || id.startsWith('nb-');
+
+/// Id of the one Links library board. Fixed, so every device fills the
+/// same board (its cards merge per item when syncing).
+const linksBoardId = 'links-board';
+
+/// Whether a canvas document is the Links library board.
+bool isLinksBoardId(String id, [String? kind]) =>
+    kind == 'links' || id == linksBoardId;
 
 /// A PDF page shown underneath one page of a notebook. The PDF stays an
 /// unchanged attachment (asset [assetId]); ink on the page is stored as

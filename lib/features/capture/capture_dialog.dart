@@ -10,9 +10,10 @@ import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
+import '../links/link_tags.dart';
 import 'capture_service.dart';
 
-enum CaptureDestination { canvas, notes, calendar, task, inbox }
+enum CaptureDestination { canvas, notes, links, calendar, task, inbox }
 
 /// Opens Quick Add. [initial] pre-fills it (e.g. from the clipboard);
 /// [inboxItem] files an Inbox item, reusing its records.
@@ -83,6 +84,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
   DateTime? _taskDue;
   String? _projectId;
   bool _saving = false;
+  final Set<String> _linkTags = {};
 
   AppState get s => widget.state;
 
@@ -209,6 +211,20 @@ class _CaptureDialogState extends State<CaptureDialog> {
         c.select(added.map((i) => i.id));
         s.goTo(AppPage.canvas);
         done = 'Added to canvas “${c.title}”';
+      case CaptureDestination.links:
+        if (link == null) {
+          setState(() => _saving = false);
+          s.showToast('Links keeps web links. Add a link, or save elsewhere.');
+          return;
+        }
+        await s.addToLinks(link, tags: _linkTags.toList());
+        for (final a in images) {
+          ws.inbox.put(InboxItem(id: newId(), assetId: a.id, createdAt: now));
+        }
+        s.goTo(AppPage.links);
+        done = images.isEmpty
+            ? 'Added to Links'
+            : 'Added to Links (photos went to the Inbox)';
       case CaptureDestination.notes:
         if (_newNote || _noteId == null) {
           final noteTitle = title.isNotEmpty
@@ -418,14 +434,15 @@ class _CaptureDialogState extends State<CaptureDialog> {
                     ),
                   ),
                 const SizedBox(height: Space.sm),
-                Row(
+                Wrap(
+                  spacing: Space.sm,
+                  runSpacing: Space.sm,
                   children: [
                     OutlinedButton.icon(
                       onPressed: _paste,
                       icon: const Icon(Icons.content_paste, size: 16),
                       label: const Text('Paste'),
                     ),
-                    const SizedBox(width: Space.sm),
                     OutlinedButton.icon(
                       onPressed: _pickPhotos,
                       icon: const Icon(
@@ -446,37 +463,46 @@ class _CaptureDialogState extends State<CaptureDialog> {
                   ),
                 ),
                 const SizedBox(height: Space.sm),
-                SegmentedButton<CaptureDestination>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(
-                      value: CaptureDestination.canvas,
-                      label: Text('Canvas'),
-                      icon: Icon(Icons.grid_view, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: CaptureDestination.notes,
-                      label: Text('Notes'),
-                      icon: Icon(Icons.description_outlined, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: CaptureDestination.calendar,
-                      label: Text('Calendar'),
-                      icon: Icon(Icons.calendar_today_outlined, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: CaptureDestination.task,
-                      label: Text('Task'),
-                      icon: Icon(Icons.check_box_outlined, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: CaptureDestination.inbox,
-                      label: Text('Inbox'),
-                      icon: Icon(Icons.inbox_outlined, size: 16),
-                    ),
-                  ],
-                  selected: {_dest},
-                  onSelectionChanged: (v) => setState(() => _dest = v.first),
+                // Six destinations: scrolls sideways on narrow phones.
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SegmentedButton<CaptureDestination>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(
+                        value: CaptureDestination.canvas,
+                        label: Text('Canvas'),
+                        icon: Icon(Icons.grid_view, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: CaptureDestination.notes,
+                        label: Text('Notes'),
+                        icon: Icon(Icons.description_outlined, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: CaptureDestination.links,
+                        label: Text('Links'),
+                        icon: Icon(Icons.bookmarks_outlined, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: CaptureDestination.calendar,
+                        label: Text('Calendar'),
+                        icon: Icon(Icons.calendar_today_outlined, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: CaptureDestination.task,
+                        label: Text('Task'),
+                        icon: Icon(Icons.check_box_outlined, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: CaptureDestination.inbox,
+                        label: Text('Inbox'),
+                        icon: Icon(Icons.inbox_outlined, size: 16),
+                      ),
+                    ],
+                    selected: {_dest},
+                    onSelectionChanged: (v) => setState(() => _dest = v.first),
+                  ),
                 ),
                 const SizedBox(height: Space.md),
                 _destinationOptions(),
@@ -519,6 +545,28 @@ class _CaptureDialogState extends State<CaptureDialog> {
   Widget _destinationOptions() {
     final ws = s.workspace;
     switch (_dest) {
+      case CaptureDestination.links:
+        return LabeledField(
+          label: 'Tags',
+          child: Wrap(
+            spacing: Space.xs,
+            runSpacing: Space.xs,
+            children: [
+              for (final tag in LinkTag.values)
+                FilterChip(
+                  key: ValueKey('capture-tag-${tag.id}'),
+                  label: Text(tag.label),
+                  selected: _linkTags.contains(tag.id),
+                  selectedColor: tag.color.withValues(alpha: 0.3),
+                  side: BorderSide(color: tag.color.withValues(alpha: 0.6)),
+                  showCheckmark: false,
+                  onSelected: (on) => setState(
+                    () => on ? _linkTags.add(tag.id) : _linkTags.remove(tag.id),
+                  ),
+                ),
+            ],
+          ),
+        );
       case CaptureDestination.canvas:
         return LabeledField(
           label: 'Canvas',

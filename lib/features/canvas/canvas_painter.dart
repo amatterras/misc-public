@@ -67,6 +67,13 @@ class CanvasPainter extends CustomPainter {
       if (item is ConnectorItem) continue;
       final bounds = controller.itemBounds(item);
       if (!bounds.overlaps(visible)) continue;
+      final faded = controller.dimmed?.call(item) ?? false;
+      if (faded) {
+        canvas.saveLayer(
+          bounds.inflate(4),
+          Paint()..color = const Color.fromRGBO(0, 0, 0, 0.22),
+        );
+      }
       switch (item) {
         case TextItem():
           _paintText(canvas, item, bounds);
@@ -81,6 +88,7 @@ class CanvasPainter extends CustomPainter {
         case ConnectorItem():
           break; // drawn above
       }
+      if (faded) canvas.restore();
     }
     _paintSelection(canvas, scale);
     canvas.restore();
@@ -220,6 +228,21 @@ class CanvasPainter extends CustomPainter {
     );
     for (final (offset, painter) in layout.lines) {
       painter.paint(canvas, bounds.topLeft + offset);
+    }
+    for (final (rect, color, label) in layout.chips) {
+      final r = RRect.fromRectAndRadius(
+        rect.shift(bounds.topLeft),
+        Radius.circular(rect.height / 2),
+      );
+      canvas.drawRRect(r, Paint()..color = color.withValues(alpha: 0.16));
+      canvas.drawRRect(
+        r,
+        Paint()
+          ..color = color.withValues(alpha: 0.7)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
+      );
+      label.paint(canvas, r.outerRect.topLeft + const Offset(7, 3));
     }
   }
 

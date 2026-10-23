@@ -24,6 +24,7 @@ class Asset implements Record {
     this.fileSize,
     this.previewSha256,
     this.previewSize,
+    this.linkTags = const [],
   });
 
   @override
@@ -57,6 +58,10 @@ class Asset implements Record {
   final String? previewSha256;
   final int? previewSize;
 
+  /// Links library tags (ids from `LinkTag`; links only). Written only when
+  /// set, so older files and older app versions are unaffected.
+  final List<String> linkTags;
+
   /// What to show as a one-line name.
   String get label {
     if (title != null && title!.trim().isNotEmpty) return title!.trim();
@@ -75,6 +80,7 @@ class Asset implements Record {
     int? fileSize,
     String? previewSha256,
     int? previewSize,
+    List<String>? linkTags,
   }) => Asset(
     id: id,
     kind: kind,
@@ -92,6 +98,7 @@ class Asset implements Record {
     fileSize: fileSize ?? this.fileSize,
     previewSha256: previewSha256 ?? this.previewSha256,
     previewSize: previewSize ?? this.previewSize,
+    linkTags: linkTags ?? this.linkTags,
   );
 
   @override
@@ -112,6 +119,7 @@ class Asset implements Record {
     'fileSize': ?fileSize,
     'previewSha256': ?previewSha256,
     'previewSize': ?previewSize,
+    if (linkTags.isNotEmpty) 'linkTags': linkTags,
   };
 
   factory Asset.fromJson(Map<String, dynamic> j) => Asset(
@@ -131,6 +139,10 @@ class Asset implements Record {
     fileSize: j['fileSize'] as int?,
     previewSha256: j['previewSha256'] as String?,
     previewSize: j['previewSize'] as int?,
+    linkTags: [
+      for (final t in (j['linkTags'] as List?) ?? const [])
+        ?(t is String ? t : null),
+    ],
   );
 }
 

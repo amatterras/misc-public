@@ -6,6 +6,7 @@ import Security
 import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
+import WidgetKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -93,6 +94,8 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       pdfExport(call.arguments as? [String: Any] ?? [:], result)
     case "shareFile":
       shareFile(call.arguments as? String, result)
+    case "widgetSnapshot":
+      result(writeWidgetSnapshot(call.arguments as? String))
     case "enablePencilSqueeze":
       result(installPencilInteraction())
     case "deviceModel":
@@ -339,6 +342,25 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
   /// Replaces all of THEapp's pending reminders with `items`
   /// ([{id, title, at (ms since 1970)}]). Permission is asked only once
   /// there is something to schedule.
+  // MARK: home-screen widgets
+
+  /// The widgets (TheAppWidget extension) read this file. It is derived,
+  /// display-only data; false when there is no App Group to share it in.
+  private func writeWidgetSnapshot(_ json: String?) -> Bool {
+    guard let data = json?.data(using: .utf8),
+      let folder = FileManager.default.containerURL(
+        forSecurityApplicationGroupIdentifier: Self.appGroup)
+    else { return false }
+    do {
+      try data.write(
+        to: folder.appendingPathComponent("widget_snapshot.json"), options: .atomic)
+    } catch {
+      return false
+    }
+    WidgetCenter.shared.reloadAllTimelines()
+    return true
+  }
+
   private func scheduleReminders(_ items: [[String: Any]], _ result: @escaping FlutterResult) {
     let center = UNUserNotificationCenter.current()
     center.getPendingNotificationRequests { pending in

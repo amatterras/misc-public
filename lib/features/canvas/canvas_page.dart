@@ -38,10 +38,18 @@ class CanvasPage extends StatelessWidget {
 
 /// The interactive canvas surface for one [CanvasController].
 class CanvasView extends StatefulWidget {
-  const CanvasView({super.key, required this.controller, required this.state});
+  const CanvasView({
+    super.key,
+    required this.controller,
+    required this.state,
+    this.page = AppPage.canvas,
+  });
 
   final CanvasController controller;
   final AppState state;
+
+  /// The app page this view belongs to (Canvas or the Links library).
+  final AppPage page;
 
   @override
   State<CanvasView> createState() => _CanvasViewState();
@@ -86,7 +94,7 @@ class _CanvasViewState extends State<CanvasView> {
 
   void _onSqueeze(String phase) {
     if (phase == 'began') {
-      if (s.page == AppPage.canvas) c.squeezeBegan();
+      if (s.page == widget.page) c.squeezeBegan();
     } else {
       c.squeezeEnded(); // ended or cancelled
     }
@@ -98,7 +106,7 @@ class _CanvasViewState extends State<CanvasView> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.squeezeEnded();
     }
-    if (s.page != AppPage.canvas) c.squeezeEnded();
+    if (s.page != widget.page) c.squeezeEnded();
     _focusWhenShown();
   }
 
@@ -106,10 +114,10 @@ class _CanvasViewState extends State<CanvasView> {
   /// keyboard focus each time it becomes visible; otherwise shortcuts
   /// (P, V, Ctrl+V…) only work after clicking it.
   void _focusWhenShown() {
-    final visible = s.page == AppPage.canvas;
+    final visible = s.page == widget.page;
     if (visible && !_wasVisible) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && s.page == AppPage.canvas && c.editingId == null) {
+        if (mounted && s.page == widget.page && c.editingId == null) {
           _focusNode.requestFocus();
         }
       });

@@ -22,6 +22,7 @@ class Sidebar extends StatelessWidget {
     (AppPage.home, Icons.home_outlined, 'Home'),
     (AppPage.canvas, Icons.grid_view, 'Canvas'),
     (AppPage.notes, Icons.description_outlined, 'Notes'),
+    (AppPage.links, Icons.bookmarks_outlined, 'Links'),
     (AppPage.calendar, Icons.calendar_today_outlined, 'Calendar'),
     (AppPage.tasks, Icons.check_box_outlined, 'Tasks'),
   ];

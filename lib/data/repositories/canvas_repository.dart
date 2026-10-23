@@ -47,6 +47,7 @@ class FileCanvasRepository implements CanvasRepository {
           folderId: json['folderId'] as String?,
           searchText: text.toString(),
           isNotebook: isNotebookId(id, json['kind'] as String?),
+          isLinksBoard: isLinksBoardId(id, json['kind'] as String?),
         ),
       );
     }

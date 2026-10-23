@@ -132,6 +132,12 @@ class IosBridge implements KeychainBackend {
     await _invoke<bool>('shareFile', path, true);
   }
 
+  /// Writes the home-screen widgets' snapshot (JSON, see `WidgetSnapshot`)
+  /// to the App Group folder and asks iOS to redraw the widgets. False if
+  /// there is no App Group (it needs a signing that grants one).
+  Future<bool> writeWidgetSnapshot(String json) async =>
+      await _invoke<bool>('widgetSnapshot', json) ?? false;
+
   /// "iPad" or "iPhone" (iOS no longer gives apps the device's own name).
   Future<String?> deviceModel() => _invoke<String>('deviceModel');
 

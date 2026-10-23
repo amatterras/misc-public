@@ -41,8 +41,34 @@ workflows:
           rm -rf Payload THEapp-unsigned.ipa
           mkdir Payload
           cp -R Runner.app Payload/
+          # The widget extension goes only into THEapp-with-widgets.ipa, so
+          # this IPA installs exactly like the earlier builds.
+          ls Payload/Runner.app/PlugIns || true
+          rm -rf Payload/Runner.app/PlugIns
           zip -qry THEapp-unsigned.ipa Payload
           ls -la THEapp-unsigned.ipa
+      - name: Pack IPA with App Group entitlements (for widgets)
+        ignore_failure: true
+        script: |
+          # Same app, ad-hoc signed (no certificate, no account) only so the
+          # App Group entitlement is inside it: some free sideloaders keep
+          # it when they re-sign, which the home-screen widgets need. If this
+          # step fails, use THEapp-unsigned.ipa as before.
+          set -e
+          ROOT="$PWD"
+          cd build/ios/iphoneos
+          rm -rf Signed THEapp-with-widgets.ipa
+          mkdir -p Signed/Payload
+          cp -R Runner.app Signed/Payload/
+          APP=Signed/Payload/Runner.app
+          for f in "$APP"/Frameworks/*; do codesign --force --sign - "$f"; done
+          codesign --force --sign - --entitlements "$ROOT/ios/TheAppWidget/TheAppWidget.entitlements" "$APP/PlugIns/TheAppWidget.appex"
+          codesign --force --sign - --entitlements "$ROOT/ios/Runner/Runner.entitlements" "$APP"
+          codesign -d --entitlements - "$APP"
+          cd Signed
+          zip -qry ../THEapp-with-widgets.ipa Payload
+          ls -la ../THEapp-with-widgets.ipa
     artifacts:
       - build/ios/iphoneos/THEapp-unsigned.ipa
+      - build/ios/iphoneos/THEapp-with-widgets.ipa
       - /tmp/xcodebuild_logs/*.log

@@ -47,7 +47,14 @@ being closed and are sent on the next sync (`test/sync_engine_test.dart`,
    page could open such a link too, so these links can only ever **add Inbox
    items** (text capped at 20,000 characters); they can't change settings,
    delete or pair.
-2. **Share Extension (paid account only):** the files in `ShareExtension/` need
+2. **Share to the Links library (free):** make a second Shortcut, "Save to
+   THEapp Links", the same way but with
+   `theapp://capture?to=links&url=` followed by the URL-encoded *Shortcut
+   Input*. The link goes straight onto the Links board as a card (tags can
+   be added with `&tags=resource,projects`; ids: resource, projects, other,
+   shopping, second-brain). It only ever adds a card or tags; nothing is
+   deleted. Same Dart code as tested on Windows; not yet run on a device.
+3. **Share Extension (paid account only):** the files in `ShareExtension/` need
    the App Groups capability, which Apple only grants to the paid Developer
    Program ($99/year). Not required; the Shortcut covers links and text.
 
@@ -114,3 +121,24 @@ ID; steps 3 and 4 below then need the iPad instead of the Simulator. With a Mac:
 10. Share Extension (paid account only): add the target as described in
     `ShareExtension/README.md`, enable App Groups with a group id of your own
     on both targets, and change `group.com.theapp.shared` in both Swift files.
+
+## Home-screen widgets (Today & Tomorrow)
+- Source: `ios/TheAppWidget/` (WidgetKit, SwiftUI; small, medium and large;
+  follows light and dark mode). THEapp writes `widget_snapshot.json` into the
+  App Group folder `group.com.theapp.shared` whenever tasks or the calendar
+  change, and at midnight. The widget only reads it: the snapshot is derived
+  display data, never a source of truth, so it can't change your tasks.
+- Tapping an item opens it (`theapp://open?task=…`, `theapp://open?day=…`).
+  More items than fit show as "+N more".
+- The cloud build makes two files. `THEapp-unsigned.ipa` is the same as
+  before, without the widget. `THEapp-with-widgets.ipa` contains the widget
+  extension. It is ad-hoc signed (no certificate) only so that the App Group
+  entitlement is inside it.
+- Free Apple ID: the widget needs an App Group shared by the app and the
+  widget. Whether your sideloader (iLoader) keeps or registers App Groups
+  with a free account is NOT verified. If it doesn't, the widget installs but
+  shows "Open THEapp once…" and nothing else breaks. The extension also uses
+  one more of the free account's 10 App IDs per week.
+- STATUS: Dart side tested on Windows (snapshot, deep links, simulated
+  channel). The Swift compiles in the cloud build. Nothing has been seen on a
+  device.

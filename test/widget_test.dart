@@ -148,6 +148,49 @@ void main() {
     await shutDown(tester, s);
   });
 
+  testWidgets('Quick Add on a phone: save a link to Links with tags', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    final s = await boot(tester, dir);
+    tester.view.physicalSize = const Size(375, 812);
+    await tester.pump();
+    showCaptureDialog(
+      tester.element(find.byType(Scaffold).first),
+      s,
+      destination: CaptureDestination.links,
+    );
+    await settle(tester);
+    expect(tester.takeException(), isNull, reason: 'fits a phone');
+    await tester.enterText(
+      find
+          .descendant(
+            of: find.byType(CaptureDialog),
+            matching: find.byType(TextField),
+          )
+          .first,
+      'https://example.com/recipe',
+    );
+    await tester.pump();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('capture-tag-shopping')),
+    );
+    await tester.tap(find.byKey(const ValueKey('capture-tag-shopping')));
+    await tester.pump();
+    await tester.ensureVisible(find.textContaining('Save').last);
+    await tester.tap(find.textContaining('Save').last);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await settle(tester);
+    expect(s.page, AppPage.links);
+    final card = s.linksBoard!.items.whereType<LinkItem>().single;
+    final asset = s.workspace.assets[card.assetId]!;
+    expect(asset.url, 'https://example.com/recipe');
+    expect(asset.linkTags, ['shopping']);
+    await shutDown(tester, s);
+  });
+
   testWidgets(
     'Quick Add: a pasted URL becomes a link card on the canvas and a note',
     (tester) async {

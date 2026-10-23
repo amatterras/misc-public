@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,7 @@ import '../features/canvas/canvas_controller.dart';
 import '../features/canvas/canvas_resources.dart';
 import '../features/capture/capture_service.dart';
 import '../features/capture/send_to.dart';
+import '../features/widgets/widget_snapshot.dart';
 import '../platform/ios_bridge.dart';
 import '../platform/input_hints.dart';
 import '../platform/platform.dart' as native;
@@ -26,7 +28,7 @@ import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
 import 'test_environment.dart';
 
-enum AppPage { home, canvas, notes, calendar, tasks }
+enum AppPage { home, canvas, notes, links, calendar, tasks }
 
 /// A simple focus (Pomodoro-style) timer that keeps running while you
 /// switch pages.
@@ -248,6 +250,7 @@ class AppState extends ChangeNotifier {
       } catch (e, s) {
         AppLog.error('iPhone/iPad link and share services unavailable', e, s);
       }
+      _startWidgets();
     }
     final recoveries = workspace.store.recoveries;
     if (recoveries.isNotEmpty) {
@@ -506,10 +509,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _refreshList() async {
-    // Note handwriting is stored like a canvas but is not one.
+    // Note handwriting and the Links board are stored like canvases but
+    // are not ones.
     _canvasList = [
       for (final c in await canvases.listCanvases())
-        if (!c.isNotebook) c,
+        if (c.isCanvas) c,
     ];
     notifyListeners();
   }
@@ -609,6 +613,71 @@ class AppState extends ChangeNotifier {
     checkReminders();
   }
 
+  // ------------------------------------------------- home-screen widgets --
+
+  Timer? _widgetTimer;
+  Timer? _widgetMidnight;
+  String? _lastWidgetJson;
+
+  /// How long changes are collected before the widgets are updated.
+  static Duration widgetDelay = const Duration(seconds: 2);
+
+  /// Keeps the iPhone/iPad widgets' snapshot (today and tomorrow) up to
+  /// date. The snapshot is derived display data only; see [WidgetSnapshot].
+  void _startWidgets() {
+    for (final c in [workspace.tasks, workspace.entries, workspace.projects]) {
+      c.addListener(_scheduleWidgetUpdate);
+    }
+    unawaited(updateWidgets());
+  }
+
+  void _scheduleWidgetUpdate() {
+    _widgetTimer?.cancel();
+    _widgetTimer = Timer(widgetDelay, () => unawaited(updateWidgets()));
+  }
+
+  /// Writes a fresh snapshot if it changed (and again after midnight,
+  /// when "tomorrow" becomes "today"). Returns false if not written.
+  Future<bool> updateWidgets({DateTime? now}) async {
+    final ios = this.ios;
+    if (ios == null) return false;
+    final at = now ?? DateTime.now();
+    _widgetMidnight?.cancel();
+    _widgetMidnight = Timer(
+      addDays(dateOnly(at), 1).difference(at) + const Duration(seconds: 5),
+      () => unawaited(updateWidgets()),
+    );
+    final json = jsonEncode(WidgetSnapshot.build(workspace, at));
+    // generatedAt changes every time; compare the rest.
+    final key = json.replaceFirst(RegExp(r'"generatedAt":"[^"]*"'), '');
+    if (key == _lastWidgetJson) return false;
+    try {
+      if (!await ios.writeWidgetSnapshot(json)) return false;
+    } catch (e, s) {
+      AppLog.error('Could not update the home-screen widgets', e, s);
+      return false;
+    }
+    _lastWidgetJson = key;
+    return true;
+  }
+
+  /// Opens what a widget was tapped on (`theapp://open?task=…` or
+  /// `theapp://open?day=…`). Returns false for any other link.
+  bool openWidgetLink(Uri uri) {
+    final target = WidgetSnapshot.parseLink(uri);
+    if (target == null) return false;
+    final taskId = target.taskId;
+    if (taskId != null && workspace.tasks.contains(taskId)) {
+      openTask(taskId);
+    } else if (target.day != null) {
+      openCalendarDay(target.day!);
+    } else {
+      goTo(AppPage.tasks);
+      showToast('That task is no longer there.');
+    }
+    return true;
+  }
+
   // ------------------------------------------------------- iPhone / iPad --
 
   /// Links opened from outside (e.g. an iOS Shortcut opening
@@ -620,11 +689,32 @@ class AppState extends ChangeNotifier {
     _sharedInbox = shared == null ? null : SendToBridge(Directory(shared));
     await importSharedItems();
     await ios.listenForLinks((uri) async {
+      if (openWidgetLink(uri)) return;
+      if (await addSharedLinkToLinks(uri)) return;
       final items = await sendTo.handleUri(uri, capture);
       if (items.isEmpty) return;
       await workspace.flush();
       showToast('Added ${items.length} item(s) to the Inbox');
     });
+  }
+
+  /// `theapp://capture?url=…&to=links[&tags=resource,projects]` (e.g. an
+  /// iOS Shortcut in the share sheet): puts the link straight on the Links
+  /// board instead of the Inbox. Returns false for any other link.
+  Future<bool> addSharedLinkToLinks(Uri uri) async {
+    if (uri.scheme != 'theapp' || uri.queryParameters['to'] != 'links') {
+      return false;
+    }
+    final url = extractUrl(uri.queryParameters['url'] ?? '');
+    if (url == null) return false;
+    final tags = [
+      for (final t in (uri.queryParameters['tags'] ?? '').split(','))
+        if (t.trim().isNotEmpty) t.trim().toLowerCase(),
+    ];
+    final asset = capture.link(url, title: uri.queryParameters['title']);
+    await addToLinks(asset, tags: tags);
+    showToast('Added to Links');
+    return true;
   }
 
   /// Imports items shared through the Share Extension (at start and when
@@ -645,6 +735,8 @@ class AppState extends ChangeNotifier {
   void goTo(AppPage page) {
     if (page == _page) return;
     _canvas?.endEditing();
+    _links?.endEditing();
+    if (page == AppPage.links) unawaited(openLinksBoard());
     _page = page;
     notifyListeners();
   }
@@ -801,6 +893,92 @@ class AppState extends ChangeNotifier {
     old.dispose();
   }
 
+  // --------------------------------------------------------------- links --
+
+  CanvasController? _links;
+  Future<CanvasController>? _linksOpening;
+
+  /// The Links library board, once opened (see [openLinksBoard]).
+  CanvasController? get linksBoard => _links;
+
+  /// Opens the Links library board: one canvas-like document of link cards
+  /// (it may also hold ink and text). Nothing is written until something
+  /// changes, so opening an empty library creates no record.
+  Future<CanvasController> openLinksBoard() =>
+      _linksOpening ??= _openLinksBoard();
+
+  Future<CanvasController> _openLinksBoard() async {
+    final doc =
+        await canvases.load(linksBoardId) ??
+        CanvasDocument(
+          id: linksBoardId,
+          title: 'Links',
+          items: const [],
+          updatedAt: DateTime.now(),
+          kind: 'links',
+        );
+    final c = CanvasController(
+      document: doc,
+      onSave: canvases.save,
+      resources: resources,
+      onActivate: _activateCanvasItem,
+      clock: workspace.clock,
+    );
+    _links = c;
+    notifyListeners();
+    return c;
+  }
+
+  /// Size of one place in the Links board's grid of new cards.
+  static const linkSlot = Size(340, 380);
+  static const linkColumns = 4;
+
+  /// Puts [asset] on the Links board in the first free place of its grid,
+  /// or selects its card if the link is already there. Returns the card.
+  Future<LinkItem> addToLinks(Asset asset, {List<String>? tags}) async {
+    final c = await openLinksBoard();
+    if (tags != null && tags.isNotEmpty) {
+      setLinkTags(asset.id, {...asset.linkTags, ...tags}.toList());
+    }
+    for (final item in c.items) {
+      if (item is LinkItem && item.assetId == asset.id) {
+        c.select([item.id]);
+        return item;
+      }
+    }
+    final taken = [
+      for (final item in c.items)
+        if (item is! ConnectorItem) c.itemBounds(item),
+    ];
+    for (var i = 0; ; i++) {
+      final slot =
+          Offset(
+            (i % linkColumns) * linkSlot.width,
+            (i ~/ linkColumns) * linkSlot.height,
+          ) &
+          linkSlot;
+      if (taken.any((r) => r.overlaps(slot.deflate(1)))) continue;
+      final item = c.insertLink(
+        asset,
+        slot.topLeft + const Offset(LinkItem.defaultWidth / 2 + 20, 60),
+      );
+      c.select([item.id]);
+      return item;
+    }
+  }
+
+  /// Sets the Links library tags of link [assetId] (synced with the link).
+  void setLinkTags(String assetId, List<String> tags) {
+    final asset = workspace.assets[assetId];
+    if (asset == null) return;
+    final next = [
+      for (final t in tags)
+        if (t.isNotEmpty) t,
+    ];
+    if (listEquals(next, asset.linkTags)) return;
+    workspace.assets.put(asset.copyWith(linkTags: next));
+  }
+
   Future<void> createCanvas({
     String title = 'Untitled Canvas',
     bool withWelcome = false,
@@ -868,6 +1046,7 @@ class AppState extends ChangeNotifier {
   /// Saves everything that is pending. Called before the app exits.
   Future<void> flush() async {
     await _canvas?.flush();
+    await _links?.flush();
     await workspace.flush();
     // Settings and any other direct writes still in flight.
     await workspace.store.flush();
@@ -903,6 +1082,11 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _syncTimer?.cancel();
+    _widgetTimer?.cancel();
+    _widgetMidnight?.cancel();
+    for (final c in [workspace.tasks, workspace.entries, workspace.projects]) {
+      c.removeListener(_scheduleWidgetUpdate);
+    }
     _firstSync?.cancel();
     _reminderTimer?.cancel();
     workspace.tasks.removeListener(checkReminders);
@@ -910,6 +1094,7 @@ class AppState extends ChangeNotifier {
     sendTo.dispose();
     timer.dispose();
     _canvas?.dispose();
+    _links?.dispose();
     resources.dispose();
     super.dispose();
   }
@@ -924,6 +1109,7 @@ class _SyncBridge implements OpenCanvasBridge {
   CanvasController? _open(String id) {
     if (state._canvas?.id == id) return state._canvas;
     if (state.openNotebook?.id == id) return state.openNotebook;
+    if (state._links?.id == id) return state._links;
     return null;
   }
 
@@ -934,6 +1120,7 @@ class _SyncBridge implements OpenCanvasBridge {
   Future<void> flushOpenCanvas() async {
     await state._canvas?.flush();
     await state.openNotebook?.flush();
+    await state._links?.flush();
   }
 
   @override
