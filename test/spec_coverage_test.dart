@@ -148,20 +148,28 @@ void main() {
 }
 
 void calendarCellAndColourTests() {
-  test('the ten organizer colours are exactly the specified ones', () {
+  test('the shared 18-colour ink library is canonical and ordered', () {
     expect(
-      [for (final c in OrganizerColors.all) c.toARGB32() & 0xFFFFFF],
+      [for (final c in InkColors.all) c.toARGB32() & 0xFFFFFF],
       [
-        0xE76F51, // coral
-        0xE9A23B, // amber
-        0xE8D45B, // yellow
-        0x79B85A, // green
-        0x35A99A, // teal
-        0x4D8FD6, // blue
-        0x6965C9, // indigo
-        0xA56BC4, // purple
-        0xD86D9C, // pink
-        0x9A9A9A, // grey
+        0xE3E5E8,
+        0x789BB5,
+        0x829CB5,
+        0x172943,
+        0x4F9AA6,
+        0x8FBFA9,
+        0xC7D5A0,
+        0xC8AED2,
+        0xD5A16F,
+        0xE56BDA,
+        0xC6AD79,
+        0x2878F0,
+        0x2366AD,
+        0x00BDB1,
+        0xB5DC32,
+        0x793BE8,
+        0xF2D84A,
+        0x176B4D,
       ],
     );
   });

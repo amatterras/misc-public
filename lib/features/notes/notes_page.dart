@@ -9,6 +9,13 @@ import '../../data/models/library_models.dart';
 import '../../data/workspace.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
+import '../ai/ai_service.dart';
+import '../ai/ai_session.dart';
+import '../ai/similarity.dart';
+import '../import/import_dialog.dart';
+import 'conversion.dart';
+import 'note_connections.dart';
+import 'note_diff.dart';
 import 'note_page.dart';
 
 /// Which notes the middle column shows.
@@ -27,6 +34,11 @@ class FavoriteNotes extends NoteFilter {
 class FolderNotes extends NoteFilter {
   const FolderNotes(this.folderId);
   final String folderId;
+}
+
+/// Notes that belong to no project or study subject (smart view).
+class UnlinkedNotes extends NoteFilter {
+  const UnlinkedNotes();
 }
 
 class TagNotes extends NoteFilter {
@@ -93,6 +105,7 @@ class _NotesPageState extends State<NotesPage> {
       n.folderId != null &&
           s.workspace.folderAndDescendants(folderId).contains(n.folderId),
     TagNotes(:final tag) => n.tags.contains(tag),
+    UnlinkedNotes() => n.projectIds.isEmpty,
   };
 
   // ------------------------------------------------------------ folders --
@@ -113,6 +126,7 @@ class _NotesPageState extends State<NotesPage> {
         (FolderNotes(folderId: final a), FolderNotes(folderId: final b)) =>
           a == b,
         (TagNotes(tag: final a), TagNotes(tag: final b)) => a == b,
+        (UnlinkedNotes(), UnlinkedNotes()) => true,
         _ => false,
       };
       return Padding(
@@ -169,6 +183,14 @@ class _NotesPageState extends State<NotesPage> {
           trailing: _count(ws.notes.length),
         ),
         item('Favorites', Icons.star_outline, const FavoriteNotes()),
+        item(
+          'Not in a project',
+          Icons.link_off,
+          const UnlinkedNotes(),
+          trailing: _count(
+            ws.notes.all.where((n) => n.projectIds.isEmpty).length,
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 18, 4, 6),
           child: Row(
@@ -347,6 +369,32 @@ class _NotesPageState extends State<NotesPage> {
                 tooltip: 'Import a PDF as a note',
                 icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
               ),
+              PopupMenuButton<String>(
+                key: const ValueKey('notes-more'),
+                tooltip: 'More: import notes, find similar notes',
+                icon: const Icon(Icons.more_horiz, size: 18),
+                onSelected: (v) => v == 'import'
+                    ? showImportDialog(context, s)
+                    : showSimilarNotes(context, s),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'import',
+                    child: Text(
+                      'Import notes (Obsidian, Notion, Apple Notes)…',
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'similar',
+                    child: Text('Find similar notes…'),
+                  ),
+                ],
+              ),
+              IconButton(
+                key: const ValueKey('notes-recently-deleted'),
+                onPressed: () => showRecentlyDeleted(context, s),
+                tooltip: 'Recently deleted',
+                icon: const Icon(Icons.restore_from_trash_outlined, size: 18),
+              ),
               const SizedBox(width: Space.sm),
               // Icon only when the list column is narrow.
               if (MediaQuery.sizeOf(context).width < 1000)
@@ -433,11 +481,7 @@ class _NotesPageState extends State<NotesPage> {
                       ),
                     ),
                     if (n.favorite)
-                      const Icon(
-                        Icons.star,
-                        size: 14,
-                        color: OrganizerColors.amber,
-                      ),
+                      const Icon(Icons.star, size: 14, color: AppColors.warm),
                     if (n.assetIds.isNotEmpty) ...[
                       const SizedBox(width: 4),
                       const Icon(
@@ -547,8 +591,28 @@ class _NoteEditorState extends State<NoteEditor> {
   AppState get s => widget.state;
   Note? get note => s.workspace.notes[widget.noteId];
 
+  /// Text selected in the body (for the conversion bar).
+  String _selected = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _body.addListener(_onSelection);
+  }
+
+  void _onSelection() {
+    final sel = _body.selection;
+    final text = sel.isValid && !sel.isCollapsed
+        ? sel.textInside(_body.text)
+        : '';
+    if (text.trim() != _selected.trim()) setState(() => _selected = text);
+  }
+
+  bool get _conversionOpen => s.settings.get<bool>('conversionBarOpen') ?? true;
+
   @override
   void dispose() {
+    _body.removeListener(_onSelection);
     _title.dispose();
     _body.dispose();
     _tag.dispose();
@@ -701,6 +765,20 @@ class _NoteEditorState extends State<NoteEditor> {
             tooltip: 'Place on canvas (as a reference)',
             onTap: _placeOnCanvas,
           ),
+          if (s.ai.enabled)
+            GhostIconButton(
+              key: const ValueKey('note-ask-ai'),
+              icon: Icons.auto_awesome_outlined,
+              tooltip: 'Ask AI about this note (you review it before sending)',
+              onTap: () => s.sendToAi(
+                AiContext(
+                  title: n.displayTitle,
+                  source: AiSource.notes,
+                  text: '${n.displayTitle}\n${n.body}',
+                  noteId: n.id,
+                ),
+              ),
+            ),
           GhostIconButton(
             icon: Icons.history,
             tooltip: 'Version history',
@@ -715,12 +793,13 @@ class _NoteEditorState extends State<NoteEditor> {
                 title: 'Delete “${n.displayTitle}”?',
                 message:
                     'Canvas cards that show this note will say it was deleted. '
-                    'The note stays in your backups.',
+                    'You can bring it back, with its handwriting, from '
+                    '“Recently deleted” in Notes.',
               );
               if (ok) {
-                ws.notes.remove(n.id);
-                // Its handwriting goes to the trash folder too (recoverable).
-                unawaited(s.trashNotebookOf(n.id));
+                // All of it is kept: a version for Recently deleted, the
+                // handwriting in the trash folder.
+                unawaited(s.deleteNote(n.id));
                 widget.onDeleted();
               }
             },
@@ -788,6 +867,25 @@ class _NoteEditorState extends State<NoteEditor> {
         ),
         onChanged: (v) => _update((x) => x.copyWith(body: v)),
       ),
+      if (_selected.trim().isNotEmpty)
+        ConversionBar(
+          open: _conversionOpen,
+          onToggle: () => setState(
+            () => s.settings.set('conversionBarOpen', !_conversionOpen),
+          ),
+          onConvert: (target) =>
+              convertSelection(context, s, widget.noteId, _selected, target),
+          onAskAi: s.ai.enabled
+              ? () => s.sendToAi(
+                  AiContext(
+                    title: 'Part of “${n.displayTitle}”',
+                    source: AiSource.notes,
+                    text: _selected,
+                    noteId: n.id,
+                  ),
+                )
+              : null,
+        ),
       const Divider(),
       const SizedBox(height: Space.md),
       Row(
@@ -837,6 +935,34 @@ class _NoteEditorState extends State<NoteEditor> {
             ),
         ],
       ),
+      if (ws.mentionedNotes(n) case final mentions when mentions.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: Space.md),
+          child: Wrap(
+            key: const ValueKey('mention-suggestions'),
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Text(
+                'Mentions other notes:',
+                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+              ),
+              for (final m in mentions.take(6))
+                ActionChip(
+                  avatar: const Icon(Icons.add_link, size: 14),
+                  label: Text(
+                    'Link “${m.displayTitle}”',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  tooltip: 'Turn the mention into a [[link]]',
+                  onPressed: () => ws.linkMention(n.id, m.displayTitle),
+                ),
+            ],
+          ),
+        ),
+      const SizedBox(height: Space.xl),
+      NoteConnections(state: s, note: n, onOpenNote: widget.onOpenNote),
       if (linked.isNotEmpty || backlinks.isNotEmpty) ...[
         const SizedBox(height: Space.xl),
         const Text(
@@ -931,10 +1057,81 @@ Future<void> showNoteHistory(
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        trailing: Wrap(
+                          children: [
+                            if (ws.notes[noteId] case final current?)
+                              TextButton(
+                                onPressed: () =>
+                                    showVersionComparison(context, v, current),
+                                child: const Text('Compare'),
+                              ),
+                            TextButton(
+                              onPressed: () {
+                                ws.restoreNoteVersion(v.id);
+                                Navigator.pop(context);
+                              },
+                              child: const Text('Restore'),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// Deleted notes that can be brought back (on this device), each with its
+/// text, folder, tags, attachments and — from the trash folder — its
+/// handwriting and PDF pages.
+Future<void> showRecentlyDeleted(BuildContext context, AppState s) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) {
+      final deleted = s.workspace.deletedNotes();
+      return AlertDialog(
+        title: const Text('Recently deleted', style: TextStyle(fontSize: 16)),
+        content: SizedBox(
+          width: 460,
+          child: deleted.isEmpty
+              ? const Text(
+                  'No deleted notes on this device.',
+                  style: TextStyle(color: AppColors.textMuted),
+                )
+              : ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final v in deleted)
+                      ListTile(
+                        key: ValueKey('deleted-${v.noteId}'),
+                        dense: true,
+                        title: Text(
+                          v.title.isEmpty ? 'Untitled note' : v.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${v.deleted ? 'Deleted' : 'Last kept'} '
+                          '${formatShortDate(v.savedAt)}'
+                          '${v.body.isEmpty ? '' : ' · ${v.body.split('\n').first}'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         trailing: TextButton(
-                          onPressed: () {
-                            ws.restoreNoteVersion(v.id);
+                          onPressed: () async {
                             Navigator.pop(context);
+                            final note = await s.restoreDeletedNote(v.id);
+                            if (note != null) {
+                              s.showToast('Restored “${note.displayTitle}”');
+                            }
                           },
                           child: const Text('Restore'),
                         ),
@@ -950,5 +1147,63 @@ Future<void> showNoteHistory(
         ],
       );
     },
+  );
+}
+
+/// Pairs of notes with nearly the same wording (possible duplicates). They
+/// are only listed; nothing is merged or deleted.
+Future<void> showSimilarNotes(BuildContext context, AppState s) {
+  final pairs = similarNotes(s.workspace.notes.all);
+  return showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Similar notes', style: TextStyle(fontSize: 16)),
+      content: SizedBox(
+        width: 480,
+        child: pairs.isEmpty
+            ? const Text(
+                'No notes with nearly the same wording.',
+                style: TextStyle(color: AppColors.textMuted),
+              )
+            : ListView(
+                key: const ValueKey('similar-notes'),
+                shrinkWrap: true,
+                children: [
+                  for (final (a, b, score) in pairs.take(30))
+                    ListTile(
+                      dense: true,
+                      title: Text('${a.displayTitle}  ↔  ${b.displayTitle}'),
+                      subtitle: Text(
+                        '${(score * 100).round()}% the same words',
+                      ),
+                      trailing: Wrap(
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              s.openNote(a.id);
+                            },
+                            child: const Text('Open first'),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              s.openNote(b.id);
+                            },
+                            child: const Text('Open second'),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
   );
 }

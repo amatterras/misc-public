@@ -8,14 +8,11 @@ import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
 import '../../data/workspace.dart';
 import '../../widgets/common.dart';
+import '../tasks/tasks_page.dart';
+import '../canvas/canvas_controller.dart';
+import 'calendar_ink.dart';
+import 'calendar_views.dart';
 import 'entry_editor.dart';
-
-/// Payload while dragging a label to another day.
-class DayDrag {
-  const DayDrag(this.item, this.from);
-  final DayItem item;
-  final DateTime from;
-}
 
 /// One Calendar page: the custom date grid plus Reading, Habits, Events and
 /// Other. Every view reads the same records from [Workspace], so an edit
@@ -44,8 +41,51 @@ class _CalendarPageState extends State<CalendarPage> {
   DateTime? _selectedDay;
   final _viewer = TransformationController();
 
+  /// Month/week/day/agenda/timeline: the date they show.
+  DateTime _anchor = dateOnly(DateTime.now());
+
+  /// Which view (remembered on this device; the 38-day range by default).
+  CalendarView get _view =>
+      CalendarView.values.asNameMap()[s.settings.get<String>('calendarView')] ??
+      CalendarView.range;
+
+  void _setView(CalendarView v) {
+    s.settings.set('calendarView', v.name);
+    setState(() {});
+  }
+
+  List<DayItem> _itemsOn(DateTime day) => ws.itemsOn(
+    day,
+    categories: _shown,
+    colors: _colors,
+    includeTasks: _showTasks,
+  );
+
   AppState get s => widget.state;
   Workspace get ws => s.workspace;
+
+  /// Draw mode: pointer input on days draws instead of selecting.
+  bool _drawing = false;
+  CanvasController? _ink;
+
+  @override
+  void initState() {
+    super.initState();
+    s.openCalendarInk().then((c) {
+      if (mounted) setState(() => _ink = c);
+    });
+  }
+
+  Widget _inkOn(DateTime day) {
+    final ink = _ink;
+    if (ink == null) return const SizedBox.shrink();
+    return DayInkLayer(
+      key: ValueKey('ink-${dayKey(day)}'),
+      controller: ink,
+      day: day,
+      drawing: _drawing,
+    );
+  }
 
   @override
   void dispose() {
@@ -120,48 +160,248 @@ class _CalendarPageState extends State<CalendarPage> {
     }
     return WorkspaceBuilder(
       state: s,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(Space.xl, Space.xl, Space.xl, 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _header(),
-            ..._overLimitWarning(),
-            const SizedBox(height: Space.lg),
-            _tabs(),
-            const SizedBox(height: Space.md),
-            Expanded(
-              child: _tab == null
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(child: _grid()),
-                        if (_selectedDay != null) ...[
-                          const SizedBox(width: Space.md),
-                          SizedBox(
-                            width: 340,
-                            child: DayPanel(
-                              key: ValueKey(dayKey(_selectedDay!)),
-                              state: s,
-                              day: _selectedDay!,
-                              onClose: () =>
-                                  setState(() => _selectedDay = null),
-                              onNewEntry: (c) => _newEntry(c, _selectedDay),
-                            ),
-                          ),
-                        ],
-                      ],
-                    )
-                  : CategoryView(
+      builder: (context) =>
+          MediaQuery.sizeOf(context).width < 900 && s.calendarTasksOpen
+          // Narrow windows and phones: the task column takes the page.
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: const ValueKey('calendar-tasks-toggle'),
+                    onPressed: () => s.setCalendarTasksOpen(false),
+                    icon: const Icon(Icons.arrow_back, size: 16),
+                    label: const Text('Hide tasks'),
+                  ),
+                ),
+                Expanded(
+                  child: TasksPage(
+                    key: const ValueKey('calendar-tasks'),
+                    state: s,
+                  ),
+                ),
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 2, child: _calendar()),
+                // Tasks live here, in a collapsible column about 3/5 wide.
+                if (s.calendarTasksOpen) ...[
+                  const VerticalDivider(width: 1, color: AppColors.border),
+                  Expanded(
+                    flex: 3,
+                    child: TasksPage(
+                      key: const ValueKey('calendar-tasks'),
                       state: s,
-                      category: _tab!,
-                      onNew: () => _newEntry(_tab),
                     ),
+                  ),
+                ],
+              ],
             ),
-          ],
-        ),
+    );
+  }
+
+  Widget _calendar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Space.xl, Space.xl, Space.xl, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _header(),
+          ..._overLimitWarning(),
+          const SizedBox(height: Space.md),
+          _viewBar(),
+          const SizedBox(height: Space.lg),
+          _tabs(),
+          const SizedBox(height: Space.md),
+          Expanded(
+            child: _tab == null && _view != CalendarView.range
+                ? _otherView()
+                : _tab == null
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: _grid()),
+                      if (_selectedDay != null) ...[
+                        const SizedBox(width: Space.md),
+                        SizedBox(
+                          width: 340,
+                          child: DayPanel(
+                            key: ValueKey(dayKey(_selectedDay!)),
+                            state: s,
+                            day: _selectedDay!,
+                            onClose: () => setState(() => _selectedDay = null),
+                            onNewEntry: (c) => _newEntry(c, _selectedDay),
+                          ),
+                        ),
+                      ],
+                    ],
+                  )
+                : CategoryView(
+                    state: s,
+                    category: _tab!,
+                    onNew: () => _newEntry(_tab),
+                  ),
+          ),
+        ],
       ),
     );
+  }
+
+  /// View choice, and (outside the range view) back / today / forward.
+  Widget _viewBar() {
+    final v = _view;
+    return Wrap(
+      spacing: Space.sm,
+      runSpacing: Space.sm,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        SegmentedButton<CalendarView>(
+          key: const ValueKey('calendar-view-switcher'),
+          showSelectedIcon: false,
+          segments: [
+            for (final c in CalendarView.values)
+              ButtonSegment(
+                value: c,
+                label: Text(c.label, style: const TextStyle(fontSize: 12)),
+              ),
+          ],
+          selected: {v},
+          onSelectionChanged: (c) => _setView(c.first),
+        ),
+        if (_ink != null &&
+            _tab == null &&
+            (v == CalendarView.range ||
+                v == CalendarView.month ||
+                v == CalendarView.week))
+          ListenableBuilder(
+            listenable: _ink!,
+            builder: (context, _) {
+              final ink = _ink!;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GhostIconButton(
+                    key: const ValueKey('calendar-draw'),
+                    icon: Icons.draw_outlined,
+                    tooltip: _drawing
+                        ? 'Stop drawing (dates can be tapped again)'
+                        : 'Draw on the calendar',
+                    active: _drawing && ink.tool == CanvasTool.pen,
+                    onTap: () => setState(() {
+                      final pen = ink.tool == CanvasTool.pen;
+                      _drawing = !(_drawing && pen);
+                      ink.tool = CanvasTool.pen;
+                    }),
+                  ),
+                  if (_drawing) ...[
+                    GhostIconButton(
+                      icon: Icons.auto_fix_normal,
+                      tooltip: 'Erase drawings',
+                      active: ink.tool == CanvasTool.eraser,
+                      onTap: () => setState(() => ink.tool = CanvasTool.eraser),
+                    ),
+                    PopupMenuButton<Color>(
+                      tooltip: 'Pen colour',
+                      onSelected: (c) => setState(() => ink.setPen(color: c)),
+                      itemBuilder: (_) => [
+                        for (final c in InkColors.all)
+                          PopupMenuItem(
+                            value: c,
+                            height: 32,
+                            child: Container(width: 60, height: 14, color: c),
+                          ),
+                      ],
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        margin: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: ink.penColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.border),
+                        ),
+                      ),
+                    ),
+                    GhostIconButton(
+                      icon: Icons.undo,
+                      tooltip: 'Undo',
+                      onTap: ink.canUndo ? ink.undo : null,
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+        if (v != CalendarView.range) ...[
+          GhostIconButton(
+            icon: Icons.chevron_left,
+            tooltip: 'Earlier',
+            onTap: () =>
+                setState(() => _anchor = v.step(_anchor, forward: false)),
+          ),
+          TextButton(
+            onPressed: () => setState(() => _anchor = dateOnly(DateTime.now())),
+            child: const Text('Today'),
+          ),
+          GhostIconButton(
+            icon: Icons.chevron_right,
+            tooltip: 'Later',
+            onTap: () =>
+                setState(() => _anchor = v.step(_anchor, forward: true)),
+          ),
+          Text(
+            v.title(_anchor),
+            key: const ValueKey('calendar-view-title'),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _openDay(DateTime day) {
+    _anchor = dateOnly(day);
+    _setView(CalendarView.day);
+  }
+
+  Widget _otherView() {
+    switch (_view) {
+      case CalendarView.month || CalendarView.week:
+        return CalendarGridView(
+          view: _view,
+          anchor: _anchor,
+          itemsOn: _itemsOn,
+          onDay: _openDay,
+          onItem: _editItem,
+          overlay: _inkOn,
+        );
+      case CalendarView.day:
+        return DayPanel(
+          key: ValueKey('day-view-${dayKey(_anchor)}'),
+          state: s,
+          day: _anchor,
+          onClose: () => _setView(CalendarView.month),
+          onNewEntry: (c) => _newEntry(c, _anchor),
+        );
+      case CalendarView.agenda:
+        return CalendarAgendaView(
+          anchor: _anchor,
+          itemsOn: _itemsOn,
+          onDay: _openDay,
+          onItem: _editItem,
+        );
+      case CalendarView.timeline:
+        return CalendarTimelineView(
+          anchor: _anchor,
+          itemsOn: _itemsOn,
+          onItem: _editItem,
+        );
+      case CalendarView.range:
+        return _grid();
+    }
   }
 
   /// Shown when a sync merged entries from several devices and a category
@@ -180,18 +420,16 @@ class _CalendarPageState extends State<CalendarPage> {
         key: const ValueKey('over-limit-warning'),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: OrganizerColors.amber.withValues(alpha: 0.12),
+          color: AppColors.warm.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: OrganizerColors.amber.withValues(alpha: 0.5),
-          ),
+          border: Border.all(color: AppColors.warm.withValues(alpha: 0.5)),
         ),
         child: Row(
           children: [
             const Icon(
               Icons.warning_amber_rounded,
               size: 18,
-              color: OrganizerColors.amber,
+              color: AppColors.warm,
             ),
             const SizedBox(width: Space.sm),
             Expanded(
@@ -281,6 +519,17 @@ class _CalendarPageState extends State<CalendarPage> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _colorFilter(),
+            OutlinedButton.icon(
+              key: const ValueKey('calendar-tasks-toggle'),
+              onPressed: () => s.setCalendarTasksOpen(!s.calendarTasksOpen),
+              icon: Icon(
+                s.calendarTasksOpen
+                    ? Icons.keyboard_double_arrow_right
+                    : Icons.checklist,
+                size: 16,
+              ),
+              label: Text(s.calendarTasksOpen ? 'Hide tasks' : 'Tasks'),
+            ),
             FilledButton.icon(
               onPressed: () => _newEntry(),
               icon: const Icon(Icons.add, size: 16),
@@ -324,7 +573,7 @@ class _CalendarPageState extends State<CalendarPage> {
               ),
             ),
           ),
-          for (var i = 0; i < 10; i++)
+          for (var i = 0; i < CalendarCategory.values.length; i++)
             InkWell(
               onTap: () => setState(() {
                 final set = {...?_colors};
@@ -337,9 +586,12 @@ class _CalendarPageState extends State<CalendarPage> {
                   width: 14,
                   height: 14,
                   decoration: BoxDecoration(
-                    color: organizerColor(i).withValues(
-                      alpha: _colors == null || _colors!.contains(i) ? 1 : 0.25,
-                    ),
+                    color: calendarCategoryColor(CalendarCategory.values[i])
+                        .withValues(
+                          alpha: _colors == null || _colors!.contains(i)
+                              ? 1
+                              : 0.25,
+                        ),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: _colors?.contains(i) ?? false
@@ -521,6 +773,8 @@ class _CalendarPageState extends State<CalendarPage> {
         color: AppColors.canvas,
         child: InteractiveViewer(
           transformationController: _viewer,
+          panEnabled: !_drawing,
+          scaleEnabled: !_drawing,
           constrained: false,
           minScale: 0.35,
           maxScale: 2.5,
@@ -538,23 +792,31 @@ class _CalendarPageState extends State<CalendarPage> {
                       top: (i ~/ 7) * h,
                       width: w,
                       height: h,
-                      child: DayCell(
-                        state: s,
-                        day: addDays(start, i),
-                        isToday: daysBetween(today, addDays(start, i)) == 0,
-                        selected:
-                            _selectedDay != null &&
-                            daysBetween(_selectedDay!, addDays(start, i)) == 0,
-                        items: ws.itemsOn(
-                          addDays(start, i),
-                          categories: _shown,
-                          colors: _colors,
-                          includeTasks: _showTasks,
-                        ),
-                        onTap: () =>
-                            setState(() => _selectedDay = addDays(start, i)),
-                        onEditItem: (item) =>
-                            _editItem(item, addDays(start, i)),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          DayCell(
+                            state: s,
+                            day: addDays(start, i),
+                            isToday: daysBetween(today, addDays(start, i)) == 0,
+                            selected:
+                                _selectedDay != null &&
+                                daysBetween(_selectedDay!, addDays(start, i)) ==
+                                    0,
+                            items: ws.itemsOn(
+                              addDays(start, i),
+                              categories: _shown,
+                              colors: _colors,
+                              includeTasks: _showTasks,
+                            ),
+                            onTap: () => setState(
+                              () => _selectedDay = addDays(start, i),
+                            ),
+                            onEditItem: (item) =>
+                                _editItem(item, addDays(start, i)),
+                          ),
+                          _inkOn(addDays(start, i)),
+                        ],
                       ),
                     ),
                 ],
@@ -605,14 +867,15 @@ class DayCell extends StatelessWidget {
     final ws = state.workspace;
     final record = ws.days[dayKey(day)];
     return DragTarget<DayDrag>(
-      onWillAcceptWithDetails: (d) => daysBetween(d.data.from, day) != 0,
+      onWillAcceptWithDetails: (d) =>
+          d.data.from == null || daysBetween(d.data.from!, day) != 0,
       onAcceptWithDetails: (d) => ws.moveDayItem(d.data.item, d.data.from, day),
       builder: (context, candidates, _) {
         return Material(
           color: candidates.isNotEmpty
-              ? const Color(0xFF1F2A36)
+              ? AppColors.cardRaised
               : isToday
-              ? const Color(0xFF1C1D26)
+              ? AppColors.card
               : AppColors.card,
           child: InkWell(
             onTap: onTap,
@@ -737,7 +1000,9 @@ class DayLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final item = this.item;
-    final color = organizerColor(item.colorIndex);
+    final color = item is EntryOnDay
+        ? calendarCategoryColor(item.entry.category)
+        : AppColors.accent;
     final isHabit =
         item is EntryOnDay && item.entry.category == CalendarCategory.habits;
     final taskDone = item is TaskOnDay && item.task.done;
@@ -770,11 +1035,11 @@ class DayLabel extends StatelessWidget {
             )
           else if (item is TaskOnDay)
             InkWell(
-              onTap: () => state.workspace.toggleTask(item.task.id),
+              onTap: () => state.toggleTask(item.task.id),
               child: Icon(
                 taskDone ? Icons.check_box : Icons.check_box_outline_blank,
                 size: 12,
-                color: taskDone ? OrganizerColors.green : color,
+                color: taskDone ? AppColors.success : color,
               ),
             )
           else
@@ -1065,10 +1330,10 @@ class _DayPanelState extends State<DayPanel> {
   }
 
   Widget _itemRow(DayItem item) {
-    final color = organizerColor(item.colorIndex);
     final day = widget.day;
     switch (item) {
       case EntryOnDay(:final entry):
+        final color = calendarCategoryColor(entry.category);
         final isHabit = entry.category == CalendarCategory.habits;
         return ListTile(
           dense: true,
@@ -1081,7 +1346,7 @@ class _DayPanelState extends State<DayPanel> {
                 )
               : Padding(
                   padding: const EdgeInsets.all(8),
-                  child: ColorDot(index: entry.colorIndex),
+                  child: ColorDot(color: calendarCategoryColor(entry.category)),
                 ),
           title: Text(entry.name),
           subtitle: Text(
@@ -1105,9 +1370,9 @@ class _DayPanelState extends State<DayPanel> {
           contentPadding: EdgeInsets.zero,
           leading: Checkbox(
             value: task.done,
-            activeColor: OrganizerColors.green,
-            checkColor: Colors.white,
-            onChanged: (_) => ws.toggleTask(task.id),
+            activeColor: AppColors.success,
+            checkColor: AppColors.text,
+            onChanged: (_) => widget.state.toggleTask(task.id),
           ),
           title: Text(
             item.label,
@@ -1184,11 +1449,9 @@ class CategoryView extends StatelessWidget {
             margin: const EdgeInsets.only(top: Space.md),
             padding: const EdgeInsets.all(Space.md),
             decoration: BoxDecoration(
-              color: OrganizerColors.amber.withValues(alpha: 0.12),
+              color: AppColors.warm.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: OrganizerColors.amber.withValues(alpha: 0.5),
-              ),
+              border: Border.all(color: AppColors.warm.withValues(alpha: 0.5)),
             ),
             child: Text(
               '${category.label} has ${entries.length} active entries (the limit is '
@@ -1233,7 +1496,7 @@ class EntryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final e = entry;
     final ws = state.workspace;
-    final color = organizerColor(e.colorIndex);
+    final color = calendarCategoryColor(e.category);
     final details = <Widget>[];
     switch (e.category) {
       case CalendarCategory.reading:
@@ -1461,7 +1724,9 @@ Future<void> showArchive(BuildContext context, AppState state) {
                     children: [
                       for (final e in archived)
                         ListTile(
-                          leading: ColorDot(index: e.colorIndex),
+                          leading: ColorDot(
+                            color: calendarCategoryColor(e.category),
+                          ),
                           title: Text(e.name),
                           subtitle: Text(
                             e.category.label,

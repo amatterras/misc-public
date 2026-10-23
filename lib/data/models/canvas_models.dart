@@ -476,6 +476,16 @@ class StrokeItem extends CanvasItem {
     pressureWidth: pressureWidth,
   );
 
+  /// The same stroke in [newColor], keeping its own opacity (a highlighter
+  /// stays see-through) and its shape.
+  StrokeItem recolored(Color newColor) => StrokeItem(
+    id: id,
+    points: points,
+    color: newColor.withValues(alpha: color.a),
+    strokeWidth: strokeWidth,
+    pressureWidth: pressureWidth,
+  );
+
   @override
   StrokeItem withId(String id) => StrokeItem(
     id: id,
@@ -742,6 +752,8 @@ class CanvasSummary {
     this.searchText = '',
     this.isNotebook = false,
     this.isLinksBoard = false,
+    this.isCalendarInk = false,
+    this.isComponents = false,
   });
 
   final String id;
@@ -758,8 +770,16 @@ class CanvasSummary {
   /// The Links library board, not a canvas of its own.
   final bool isLinksBoard;
 
-  /// Shown in the Canvas list (notebooks and the Links board are not).
-  bool get isCanvas => !isNotebook && !isLinksBoard;
+  /// The Calendar's drawings, not a canvas of its own.
+  final bool isCalendarInk;
+
+  /// The saved reusable canvas components, not a canvas of its own.
+  final bool isComponents;
+
+  /// Shown in the Canvas list (notebooks, the Links board and the
+  /// Calendar drawings are not).
+  bool get isCanvas =>
+      !isNotebook && !isLinksBoard && !isCalendarInk && !isComponents;
 }
 
 /// Id of the handwriting document of note [noteId]. Fixed, so two devices
@@ -777,6 +797,20 @@ const linksBoardId = 'links-board';
 /// Whether a canvas document is the Links library board.
 bool isLinksBoardId(String id, [String? kind]) =>
     kind == 'links' || id == linksBoardId;
+
+/// Id of the one document holding all drawings made on the Calendar.
+const calendarInkId = 'calendar-ink';
+
+/// Whether a canvas document is the Calendar's drawings.
+bool isCalendarInkId(String id, [String? kind]) =>
+    kind == 'calendarInk' || id == calendarInkId;
+
+/// Id of the document that keeps the saved reusable canvas components.
+const componentsId = 'canvas-components';
+
+/// Whether a canvas document holds the reusable components.
+bool isComponentsId(String id, [String? kind]) =>
+    kind == 'components' || id == componentsId;
 
 /// A PDF page shown underneath one page of a notebook. The PDF stays an
 /// unchanged attachment (asset [assetId]); ink on the page is stored as

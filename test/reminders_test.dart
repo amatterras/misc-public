@@ -195,7 +195,8 @@ void main() {
       expect(find.text('Revise chapter 3'), findsWidgets);
       await tester.tap(find.widgetWithText(TextButton, 'Open'));
       await tester.pump();
-      expect(s.page, AppPage.tasks);
+      expect(s.page, AppPage.calendar); // Tasks live in its task column
+      expect(s.calendarTasksOpen, isTrue);
       expect(find.byKey(const ValueKey('reminders')), findsNothing);
       await waitForBothClocks(tester, s.flush, what: 'Saving');
       await tester.pumpWidget(const SizedBox());

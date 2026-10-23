@@ -4,6 +4,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/app/app_state.dart';
+import 'package:flutter_application_1/app/shell.dart';
+import 'package:flutter_application_1/app/theme.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/models/library_models.dart';
@@ -13,6 +15,7 @@ import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/calendar/calendar_page.dart';
 import 'package:flutter_application_1/features/canvas/canvas_page.dart';
 import 'package:flutter_application_1/features/capture/capture_dialog.dart';
+import 'package:flutter_application_1/features/motivation/motivation_service.dart';
 import 'package:flutter_application_1/features/search/search_dialog.dart';
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/sync/hlc.dart';
@@ -57,7 +60,15 @@ Future<void> shutDown(WidgetTester tester, AppState state) async {
 
 void main() {
   late Directory dir;
+  late String quoteSource;
+  late String greetingSource;
 
+  setUpAll(() async {
+    quoteSource = await rootBundle.loadString('assets/motivation/quotes.json');
+    greetingSource = await rootBundle.loadString(
+      'assets/motivation/greetings.json',
+    );
+  });
   setUp(() => dir = Directory.systemTemp.createTempSync('theapp_widget_'));
   tearDown(() {
     try {
@@ -68,12 +79,21 @@ void main() {
   testWidgets('every page opens from the sidebar', (tester) async {
     addTearDown(tester.view.reset);
     final s = await boot(tester, dir);
-    for (final label in ['Home', 'Canvas', 'Notes', 'Calendar', 'Tasks']) {
+    await tester.tap(find.byKey(const ValueKey('sidebar-start-page')));
+    await tester.pump();
+    expect(s.page, AppPage.home);
+    // Exactly the four destinations, in order and spelling.
+    for (final label in ['mindmap', 'notes', 'archive', 'calendar']) {
       await tester.tap(find.text(label).last);
       await tester.pump();
     }
-    expect(s.page, AppPage.tasks);
-    await tester.tap(find.text('Calendar').last);
+    expect(s.page, AppPage.calendar);
+    expect(find.text('Home'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('calendar-tasks-toggle')),
+      findsOneWidget,
+      reason: 'the calendar task toggle',
+    );
     await tester.pump();
     expect(find.byType(DayCell), findsNWidgets(38));
     for (final c in ['Reading', 'Habits', 'Events', 'Other']) {
@@ -83,12 +103,42 @@ void main() {
     await shutDown(tester, s);
   });
 
+  testWidgets('motivational quote bars and 60-second greeting', (tester) async {
+    addTearDown(tester.view.reset);
+    final s = await boot(tester, dir);
+    final motivation = MotivationService(nextIndex: (_) => 0)
+      ..loadFromSources(quoteSource, greetingSource);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(),
+        home: AppShell(state: s, motivation: motivation),
+      ),
+    );
+    await tester.pump();
+    await settle(tester);
+
+    expect(find.byKey(const ValueKey('motivational-quote')), findsOneWidget);
+    expect(find.byKey(const ValueKey('greeting-window')), findsOneWidget);
+
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('motivational-quote')), findsOneWidget);
+    expect(find.byKey(const ValueKey('greeting-window')), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 59));
+    expect(find.byKey(const ValueKey('greeting-window')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byKey(const ValueKey('greeting-window')), findsNothing);
+    motivation.dispose();
+    await shutDown(tester, s);
+  });
+
   testWidgets('canvas: letter keys typed into a note never switch tools', (
     tester,
   ) async {
     addTearDown(tester.view.reset);
     final s = await boot(tester, dir);
-    await tester.tap(find.text('Canvas').last);
+    await tester.tap(find.text('mindmap').last);
     await tester.pump();
     await tester.pump();
     final view = find.byType(CanvasView);
@@ -121,7 +171,7 @@ void main() {
   ) async {
     addTearDown(tester.view.reset);
     var s = await boot(tester, dir);
-    await tester.tap(find.text('Canvas').last);
+    await tester.tap(find.text('mindmap').last);
     await tester.pump();
     await tester.pump();
     final before = s.canvas!.items.length;
@@ -274,7 +324,7 @@ void main() {
       endDate: addDays(start, 1),
     );
     ws.saveEntry(e);
-    await tester.tap(find.text('Calendar').last);
+    await tester.tap(find.text('calendar').last);
     await tester.pump();
     expect(find.text('Dentist'), findsOneWidget);
 
@@ -335,7 +385,7 @@ void main() {
         ),
       );
     }
-    await tester.tap(find.text('Calendar').last);
+    await tester.tap(find.text('calendar').last);
     await tester.pump();
     await tester.tap(find.text('Habits').first);
     await tester.pump();
@@ -366,7 +416,7 @@ void main() {
         ).toJson(),
       );
     }
-    await tester.tap(find.text('Calendar').last);
+    await tester.tap(find.text('calendar').last);
     await tester.pump();
     await tester.pump();
     final warning = find.byKey(const ValueKey('over-limit-warning'));

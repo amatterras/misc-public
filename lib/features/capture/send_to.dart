@@ -157,6 +157,15 @@ class SendToBridge {
           }
           final ws = capture.workspace;
           final now = DateTime.now();
+          // Ids come from the request file, so processing the same request
+          // again (after a crash before it was removed) replaces its items
+          // instead of adding duplicates.
+          final requestId = entity.uri.pathSegments.last.replaceAll(
+            RegExp(r'.json$'),
+            '',
+          );
+          var part = 0;
+          String itemId() => 'req-$requestId-${part++}';
           switch (json['type']) {
             case 'file':
               final assets = [
@@ -165,26 +174,29 @@ class SendToBridge {
               ];
               for (final a in assets) {
                 ws.inbox.put(
-                  InboxItem(id: newId(), assetId: a.id, createdAt: now),
+                  InboxItem(id: itemId(), assetId: a.id, createdAt: now),
                 );
               }
               if (assets.isEmpty) {
                 // Not an image: keep the path as text so nothing is lost.
                 ws.inbox.put(
-                  InboxItem(id: newId(), text: value, createdAt: now),
+                  InboxItem(id: itemId(), text: value, createdAt: now),
                 );
               }
             case 'url':
               final asset = capture.link(extractUrl(value)!);
               ws.inbox.put(
-                InboxItem(id: newId(), assetId: asset.id, createdAt: now),
+                InboxItem(id: itemId(), assetId: asset.id, createdAt: now),
               );
             default:
-              ws.inbox.put(InboxItem(id: newId(), text: value, createdAt: now));
+              ws.inbox.put(
+                InboxItem(id: itemId(), text: value, createdAt: now),
+              );
           }
           count++;
           // The request is only removed once its Inbox item is on disk, so a
-          // crash in between can at worst import it twice, never lose it.
+          // crash in between never loses it (and, with the ids above, never
+          // imports it twice).
           await ws.flush();
           await entity.delete();
           // A photo the iOS Share Extension copied into the shared folder

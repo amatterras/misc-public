@@ -247,6 +247,13 @@ void main() {
       await tester.longPress(find.text('Thesis').first);
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Change colour'), findsOneWidget);
+      final colorAction = tester.widget<PopupMenuItem<String>>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is PopupMenuItem<String> && widget.value == 'color',
+        ),
+      );
+      expect(colorAction.enabled, isFalse);
       expect(find.text('Archive'), findsOneWidget);
       await tester.tapAt(const Offset(5, 5));
       await tester.pump(const Duration(milliseconds: 300));

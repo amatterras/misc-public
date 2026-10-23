@@ -35,7 +35,9 @@ workflows:
       - name: Build iOS app without code signing
         script: |
           # On failure, show Xcode's own errors (the summary above them is short).
-          flutter build ios --release --no-codesign || {
+          # The build id (git hash) is shown in Settings → About and the log.
+          flutter build ios --release --no-codesign \
+            --dart-define=THEAPP_BUILD=$(git rev-parse --short HEAD) || {
             grep -h -B3 -A8 "error:" /tmp/xcodebuild_logs/*.log | head -200
             grep -h -o -- "-target [a-z0-9_.-]*" /tmp/xcodebuild_logs/*.log | sort | uniq -c
             exit 1

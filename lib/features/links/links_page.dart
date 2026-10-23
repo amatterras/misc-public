@@ -27,14 +27,37 @@ class _LinksPageState extends State<LinksPage> {
   AppState get s => widget.state;
   LinkTag? _filter;
 
+  /// Show only resources of this project (others are dimmed).
+  String? _project;
+
+  bool _matches(LinkItem item) {
+    final asset = s.workspace.assets[item.assetId];
+    if (asset == null) return false;
+    final tag = _filter, project = _project;
+    return (tag == null || asset.linkTags.contains(tag.id)) &&
+        (project == null || asset.projectIds.contains(project));
+  }
+
+  void _setProject(CanvasController board, String? project) {
+    _project = project;
+    _setFilter(board, _filter);
+  }
+
   void _setFilter(CanvasController board, LinkTag? tag) {
     setState(() => _filter = tag);
-    board.dimmed = tag == null
+    board.dimmed = tag == null && _project == null
+        ? null
+        : (item) => item is LinkItem && !_matches(item);
+    board.highlighted = tag == null
         ? null
         : (item) =>
               item is LinkItem &&
-              !(s.workspace.assets[item.assetId]?.linkTags.contains(tag.id) ??
-                  false);
+                  (s.workspace.assets[item.assetId]?.linkTags.contains(
+                        tag.id,
+                      ) ??
+                      false)
+              ? tag.color
+              : null;
   }
 
   Future<void> _addLink() async {
@@ -121,7 +144,7 @@ class _LinksPageState extends State<LinksPage> {
       child: Row(
         children: [
           const Text(
-            'Links',
+            'archive',
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
           ),
           const SizedBox(width: Space.md),
@@ -146,6 +169,16 @@ class _LinksPageState extends State<LinksPage> {
                       onTap: () =>
                           _setFilter(board, _filter == tag ? null : tag),
                     ),
+                  const SizedBox(width: Space.sm),
+                  _projectMenu(
+                    key: const ValueKey('links-filter-project'),
+                    label: _project == null
+                        ? 'Project ▾'
+                        : '${s.workspace.projects[_project]?.name ?? 'Project'} ▾',
+                    includeAll: true,
+                    onSelected: (id) =>
+                        _setProject(board, id.isEmpty ? null : id),
+                  ),
                 ],
               ),
             ),
@@ -201,6 +234,30 @@ class _LinksPageState extends State<LinksPage> {
                         s.setLinkTags(link.id, tags);
                       },
                     ),
+                  const SizedBox(width: Space.sm),
+                  for (final id in link.projectIds)
+                    if (s.workspace.projects[id] case final p?)
+                      _chip(
+                        key: ValueKey('links-project-$id'),
+                        label: p.name,
+                        color: AppColors.accent,
+                        on: true,
+                        onTap: () => s.workspace.assets.put(
+                          link.copyWith(
+                            projectIds: [...link.projectIds]..remove(id),
+                          ),
+                        ),
+                      ),
+                  _projectMenu(
+                    key: const ValueKey('links-add-project'),
+                    label: '+ Project',
+                    onSelected: (id) {
+                      if (id.isEmpty || link.projectIds.contains(id)) return;
+                      s.workspace.assets.put(
+                        link.copyWith(projectIds: [...link.projectIds, id]),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -239,6 +296,37 @@ class _LinksPageState extends State<LinksPage> {
               color: on ? AppColors.text : color,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+extension on _LinksPageState {
+  /// A menu of the open projects and study subjects.
+  Widget _projectMenu({
+    Key? key,
+    required String label,
+    required ValueChanged<String> onSelected,
+    bool includeAll = false,
+  }) {
+    final projects = s.workspace.projects.all.where((p) => !p.archived).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    return PopupMenuButton<String>(
+      key: key,
+      tooltip: 'Projects',
+      onSelected: onSelected,
+      itemBuilder: (_) => [
+        if (includeAll)
+          const PopupMenuItem(value: '', child: Text('All projects')),
+        for (final p in projects)
+          PopupMenuItem(value: p.id, child: Text(p.name)),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
         ),
       ),
     );

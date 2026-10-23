@@ -433,7 +433,12 @@ void main() {
     await ws.backups.automaticBackup();
     await ws.backups.automaticBackup(); // second call the same day: no new one
     var list = await ws.backups.list();
-    expect(list.where((d) => d.path.endsWith('-auto')), hasLength(1));
+    expect(
+      list.where(
+        (d) => d.path.endsWith('-auto') || d.path.endsWith('-auto-full'),
+      ),
+      hasLength(1),
+    );
 
     ws.createNote(title: 'After');
     await ws.flush();

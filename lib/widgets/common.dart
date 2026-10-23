@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../app/theme.dart';
 import '../data/models/library_models.dart';
+import '../data/models/calendar_models.dart';
 import '../data/workspace.dart';
 import '../platform/platform.dart' as native;
+import 'date_prefs.dart';
+
+export 'date_prefs.dart';
 
 const _weekdays = [
   'Monday',
@@ -29,70 +33,50 @@ const _months = [
   'December',
 ];
 
-/// "Wednesday, October 21"
-String formatLongDate(DateTime d) =>
-    '${_weekdays[d.weekday - 1]}, ${_months[d.month - 1]} ${d.day}';
+/// "Wednesday, October 21" (or as chosen in [DatePrefs]).
+String formatLongDate(DateTime d) => switch (DatePrefs.order) {
+  DateOrder.monthDay =>
+    '${_weekdays[d.weekday - 1]}, ${_months[d.month - 1]} ${d.day}',
+  DateOrder.dayMonth =>
+    '${_weekdays[d.weekday - 1]}, ${d.day} ${_months[d.month - 1]}',
+  DateOrder.iso => '${_weekdays[d.weekday - 1]}, ${_iso(d)}',
+};
 
-/// "Oct 21"
-String formatShortDate(DateTime d) =>
-    '${_months[d.month - 1].substring(0, 3)} ${d.day}';
+/// "Oct 21" (or as chosen in [DatePrefs]).
+String formatShortDate(DateTime d) => switch (DatePrefs.order) {
+  DateOrder.monthDay => '${_months[d.month - 1].substring(0, 3)} ${d.day}',
+  DateOrder.dayMonth => '${d.day} ${_months[d.month - 1].substring(0, 3)}',
+  DateOrder.iso => _iso(d),
+};
+
+String _iso(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// "October 2026"
+String formatMonth(DateTime d) => '${_months[d.month - 1]} ${d.year}';
 
 /// "Wed"
 String weekdayShort(DateTime d) => _weekdays[d.weekday - 1].substring(0, 3);
 
-Color organizerColor(int index) =>
-    OrganizerColors.all[index.clamp(0, OrganizerColors.all.length - 1)];
+Color calendarCategoryColor(CalendarCategory category) => switch (category) {
+  CalendarCategory.reading => CalendarCategoryColors.reading,
+  CalendarCategory.habits => CalendarCategoryColors.habits,
+  CalendarCategory.events => CalendarCategoryColors.reminderEvent,
+  CalendarCategory.other => CalendarCategoryColors.other,
+};
 
 class ColorDot extends StatelessWidget {
-  const ColorDot({super.key, required this.index, this.size = 10});
+  const ColorDot({super.key, required this.color, this.size = 10});
 
-  final int index;
   final double size;
+  final Color color;
 
   @override
   Widget build(BuildContext context) => Container(
     width: size,
     height: size,
-    decoration: BoxDecoration(
-      color: organizerColor(index),
-      shape: BoxShape.circle,
-    ),
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
   );
-}
-
-/// The ten organiser colours as selectable dots.
-class ColorPicker extends StatelessWidget {
-  const ColorPicker({super.key, required this.value, required this.onChanged});
-
-  final int value;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        for (var i = 0; i < OrganizerColors.all.length; i++)
-          InkWell(
-            onTap: () => onChanged(i),
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: organizerColor(i),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: value == i ? AppColors.text : Colors.transparent,
-                  width: 2,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
 }
 
 class SmallIconButton extends StatelessWidget {
@@ -299,12 +283,12 @@ class AssetChip extends StatelessWidget {
     final isDocument = asset.kind == AssetKind.document;
     final Widget leading;
     if (isLink) {
-      leading = const Icon(Icons.link, size: 16, color: OrganizerColors.blue);
+      leading = const Icon(Icons.link, size: 16, color: AppColors.accent);
     } else if (isDocument) {
       leading = const Icon(
         Icons.picture_as_pdf_outlined,
         size: 16,
-        color: OrganizerColors.coral,
+        color: AppColors.danger,
       );
     } else {
       leading = ClipRRect(
@@ -422,36 +406,39 @@ Future<String?> promptText(
   String hint = '',
   String action = 'Save',
 }) async {
-  final controller = TextEditingController(text: initial);
+  // The dialog owns its text controller, so it is disposed only after the
+  // closing animation (disposing it here crashed while the dialog faded).
   final result = await showDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text(title, style: const TextStyle(fontSize: 16)),
-      content: SizedBox(
-        width: 340,
-        child: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(hintText: hint),
-          onSubmitted: (v) => Navigator.pop(context, v),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text(
-            'Cancel',
-            style: TextStyle(color: AppColors.textMuted),
+    builder: (context) => _PromptDialog(
+      initial: initial,
+      builder: (context, controller) => AlertDialog(
+        title: Text(title, style: const TextStyle(fontSize: 16)),
+        content: SizedBox(
+          width: 340,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(hintText: hint),
+            onSubmitted: (v) => Navigator.pop(context, v),
           ),
         ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, controller.text),
-          child: Text(action),
-        ),
-      ],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: Text(action),
+          ),
+        ],
+      ),
     ),
   );
-  controller.dispose();
   final trimmed = result?.trim();
   return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
 }
@@ -469,4 +456,27 @@ void syncText(State state, TextEditingController controller, String value) {
       selection: TextSelection.collapsed(offset: offset),
     );
   });
+}
+
+class _PromptDialog extends StatefulWidget {
+  const _PromptDialog({required this.initial, required this.builder});
+
+  final String initial;
+  final Widget Function(BuildContext, TextEditingController) builder;
+
+  @override
+  State<_PromptDialog> createState() => _PromptDialogState();
+}
+
+class _PromptDialogState extends State<_PromptDialog> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _controller);
 }

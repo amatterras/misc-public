@@ -103,8 +103,24 @@ class Harness {
     await tester.pump(const Duration(seconds: 4));
   }
 
+  /// Old page names map to the four destinations; Home is the THEapp
+  /// start-page button, Tasks the task column inside calendar.
   Future<void> nav(String label) async {
-    await tester.tap(find.text(label).last);
+    if (label == 'Home') {
+      await tester.tap(find.byKey(const ValueKey('sidebar-start-page')));
+    } else if (label == 'Tasks') {
+      await tester.tap(find.text('calendar').last);
+      await tester.pump();
+      final toggle = find.byKey(const ValueKey('calendar-tasks-toggle'));
+      if (find.text('Hide tasks').evaluate().isEmpty) {
+        await tester.tap(toggle);
+      }
+    } else {
+      final name =
+          const {'Canvas': 'mindmap', 'Links': 'archive'}[label] ??
+          label.toLowerCase();
+      await tester.tap(find.text(name).last);
+    }
     await tester.pump();
     await tester.pump();
   }

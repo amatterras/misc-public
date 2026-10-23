@@ -12,6 +12,7 @@ import '../../data/models/library_models.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import 'canvas_controller.dart';
+import 'canvas_menu.dart';
 import 'canvas_painter.dart';
 import 'canvas_text.dart';
 import 'canvas_toolbar.dart';
@@ -324,6 +325,14 @@ class _CanvasViewState extends State<CanvasView> {
 
   void _onPointerDown(PointerDownEvent e) {
     _focusNode.requestFocus();
+    if (e.kind == PointerDeviceKind.mouse &&
+        e.buttons & kSecondaryMouseButton != 0) {
+      // Right-click: actions for what is under the pointer.
+      unawaited(
+        showCanvasMenu(context, s, c, e.position, c.toWorld(e.localPosition)),
+      );
+      return;
+    }
     final isStylus =
         e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus;
@@ -495,6 +504,7 @@ class _CanvasViewState extends State<CanvasView> {
         return LayoutBuilder(
           builder: (context, constraints) {
             _size = constraints.biggest;
+            c.viewportSize = _size;
             s.canvasViewportSize = _size;
             if (!_viewChecked && !_size.isEmpty) {
               _viewChecked = true;
@@ -590,6 +600,19 @@ class _CanvasViewState extends State<CanvasView> {
                         onAddImage: _addImages,
                         onAddLink: _addLink,
                         onAddDocument: _addDocuments,
+                        onMore: (at) {
+                          c.select(const []);
+                          unawaited(
+                            showCanvasMenu(
+                              context,
+                              s,
+                              c,
+                              at,
+                              c.toWorld(_size.center(Offset.zero)),
+                              canvasOnly: true,
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),

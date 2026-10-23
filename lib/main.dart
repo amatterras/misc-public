@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kProfileMode, kReleaseMode;
 import 'package:flutter/material.dart';
 
 import 'app/app_state.dart';
+import 'app/build_info.dart';
 import 'app/test_environment.dart';
 import 'app/shell.dart';
 import 'app/startup.dart';
@@ -124,7 +125,7 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
   // iPhone/iPad keep the hub token in the Keychain.
   if (Platform.isIOS) secretKeychain = IosBridge.instance;
   AppLog.info(
-    'Started (pid $pid, ${Platform.operatingSystem} '
+    'Started build $appBuild (pid $pid, ${Platform.operatingSystem} '
     '${Platform.operatingSystemVersion})'
     '${TestEnvironment.active ? ' in TEST DATA mode' : ''}',
   );
@@ -212,7 +213,7 @@ class _DataProblemPage extends StatelessWidget {
               const Icon(
                 Icons.shield_outlined,
                 size: 40,
-                color: OrganizerColors.amber,
+                color: AppColors.warm,
               ),
               const SizedBox(height: Space.lg),
               Text(

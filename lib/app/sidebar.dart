@@ -6,10 +6,20 @@ import '../features/settings/settings_dialog.dart';
 import '../platform/input_hints.dart';
 import '../widgets/common.dart';
 import 'app_state.dart';
-import 'shell.dart' show openQuickAdd;
+import 'shell.dart' show openAppSwitcher, openCommandPalette, openQuickAdd;
 import 'theme.dart';
 
 /// Compact, collapsible navigation on the right side of the window.
+/// The four top-level destinations, in this order and spelling. Tasks are
+/// in Calendar's task column; the start page (Home, with the Inbox) opens
+/// from the THEapp button at the top, not as a fifth destination.
+const appDestinations = [
+  (AppPage.canvas, Icons.hub_outlined, 'mindmap'),
+  (AppPage.notes, Icons.description_outlined, 'notes'),
+  (AppPage.calendar, Icons.calendar_today_outlined, 'calendar'),
+  (AppPage.links, Icons.bookmarks_outlined, 'archive'),
+];
+
 class Sidebar extends StatelessWidget {
   const Sidebar({super.key, required this.state});
 
@@ -18,14 +28,7 @@ class Sidebar extends StatelessWidget {
   static const expandedWidth = 272.0;
   static const collapsedWidth = 60.0;
 
-  static const _pages = [
-    (AppPage.home, Icons.home_outlined, 'Home'),
-    (AppPage.canvas, Icons.grid_view, 'Canvas'),
-    (AppPage.notes, Icons.description_outlined, 'Notes'),
-    (AppPage.links, Icons.bookmarks_outlined, 'Links'),
-    (AppPage.calendar, Icons.calendar_today_outlined, 'Calendar'),
-    (AppPage.tasks, Icons.check_box_outlined, 'Tasks'),
-  ];
+  static const _pages = appDestinations;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +72,14 @@ class Sidebar extends StatelessWidget {
         ),
         const SizedBox(height: Space.md),
         _IconButton(
+          icon: Icons.wb_sunny_outlined,
+          tooltip: 'Start page',
+          active: state.page == AppPage.home,
+          badge: _inboxCount,
+          onTap: () => state.goTo(AppPage.home),
+        ),
+        const SizedBox(height: Space.sm),
+        _IconButton(
           icon: Icons.add,
           tooltip: 'Quick Add  (Ctrl+N)',
           filled: true,
@@ -80,6 +91,12 @@ class Sidebar extends StatelessWidget {
           tooltip: 'Search  (Ctrl+K)',
           onTap: () => showSearchDialog(context, state),
         ),
+        const SizedBox(height: Space.sm),
+        _IconButton(
+          icon: Icons.apps,
+          tooltip: 'App switcher',
+          onTap: () => openAppSwitcher(context, state),
+        ),
         const SizedBox(height: Space.md),
         for (final (page, icon, label) in _pages)
           Padding(
@@ -88,7 +105,6 @@ class Sidebar extends StatelessWidget {
               icon: icon,
               tooltip: label,
               active: state.page == page,
-              badge: page == AppPage.home ? _inboxCount : 0,
               onTap: () => state.goTo(page),
             ),
           ),
@@ -123,26 +139,52 @@ class Sidebar extends StatelessWidget {
           const SizedBox(height: Space.lg),
           Row(
             children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: AppColors.cardRaised,
+              // The start page (today, Inbox); not a sidebar destination.
+              Expanded(
+                child: InkWell(
+                  key: const ValueKey('sidebar-start-page'),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: const Icon(
-                  Icons.laptop_windows_outlined,
-                  size: 16,
-                  color: AppColors.textMuted,
+                  onTap: () => state.goTo(AppPage.home),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: state.page == AppPage.home
+                              ? AppColors.selected
+                              : AppColors.cardRaised,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: const Icon(
+                          Icons.wb_sunny_outlined,
+                          size: 16,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      const SizedBox(width: Space.md),
+                      const Flexible(
+                        child: Text(
+                          'THEapp',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (_inboxCount > 0) ...[
+                        const SizedBox(width: Space.sm),
+                        _Badge(count: _inboxCount),
+                      ],
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(width: Space.md),
-              const Expanded(
-                child: Text(
-                  'Local Space',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                ),
+              _IconButton(
+                icon: Icons.apps,
+                tooltip: 'App switcher',
+                onTap: () => openAppSwitcher(context, state),
               ),
               _IconButton(
                 icon: Icons.settings_outlined,
@@ -171,6 +213,18 @@ class Sidebar extends StatelessWidget {
             active: false,
             onTap: () => showSearchDialog(context, state),
           ),
+          _NavItem(
+            icon: Icons.keyboard_command_key,
+            label: 'Commands',
+            trailing: touchFirst
+                ? null
+                : const Text(
+                    'Ctrl ⇧ P',
+                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                  ),
+            active: false,
+            onTap: () => openCommandPalette(context, state),
+          ),
           const SizedBox(height: Space.sm),
           Expanded(
             child: ListView(
@@ -181,9 +235,7 @@ class Sidebar extends StatelessWidget {
                     label: label,
                     active: state.page == page,
                     onTap: () => state.goTo(page),
-                    trailing: page == AppPage.home && _inboxCount > 0
-                        ? _Badge(count: _inboxCount)
-                        : page == AppPage.tasks && state.timer.running
+                    trailing: page == AppPage.calendar && state.timer.running
                         ? Text(
                             state.timer.label,
                             style: const TextStyle(
@@ -194,6 +246,7 @@ class Sidebar extends StatelessWidget {
                         : null,
                   ),
                   if (page == AppPage.canvas) _CanvasList(state: state),
+                  if (page == AppPage.notes) _RecentNotes(state: state),
                 ],
                 if (favorites.isNotEmpty) ...[
                   const Padding(
@@ -221,7 +274,7 @@ class Sidebar extends StatelessWidget {
                             const Icon(
                               Icons.star_outline,
                               size: 15,
-                              color: OrganizerColors.amber,
+                              color: AppColors.warm,
                             ),
                             const SizedBox(width: Space.sm),
                             Expanded(
@@ -257,14 +310,14 @@ class _Badge extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
     decoration: BoxDecoration(
-      color: OrganizerColors.blue,
+      color: AppColors.accent,
       borderRadius: BorderRadius.circular(8),
     ),
     child: Text(
       '$count',
       style: const TextStyle(
         fontSize: 11,
-        color: Colors.white,
+        color: AppColors.text,
         fontWeight: FontWeight.w600,
       ),
     ),
@@ -533,7 +586,7 @@ class _IconButton extends StatelessWidget {
               child: Badge(
                 isLabelVisible: badge > 0,
                 label: Text('$badge'),
-                backgroundColor: OrganizerColors.blue,
+                backgroundColor: AppColors.accent,
                 child: Icon(
                   icon,
                   size: 18,
@@ -547,6 +600,53 @@ class _IconButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Under "notes": the five most recently edited notes, newest first.
+class _RecentNotes extends StatelessWidget {
+  const _RecentNotes({required this.state});
+
+  final AppState state;
+
+  static const count = 5;
+
+  @override
+  Widget build(BuildContext context) {
+    final recent = state.workspace.notes.all.toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    if (recent.isEmpty) return const SizedBox.shrink();
+    return Container(
+      key: const ValueKey('sidebar-recent-notes'),
+      margin: const EdgeInsets.only(left: 21, top: 2, bottom: 4),
+      padding: const EdgeInsets.only(left: Space.md),
+      decoration: const BoxDecoration(
+        border: Border(left: BorderSide(color: AppColors.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final note in recent.take(count))
+            InkWell(
+              key: ValueKey('recent-note-${note.id}'),
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => state.openNote(note.id),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Text(
+                  note.displayTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

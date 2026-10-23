@@ -84,6 +84,11 @@ class _Win {
         .lookupFunction<Int32 Function(IntPtr), int Function(int)>(
           'SetForegroundWindow',
         );
+    setWindowPos = user32
+        .lookupFunction<
+          Int32 Function(IntPtr, IntPtr, Int32, Int32, Int32, Int32, Uint32),
+          int Function(int, int, int, int, int, int, int)
+        >('SetWindowPos');
     flashWindow = user32
         .lookupFunction<Int32 Function(IntPtr, Int32), int Function(int, int)>(
           'FlashWindow',
@@ -146,6 +151,7 @@ class _Win {
   late final int Function(int, int) showWindow;
   late final int Function(int) setForegroundWindow;
   late final int Function(int, int) flashWindow;
+  late final int Function(int, int, int, int, int, int, int) setWindowPos;
   late final Pointer<Uint8> Function(int) globalLock;
   late final int Function(int) globalUnlock;
   late final int Function(int) globalSize;
@@ -405,7 +411,102 @@ void flashMainWindow() {
   }
 }
 
+/// Keeps THEapp's window above other windows (or stops doing so).
+/// Returns false if the window was not found.
+bool setMainWindowTopmost(bool topmost) {
+  final w = _win;
+  if (w == null) return false;
+  final cls = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
+  final title = 'THEapp'.toNativeUtf16();
+  try {
+    final hwnd = w.findWindow(cls, title);
+    if (hwnd == 0) return false;
+    // HWND_TOPMOST = -1, HWND_NOTOPMOST = -2;
+    // SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE.
+    return w.setWindowPos(
+          hwnd,
+          topmost ? -1 : -2,
+          0,
+          0,
+          0,
+          0,
+          0x1 | 0x2 | 0x10,
+        ) !=
+        0;
+  } finally {
+    calloc
+      ..free(cls)
+      ..free(title);
+  }
+}
+
 /// Opens a folder in File Explorer.
 void openFolder(String path) {
   if (Platform.isWindows) Process.start('explorer.exe', [path]);
+}
+
+final class _BrowseInfoW extends Struct {
+  @IntPtr()
+  external int hwndOwner;
+  external Pointer<Void> pidlRoot;
+  external Pointer<Utf16> pszDisplayName;
+  external Pointer<Utf16> lpszTitle;
+  @Uint32()
+  external int ulFlags;
+  external Pointer<Void> lpfn;
+  @IntPtr()
+  external int lParam;
+  @Int32()
+  external int iImage;
+}
+
+/// Lets the user choose a folder (Windows' own folder dialog). Null if
+/// cancelled or not on Windows.
+String? pickFolder(String title) {
+  final w = _win;
+  if (w == null) return null;
+  final shell32 = DynamicLibrary.open('shell32.dll');
+  final ole32 = DynamicLibrary.open('ole32.dll');
+  final browse = shell32
+      .lookupFunction<
+        Pointer<Void> Function(Pointer<_BrowseInfoW>),
+        Pointer<Void> Function(Pointer<_BrowseInfoW>)
+      >('SHBrowseForFolderW');
+  final pathOf = shell32
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<Utf16>),
+        int Function(Pointer<Void>, Pointer<Utf16>)
+      >('SHGetPathFromIDListW');
+  final free = ole32
+      .lookupFunction<
+        Void Function(Pointer<Void>),
+        void Function(Pointer<Void>)
+      >('CoTaskMemFree');
+  final info = calloc<_BrowseInfoW>();
+  final name = calloc<Uint16>(260).cast<Utf16>();
+  final path = calloc<Uint16>(1024).cast<Utf16>();
+  final caption = title.toNativeUtf16();
+  final cls = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
+  try {
+    info.ref
+      ..hwndOwner = w.findWindow(cls, nullptr)
+      ..pszDisplayName = name
+      ..lpszTitle = caption
+      // BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
+      ..ulFlags = 0x1 | 0x40;
+    final pidl = browse(info);
+    if (pidl == nullptr) return null;
+    try {
+      return pathOf(pidl, path) != 0 ? path.toDartString() : null;
+    } finally {
+      free(pidl);
+    }
+  } finally {
+    calloc
+      ..free(info)
+      ..free(name)
+      ..free(path)
+      ..free(caption)
+      ..free(cls);
+  }
 }

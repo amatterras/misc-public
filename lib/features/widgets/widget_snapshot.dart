@@ -13,6 +13,7 @@
 import '../../app/theme.dart';
 import '../../data/models/record.dart';
 import '../../data/workspace.dart';
+import '../../widgets/common.dart';
 
 class WidgetSnapshot {
   /// Items kept per day; the widget shows as many as fit and "+N more"
@@ -66,9 +67,10 @@ class WidgetSnapshot {
               EntryOnDay(:final entry) => _time(entry.startMinutes),
             },
             'done': item is TaskOnDay && item.task.done,
-            'color': OrganizerColors
-                .all[item.colorIndex.clamp(0, OrganizerColors.all.length - 1)]
-                .toARGB32(),
+            'color': switch (item) {
+              EntryOnDay(:final entry) => calendarCategoryColor(entry.category),
+              TaskOnDay() => CalendarCategoryColors.reminderEvent,
+            }.toARGB32(),
             'link': linkFor(item, day),
           },
       ],

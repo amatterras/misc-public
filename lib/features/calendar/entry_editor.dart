@@ -37,12 +37,7 @@ Future<CalendarEntry?> showEntryEditor(
         name: '',
         createdAt: now,
         updatedAt: now,
-        colorIndex: switch (cat) {
-          CalendarCategory.reading => 6,
-          CalendarCategory.habits => 3,
-          CalendarCategory.events => 5,
-          CalendarCategory.other => 1,
-        },
+        colorIndex: cat.index,
         startDate:
             cat == CalendarCategory.events || cat == CalendarCategory.habits
             ? start
@@ -471,7 +466,7 @@ class _EntryEditorState extends State<_EntryEditor> {
     return AlertDialog(
       title: Row(
         children: [
-          ColorDot(index: e.colorIndex, size: 12),
+          ColorDot(color: calendarCategoryColor(e.category), size: 12),
           const SizedBox(width: Space.sm),
           Text(
             widget.isNew
@@ -509,14 +504,6 @@ class _EntryEditorState extends State<_EntryEditor> {
                 ),
               ),
               const SizedBox(height: Space.md),
-              LabeledField(
-                label: 'Colour',
-                child: ColorPicker(
-                  value: e.colorIndex,
-                  onChanged: (i) =>
-                      setState(() => e = e.copyWith(colorIndex: i)),
-                ),
-              ),
               ..._categoryFields(),
               const SizedBox(height: Space.md),
               TextField(

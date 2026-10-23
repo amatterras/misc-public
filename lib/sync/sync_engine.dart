@@ -16,6 +16,7 @@ import '../data/repositories/canvas_repository.dart';
 import '../data/storage/app_log.dart';
 import '../data/workspace.dart';
 import 'canvas_merge.dart';
+import 'record_merge.dart';
 import 'protocol.dart';
 import 'sync_client.dart';
 
@@ -35,6 +36,10 @@ abstract class OpenCanvasBridge {
     List<SyncChange> changes,
     bool Function(String key, String? localRev) isPending,
   );
+
+  /// Adds [ours] to the open notebook's PDF pages (see
+  /// `mergePageBackgrounds`); true if anything was added.
+  bool mergeOpenPages(String canvasId, List<PageBackground> ours);
 }
 
 class SyncReport {
@@ -44,28 +49,87 @@ class SyncReport {
   int uploaded = 0;
   int downloaded = 0;
   int skipped = 0;
+
+  /// Conflicts where both sides' tags or PDF pages were kept.
+  int merged = 0;
   final List<String> problems = [];
 
   @override
   String toString() =>
-      'pushed $pushed, pulled $pulled, conflicts $conflicts, files up $uploaded/down $downloaded'
+      'pushed $pushed, pulled $pulled, conflicts $conflicts'
+      '${merged == 0 ? '' : ' ($merged merged)'}, files up $uploaded/down $downloaded'
       '${problems.isEmpty ? '' : ', ${problems.length} problem(s)'}';
 }
 
 /// Remembered per device: which hub, how far we have read, and the hub
 /// revision of every record we have in sync.
 class SyncState {
-  SyncState({this.hubId, this.cursor = 0, Map<String, String>? base})
-    : base = base ?? {};
+  SyncState({
+    this.hubId,
+    this.cursor = 0,
+    Map<String, String>? base,
+    Map<String, List<String>>? tagBase,
+    Map<String, Map<String, List<String>>>? tagBaseByRev,
+    Set<String>? mergedConflicts,
+  }) : base = base ?? {},
+       tagBase = tagBase ?? {},
+       tagBaseByRev = tagBaseByRev ?? {},
+       mergedConflicts = mergedConflicts ?? {};
 
   String? hubId;
   int cursor;
   final Map<String, String> base;
 
+  /// Each link's tags as last synced (asset id → tags), so a conflict can
+  /// tell which tags this device added or removed (see `mergeLinkTags`).
+  final Map<String, List<String>> tagBase;
+
+  /// The tag base for recent locally pushed revisions. A peer may report a
+  /// conflict after this device has already acknowledged its own edit; retain
+  /// that edit's original base so conflict merging can still distinguish an
+  /// independent addition from an unchanged tag.
+  final Map<String, Map<String, List<String>>> tagBaseByRev;
+
+  void rememberTagBase(String assetId, String revision, List<String> tags) {
+    final history = tagBaseByRev.putIfAbsent(assetId, () => {});
+    history.putIfAbsent(revision, () => [...tags]);
+    while (history.length > 10) {
+      history.remove(history.keys.first);
+    }
+  }
+
+  /// Hub conflict records already merged here (so a merge is never redone
+  /// over a later edit). Only the most recent ones are kept.
+  final Set<String> mergedConflicts;
+  static const maxMergedConflicts = 500;
+
+  /// Remembers the tags of a link record as synced ([data] null: deleted).
+  void rememberTags(String assetId, Map<String, dynamic>? data) {
+    final tags = [
+      for (final t in (data?['linkTags'] as List?) ?? const [])
+        if (t is String) t,
+    ];
+    if (tags.isEmpty) {
+      tagBase.remove(assetId);
+    } else {
+      tagBase[assetId] = tags;
+    }
+  }
+
   Map<String, dynamic> toJson() => {
     'hubId': hubId,
     'cursor': cursor,
     'base': base,
+    if (tagBase.isNotEmpty) 'tagBase': tagBase,
+    if (tagBaseByRev.isNotEmpty) 'tagBaseByRev': tagBaseByRev,
+    if (mergedConflicts.isNotEmpty)
+      'mergedConflicts': mergedConflicts
+          .skip(
+            mergedConflicts.length > maxMergedConflicts
+                ? mergedConflicts.length - maxMergedConflicts
+                : 0,
+          )
+          .toList(),
   };
 
   factory SyncState.fromJson(Map<String, dynamic>? j) => j == null
@@ -74,6 +138,30 @@ class SyncState {
           hubId: j['hubId'] as String?,
           cursor: j['cursor'] as int? ?? 0,
           base: {...?(j['base'] as Map?)?.cast<String, String>()},
+          tagBase: {
+            for (final e in ((j['tagBase'] as Map?) ?? const {}).entries)
+              if (e.value is List)
+                e.key as String: [
+                  for (final t in e.value as List)
+                    if (t is String) t,
+                ],
+          },
+          tagBaseByRev: {
+            for (final e in ((j['tagBaseByRev'] as Map?) ?? const {}).entries)
+              if (e.value is Map)
+                e.key as String: {
+                  for (final rev in (e.value as Map).entries)
+                    if (rev.value is List)
+                      rev.key as String: [
+                        for (final t in rev.value as List)
+                          if (t is String) t,
+                      ],
+                },
+          },
+          mergedConflicts: {
+            for (final id in (j['mergedConflicts'] as List?) ?? const [])
+              if (id is String) id,
+          },
         );
 }
 
@@ -243,9 +331,22 @@ class SyncEngine {
       await _reconcileAttachments(report);
       _attachmentsReconciled = true;
     }
-    for (var i = 0; i < pending.length; i += maxPushBatch) {
+    // Shared clipboard text goes last and on its own: a hub from before
+    // clipboard sharing refuses it, and that must not stop everything else.
+    final clips = [
+      for (final c in pending)
+        if (c.collection == 'clipboard') c,
+    ];
+    pending.removeWhere((c) => c.collection == 'clipboard');
+    final groups = [
+      for (var i = 0; i < pending.length; i += maxPushBatch)
+        pending.skip(i).take(maxPushBatch).toList(),
+      for (var i = 0; i < clips.length; i += maxPushBatch)
+        clips.skip(i).take(maxPushBatch).toList(),
+    ];
+    for (final group in groups) {
       final batch = [
-        for (final c in pending.skip(i).take(maxPushBatch))
+        for (final c in group)
           SyncChange(
             collection: c.collection,
             id: c.id,
@@ -260,20 +361,72 @@ class SyncEngine {
           await _uploadFiles(c, report);
         }
       }
-      final response = await client.push(batch);
+      final ({List<PushResult> results, int lastSeq, String hubId}) response;
+      try {
+        response = await client.push(batch);
+      } on SyncFailure catch (e) {
+        if (e.code == 'bad_change' && group.first.collection == 'clipboard') {
+          report.problems.add(
+            'The hub does not accept the shared clipboard yet: restart it '
+            'with this version of THEapp.',
+          );
+          break;
+        }
+        rethrow;
+      }
       _checkHub(state, response.hubId, response.lastSeq);
       final sentRev = {for (final c in batch) c.key: c.rev};
+      final sent = {for (final c in batch) c.key: c};
       final adopt = <SyncChange>[];
+      // Our tags / PDF pages, merged back in after taking the hub's version.
+      final tagMerges = <(String, List<String>, List<String>?)>[];
+      final pageMerges = <(String, List<PageBackground>)>[];
       for (final r in response.results) {
         final key = '${r.collection}/${r.id}';
+        final ours = sent[key];
         switch (r.status) {
           case PushStatus.applied || PushStatus.duplicate:
             state.base[key] = r.rev;
+            if (r.collection == 'assets') {
+              final sentAsset = ours;
+              if (sentAsset != null) {
+                state.rememberTagBase(
+                  r.id,
+                  sentAsset.rev,
+                  state.tagBase[r.id] ?? const [],
+                );
+              }
+              state.rememberTags(
+                r.id,
+                sentAsset?.deleted == true ? null : sentAsset?.data,
+              );
+            }
             report.pushed++;
           case PushStatus.keptServer:
             // The hub kept another version (ours is preserved as a conflict
             // when it was a real edit): take the hub's version.
             if (r.current != null) adopt.add(r.current!);
+            final data = ours?.data;
+            if (data != null && r.collection == 'assets') {
+              tagMerges.add((
+                r.id,
+                [
+                  for (final t in (data['linkTags'] as List?) ?? const [])
+                    if (t is String) t,
+                ],
+                state.tagBase[r.id],
+              ));
+              final conflict = r.conflictId;
+              if (conflict != null) state.mergedConflicts.add(conflict);
+            } else if (data != null && r.collection == 'canvases') {
+              final pages = [
+                for (final b in (data['backgrounds'] as List?) ?? const [])
+                  PageBackground.fromJson(b as Map<String, dynamic>),
+              ];
+              if (pages.isNotEmpty) pageMerges.add((r.id, pages));
+              final conflict = r.conflictId;
+              if (conflict != null) state.mergedConflicts.add(conflict);
+            }
         }
         if (r.conflictId != null) report.conflicts++;
       }
@@ -283,8 +436,135 @@ class SyncEngine {
         // stays (it is pending and will be resolved by the next push).
         await _apply(adopt, state, report, sentRev: sentRev);
       }
+      // Neither device's tags or PDF pages are lost: the merged result is
+      // a new local edit, sent with the next push.
+      for (final (id, ours, base) in tagMerges) {
+        final asset = workspace.assets[id];
+        if (asset == null) continue;
+        final merged = mergeLinkTags(
+          local: asset.linkTags,
+          ours: ours,
+          base: base,
+        );
+        if (!_sameList(merged, asset.linkTags)) {
+          workspace.assets.put(asset.copyWith(linkTags: merged));
+          report.merged++;
+        }
+      }
+      for (final (id, ours) in pageMerges) {
+        if (await _mergePages(id, ours)) report.merged++;
+      }
       await _commitLocal(state);
     }
+  }
+
+  /// A hub conflict record says our edit of a link or a notebook's metadata
+  /// lost against a newer edit from another device: add our tags (keeping
+  /// the other device's too) or our PDF pages back, once.
+  Future<void> _mergeLostEdit(
+    Map<String, dynamic> conflict,
+    SyncState state,
+    SyncReport report,
+    Map<String, List<String>> tagBaseBefore,
+    Map<String, SyncChange> serverChanges,
+  ) async {
+    final id = conflict['id'];
+    final other = conflict['otherData'];
+    if (id is! String ||
+        conflict['reason'] != 'concurrent_edit' ||
+        conflict['otherDevice'] != workspace.device?.id ||
+        other is! Map<String, dynamic> ||
+        state.mergedConflicts.contains(id)) {
+      return;
+    }
+    final recordId = conflict['recordId'] as String?;
+    if (recordId == null) return;
+    switch (conflict['collection']) {
+      case 'assets':
+        final collection = workspace.syncCollections['assets']!;
+        final server = serverChanges['assets/$recordId'];
+        final otherRev = conflict['otherRev'] as String?;
+        final keptRev = conflict['keptRev'] as String?;
+        final localRev = collection.revOf(recordId);
+        // The hub's winning asset may have arrived in this same pull, but
+        // the ordinary pending-edit check correctly left our losing local
+        // copy untouched. Replace it only when it is still exactly the
+        // revision named by this conflict.
+        if (localRev == otherRev &&
+            server != null &&
+            server.rev == keptRev &&
+            !server.deleted &&
+            server.data != null) {
+          collection.applyRemote(recordId, server.rev, server.data);
+          state.base[server.key] = server.rev;
+          state.rememberTags(recordId, server.data);
+        }
+        final asset = workspace.assets[recordId];
+        if (asset != null) {
+          final merged = mergeLinkTags(
+            local: asset.linkTags,
+            ours: [
+              for (final t in (other['linkTags'] as List?) ?? const [])
+                if (t is String) t,
+            ],
+            base:
+                (otherRev == null
+                    ? null
+                    : state.tagBaseByRev[recordId]?[otherRev]) ??
+                tagBaseBefore[recordId],
+          );
+          if (!_sameList(merged, asset.linkTags)) {
+            workspace.assets.put(asset.copyWith(linkTags: merged));
+            report.merged++;
+          }
+        }
+      case 'canvases':
+        final pages = [
+          for (final b in (other['backgrounds'] as List?) ?? const [])
+            PageBackground.fromJson(b as Map<String, dynamic>),
+        ];
+        if (pages.isNotEmpty && await _mergePages(recordId, pages)) {
+          report.merged++;
+        }
+    }
+    state.mergedConflicts.add(id);
+  }
+
+  static bool _sameList(List<String> a, List<String> b) =>
+      a.length == b.length &&
+      [for (var i = 0; i < a.length; i++) a[i] == b[i]].every((x) => x);
+
+  /// Adds our PDF pages back to a notebook after the hub's version was
+  /// taken. The result gets a new metadata revision, so it is sent next.
+  Future<bool> _mergePages(String canvasId, List<PageBackground> ours) async {
+    final bridge = openCanvas;
+    if (bridge != null && bridge.isOpen(canvasId)) {
+      return bridge.mergeOpenPages(canvasId, ours);
+    }
+    final doc = await canvases.load(canvasId);
+    if (doc == null) return false;
+    final merged = mergePageBackgrounds(doc.pageBackgrounds, ours);
+    if (merged == null) return false;
+    await canvases.save(
+      CanvasDocument(
+        id: doc.id,
+        title: doc.title,
+        folderId: doc.folderId,
+        items: doc.items,
+        updatedAt: DateTime.now(),
+        viewport: doc.viewport,
+        itemRevs: doc.itemRevs,
+        tombstones: doc.tombstones,
+        metaRev: workspace.clock.now(),
+        unknownItems: doc.unknownItems,
+        itemUnknownFields: doc.itemUnknownFields,
+        unknownKeys: doc.unknownKeys,
+        metaUnknownFields: doc.metaUnknownFields,
+        kind: doc.kind,
+        pageBackgrounds: merged,
+      ),
+    );
+    return true;
   }
 
   bool _attachmentsReconciled = false;
@@ -398,12 +678,20 @@ class SyncEngine {
         : localRev != null && localRev != state.base[key];
 
     final byCanvas = <String, List<SyncChange>>{};
+    final lostEdits = <Map<String, dynamic>>[];
+    final tagBaseBefore = {
+      for (final e in state.tagBase.entries) e.key: [...e.value],
+    };
+    final serverChanges = {for (final c in changes) c.key: c};
     for (final c in changes) {
       final collection = workspace.syncCollections[c.collection];
       if (collection != null) {
         final localRev = collection.revOf(c.id) ?? collection.tombstones[c.id];
         if (localRev == c.rev) {
           state.base[c.key] = c.rev;
+          if (c.collection == 'assets') {
+            state.rememberTags(c.id, c.deleted ? null : c.data);
+          }
           continue;
         }
         if (isPending(c.key, localRev)) {
@@ -413,6 +701,12 @@ class SyncEngine {
         try {
           collection.applyRemote(c.id, c.rev, c.deleted ? null : c.data);
           state.base[c.key] = c.rev;
+          if (c.collection == 'assets') {
+            state.rememberTags(c.id, c.deleted ? null : c.data);
+          }
+          if (c.collection == 'conflicts' && c.data != null) {
+            lostEdits.add(c.data!);
+          }
           report.pulled++;
         } catch (e) {
           // Not readable by this version: leave it on the hub, note it.
@@ -427,6 +721,17 @@ class SyncEngine {
     }
     for (final MapEntry(key: canvasId, value: list) in byCanvas.entries) {
       await _applyCanvas(canvasId, list, state, report, isPending);
+    }
+    // Our tags or PDF pages that lost against another device's newer edit
+    // (recorded by the hub as a conflict) are added back.
+    for (final conflict in lostEdits) {
+      await _mergeLostEdit(
+        conflict,
+        state,
+        report,
+        tagBaseBefore,
+        serverChanges,
+      );
     }
   }
 
@@ -499,6 +804,13 @@ class SyncEngine {
       } else {
         report.skipped++;
       }
+    }
+    // A canvas deleted earlier was brought back on another device (e.g. a
+    // restored note's handwriting): it exists again here too.
+    if (meta != null &&
+        applied.contains(meta.key) &&
+        workspace.canvasTombstones.containsKey(canvasId)) {
+      await workspace.forgetCanvasDeletion(canvasId);
     }
   }
 

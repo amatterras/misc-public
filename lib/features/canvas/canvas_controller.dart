@@ -15,6 +15,7 @@ import '../../sync/protocol.dart';
 import 'canvas_resources.dart';
 import 'canvas_text.dart';
 import '../ink/stroke_geometry.dart';
+import '../ink/shape_recognition.dart';
 
 export 'canvas_text.dart' show kTextPadding, canvasTextStyle;
 
@@ -191,6 +192,20 @@ class CanvasController extends ChangeNotifier {
     return _items.map(itemBounds).reduce((a, b) => a.expandToInclude(b));
   }
 
+  /// Size of the view showing this canvas (set by the view; zero until it
+  /// is laid out). Lets code outside the view centre on an item.
+  Size viewportSize = Size.zero;
+
+  /// Selects [itemId] and, once the view size is known, centres on it.
+  void reveal(String itemId) {
+    final item = itemById(itemId);
+    if (item == null) return;
+    select([itemId]);
+    if (!viewportSize.isEmpty) {
+      centerOn(itemBounds(item).center, viewportSize);
+    }
+  }
+
   /// Centres the camera on [world] at the current zoom.
   void centerOn(Offset world, Size viewport) {
     _offset = viewport.center(Offset.zero) - world * _scale;
@@ -262,7 +277,7 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Color highlighterColor = const Color(0xFFFFD54F);
+  Color highlighterColor = InkColors.electricGold;
   double highlighterWidth = 18.0;
 
   void setHighlighter({Color? color, double? width}) {
@@ -286,7 +301,11 @@ class CanvasController extends ChangeNotifier {
 
   void selectAll() {
     _tool = CanvasTool.select;
-    select(_items.map((i) => i.id));
+    // Reference overlays are never selected (so never deleted by accident).
+    select([
+      for (final i in _items)
+        if (!isReference(i.id)) i.id,
+    ]);
   }
 
   List<CanvasItem> get selectedItems => [
@@ -296,14 +315,214 @@ class CanvasController extends ChangeNotifier {
 
   void deleteSelection() {
     if (_selection.isEmpty) return;
+    // Locked items stay (unlock them first).
+    final doomed = {
+      for (final id in _selection)
+        if (!isLocked(id)) id,
+    };
+    if (doomed.isEmpty) return;
     // Connections go with the items they join (one undo step).
     _commit([
       for (final i in _items)
-        if (!_selection.contains(i.id) &&
-            !(i is ConnectorItem && _selection.any(i.touches)))
+        if (!doomed.contains(i.id) &&
+            !(i is ConnectorItem && doomed.any(i.touches)))
           i,
     ]);
+    _selection = Set.unmodifiable(_selection.difference(doomed));
+    notifyListeners();
+  }
+
+  // ----------------------------------------------------------- item marks --
+  //
+  // Lock, lasso tag and group are kept with each item as extra fields, the
+  // same way fields from a newer version are kept: they are saved and
+  // synced with the item, and no item type had to change.
+
+  static const lockedMark = 'locked';
+  static const tagMark = 'tag';
+  static const groupMark = 'group';
+
+  Object? markOf(String id, String key) => _itemUnknownFields[id]?[key];
+
+  /// Locked items cannot be moved, resized, edited, erased or deleted.
+  bool isLocked(String id) => markOf(id, lockedMark) == true;
+
+  /// Index into the lasso/tag colors, or null.
+  int? tagOf(String id) {
+    final v = markOf(id, tagMark);
+    return v is int && v >= 0 && v < CanvasTagColors.selected.length ? v : null;
+  }
+
+  String? groupOf(String id) {
+    final v = markOf(id, groupMark);
+    return v is String ? v : null;
+  }
+
+  final Set<String> _marksChanged = {};
+
+  /// Sets (or with null removes) a mark on [ids].
+  void setMark(Iterable<String> ids, String key, Object? value) {
+    var changed = false;
+    for (final id in ids) {
+      if (itemById(id) == null || markOf(id, key) == value) continue;
+      final fields = {...?_itemUnknownFields[id]};
+      value == null ? fields.remove(key) : fields[key] = value;
+      if (fields.isEmpty) {
+        _itemUnknownFields.remove(id);
+      } else {
+        _itemUnknownFields[id] = fields;
+      }
+      _marksChanged.add(id);
+      changed = true;
+    }
+    if (!changed) return;
+    _markDirty();
+    notifyListeners();
+  }
+
+  /// The marks of [ids] (to copy them along with the items).
+  Map<String, Map<String, dynamic>> marksOf(Iterable<String> ids) => {
+    for (final id in ids)
+      if (_itemUnknownFields[id] case final m? when m.isNotEmpty) id: {...m},
+  };
+
+  /// Adds [items] (one undo step) with their [marks] (by item id), e.g.
+  /// copies of tagged or grouped items.
+  void addItemsWithMarks(
+    List<CanvasItem> items,
+    Map<String, Map<String, dynamic>> marks,
+  ) {
+    for (final e in marks.entries) {
+      _itemUnknownFields[e.key] = {...e.value};
+      _marksChanged.add(e.key);
+    }
+    addItems(items);
+  }
+
+  /// Replaces every item with [items] and their [marks] (restoring a
+  /// version snapshot). One undo step, so a restore can be taken back;
+  /// every item is saved and synced as a change.
+  void replaceAllItems(
+    List<CanvasItem> items,
+    Map<String, Map<String, dynamic>> marks,
+  ) {
+    endEditing();
+    for (final i in items) {
+      final m = marks[i.id];
+      if (m == null || m.isEmpty) {
+        _itemUnknownFields.remove(i.id);
+      } else {
+        _itemUnknownFields[i.id] = {...m};
+      }
+      _marksChanged.add(i.id);
+    }
+    _commit(items);
     _selection = const {};
+    notifyListeners();
+  }
+
+  /// Locks the selection, or unlocks it if every selected item is locked.
+  void toggleLockSelection() {
+    final allLocked = _selection.isNotEmpty && _selection.every(isLocked);
+    setMark(_selection, lockedMark, allLocked ? null : true);
+  }
+
+  /// Gives the selection lasso tag [index] (null removes the tag).
+  void tagSelection(int? index) => setMark(_selection, tagMark, index);
+
+  /// Joins the selected items into one group (selected and moved together).
+  void groupSelection() {
+    if (_selection.length < 2) return;
+    setMark(_selection, groupMark, newId());
+  }
+
+  void ungroupSelection() => setMark(_selection, groupMark, null);
+
+  /// [ids] plus every item grouped with one of them.
+  Set<String> withGroups(Iterable<String> ids) {
+    final groups = {for (final id in ids) ?groupOf(id)};
+    if (groups.isEmpty) return ids.toSet();
+    return {
+      ...ids,
+      for (final i in _items)
+        if (groups.contains(groupOf(i.id))) i.id,
+    };
+  }
+
+  static const referenceMark = 'reference';
+
+  /// A reference overlay: an image or document card drawn faintly behind
+  /// everything, never selected, moved or erased by drawing over it.
+  bool isReference(String id) => markOf(id, referenceMark) == true;
+
+  bool get hasReferences => _items.any((i) => isReference(i.id));
+
+  /// Makes the selected images and document cards reference overlays.
+  void makeSelectionReference() {
+    final ids = [
+      for (final i in selectedItems)
+        if (i is ImageItem || i is LinkItem) i.id,
+    ];
+    setMark(ids, referenceMark, true);
+    select(_selection.difference(ids.toSet()));
+  }
+
+  /// Turns every reference overlay back into an ordinary item.
+  void releaseReferences() => setMark(
+    [
+      for (final i in _items)
+        if (isReference(i.id)) i.id,
+    ],
+    referenceMark,
+    null,
+  );
+
+  /// Rotates the selected ink by [radians] around the selection's centre
+  /// (one undo step). Boxes (text, images, cards) are not rotated.
+  void rotateSelection(double radians) {
+    final strokes = [
+      for (final i in selectedItems)
+        if (i is StrokeItem && !isLocked(i.id)) i,
+    ];
+    if (strokes.isEmpty) return;
+    var area = strokes.first.bounds;
+    for (final s in strokes) {
+      area = area.expandToInclude(s.bounds);
+    }
+    final c = area.center;
+    final cos = math.cos(radians), sin = math.sin(radians);
+    StrokeItem turn(StrokeItem s) => StrokeItem(
+      id: s.id,
+      points: [
+        for (final p in s.points)
+          StrokePoint(
+            c.dx + (p.x - c.dx) * cos - (p.y - c.dy) * sin,
+            c.dy + (p.x - c.dx) * sin + (p.y - c.dy) * cos,
+            p.pressure,
+          ),
+      ],
+      color: s.color,
+      strokeWidth: s.strokeWidth,
+      pressureWidth: s.pressureWidth,
+    );
+    final changes = {for (final s in strokes) s.id: turn(s)};
+    _commit([for (final i in _items) changes[i.id] ?? i]);
+    notifyListeners();
+  }
+
+  /// Recolors the selected strokes and texts (one undo step). Locked items
+  /// keep their colors.
+  void recolorSelection(Color color) {
+    final changes = <String, CanvasItem>{
+      for (final item in selectedItems)
+        if (!isLocked(item.id))
+          if (item is StrokeItem)
+            item.id: item.recolored(color)
+          else if (item is TextItem)
+            item.id: item.copyWith(textColor: () => color),
+    };
+    if (changes.isEmpty) return;
+    _commit([for (final i in _items) changes[i.id] ?? i]);
     notifyListeners();
   }
 
@@ -311,7 +530,7 @@ class CanvasController extends ChangeNotifier {
   void updateSelectedTexts(TextItem Function(TextItem) change) {
     final changes = <String, CanvasItem>{
       for (final item in selectedItems)
-        if (item is TextItem) item.id: change(item),
+        if (item is TextItem && !isLocked(item.id)) item.id: change(item),
     };
     if (changes.isEmpty) return;
     _commit([for (final i in _items) changes[i.id] ?? i]);
@@ -328,7 +547,15 @@ class CanvasController extends ChangeNotifier {
 
   /// New copies of [items] moved by [delta]. Connections are copied only
   /// when both their ends are copied, and then join the copies.
-  static List<CanvasItem> _copies(List<CanvasItem> items, Offset delta) {
+  static List<CanvasItem> _copies(List<CanvasItem> items, Offset delta) =>
+      copyItems(items, delta).$1;
+
+  /// Copies of [items] with new ids, moved by [delta] (connections between
+  /// copied items join the copies), and old id → new id.
+  static (List<CanvasItem>, Map<String, String>) copyItems(
+    List<CanvasItem> items,
+    Offset delta,
+  ) {
     final newIds = <String, String>{};
     final copies = <CanvasItem>[];
     for (final item in items) {
@@ -337,7 +564,7 @@ class CanvasController extends ChangeNotifier {
       newIds[item.id] = id;
       copies.add(item.withId(id).translated(delta));
     }
-    return [...copies, ..._remapConnectors(items, newIds)];
+    return ([...copies, ..._remapConnectors(items, newIds)], newIds);
   }
 
   /// Adds [items] as one undo step and selects them.
@@ -440,7 +667,7 @@ class CanvasController extends ChangeNotifier {
   }
 
   void beginEditing(String id) {
-    if (_editingId == id) return;
+    if (_editingId == id || isLocked(id)) return;
     endEditing();
     _beginTransaction();
     _editingId = id;
@@ -670,6 +897,7 @@ class CanvasController extends ChangeNotifier {
   CanvasItem? hitTest(Offset world) {
     final tolerance = 6 / _scale;
     for (final item in _items.reversed) {
+      if (isReference(item.id)) continue; // behind the ink, not selectable
       switch (item) {
         case BoxItem():
           if (itemBounds(item).contains(world)) return item;
@@ -783,6 +1011,13 @@ class CanvasController extends ChangeNotifier {
   /// library. Display only; nothing is changed or saved.
   bool Function(CanvasItem item)? get dimmed => _dimmed;
   bool Function(CanvasItem item)? _dimmed;
+  Color? Function(CanvasItem item)? _highlighted;
+  Color? Function(CanvasItem item)? get highlighted => _highlighted;
+  set highlighted(Color? Function(CanvasItem item)? value) {
+    _highlighted = value;
+    notifyListeners();
+  }
+
   set dimmed(bool Function(CanvasItem item)? value) {
     _dimmed = value;
     notifyListeners();
@@ -1033,7 +1268,7 @@ class CanvasController extends ChangeNotifier {
     PointerDeviceKind kind = PointerDeviceKind.mouse,
   }) {
     final handle = resizeHandleAt(screen, kind: kind);
-    if (handle != null) {
+    if (handle != null && !isLocked(handle.id)) {
       endEditing();
       _beginTransaction();
       _drag = _Drag.resize;
@@ -1060,12 +1295,18 @@ class CanvasController extends ChangeNotifier {
     endEditing();
 
     if (hit != null) {
+      // A grouped item brings its whole group.
+      final picked = withGroups({hit.id});
       if (shift) {
         final next = {..._selection};
-        if (!next.remove(hit.id)) next.add(hit.id);
+        if (next.contains(hit.id)) {
+          next.removeAll(picked);
+        } else {
+          next.addAll(picked);
+        }
         _selection = Set.unmodifiable(next);
       } else if (!_selection.contains(hit.id)) {
-        _selection = {hit.id};
+        _selection = Set.unmodifiable(picked);
       }
       if (_selection.contains(hit.id)) {
         _beginTransaction();
@@ -1098,7 +1339,7 @@ class CanvasController extends ChangeNotifier {
         final worldDelta = delta / _scale;
         _replaceItems({
           for (final item in selectedItems)
-            item.id: item.translated(worldDelta),
+            if (!isLocked(item.id)) item.id: item.translated(worldDelta),
         });
       case _Drag.resize:
         final original = _resizeOriginal;
@@ -1107,11 +1348,14 @@ class CanvasController extends ChangeNotifier {
         }
       case _Drag.marquee:
         _marquee = Rect.fromPoints(_dragStartWorld, world);
-        _selection = Set.unmodifiable({
-          ..._selectionAtDragStart,
-          for (final item in _items)
-            if (_marquee!.overlaps(itemBounds(item))) item.id,
-        });
+        _selection = Set.unmodifiable(
+          withGroups({
+            ..._selectionAtDragStart,
+            for (final item in _items)
+              if (!isReference(item.id) && _marquee!.overlaps(itemBounds(item)))
+                item.id,
+          }),
+        );
       case _Drag.lasso:
         final last = _lassoPoints.last;
         // Sample points spaced at least 2 pixels apart on screen for efficiency.
@@ -1181,7 +1425,7 @@ class CanvasController extends ChangeNotifier {
         _velocity = null;
         _straight = false;
         (liveInk as _Ping).ping();
-        if (stroke != null) _setItems([..._items, stroke]);
+        if (stroke != null) _setItems([..._items, _cleanShape(stroke)]);
         _endTransaction();
       case _Drag.move || _Drag.resize || _Drag.erase:
         _endTransaction();
@@ -1191,7 +1435,8 @@ class CanvasController extends ChangeNotifier {
         if (_lassoPoints.length >= 3) {
           final hits = <String>{};
           for (final item in _items) {
-            if (_lassoContainsOrIntersects(itemBounds(item), _lassoPoints)) {
+            if (!isReference(item.id) &&
+                _lassoContainsOrIntersects(itemBounds(item), _lassoPoints)) {
               hits.add(item.id);
             }
           }
@@ -1251,6 +1496,27 @@ class CanvasController extends ChangeNotifier {
     }
   }
 
+  /// Turns rough shapes into clean ones while [recognizeShapes] is on.
+  bool get recognizeShapes => _recognizeShapes;
+  bool _recognizeShapes = false;
+  set recognizeShapes(bool on) {
+    _recognizeShapes = on;
+    notifyListeners();
+  }
+
+  StrokeItem _cleanShape(StrokeItem stroke) {
+    if (!recognizeShapes) return stroke;
+    final match = recognizeShape(stroke.points);
+    if (match == null) return stroke;
+    return StrokeItem(
+      id: stroke.id,
+      points: match.points,
+      color: stroke.color,
+      strokeWidth: stroke.strokeWidth,
+      pressureWidth: false,
+    );
+  }
+
   void pointerCancel() {
     _holdTimer?.cancel();
     if (_drag == _Drag.draw) _liveStroke = null;
@@ -1291,6 +1557,7 @@ class CanvasController extends ChangeNotifier {
     final remaining = [
       for (final item in _items)
         if (item is! StrokeItem ||
+            isLocked(item.id) ||
             !samples.any((p) => item.hitTest(p, tolerance)))
           item,
     ];
@@ -1406,6 +1673,8 @@ class CanvasController extends ChangeNotifier {
     final unsaved = {
       for (final i in _items)
         if (!identical(_savedItems[i.id], i)) i.id,
+      // Tag, lock, group … changed here and not saved yet.
+      ..._marksChanged,
     };
     if (_editingId != null) unsaved.add(_editingId!);
     final metaUnsaved =
@@ -1473,6 +1742,7 @@ class CanvasController extends ChangeNotifier {
     final current = {for (final i in _items) i.id: i};
     for (final item in _items) {
       if (!identical(_savedItems[item.id], item) ||
+          _marksChanged.contains(item.id) ||
           !_itemRevs.containsKey(item.id)) {
         _itemRevs[item.id] = clock.now();
       }
@@ -1493,6 +1763,7 @@ class CanvasController extends ChangeNotifier {
       _metaRev = clock.now();
     }
     _metaChanged = false;
+    _marksChanged.clear();
     _savedItems = current;
     _savedTitle = _title;
     _savedFolderId = _folderId;

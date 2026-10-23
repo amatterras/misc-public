@@ -3,29 +3,40 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart';
+import 'package:flutter/services.dart';
 
 import '../data/models/canvas_models.dart';
 
 import '../data/models/library_models.dart';
 import '../data/models/record.dart';
 import '../data/models/task_models.dart';
+import '../data/migrations/canonical_color_migration.dart';
 import '../data/repositories/canvas_repository.dart';
 import '../data/repositories/record_collection.dart';
 import '../data/storage/app_log.dart';
+import '../data/storage/json_file_store.dart' show iosDocuments, iosFolder;
 import '../data/workspace.dart';
 import '../features/canvas/canvas_controller.dart';
+import '../features/ai/ai_service.dart';
+import '../features/ai/ai_session.dart';
+import '../features/ai/similarity.dart';
 import '../features/canvas/canvas_resources.dart';
 import '../features/capture/capture_service.dart';
+import '../features/capture/file_drop.dart';
 import '../features/capture/send_to.dart';
+import '../features/tasks/completion_messages.dart';
 import '../features/widgets/widget_snapshot.dart';
 import '../platform/ios_bridge.dart';
 import '../platform/input_hints.dart';
 import '../platform/platform.dart' as native;
+import '../widgets/date_prefs.dart';
 import '../sync/protocol.dart';
+import '../sync/record_merge.dart';
 import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
+import 'canvas_ops.dart';
+import 'floating_windows.dart';
 import 'test_environment.dart';
 
 enum AppPage { home, canvas, notes, links, calendar, tasks }
@@ -113,6 +124,9 @@ class AppState extends ChangeNotifier {
   late final WorkspaceCanvasResources resources;
   final FocusTimer timer = FocusTimer();
 
+  /// Floating panels (draggable, resizable; places kept on this device).
+  late final FloatingWindows floating = FloatingWindows(settings);
+
   /// Opens a link in the browser; replaceable in tests.
   bool Function(String url) openUrl = native.openUrl;
 
@@ -146,10 +160,29 @@ class AppState extends ChangeNotifier {
 
   void openTask(String id) {
     selectedTaskId = id;
-    _canvas?.endEditing();
-    _page = AppPage.tasks;
+    goTo(AppPage.tasks);
+  }
+
+  /// Tasks live in a collapsible column inside Calendar (there is no
+  /// separate Tasks destination); whether it is open is remembered.
+  bool get calendarTasksOpen => _calendarTasksOpen;
+  bool _calendarTasksOpen = false;
+
+  void setCalendarTasksOpen(bool open) {
+    if (open == _calendarTasksOpen) return;
+    _calendarTasksOpen = open;
+    unawaited(settings.set('calendarTasksOpen', open));
     notifyListeners();
   }
+
+  /// Pages that are restored at the next start (see [goTo]).
+  static const _restorablePages = {
+    AppPage.home,
+    AppPage.canvas,
+    AppPage.notes,
+    AppPage.links,
+    AppPage.calendar,
+  };
 
   /// Short message shown at the bottom of the window.
   final ValueNotifier<String?> toast = ValueNotifier(null);
@@ -167,7 +200,24 @@ class AppState extends ChangeNotifier {
     step('Loading your data');
     await workspace.load();
     _sidebarCollapsed = settings.get<bool>('sidebarCollapsed') ?? false;
+    _calendarTasksOpen = settings.get<bool>('calendarTasksOpen') ?? false;
+    // Reopen where the user was (the last canvas is restored below).
+    final lastPage = AppPage.values
+        .asNameMap()[settings.get<String>('lastPage')];
+    if (lastPage != null && _restorablePages.contains(lastPage)) {
+      _page = lastPage;
+      if (lastPage == AppPage.links) unawaited(openLinksBoard());
+    }
     capture.fetchPreviews = settings.get<bool>('linkPreviews') ?? true;
+    if (alwaysOnTop && alwaysOnTopSupported) applyAlwaysOnTop(true);
+    DatePrefs.order =
+        DateOrder.values.asNameMap()[settings.get<String>('dateOrder')] ??
+        DateOrder.monthDay;
+    DatePrefs.firstWeekday =
+        (settings.get<int>('firstWeekday') ?? DateTime.monday).clamp(
+          DateTime.monday,
+          DateTime.sunday,
+        );
 
     // Data written by a newer version of THEapp must never be rewritten in
     // an older format: stop before anything is saved.
@@ -215,6 +265,8 @@ class AppState extends ChangeNotifier {
       await workspace.flush();
       await settings.set('backupBeforeSchema', CanvasDocument.schemaVersion);
     }
+    if (!await _checkFeatureLevel()) return;
+    workspace.backups.copiesDir ??= backupCopiesFolder();
     step('Daily backup');
     try {
       await workspace.backups.automaticBackup();
@@ -238,6 +290,8 @@ class AppState extends ChangeNotifier {
       await openCanvas(id, show: false);
     }
     if (enableSendTo) {
+      // Files dragged onto the window (Windows runner).
+      listenForDroppedFiles(this);
       sendTo.onFocusRequested = native.focusMainWindow;
       sendTo.start(capture);
     }
@@ -261,6 +315,7 @@ class AppState extends ChangeNotifier {
     await _startSyncIfPaired();
     step('Starting reminders');
     _startReminders();
+    _applyClipboardSetting();
     step('Ready');
   }
 
@@ -291,6 +346,129 @@ class AppState extends ChangeNotifier {
 
   /// Whether automatic (timed) sync is currently scheduled.
   bool get syncScheduled => _syncTimer?.isActive ?? false;
+
+  /// iPhone/iPad: Documents/THEapp Backups, shown in the Files app (On My
+  /// iPad → THEapp), so a backup can be moved off the device. Null
+  /// elsewhere: on Windows the data folder itself is reachable.
+  static Directory? backupCopiesFolder() {
+    if (!Platform.isIOS) return null;
+    try {
+      final documents = iosFolder(
+        'Documents',
+        reported: iosDocuments,
+        home: Platform.environment['HOME'],
+        systemTemp: Directory.systemTemp.path,
+      );
+      return Directory('$documents/THEapp Backups');
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  /// Makes a backup of everything (records, photos, PDFs) and saves a
+  /// checked copy of it in [backups.copiesDir]. Returns the copy, or null
+  /// if there is no such folder here.
+  Future<Directory?> saveBackupCopy() async {
+    final dest = workspace.backups.copiesDir;
+    if (dest == null) return null;
+    await flush();
+    final backup = await workspace.backups.snapshot(
+      'manual',
+      includeAttachments: true,
+    );
+    if (!await workspace.backups.verify(backup)) {
+      throw const FileSystemException('The backup could not be verified');
+    }
+    await dest.create(recursive: true);
+    final copy = await workspace.backups.copyTo(backup, dest);
+    AppLog.info('Saved a backup copy outside the data folder');
+    return copy;
+  }
+
+  /// Raised whenever a build starts writing fields that an older build would
+  /// drop (schema numbers alone did not change for those). 1: notebooks,
+  /// PDF pages, pressure strokes, link tags (Phases 2 and 3).
+  static const dataFeatureLevel = 2;
+
+  /// First start of a build with a higher [dataFeatureLevel]: a verified
+  /// backup (with photos) before anything is written, so the old state can
+  /// be restored. Data marked by a newer build opens read-only, so this
+  /// build never rewrites it without the newer fields. False = stop here.
+  Future<bool> _checkFeatureLevel() async {
+    final stored = settings.get<int>('dataFeatureLevel') ?? 0;
+    if (stored > dataFeatureLevel) {
+      workspace.store.readOnly = true;
+      dataProblem =
+          'Your data was saved by a newer build of THEapp. To protect it, '
+          'this build will not change it. Please install the newer build.';
+      AppLog.error(
+        'Data feature level $stored > $dataFeatureLevel; wrote nothing.',
+      );
+      notifyListeners();
+      return false;
+    }
+    if (stored == dataFeatureLevel) return true;
+    final hasData =
+        workspace.hasRecords || (await canvases.listCanvases()).isNotEmpty;
+    if (hasData) {
+      Directory? backup;
+      var verified = false;
+      try {
+        backup = await workspace.backups.snapshot(
+          'pre-level$dataFeatureLevel',
+          includeAttachments: true,
+        );
+        verified = await workspace.backups.verify(backup);
+      } catch (e, s) {
+        AppLog.error('Pre-upgrade backup failed', e, s);
+      }
+      if (backup == null || !verified) {
+        workspace.store.readOnly = true;
+        dataProblem =
+            'THEapp could not make a verified backup before using this new '
+            'build with your data, so nothing was changed. Free some space '
+            'and restart THEapp.';
+        AppLog.error('Pre-upgrade backup failed verification; data untouched.');
+        notifyListeners();
+        return false;
+      }
+      AppLog.info('Verified backup before data level $dataFeatureLevel');
+    }
+    try {
+      await _migrateCanonicalColors();
+      await settings.set(
+        'canonicalColorMigration',
+        CanonicalColorMigration.version,
+      );
+    } catch (e, s) {
+      workspace.store.readOnly = true;
+      dataProblem =
+          'THEapp could not complete the color migration safely. Your verified '
+          'backup is preserved and this data folder is now read-only.';
+      AppLog.error('Canonical color migration failed', e, s);
+      notifyListeners();
+      return false;
+    }
+    await settings.set('dataFeatureLevel', dataFeatureLevel);
+    return true;
+  }
+
+  Future<void> _migrateCanonicalColors() async {
+    for (final entry in workspace.entries.all.toList()) {
+      final migrated = CanonicalColorMigration.migrateCalendarEntry(entry);
+      if (!identical(migrated, entry)) workspace.entries.put(migrated);
+    }
+    for (final summary in await canvases.listCanvases()) {
+      final document = await canvases.load(summary.id);
+      if (document == null) continue;
+      final migrated = CanonicalColorMigration.migrateCanvas(
+        document,
+        workspace.clock.now(),
+      );
+      if (!identical(migrated, document)) await canvases.save(migrated);
+    }
+    await workspace.flush();
+  }
 
   Future<void> _startSyncIfPaired() async {
     final config = await workspace.store.read('sync', 'hub');
@@ -511,11 +689,54 @@ class AppState extends ChangeNotifier {
   Future<void> _refreshList() async {
     // Note handwriting and the Links board are stored like canvases but
     // are not ones.
+    final all = await canvases.listCanvases();
     _canvasList = [
-      for (final c in await canvases.listCanvases())
+      for (final c in all)
         if (c.isCanvas) c,
     ];
+    // Their typed text is still searchable (see [pageSearchText]).
+    _pageText
+      ..clear()
+      ..addAll({
+        for (final c in all)
+          if (!c.isCanvas && c.searchText.trim().isNotEmpty) c.id: c.searchText,
+      });
     notifyListeners();
+  }
+
+  final Map<String, String> _pageText = {};
+
+  /// Text typed on note pages (`nb-<note id>`) and on the Archive board, by
+  /// document id, for global search. Kept current by [saveDocument].
+  Map<String, String> get pageSearchText => _pageText;
+
+  /// Saves a note's pages or the Archive board and keeps its search text
+  /// current. (Canvases save through [_saveCanvas].)
+  Future<void> saveDocument(CanvasDocument doc) async {
+    await canvases.save(doc);
+    final text = [
+      for (final i in doc.items)
+        if (i is TextItem) i.text,
+    ].join('\n');
+    if (text.trim().isEmpty) {
+      _pageText.remove(doc.id);
+    } else {
+      _pageText[doc.id] = text;
+    }
+  }
+
+  /// Shows a link's card on the Archive board (search result). Returns
+  /// false if the link has no card there.
+  Future<bool> openLinkCard(String assetId) async {
+    final board = await openLinksBoard();
+    final card = board.items
+        .whereType<LinkItem>()
+        .where((i) => i.assetId == assetId)
+        .firstOrNull;
+    if (card == null) return false;
+    goTo(AppPage.links);
+    board.reveal(card.id);
+    return true;
   }
 
   // ----------------------------------------------------------- reminders --
@@ -733,11 +954,22 @@ class AppState extends ChangeNotifier {
   }
 
   void goTo(AppPage page) {
-    if (page == _page) return;
+    if (page == AppPage.tasks) {
+      // Tasks are shown in Calendar's task column.
+      page = AppPage.calendar;
+      if (!_calendarTasksOpen) setCalendarTasksOpen(true);
+    }
+    if (page == _page) {
+      notifyListeners(); // e.g. a task was selected
+      return;
+    }
     _canvas?.endEditing();
     _links?.endEditing();
     if (page == AppPage.links) unawaited(openLinksBoard());
     _page = page;
+    if (_restorablePages.contains(page)) {
+      unawaited(settings.set('lastPage', page.name));
+    }
     notifyListeners();
   }
 
@@ -747,6 +979,297 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Keeps THEapp's window above other windows (Windows only; a setting
+  /// of this device). Never touches a real window during `flutter test`.
+  bool get alwaysOnTop => settings.get<bool>('alwaysOnTop') ?? false;
+
+  bool get alwaysOnTopSupported => native.supportsAlwaysOnTop;
+
+  /// Applies the setting to the window; replaceable in tests.
+  bool Function(bool on) applyAlwaysOnTop =
+      Platform.environment.containsKey('FLUTTER_TEST')
+      ? (_) => false
+      : native.setAlwaysOnTop;
+
+  Future<void> setAlwaysOnTop(bool on) async {
+    await settings.set('alwaysOnTop', on);
+    if (alwaysOnTopSupported) applyAlwaysOnTop(on);
+    notifyListeners();
+  }
+
+  // ------------------------------------------------------------------ ai --
+
+  /// AI settings of this device (off by default).
+  late final AiSettings ai = AiSettings(settings);
+
+  File get _aiKeyFile => File(
+    '${workspace.root.path}${Platform.pathSeparator}ai${Platform.pathSeparator}service.key',
+  );
+
+  /// Stores the key of the OpenAI-compatible service, protected like the
+  /// hub key (Windows DPAPI / iOS Keychain). Null removes it.
+  Future<void> setAiKey(String? key) async {
+    if (key == null || key.trim().isEmpty) {
+      await deleteSecret(_aiKeyFile);
+    } else {
+      await _aiKeyFile.parent.create(recursive: true);
+      await writeSecret(_aiKeyFile, key.trim());
+    }
+  }
+
+  Future<bool> get hasAiKey async => await readSecret(_aiKeyFile) != null;
+
+  /// Makes the AI client; replaceable in tests.
+  late Future<AiClient> Function() aiClient = () async => aiClientFor(
+    ai,
+    apiKey: ai.provider == AiProvider.openAiCompatible
+        ? await readSecret(_aiKeyFile)
+        : null,
+  );
+
+  late final AiSession aiSession = AiSession(
+    settings: ai,
+    client: () => aiClient(),
+  );
+
+  /// Embeddings from the local model; replaceable in tests.
+  late Embedder Function() aiEmbedder = () =>
+      ollamaEmbedder(Uri.parse(ai.endpoint));
+
+  SemanticIndex? _semantic;
+
+  /// Whether search by meaning may run: AI on, the local model (nothing
+  /// leaves this PC) and notes allowed.
+  bool get canSearchByMeaning =>
+      ai.enabled &&
+      ai.provider == AiProvider.ollama &&
+      ai.isLocal &&
+      ai.sources.contains(AiSource.notes);
+
+  /// Notes ranked by meaning (the user asked for it; local model only).
+  Future<List<(Note, double)>> searchByMeaning(String query) async {
+    if (!canSearchByMeaning || query.trim().isEmpty) return const [];
+    final index = _semantic ??= SemanticIndex(aiEmbedder());
+    return index.search(query, workspace.notes.all);
+  }
+
+  static const aiWindowId = 'ai';
+
+  /// Builds the AI window (set by the shell, which knows its widgets).
+  FloatingWindowSpec Function()? aiWindow;
+
+  /// Gives [context] to the AI and opens the AI window. Nothing is sent
+  /// yet: the user reviews it and presses Send. Returns false (with a
+  /// message) when AI is off or this kind of content is not allowed.
+  bool sendToAi(AiContext context) {
+    if (!ai.enabled) {
+      showToast('AI is off. Turn it on in Settings → AI.');
+      return false;
+    }
+    if (!ai.sources.contains(context.source)) {
+      showToast(
+        '${context.source.label} may not be sent to AI (Settings → AI).',
+      );
+      return false;
+    }
+    aiSession.attach(context);
+    openAiWindow();
+    return true;
+  }
+
+  void openAiWindow() {
+    final spec = aiWindow?.call();
+    if (spec != null) floating.show(spec);
+  }
+
+  // ----------------------------------------------------------- clipboard --
+  //
+  // "Clipboard between my devices" (off by default). While on, text copied
+  // anywhere on this PC (THEapp watches the system clipboard while it is
+  // running) is synced through the user's own hub, and text copied on
+  // another device is put on this device's clipboard, ready to paste in any
+  // app. Text only, the 20 newest clips are kept.
+
+  static const maxClips = 20;
+  static const maxClipLength = 20000;
+
+  bool get shareClipboard => settings.get<bool>('shareClipboard') ?? false;
+
+  /// Reads the system clipboard's text; replaceable in tests.
+  Future<String?> Function() readClipboardText = () async =>
+      (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+
+  /// Puts text on the system clipboard; replaceable in tests.
+  Future<void> Function(String text) writeClipboardText = (text) =>
+      Clipboard.setData(ClipboardData(text: text));
+
+  Timer? _clipTimer;
+  String? _lastClipText;
+  String? _appliedClipId;
+
+  Future<void> setShareClipboard(bool on) async {
+    await settings.set('shareClipboard', on);
+    _applyClipboardSetting();
+    notifyListeners();
+  }
+
+  void _applyClipboardSetting() {
+    final on = shareClipboard;
+    workspace.shareClipboard = on;
+    _clipTimer?.cancel();
+    _clipTimer = null;
+    workspace.clipboard.removeListener(_onClipsChanged);
+    if (!on) return;
+    workspace.clipboard.addListener(_onClipsChanged);
+    // iPhone/iPad ask before every paste-read, so they only share what the
+    // user sends with "Share clipboard now"; Windows watches the clipboard.
+    if (Platform.isWindows) {
+      _clipTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => unawaited(checkClipboard()),
+      );
+    }
+  }
+
+  /// Shares the system clipboard's text if it changed. Returns the new
+  /// clip, or null.
+  Future<ClipboardClip?> checkClipboard() async {
+    if (!shareClipboard) return null;
+    String? text;
+    try {
+      text = await readClipboardText();
+    } catch (_) {
+      return null;
+    }
+    if (text == null || text.trim().isEmpty || text == _lastClipText) {
+      return null;
+    }
+    _lastClipText = text;
+    if (text.length > maxClipLength) return null;
+    final newest = _newestClip;
+    if (newest != null && newest.text == text) return null; // came from sync
+    final clip = ClipboardClip(
+      id: newId(),
+      text: text,
+      device: workspace.device?.name ?? 'This device',
+      copiedAt: clock(),
+    );
+    workspace.clipboard.put(clip);
+    _appliedClipId = clip.id;
+    final old = workspace.clipboard.all.toList()
+      ..sort((a, b) => b.copiedAt.compareTo(a.copiedAt));
+    for (final c in old.skip(maxClips)) {
+      workspace.clipboard.remove(c.id);
+    }
+    return clip;
+  }
+
+  ClipboardClip? get _newestClip {
+    ClipboardClip? newest;
+    for (final c in workspace.clipboard.all) {
+      if (newest == null || c.copiedAt.isAfter(newest.copiedAt)) newest = c;
+    }
+    return newest;
+  }
+
+  /// A newer clip from another device goes onto this clipboard.
+  void _onClipsChanged() {
+    final newest = _newestClip;
+    if (newest == null || newest.id == _appliedClipId) return;
+    _appliedClipId = newest.id;
+    if (newest.text == _lastClipText) return;
+    _lastClipText = newest.text;
+    unawaited(writeClipboardText(newest.text));
+  }
+
+  // ------------------------------------------------------------ activity --
+
+  static const _visitsKey = 'recentVisits';
+  static const maxVisits = 50;
+
+  /// Notes and mindmaps opened recently (this device only), newest first.
+  List<({String kind, String id, DateTime at})> get recentVisits => [
+    for (final v in settings.get<List<dynamic>>(_visitsKey) ?? const [])
+      if (v is Map &&
+          v['kind'] is String &&
+          v['id'] is String &&
+          parseDate(v['at']) != null)
+        (
+          kind: v['kind'] as String,
+          id: v['id'] as String,
+          at: parseDate(v['at'])!,
+        ),
+  ];
+
+  Future<void> _recordVisit(String kind, String id) {
+    final list = [
+      {'kind': kind, 'id': id, 'at': utcIso(clock())},
+      for (final v in recentVisits)
+        if (v.id != id) {'kind': v.kind, 'id': v.id, 'at': utcIso(v.at)},
+    ];
+    return settings.set(_visitsKey, list.take(maxVisits).toList());
+  }
+
+  /// Start-page sections in the user's order; hidden ones are left out.
+  /// Kept per device, so a tablet layout never changes the PC's.
+  List<String> get homeSections {
+    final saved = settings.get<List<dynamic>>('homeSections');
+    if (saved == null) return defaultHomeSections;
+    return [
+      for (final v in saved)
+        if (v is String && allHomeSections.contains(v)) v,
+    ];
+  }
+
+  static const allHomeSections = [
+    'today',
+    'upcoming',
+    'inbox',
+    'notes',
+    'canvases',
+    'activity',
+  ];
+  static const defaultHomeSections = allHomeSections;
+
+  Future<void> setHomeSections(List<String> sections) async {
+    await settings.set('homeSections', sections);
+    notifyListeners();
+  }
+
+  // --------------------------------------------------------------- tasks --
+
+  CompletionStyle get completionStyle =>
+      CompletionStyle.values.asNameMap()[settings.get<String>(
+        'completionStyle',
+      )] ??
+      CompletionStyle.understated;
+
+  Future<void> setCompletionStyle(CompletionStyle style) async {
+    await settings.set('completionStyle', style.name);
+    notifyListeners();
+  }
+
+  /// Ticks a task off (or back on). Completing says a short message (see
+  /// [completionStyle]) and mentions unfinished prerequisites; it never
+  /// blocks.
+  void toggleTask(String id) {
+    final before = workspace.tasks[id];
+    if (before == null) return;
+    workspace.toggleTask(id);
+    if (before.done) return; // reopened
+    final waiting = workspace.openPrerequisites(before);
+    final message = completionMessage(completionStyle);
+    if (waiting.isNotEmpty) {
+      showToast(
+        '${message ?? 'Done.'} Still open before it: '
+        '${waiting.map((t) => t.title).take(2).join(', ')}'
+        '${waiting.length > 2 ? '…' : ''}',
+      );
+    } else if (message != null) {
+      showToast(message);
+    }
+  }
+
   void setLinkPreviews(bool on) {
     capture.fetchPreviews = on;
     settings.set('linkPreviews', on);
@@ -754,6 +1277,19 @@ class AppState extends ChangeNotifier {
   }
 
   // ------------------------------------------------------------ calendar --
+
+  /// How dates are written and which day starts the week (this device).
+  Future<void> setDatePrefs({DateOrder? order, int? firstWeekday}) async {
+    if (order != null) {
+      DatePrefs.order = order;
+      await settings.set('dateOrder', order.name);
+    }
+    if (firstWeekday != null) {
+      DatePrefs.firstWeekday = firstWeekday;
+      await settings.set('firstWeekday', firstWeekday);
+    }
+    notifyListeners();
+  }
 
   static const maxCalendarDays = 38;
 
@@ -785,6 +1321,7 @@ class AppState extends ChangeNotifier {
 
   void openNote(String id) {
     selectedNoteId = id;
+    unawaited(_recordVisit('note', id));
     _page = AppPage.notes;
     _canvas?.endEditing();
     notifyListeners();
@@ -826,6 +1363,16 @@ class AppState extends ChangeNotifier {
           return;
         }
         final url = asset?.url;
+        final target = canvasLinkTarget(url);
+        if (target != null) {
+          // A link to another mindmap opens it inside THEapp.
+          if (_canvasList.any((c) => c.id == target)) {
+            unawaited(openCanvas(target));
+          } else {
+            showToast('That mindmap no longer exists.');
+          }
+          return;
+        }
         if (url != null && !openUrl(url)) {
           showToast('Could not open $url');
         }
@@ -860,6 +1407,7 @@ class AppState extends ChangeNotifier {
     if (show) {
       _canvas?.endEditing();
       _page = AppPage.canvas;
+      await _recordVisit('mindmap', id);
     }
     notifyListeners();
   }
@@ -919,7 +1467,7 @@ class AppState extends ChangeNotifier {
         );
     final c = CanvasController(
       document: doc,
-      onSave: canvases.save,
+      onSave: saveDocument,
       resources: resources,
       onActivate: _activateCanvasItem,
       clock: workspace.clock,
@@ -928,6 +1476,56 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return c;
   }
+
+  // The app's own canvas-like documents that are not canvases (Calendar
+  // drawings, saved components). Opened once and kept open, so sync merges
+  // into them and they are saved with everything else.
+  final Map<String, CanvasController> _special = {};
+  final Map<String, Future<CanvasController>> _specialOpening = {};
+
+  Future<CanvasController> _openSpecial(String id, String kind, String title) =>
+      _specialOpening[id] ??= () async {
+        final doc =
+            await canvases.load(id) ??
+            CanvasDocument(
+              id: id,
+              title: title,
+              items: const [],
+              updatedAt: DateTime.now(),
+              kind: kind,
+            );
+        final c = CanvasController(
+          document: doc,
+          onSave: saveDocument,
+          resources: resources,
+          clock: workspace.clock,
+        );
+        _special[id] = c;
+        notifyListeners();
+        return c;
+      }();
+
+  /// The Calendar's drawings, once opened (see [openCalendarInk]).
+  CanvasController? get calendarInk => _special[calendarInkId];
+
+  /// Opens the one document of Calendar drawings (each stroke sits in its
+  /// date's place, see calendar_ink.dart). Nothing is written until
+  /// something is drawn.
+  Future<CanvasController> openCalendarInk() async {
+    final c = await _openSpecial(
+      calendarInkId,
+      'calendarInk',
+      'Calendar drawings',
+    );
+    if (c.tool != CanvasTool.pen && c.tool != CanvasTool.eraser) {
+      c.tool = CanvasTool.pen;
+    }
+    return c;
+  }
+
+  /// Opens the document of saved reusable canvas components.
+  Future<CanvasController> openComponents() =>
+      _openSpecial(componentsId, 'components', 'Components');
 
   /// Size of one place in the Links board's grid of new cards.
   static const linkSlot = Size(340, 380);
@@ -1021,7 +1619,13 @@ class AppState extends ChangeNotifier {
     await _refreshList();
   }
 
-  /// Moves the canvas file to a trash folder (it is not erased).
+  /// Deletes a note: all of it is kept as a version first (Recently
+  /// deleted), and its handwriting and PDF pages go to the trash folder.
+  Future<void> deleteNote(String noteId) async {
+    workspace.deleteNote(noteId);
+    await trashNotebookOf(noteId);
+  }
+
   /// Moves the handwriting of a deleted note to the trash folder (never
   /// erased) and tells other devices, like a deleted canvas.
   Future<void> trashNotebookOf(String noteId) async {
@@ -1030,6 +1634,52 @@ class AppState extends ChangeNotifier {
     await canvases.delete(id);
     await workspace.recordCanvasDeletion(id);
   }
+
+  /// Brings back a deleted note from its kept version, together with its
+  /// handwriting and PDF pages from the trash folder. Returns the note.
+  Future<Note?> restoreDeletedNote(String versionId) async {
+    final note = workspace.restoreNoteVersion(versionId);
+    if (note == null) return null;
+    await restoreNotebookOf(note.id);
+    return note;
+  }
+
+  /// Puts a note's trashed handwriting back. Every item and the page list
+  /// get new revisions, so the restored copy wins over the deletion on
+  /// every device. Does nothing if the notebook exists or none was kept.
+  Future<bool> restoreNotebookOf(String noteId) async {
+    final id = notebookIdFor(noteId);
+    if (await canvases.load(id) != null) return false;
+    final json = await workspace.store.readFromTrash('canvases', id);
+    if (json == null) return false;
+    final trashed = CanvasDocument.fromJson(json);
+    final clock = workspace.clock;
+    clock.observe(workspace.canvasTombstones[id]);
+    await canvases.save(
+      CanvasDocument(
+        id: id,
+        title: trashed.title,
+        items: trashed.items,
+        updatedAt: DateTime.now(),
+        viewport: trashed.viewport,
+        folderId: trashed.folderId,
+        itemRevs: {for (final i in trashed.items) i.id: clock.now()},
+        tombstones: trashed.tombstones,
+        metaRev: clock.now(),
+        unknownItems: trashed.unknownItems,
+        itemUnknownFields: trashed.itemUnknownFields,
+        unknownKeys: trashed.unknownKeys,
+        metaUnknownFields: trashed.metaUnknownFields,
+        kind: trashed.kind ?? 'notebook',
+        pageBackgrounds: trashed.pageBackgrounds,
+      ),
+    );
+    await workspace.forgetCanvasDeletion(id);
+    AppLog.info('Restored a note\'s handwriting from the trash');
+    return true;
+  }
+
+  /// Moves the canvas file to a trash folder (it is not erased).
 
   Future<void> deleteCanvas(String id) async {
     if (_canvas?.id == id) await _closeCanvas();
@@ -1047,6 +1697,9 @@ class AppState extends ChangeNotifier {
   Future<void> flush() async {
     await _canvas?.flush();
     await _links?.flush();
+    for (final c in _special.values) {
+      await c.flush();
+    }
     await workspace.flush();
     // Settings and any other direct writes still in flight.
     await workspace.store.flush();
@@ -1089,12 +1742,16 @@ class AppState extends ChangeNotifier {
     }
     _firstSync?.cancel();
     _reminderTimer?.cancel();
+    _clipTimer?.cancel();
     workspace.tasks.removeListener(checkReminders);
     _sync?.client.close();
     sendTo.dispose();
     timer.dispose();
     _canvas?.dispose();
     _links?.dispose();
+    for (final c in _special.values) {
+      c.dispose();
+    }
     resources.dispose();
     super.dispose();
   }
@@ -1110,6 +1767,7 @@ class _SyncBridge implements OpenCanvasBridge {
     if (state._canvas?.id == id) return state._canvas;
     if (state.openNotebook?.id == id) return state.openNotebook;
     if (state._links?.id == id) return state._links;
+    if (state._special[id] case final c?) return c;
     return null;
   }
 
@@ -1121,6 +1779,9 @@ class _SyncBridge implements OpenCanvasBridge {
     await state._canvas?.flush();
     await state.openNotebook?.flush();
     await state._links?.flush();
+    for (final c in state._special.values) {
+      await c.flush();
+    }
   }
 
   @override
@@ -1129,4 +1790,14 @@ class _SyncBridge implements OpenCanvasBridge {
     List<SyncChange> changes,
     bool Function(String key, String? localRev) isPending,
   ) => _open(canvasId)?.applyRemote(changes, isPending) ?? const {};
+
+  @override
+  bool mergeOpenPages(String canvasId, List<PageBackground> ours) {
+    final c = _open(canvasId);
+    if (c == null) return false;
+    final merged = mergePageBackgrounds(c.pageBackgrounds, ours);
+    if (merged == null) return false;
+    c.setPageBackgrounds(merged);
+    return true;
+  }
 }

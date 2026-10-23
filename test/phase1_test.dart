@@ -253,7 +253,7 @@ void main() {
     );
     final checkbox = tester.widget<Checkbox>(box);
     expect(checkbox.value, isTrue);
-    expect(checkbox.activeColor, OrganizerColors.green);
+    expect(checkbox.activeColor, AppColors.success);
 
     await tester.tap(box);
     await settle(tester);

@@ -16,6 +16,7 @@ import '../../app/app_state.dart';
 import '../../app/shell.dart' show WorkspaceBuilder;
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
+import '../../data/models/paper.dart';
 import '../../data/storage/app_log.dart';
 import '../../platform/input_hints.dart';
 import '../../platform/ios_bridge.dart';
@@ -24,6 +25,9 @@ import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
 import '../ink/stroke_geometry.dart';
 import 'notebook_layout.dart';
+import '../export/exports.dart';
+import 'paper_dialog.dart';
+import 'paper_painter.dart';
 import 'notes_page.dart' show NoteEditor;
 
 /// Opens note [noteId] as its own page (with a normal Back button).
@@ -34,18 +38,13 @@ Future<void> openNotePage(BuildContext context, AppState state, String id) =>
       ),
     );
 
-/// Paper of notebook pages (the app's dark style; PDF pages are white).
-const notebookPaper = Color(0xFF1C1C1E);
+/// Whether a notebook opens with the pen (iPad) or the text tool (Windows,
+/// iPhone: tap to type, choose Draw to draw).
+bool notebookStartsWithPen(Size screen) =>
+    touchFirst && screen.shortestSide >= 600;
 
 /// Pen colours offered on notebook pages (dark ones for PDF pages).
-const notebookInk = <Color>[
-  AppColors.text,
-  Color(0xFF1B2A4A),
-  Color(0xFF111111),
-  OrganizerColors.blue,
-  OrganizerColors.coral,
-  OrganizerColors.green,
-];
+const notebookInk = InkColors.all;
 
 class NotePage extends StatefulWidget {
   const NotePage({super.key, required this.state, required this.noteId});
@@ -110,11 +109,15 @@ class _NotePageState extends State<NotePage> {
     if (!mounted) return;
     final c = CanvasController(
       document: doc,
-      onSave: s.canvases.save,
+      onSave: s.saveDocument,
       resources: s.resources,
       clock: s.workspace.clock,
     );
-    c.tool = CanvasTool.pen;
+    // Windows and iPhone: clicking or tapping a page types; Draw must be
+    // chosen. iPad: Type or Draw is always chosen (Pencil-first).
+    c.tool = notebookStartsWithPen(MediaQuery.sizeOf(context))
+        ? CanvasTool.pen
+        : CanvasTool.text;
     if (doc.pageBackgrounds.isNotEmpty) c.setPen(color: notebookInk[1]);
     s.openNotebook = c; // sync merges remote changes into this document
     setState(() => _c = c);
@@ -415,7 +418,13 @@ class _NotePageState extends State<NotePage> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                const ColoredBox(color: notebookPaper),
+                CustomPaint(
+                  painter: PaperPainter(
+                    s.workspace.notes[widget.noteId]?.paperOrDefault ??
+                        const NotePaper(),
+                    scale: scale,
+                  ),
+                ),
                 if (background != null)
                   PdfPageView(state: s, background: background, scale: scale),
                 RepaintBoundary(
@@ -574,6 +583,54 @@ class _NotePageState extends State<NotePage> {
                 },
               ),
             const SizedBox(width: Space.sm),
+            PopupMenuButton<String>(
+              key: const ValueKey('note-export'),
+              tooltip: 'Export (Markdown, pictures, web page)',
+              icon: const Icon(Icons.ios_share, size: 18),
+              onSelected: (what) async {
+                final note = s.workspace.notes[widget.noteId];
+                if (note == null) return;
+                await c.flush();
+                File? shown;
+                switch (what) {
+                  case 'md':
+                    shown = await exportNoteMarkdown(s, note);
+                    s.showToast('Saved ${shown.path}');
+                  case 'png':
+                    final files = await exportNotePages(s, note);
+                    if (files.isEmpty) {
+                      s.showToast('No handwriting or text boxes to export.');
+                      return;
+                    }
+                    shown = files.first;
+                    s.showToast('Saved ${files.length} page picture(s).');
+                  case 'html':
+                    shown = await exportNoteWebPage(s, note);
+                    s.showToast('Saved ${shown.path}');
+                }
+                if (shown != null) await revealExport(s, shown);
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'md',
+                  child: Text('Export text (Markdown)'),
+                ),
+                PopupMenuItem(
+                  value: 'png',
+                  child: Text('Export pages as pictures'),
+                ),
+                PopupMenuItem(
+                  value: 'html',
+                  child: Text('Export as read-only web page'),
+                ),
+              ],
+            ),
+            GhostIconButton(
+              key: const ValueKey('note-paper'),
+              icon: Icons.grid_4x4,
+              tooltip: 'Paper (template, grid, colors)',
+              onTap: () => showPaperDialog(context, s, widget.noteId),
+            ),
             GhostIconButton(
               icon: Icons.picture_as_pdf_outlined,
               tooltip: 'Add PDF pages to this note',
@@ -725,7 +782,7 @@ class _PdfPageViewState extends State<PdfPageView> {
       return RawImage(image: image, fit: BoxFit.fill);
     }
     return ColoredBox(
-      color: Colors.white,
+      color: AppColors.text,
       child: Center(
         child: Text(
           widget.state.ios == null

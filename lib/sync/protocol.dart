@@ -35,6 +35,7 @@ const syncedCollections = {
   'canvases', // canvas title, folder and item order
   'canvas_items', // id = "<canvasId>/<itemId>"
   'conflicts', // preserved losing versions of concurrent edits
+  'clipboard', // shared clipboard text (only while the user turns it on)
 };
 
 /// `0001792610475963-0000-a1b2c3d4`: see SyncClock.

@@ -9,12 +9,27 @@ import '../../data/models/task_models.dart';
 import '../../data/workspace.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
+import '../ai/ai_service.dart';
+import '../ai/ai_session.dart';
+import 'task_views.dart';
 
 sealed class TaskList {
   const TaskList();
 }
 
-enum SmartList { open, today, upcoming, exams, done }
+/// Built-in views. Each is a condition over the same task records.
+enum SmartList {
+  open,
+  today,
+  upcoming,
+  overdue,
+  noDate,
+  highPriority,
+  waiting,
+  study,
+  exams,
+  done,
+}
 
 class SmartTaskList extends TaskList {
   const SmartTaskList(this.kind);
@@ -26,11 +41,16 @@ class ProjectTaskList extends TaskList {
   final String projectId;
 }
 
+class LabelTaskList extends TaskList {
+  const LabelTaskList(this.label);
+  final String label;
+}
+
 const priorityColors = [
   AppColors.textFaint,
-  OrganizerColors.teal,
-  OrganizerColors.amber,
-  OrganizerColors.coral,
+  AppColors.accentSecondary,
+  AppColors.warm,
+  AppColors.danger,
 ];
 const priorityNames = ['No priority', 'Low', 'Medium', 'High'];
 
@@ -60,8 +80,22 @@ class _TasksPageState extends State<TasksPage> {
   String? _selectedId;
   final _newTask = TextEditingController();
 
+  /// Multi-select: picked task ids while [_selecting].
+  bool _selecting = false;
+  final Set<String> _picked = {};
+
   AppState get s => widget.state;
   Workspace get ws => s.workspace;
+
+  /// List, board, table or Gantt (remembered on this device).
+  TaskView get _view =>
+      TaskView.values.asNameMap()[s.settings.get<String>('taskView')] ??
+      TaskView.list;
+
+  void _setView(TaskView v) {
+    s.settings.set('taskView', v.name);
+    setState(() {});
+  }
 
   @override
   void dispose() {
@@ -90,11 +124,21 @@ class _TasksPageState extends State<TasksPage> {
                     ? daysBetween(due, today) == 0 || completedToday
                     : daysBetween(due, today) >= 0),
           SmartList.upcoming => due != null && daysBetween(today, due) > 0,
+          SmartList.overdue =>
+            !t.done && due != null && daysBetween(due, today) > 0,
+          SmartList.noDate => !t.done && due == null,
+          SmartList.highPriority => !t.done && t.priority == 3,
+          SmartList.waiting => !t.done && ws.openPrerequisites(t).isNotEmpty,
+          // Unfinished study topics: open tasks of study subjects.
+          SmartList.study =>
+            !t.done && ws.projects[t.projectId]?.kind == ProjectKind.subject,
           SmartList.exams => t.isExam,
           SmartList.done => t.done,
         };
       case ProjectTaskList(:final projectId):
         return t.projectId == projectId;
+      case LabelTaskList(:final label):
+        return t.labels.contains(label);
     }
   }
 
@@ -199,6 +243,8 @@ class _TasksPageState extends State<TasksPage> {
           ProjectTaskList(projectId: final b),
         ) =>
           a == b,
+        (LabelTaskList(label: final a), LabelTaskList(label: final b)) =>
+          a == b,
         _ => false,
       };
       return Material(
@@ -292,7 +338,7 @@ class _TasksPageState extends State<TasksPage> {
             ? Icons.school_outlined
             : Icons.folder_special_outlined,
         ProjectTaskList(p.id),
-        color: organizerColor(p.colorIndex),
+        color: AppColors.accent,
         count: countOf((t) => !t.done && t.projectId == p.id),
       ),
     );
@@ -330,6 +376,38 @@ class _TasksPageState extends State<TasksPage> {
           const SmartTaskList(SmartList.upcoming),
         ),
         item(
+          'Overdue',
+          Icons.running_with_errors_outlined,
+          const SmartTaskList(SmartList.overdue),
+          count: countOf(
+            (t) =>
+                !t.done &&
+                t.dueDate != null &&
+                daysBetween(t.dueDate!, today) > 0,
+          ),
+        ),
+        item(
+          'No date',
+          Icons.event_busy_outlined,
+          const SmartTaskList(SmartList.noDate),
+        ),
+        item(
+          'High priority',
+          Icons.flag_outlined,
+          const SmartTaskList(SmartList.highPriority),
+        ),
+        item(
+          'Waiting on others',
+          Icons.link,
+          const SmartTaskList(SmartList.waiting),
+          count: countOf((t) => !t.done && ws.openPrerequisites(t).isNotEmpty),
+        ),
+        item(
+          'Study topics to do',
+          Icons.menu_book_outlined,
+          const SmartTaskList(SmartList.study),
+        ),
+        item(
           'Exams',
           Icons.school_outlined,
           const SmartTaskList(SmartList.exams),
@@ -352,6 +430,26 @@ class _TasksPageState extends State<TasksPage> {
           'New subject',
         ),
         for (final p in subjects) projectItem(p),
+        if (ws.taskLabels.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(10, 18, 4, 6),
+            child: Text(
+              'LABELS',
+              style: TextStyle(
+                fontSize: 11,
+                letterSpacing: 0.6,
+                color: AppColors.textFaint,
+              ),
+            ),
+          ),
+          for (final label in ws.taskLabels)
+            item(
+              label,
+              Icons.label_outline,
+              LabelTaskList(label),
+              count: countOf((t) => !t.done && t.labels.contains(label)),
+            ),
+        ],
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 24, 10, 0),
           child: Text(
@@ -371,12 +469,30 @@ class _TasksPageState extends State<TasksPage> {
       position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
       items: const [
         PopupMenuItem(value: 'rename', height: 36, child: Text('Rename')),
-        PopupMenuItem(value: 'color', height: 36, child: Text('Change colour')),
+        // Project color choices remain visible but unavailable until a
+        // project palette is approved; do not reuse ink or category colors.
+        PopupMenuItem(
+          value: 'color',
+          height: 36,
+          enabled: false,
+          child: Text('Change colour'),
+        ),
+        PopupMenuItem(
+          value: 'shift',
+          height: 36,
+          child: Text('Shift deadlines…'),
+        ),
         PopupMenuItem(value: 'archive', height: 36, child: Text('Archive')),
       ],
     );
     if (!mounted) return;
     switch (choice) {
+      case 'shift':
+        final days = await askShiftDays(context);
+        if (days != null) {
+          final n = ws.shiftProject(p.id, days);
+          s.showToast('Moved $n task(s) by ${_daysText(days)}.');
+        }
       case 'rename':
         final name = await promptText(
           context,
@@ -384,20 +500,6 @@ class _TasksPageState extends State<TasksPage> {
           initial: p.name,
         );
         if (name != null) ws.projects.put(p.copyWith(name: name));
-      case 'color':
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Colour', style: TextStyle(fontSize: 16)),
-            content: ColorPicker(
-              value: p.colorIndex,
-              onChanged: (i) {
-                ws.projects.put(p.copyWith(colorIndex: i));
-                Navigator.pop(context);
-              },
-            ),
-          ),
-        );
       case 'archive':
         ws.projects.put(p.copyWith(archived: true));
         setState(() => _list = const SmartTaskList(SmartList.open));
@@ -409,12 +511,169 @@ class _TasksPageState extends State<TasksPage> {
       SmartList.open => 'All tasks',
       SmartList.today => 'Today & overdue',
       SmartList.upcoming => 'Upcoming',
+      SmartList.overdue => 'Overdue',
+      SmartList.noDate => 'No date',
+      SmartList.highPriority => 'High priority',
+      SmartList.waiting => 'Waiting on others',
+      SmartList.study => 'Study topics to do',
       SmartList.exams => 'Exams',
       SmartList.done => 'Completed',
     },
     ProjectTaskList(:final projectId) =>
       ws.projects[projectId]?.name ?? 'Project',
+    LabelTaskList(:final label) => label,
   };
+
+  static String _daysText(int days) =>
+      '${days > 0 ? '+' : ''}$days day${days.abs() == 1 ? '' : 's'}';
+
+  Widget _viewSwitcher() => SegmentedButton<TaskView>(
+    key: const ValueKey('task-view-switcher'),
+    showSelectedIcon: false,
+    segments: [
+      for (final v in TaskView.values)
+        ButtonSegment(
+          value: v,
+          icon: Icon(v.icon, size: 16),
+          tooltip: v.label,
+          label: MediaQuery.sizeOf(context).width < 1100
+              ? null
+              : Text(v.label, style: const TextStyle(fontSize: 12)),
+        ),
+    ],
+    selected: {_view},
+    onSelectionChanged: (v) => _setView(v.first),
+  );
+
+  /// Actions on the picked tasks (multi-select).
+  Widget _bulkBar() {
+    final ids = _picked.where(ws.tasks.contains).toList();
+    Future<void> run(String what) async {
+      switch (what) {
+        case 'complete':
+          for (final id in ids) {
+            if (!(ws.tasks[id]?.done ?? true)) ws.toggleTask(id);
+          }
+          s.showToast('Completed ${ids.length} task(s).');
+        case 'shift':
+          final days = await askShiftDays(context);
+          if (days == null) return;
+          final n = ws.shiftTasks(ids, days);
+          s.showToast('Moved $n task(s) by ${_daysText(days)}.');
+        case 'label':
+          final label = await promptText(
+            context,
+            title: 'Add a label',
+            action: 'Add',
+          );
+          if (label == null || label.trim().isEmpty) return;
+          for (final id in ids) {
+            final t = ws.tasks[id]!;
+            if (!t.labels.contains(label.trim())) {
+              ws.tasks.put(t.copyWith(labels: [...t.labels, label.trim()]));
+            }
+          }
+        case 'delete':
+          if (!mounted) return;
+          final ok = await confirm(
+            context,
+            title: 'Delete ${ids.length} task(s)?',
+            message: 'Their subtasks are deleted too.',
+          );
+          if (!ok) return;
+          for (final id in ids) {
+            ws.deleteTask(id);
+          }
+          _picked.clear();
+        default:
+          if (what.startsWith('priority:')) {
+            final p = int.parse(what.substring(9));
+            for (final id in ids) {
+              ws.tasks.put(ws.tasks[id]!.copyWith(priority: p));
+            }
+          } else if (what.startsWith('project:')) {
+            final pid = what.substring(8);
+            for (final id in ids) {
+              ws.tasks.put(
+                ws.tasks[id]!.copyWith(
+                  projectId: () => pid.isEmpty ? null : pid,
+                ),
+              );
+            }
+          }
+      }
+      if (mounted) setState(() {});
+    }
+
+    final projects = ws.projects.all.where((p) => !p.archived).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    return Container(
+      key: const ValueKey('task-bulk-bar'),
+      padding: const EdgeInsets.symmetric(horizontal: Space.sm, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        children: [
+          Text(
+            '${ids.length} selected',
+            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+          ),
+          TextButton(
+            onPressed: ids.isEmpty ? null : () => run('complete'),
+            child: const Text('Complete'),
+          ),
+          TextButton(
+            key: const ValueKey('bulk-shift'),
+            onPressed: ids.isEmpty ? null : () => run('shift'),
+            child: const Text('Shift dates…'),
+          ),
+          TextButton(
+            onPressed: ids.isEmpty ? null : () => run('label'),
+            child: const Text('Add label…'),
+          ),
+          PopupMenuButton<String>(
+            enabled: ids.isNotEmpty,
+            tooltip: 'Priority',
+            onSelected: run,
+            itemBuilder: (_) => [
+              for (var p = 0; p < 4; p++)
+                PopupMenuItem(
+                  value: 'priority:$p',
+                  child: Text(priorityNames[p]),
+                ),
+            ],
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('Priority ▾', style: TextStyle(fontSize: 13)),
+            ),
+          ),
+          PopupMenuButton<String>(
+            enabled: ids.isNotEmpty,
+            tooltip: 'Project',
+            onSelected: run,
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'project:', child: Text('No project')),
+              for (final p in projects)
+                PopupMenuItem(value: 'project:${p.id}', child: Text(p.name)),
+            ],
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('Project ▾', style: TextStyle(fontSize: 13)),
+            ),
+          ),
+          TextButton(
+            onPressed: ids.isEmpty ? null : () => run('delete'),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _tasks() {
     final tasks = ws.tasks.all.where(_inList).toList()
@@ -448,7 +707,33 @@ class _TasksPageState extends State<TasksPage> {
               FocusTimerCard(state: s),
             ],
           ),
-          const SizedBox(height: Space.xl),
+          const SizedBox(height: Space.md),
+          Wrap(
+            spacing: Space.sm,
+            runSpacing: Space.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _viewSwitcher(),
+              if (_view == TaskView.list)
+                TextButton.icon(
+                  key: const ValueKey('task-select-toggle'),
+                  onPressed: () => setState(() {
+                    _selecting = !_selecting;
+                    _picked.clear();
+                  }),
+                  icon: Icon(
+                    _selecting ? Icons.close : Icons.checklist,
+                    size: 16,
+                  ),
+                  label: Text(_selecting ? 'Done selecting' : 'Select'),
+                ),
+            ],
+          ),
+          if (_selecting && _view == TaskView.list) ...[
+            const SizedBox(height: Space.sm),
+            _bulkBar(),
+          ],
+          const SizedBox(height: Space.md),
           TextField(
             controller: _newTask,
             style: const TextStyle(fontSize: 14),
@@ -467,22 +752,74 @@ class _TasksPageState extends State<TasksPage> {
                       style: TextStyle(color: AppColors.textFaint),
                     ),
                   )
-                : ListView(
-                    children: [
-                      for (final t in tasks)
-                        TaskRow(
-                          state: s,
-                          task: t,
-                          selected: t.id == _selectedId,
-                          onTap: () => setState(() => _selectedId = t.id),
-                        ),
-                    ],
-                  ),
+                : switch (_view) {
+                    TaskView.list => ListView(
+                      children: [
+                        for (final t in tasks)
+                          Row(
+                            children: [
+                              if (_selecting)
+                                Checkbox(
+                                  key: ValueKey('pick-${t.id}'),
+                                  value: _picked.contains(t.id),
+                                  onChanged: (on) => setState(
+                                    () => on == true
+                                        ? _picked.add(t.id)
+                                        : _picked.remove(t.id),
+                                  ),
+                                ),
+                              Expanded(
+                                child: TaskRow(
+                                  state: s,
+                                  task: t,
+                                  selected: t.id == _selectedId,
+                                  onTap: () => setState(() {
+                                    if (_selecting) {
+                                      _picked.contains(t.id)
+                                          ? _picked.remove(t.id)
+                                          : _picked.add(t.id);
+                                    } else {
+                                      _selectedId = t.id;
+                                    }
+                                  }),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                    TaskView.board => TaskBoardView(
+                      state: s,
+                      tasks: tasks,
+                      onOpen: (id) => setState(() => _selectedId = id),
+                    ),
+                    TaskView.table => TaskTableView(
+                      state: s,
+                      tasks: tasks,
+                      onOpen: (id) => setState(() => _selectedId = id),
+                    ),
+                    TaskView.gantt => TaskGanttView(
+                      state: s,
+                      tasks: tasks,
+                      onOpen: (id) => setState(() => _selectedId = id),
+                    ),
+                  },
           ),
         ],
       ),
     );
   }
+}
+
+/// Asks how many days to move dates by (negative = earlier).
+Future<int?> askShiftDays(BuildContext context) async {
+  final text = await promptText(
+    context,
+    title: 'Move dates by how many days? (e.g. 3 or -2)',
+    action: 'Move',
+  );
+  final days = int.tryParse(text?.trim().replaceFirst('+', '') ?? '');
+  return days == null || days == 0 ? null : days;
 }
 
 class TaskRow extends StatelessWidget {
@@ -510,7 +847,8 @@ class TaskRow extends StatelessWidget {
     final today = dateOnly(DateTime.now());
     final overdue =
         !t.done && t.dueDate != null && daysBetween(t.dueDate!, today) > 0;
-    return Material(
+    final waiting = t.done ? const <Task>[] : ws.openPrerequisites(t);
+    final row = Material(
       color: selected ? AppColors.selected : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
@@ -526,10 +864,10 @@ class TaskRow extends StatelessWidget {
               Checkbox(
                 value: t.done,
                 // Done: a clear green tick, whatever the priority colour.
-                activeColor: OrganizerColors.green,
-                checkColor: Colors.white,
+                activeColor: AppColors.success,
+                checkColor: AppColors.text,
                 side: BorderSide(color: priorityColors[t.priority], width: 1.5),
-                onChanged: (_) => ws.toggleTask(t.id),
+                onChanged: (_) => state.toggleTask(t.id),
               ),
               Expanded(
                 child: Column(
@@ -550,6 +888,8 @@ class TaskRow extends StatelessWidget {
                     if (!compact &&
                         (project != null ||
                             subtasks.isNotEmpty ||
+                            t.labels.isNotEmpty ||
+                            waiting.isNotEmpty ||
                             t.recurrence != Recurrence.none))
                       Text(
                         [
@@ -558,6 +898,9 @@ class TaskRow extends StatelessWidget {
                             '${subtasks.where((s) => s.done).length}/${subtasks.length} subtasks',
                           if (t.recurrence != Recurrence.none)
                             'repeats ${t.recurrence.name}',
+                          ...t.labels,
+                          if (waiting.isNotEmpty)
+                            'waits for ${waiting.first.title}${waiting.length > 1 ? ' +${waiting.length - 1}' : ''}',
                         ].join('  ·  '),
                         style: const TextStyle(
                           fontSize: 11,
@@ -585,6 +928,24 @@ class TaskRow extends StatelessWidget {
         ),
       ),
     );
+    if (compact) return row;
+    // Drag onto a Calendar day to schedule it there (the same record).
+    final drag = DayDrag(TaskOnDay(t, 0), t.dueDate);
+    final feedback = Material(
+      color: AppColors.cardRaised,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Text(t.title, style: const TextStyle(fontSize: 13)),
+      ),
+    );
+    return touchFirst
+        ? LongPressDraggable<DayDrag>(
+            data: drag,
+            feedback: feedback,
+            child: row,
+          )
+        : Draggable<DayDrag>(data: drag, feedback: feedback, child: row);
   }
 }
 
@@ -804,6 +1165,98 @@ class _TaskDetailState extends State<TaskDetail> {
             onChanged: (v) => _update((x) => x.copyWith(recurrence: v)),
           ),
         ),
+        if (t.recurrence != Recurrence.none && t.dueDate != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 96, bottom: 4),
+            child: Wrap(
+              spacing: 4,
+              children: [
+                TextButton(
+                  key: const ValueKey('skip-occurrence'),
+                  onPressed: () => _update((x) => x.skippedOccurrence()),
+                  child: const Text('Skip this one'),
+                ),
+                TextButton(
+                  key: const ValueKey('move-occurrence'),
+                  onPressed: () async {
+                    final d = await showDatePicker(
+                      context: context,
+                      initialDate: t.dueDate!,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                      helpText: 'Move only this occurrence',
+                    );
+                    if (d != null) _update((x) => x.movedOccurrence(d));
+                  },
+                  child: const Text('Move only this one…'),
+                ),
+                if (t.seriesDate != null)
+                  Text(
+                    'Moved from ${formatShortDate(t.seriesDate!)}; '
+                    'the series continues from there.',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textFaint,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        if (t.dueDate != null)
+          LabeledField(
+            label: 'Starts',
+            child: Row(
+              children: [
+                Flexible(
+                  child: TextButton(
+                    key: const ValueKey('task-start'),
+                    onPressed: () async {
+                      final d = await showDatePicker(
+                        context: context,
+                        initialDate: t.startDate ?? t.dueDate!,
+                        firstDate: DateTime(2000),
+                        lastDate: t.dueDate!,
+                      );
+                      if (d != null) {
+                        _update((x) => x.copyWith(startDate: () => d));
+                      }
+                    },
+                    child: Text(
+                      t.startDate == null
+                          ? 'Same day (for Gantt)'
+                          : formatLongDate(t.startDate!),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+                if (t.startDate != null)
+                  GhostIconButton(
+                    icon: Icons.close,
+                    tooltip: 'Remove start date',
+                    size: 14,
+                    onTap: () =>
+                        _update((x) => x.copyWith(startDate: () => null)),
+                  ),
+              ],
+            ),
+          ),
+        if (!t.done)
+          LabeledField(
+            label: 'Status',
+            child: DropdownButton<TaskStatus>(
+              isExpanded: true,
+              value: t.status,
+              items: const [
+                DropdownMenuItem(value: TaskStatus.todo, child: Text('To do')),
+                DropdownMenuItem(
+                  value: TaskStatus.doing,
+                  child: Text('In progress'),
+                ),
+              ],
+              onChanged: (v) => _update((x) => x.copyWith(status: v)),
+            ),
+          ),
         LabeledField(
           label: 'Priority',
           child: Wrap(
@@ -838,6 +1291,183 @@ class _TaskDetailState extends State<TaskDetail> {
                 ),
             ],
             onChanged: (v) => _update((x) => x.copyWith(projectId: () => v)),
+          ),
+        ),
+        LabeledField(
+          label: 'Labels',
+          child: Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (final l in t.labels)
+                InputChip(
+                  label: Text(l, style: const TextStyle(fontSize: 12)),
+                  onDeleted: () => _update(
+                    (x) => x.copyWith(labels: [...x.labels]..remove(l)),
+                  ),
+                ),
+              TextButton(
+                key: const ValueKey('task-add-label'),
+                onPressed: () async {
+                  final l = await promptText(
+                    context,
+                    title: 'Add a label',
+                    action: 'Add',
+                  );
+                  final label = l?.trim() ?? '';
+                  if (label.isEmpty) return;
+                  _update(
+                    (x) => x.labels.contains(label)
+                        ? x
+                        : x.copyWith(labels: [...x.labels, label]),
+                  );
+                },
+                child: const Text('+ Label'),
+              ),
+            ],
+          ),
+        ),
+        LabeledField(
+          label: 'Waits for',
+          child: Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (final id in t.dependsOn)
+                if (ws.tasks[id] case final other?)
+                  InputChip(
+                    avatar: Icon(
+                      other.done ? Icons.check : Icons.hourglass_empty,
+                      size: 14,
+                      color: other.done ? AppColors.success : AppColors.warm,
+                    ),
+                    label: Text(
+                      other.title,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onDeleted: () => _update(
+                      (x) =>
+                          x.copyWith(dependsOn: [...x.dependsOn]..remove(id)),
+                    ),
+                  ),
+              PopupMenuButton<String>(
+                key: const ValueKey('task-add-dependency'),
+                tooltip: 'Add a task to finish first',
+                onSelected: (id) =>
+                    _update((x) => x.copyWith(dependsOn: [...x.dependsOn, id])),
+                itemBuilder: (_) => [
+                  for (final other
+                      in ws.tasks.all.toList()
+                        ..sort((a, b) => a.title.compareTo(b.title)))
+                    if (!t.dependsOn.contains(other.id) &&
+                        ws.canDependOn(t.id, other.id))
+                      PopupMenuItem(value: other.id, child: Text(other.title)),
+                ],
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Text('+ Task', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        LabeledField(
+          label: 'Notes',
+          child: Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (final id in t.noteIds)
+                if (ws.notes[id] case final note?)
+                  InputChip(
+                    avatar: const Icon(Icons.description_outlined, size: 14),
+                    label: Text(
+                      note.displayTitle,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () => widget.state.openNote(id),
+                    onDeleted: () => _update(
+                      (x) => x.copyWith(noteIds: [...x.noteIds]..remove(id)),
+                    ),
+                  ),
+              PopupMenuButton<String>(
+                key: const ValueKey('task-link-note'),
+                tooltip: 'Link a note to this task',
+                onSelected: (id) =>
+                    _update((x) => x.copyWith(noteIds: [...x.noteIds, id])),
+                itemBuilder: (_) => [
+                  for (final note
+                      in ws.notes.all.toList()
+                        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)))
+                    if (!t.noteIds.contains(note.id))
+                      PopupMenuItem(
+                        value: note.id,
+                        child: Text(note.displayTitle),
+                      ),
+                ],
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Text('+ Note', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        LabeledField(
+          label: 'Properties',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final e in t.properties.entries)
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${e.key}: ${e.value}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                    GhostIconButton(
+                      icon: Icons.close,
+                      tooltip: 'Remove ${e.key}',
+                      size: 14,
+                      onTap: () => _update(
+                        (x) => x.copyWith(
+                          properties: {...x.properties}..remove(e.key),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              TextButton(
+                key: const ValueKey('task-add-property'),
+                onPressed: () async {
+                  final name = await promptText(
+                    context,
+                    title: 'Property name (e.g. Effort)',
+                    action: 'Next',
+                  );
+                  if (name == null || name.trim().isEmpty || !context.mounted) {
+                    return;
+                  }
+                  final value = await promptText(
+                    context,
+                    title: name.trim(),
+                    initial: t.properties[name.trim()] ?? '',
+                  );
+                  if (value == null) return;
+                  _update(
+                    (x) => x.copyWith(
+                      properties: {...x.properties, name.trim(): value},
+                    ),
+                  );
+                },
+                child: const Text('+ Property'),
+              ),
+            ],
           ),
         ),
         SwitchListTile(
@@ -945,6 +1575,26 @@ class _TaskDetailState extends State<TaskDetail> {
           ],
         ),
         const SizedBox(height: Space.lg),
+        if (widget.state.ai.enabled)
+          Padding(
+            padding: const EdgeInsets.only(bottom: Space.sm),
+            child: OutlinedButton.icon(
+              key: const ValueKey('task-ask-ai'),
+              onPressed: () => widget.state.sendToAi(
+                AiContext(
+                  title: 'Task “${t.title}”',
+                  source: AiSource.tasks,
+                  text: [
+                    t.title,
+                    if (t.notes.isNotEmpty) t.notes,
+                    for (final sub in subtasks) '- ${sub.title}',
+                  ].join('\n'),
+                ),
+              ),
+              icon: const Icon(Icons.auto_awesome_outlined, size: 16),
+              label: const Text('Ask AI (break down, explain…)'),
+            ),
+          ),
         OutlinedButton.icon(
           onPressed: () {
             widget.state.timer
@@ -991,7 +1641,7 @@ class FocusTimerCard extends StatelessWidget {
                       fontSize: 10,
                       letterSpacing: 0.6,
                       color: timer.onBreak
-                          ? OrganizerColors.green
+                          ? AppColors.success
                           : AppColors.textFaint,
                     ),
                   ),

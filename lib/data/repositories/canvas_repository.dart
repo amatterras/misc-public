@@ -48,6 +48,8 @@ class FileCanvasRepository implements CanvasRepository {
           searchText: text.toString(),
           isNotebook: isNotebookId(id, json['kind'] as String?),
           isLinksBoard: isLinksBoardId(id, json['kind'] as String?),
+          isCalendarInk: isCalendarInkId(id, json['kind'] as String?),
+          isComponents: isComponentsId(id, json['kind'] as String?),
         ),
       );
     }

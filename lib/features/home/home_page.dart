@@ -11,6 +11,7 @@ import '../../widgets/common.dart';
 import '../../widgets/page_scaffold.dart';
 import '../capture/capture_dialog.dart';
 import '../tasks/tasks_page.dart' show TaskRow;
+import 'activity.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key, required this.state});
@@ -43,7 +44,7 @@ class HomePage extends StatelessWidget {
                 )
                 .toList()
               ..sort((a, b) => b.priority.compareTo(a.priority));
-        final upcoming = <(DateTime, String, int, VoidCallback)>[];
+        final upcoming = <(DateTime, String, Color, VoidCallback)>[];
         for (final t in ws.tasks.all) {
           final due = t.dueDate;
           if (t.done || due == null) continue;
@@ -52,7 +53,7 @@ class HomePage extends StatelessWidget {
             upcoming.add((
               due,
               t.isExam ? 'Exam: ${t.title}' : t.title,
-              ws.projects[t.projectId]?.colorIndex ?? 9,
+              AppColors.accent,
               () => state.openTask(t.id),
             ));
           }
@@ -68,7 +69,7 @@ class HomePage extends StatelessWidget {
             upcoming.add((
               e.startDate!,
               e.name,
-              e.colorIndex,
+              calendarCategoryColor(e.category),
               () => state.openCalendarDay(e.startDate!),
             ));
           }
@@ -83,6 +84,7 @@ class HomePage extends StatelessWidget {
           });
         final canvases = [...state.canvasList]
           ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        final activity = activityTimeline(state, limit: 12);
 
         Widget card(String title, Widget child, {Widget? action}) => SizedBox(
           width: 520,
@@ -126,13 +128,147 @@ class HomePage extends StatelessWidget {
           ),
         );
 
+        final sections = <String, Widget>{
+          'today': card(
+            "Today's Tasks",
+            todays.isEmpty
+                ? empty('Nothing due today.')
+                : Column(
+                    children: [
+                      for (final t in todays.take(8))
+                        TaskRow(
+                          state: state,
+                          task: t,
+                          compact: true,
+                          onTap: () => state.openTask(t.id),
+                        ),
+                    ],
+                  ),
+            action: GhostIconButton(
+              icon: Icons.add,
+              tooltip: 'Open Tasks',
+              onTap: () => state.goTo(AppPage.tasks),
+            ),
+          ),
+          'upcoming': card(
+            'Upcoming (next 14 days)',
+            upcoming.isEmpty
+                ? empty('No deadlines or events coming up.')
+                : Column(
+                    children: [
+                      for (final u in upcoming.take(8))
+                        row(
+                          Icons.circle,
+                          u.$2,
+                          formatShortDate(u.$1),
+                          u.$4,
+                          color: u.$3,
+                        ),
+                    ],
+                  ),
+          ),
+          if (inbox.isNotEmpty)
+            'inbox': card(
+              'Inbox  ·  ${inbox.length} to file',
+              Column(
+                children: [
+                  for (final item in inbox.take(8))
+                    _InboxRow(state: state, item: item),
+                ],
+              ),
+            ),
+          'notes': card(
+            'Notes',
+            notes.isEmpty
+                ? empty(
+                    'No notes yet. Quick Add or the Notes page creates one.',
+                  )
+                : Column(
+                    children: [
+                      for (final n in notes.take(6))
+                        row(
+                          n.favorite ? Icons.star : Icons.description_outlined,
+                          n.displayTitle,
+                          _ago(n.updatedAt),
+                          () => state.openNote(n.id),
+                          color: n.favorite ? AppColors.warm : null,
+                        ),
+                    ],
+                  ),
+          ),
+          'canvases': card(
+            'Recent mindmaps',
+            Column(
+              children: [
+                for (final c in canvases.take(5))
+                  row(
+                    Icons.grid_view,
+                    c.title,
+                    _ago(c.updatedAt),
+                    () => state.openCanvas(c.id),
+                  ),
+              ],
+            ),
+          ),
+          'activity': card(
+            'Activity',
+            activity.isEmpty
+                ? empty('Nothing in the last two weeks.')
+                : Column(
+                    key: const ValueKey('home-activity'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var i = 0; i < activity.length; i++) ...[
+                        if (i == 0 ||
+                            daysBetween(activity[i].at, activity[i - 1].at) !=
+                                0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6, bottom: 2),
+                            child: Text(
+                              activityDayLabel(
+                                activity[i].at,
+                                DateTime.now(),
+                                formatShortDate,
+                              ),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textFaint,
+                              ),
+                            ),
+                          ),
+                        row(
+                          activity[i].icon,
+                          '${activity[i].verb} ${activity[i].what}: '
+                              '${activity[i].title}',
+                          '${activity[i].at.hour.toString().padLeft(2, '0')}:'
+                              '${activity[i].at.minute.toString().padLeft(2, '0')}',
+                          activity[i].open,
+                        ),
+                      ],
+                    ],
+                  ),
+          ),
+        };
+
         return PageScaffold(
           title: 'Home',
           subtitle: formatLongDate(DateTime.now()),
-          trailing: FilledButton.icon(
-            onPressed: () => openQuickAdd(context, state),
-            icon: const Icon(Icons.bolt_outlined, size: 16),
-            label: Text(withShortcut('Quick Add', 'Ctrl+N')),
+          trailing: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              GhostIconButton(
+                key: const ValueKey('home-customize'),
+                icon: Icons.tune,
+                tooltip: 'Choose and arrange what this page shows',
+                onTap: () => showHomeCustomizer(context, state),
+              ),
+              const SizedBox(width: Space.sm),
+              FilledButton.icon(
+                onPressed: () => openQuickAdd(context, state),
+                icon: const Icon(Icons.bolt_outlined, size: 16),
+                label: Text(withShortcut('Quick Add', 'Ctrl+N')),
+              ),
+            ],
           ),
           child: SingleChildScrollView(
             padding: const EdgeInsets.only(bottom: Space.xxl),
@@ -140,91 +276,7 @@ class HomePage extends StatelessWidget {
               spacing: Space.xl,
               runSpacing: Space.xl,
               children: [
-                card(
-                  "Today's Tasks",
-                  todays.isEmpty
-                      ? empty('Nothing due today.')
-                      : Column(
-                          children: [
-                            for (final t in todays.take(8))
-                              TaskRow(
-                                state: state,
-                                task: t,
-                                compact: true,
-                                onTap: () => state.openTask(t.id),
-                              ),
-                          ],
-                        ),
-                  action: GhostIconButton(
-                    icon: Icons.add,
-                    tooltip: 'Open Tasks',
-                    onTap: () => state.goTo(AppPage.tasks),
-                  ),
-                ),
-                card(
-                  'Upcoming (next 14 days)',
-                  upcoming.isEmpty
-                      ? empty('No deadlines or events coming up.')
-                      : Column(
-                          children: [
-                            for (final u in upcoming.take(8))
-                              row(
-                                Icons.circle,
-                                u.$2,
-                                formatShortDate(u.$1),
-                                u.$4,
-                                color: organizerColor(u.$3),
-                              ),
-                          ],
-                        ),
-                ),
-                if (inbox.isNotEmpty)
-                  card(
-                    'Inbox  ·  ${inbox.length} to file',
-                    Column(
-                      children: [
-                        for (final item in inbox.take(8))
-                          _InboxRow(state: state, item: item),
-                      ],
-                    ),
-                  ),
-                card(
-                  'Notes',
-                  notes.isEmpty
-                      ? empty(
-                          'No notes yet. Quick Add or the Notes page creates one.',
-                        )
-                      : Column(
-                          children: [
-                            for (final n in notes.take(6))
-                              row(
-                                n.favorite
-                                    ? Icons.star
-                                    : Icons.description_outlined,
-                                n.displayTitle,
-                                _ago(n.updatedAt),
-                                () => state.openNote(n.id),
-                                color: n.favorite
-                                    ? OrganizerColors.amber
-                                    : null,
-                              ),
-                          ],
-                        ),
-                ),
-                card(
-                  'Recent Canvases',
-                  Column(
-                    children: [
-                      for (final c in canvases.take(5))
-                        row(
-                          Icons.grid_view,
-                          c.title,
-                          _ago(c.updatedAt),
-                          () => state.openCanvas(c.id),
-                        ),
-                    ],
-                  ),
-                ),
+                for (final name in state.homeSections) ?sections[name],
               ],
             ),
           ),
@@ -292,4 +344,71 @@ class _InboxRow extends StatelessWidget {
       ),
     );
   }
+}
+
+const _sectionNames = {
+  'today': "Today's tasks",
+  'upcoming': 'Upcoming (next 14 days)',
+  'inbox': 'Inbox',
+  'notes': 'Notes',
+  'canvases': 'Recent mindmaps',
+  'activity': 'Activity',
+};
+
+/// Lets the user choose which sections the start page shows and in what
+/// order (drag to rearrange). Saved on this device.
+Future<void> showHomeCustomizer(BuildContext context, AppState state) {
+  final order = [
+    ...state.homeSections,
+    for (final s in AppState.allHomeSections)
+      if (!state.homeSections.contains(s)) s,
+  ];
+  final shown = {...state.homeSections};
+  return showDialog<void>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: const Text('Start page', style: TextStyle(fontSize: 16)),
+        content: SizedBox(
+          width: 360,
+          height: 360,
+          child: ReorderableListView(
+            key: const ValueKey('home-customizer'),
+            buildDefaultDragHandles: true,
+            onReorderItem: (from, to) =>
+                setState(() => order.insert(to, order.removeAt(from))),
+            children: [
+              for (final name in order)
+                CheckboxListTile(
+                  key: ValueKey('home-section-$name'),
+                  value: shown.contains(name),
+                  title: Text(_sectionNames[name] ?? name),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  onChanged: (on) => setState(
+                    () => on == true ? shown.add(name) : shown.remove(name),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            key: const ValueKey('home-customizer-save'),
+            onPressed: () {
+              state.setHomeSections([
+                for (final name in order)
+                  if (shown.contains(name)) name,
+              ]);
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    ),
+  );
 }

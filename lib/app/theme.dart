@@ -3,47 +3,115 @@ import 'package:flutter/material.dart';
 /// Colour tokens taken from the Gemini prototype: near-black surfaces,
 /// hairline white borders and soft grey text.
 abstract final class AppColors {
-  static const background = Color(0xFF141414);
-  static const canvas = Color(0xFF111111);
-  static const sidebar = Color(0xFF181818);
-  static const card = Color(0xFF1B1B1B);
-  static const cardRaised = Color(0xFF222222);
-  static const border = Color(0x14FFFFFF);
-  static const hover = Color(0x0DFFFFFF);
-  static const selected = Color(0xFF262626);
-  static const text = Color(0xFFEDEDED);
-  static const textMuted = Color(0xFF8E8E8E);
-  static const textFaint = Color(0xFF5C5C5C);
-  static const accent = Color(0xFF4D8FD6);
-  static const danger = Color(0xFFE76F51);
+  static const background = Color(0xFF191A1D);
+  static const canvas = background;
+  static const sidebar = Color(0xFF222429);
+  static const card = Color(0xFF222429);
+  static const cardRaised = Color(0xFF303239);
+  static const border = Color(0xFF41444A);
+  static const hover = Color(0x1A789BB5);
+  static const selected = Color(0xFF303239);
+  static const text = Color(0xFFF5F3EF);
+  static const textMuted = Color(0xFFAAAEB6);
+  static const textFaint = Color(0xFFAAAEB6);
+  static const accent = Color(0xFF789BB5);
+  static const accentSecondary = Color(0xFF829CB5);
+  static const success = Color(0xFF8FBFA9);
+  static const brand = Color(0xFF172943);
+  static const warm = Color(0xFFE5D5B8);
+  // No separate danger hue was selected; warnings use the approved warm role.
+  static const danger = warm;
 }
 
-/// The ten organiser colours shared by Calendar entries, pens and labels.
-abstract final class OrganizerColors {
-  static const coral = Color(0xFFE76F51);
-  static const amber = Color(0xFFE9A23B);
-  static const yellow = Color(0xFFE8D45B);
-  static const green = Color(0xFF79B85A);
-  static const teal = Color(0xFF35A99A);
-  static const blue = Color(0xFF4D8FD6);
-  static const indigo = Color(0xFF6965C9);
-  static const purple = Color(0xFFA56BC4);
-  static const pink = Color(0xFFD86D9C);
-  static const grey = Color(0xFF9A9A9A);
+/// Canonical ink choices shared by fineliner, brush, pencil, highlighter,
+/// and marker tools. Order and names are part of the user-facing palette.
+abstract final class InkColors {
+  static const pearl = Color(0xFFE3E5E8);
+  static const steelBlue = Color(0xFF789BB5);
+  static const dustyBlue = Color(0xFF829CB5);
+  static const midnightNavy = Color(0xFF172943);
+  static const petrol = Color(0xFF4F9AA6);
+  static const dustyMint = Color(0xFF8FBFA9);
+  static const pistachio = Color(0xFFC7D5A0);
+  static const orchidMist = Color(0xFFC8AED2);
+  static const softAmber = Color(0xFFD5A16F);
+  static const fuchsia = Color(0xFFE56BDA);
+  static const antiqueGold = Color(0xFFC6AD79);
+  static const electricAzure = Color(0xFF2878F0);
+  static const sapphire = Color(0xFF2366AD);
+  static const vividTurquoise = Color(0xFF00BDB1);
+  static const electricLime = Color(0xFFB5DC32);
+  static const ultraviolet = Color(0xFF793BE8);
+  static const electricGold = Color(0xFFF2D84A);
+  static const deepPine = Color(0xFF176B4D);
 
   static const all = [
-    coral,
-    amber,
-    yellow,
-    green,
-    teal,
-    blue,
-    indigo,
-    purple,
-    pink,
-    grey,
+    pearl,
+    steelBlue,
+    dustyBlue,
+    midnightNavy,
+    petrol,
+    dustyMint,
+    pistachio,
+    orchidMist,
+    softAmber,
+    fuchsia,
+    antiqueGold,
+    electricAzure,
+    sapphire,
+    vividTurquoise,
+    electricLime,
+    ultraviolet,
+    electricGold,
+    deepPine,
   ];
 }
+
+abstract final class ArchiveCategoryColors {
+  static const resource = Color(0xFF3060B0);
+  static const projects = Color(0xFFB03040);
+  static const other = Color(0xFFF0C060);
+  static const shopping = Color(0xFF409060);
+  static const secondBrain = Color(0xFFE0A0D0);
+}
+
+abstract final class CalendarCategoryColors {
+  static const reading = Color(0xFFA3B18A);
+  static const habits = Color(0xFF6495ED);
+  static const other = Color(0xFFDDA0DD);
+  static const reminderEvent = Color(0xFF20B2AA);
+}
+
+abstract final class CanvasTagColors {
+  static const selected = [
+    Color(0xFFB5E1DF),
+    Color(0xFF15563F),
+    Color(0xFFA84D67),
+    Color(0xFFE9C5DD),
+    Color(0xFFE8AB73),
+  ];
+}
+
+const inkColorNames = [
+  'Pearl',
+  'Steel Blue',
+  'Dusty Blue',
+  'Midnight Navy',
+  'Petrol',
+  'Dusty Mint',
+  'Pistachio',
+  'Orchid Mist',
+  'Soft Amber',
+  'Fuchsia',
+  'Antique Gold',
+  'Electric Azure',
+  'Sapphire',
+  'Vivid Turquoise',
+  'Electric Lime',
+  'Ultraviolet',
+  'Electric Gold',
+  'Deep Pine',
+];
 
 /// Shared spacing scale, so every page lines up the same way.
 abstract final class Space {
@@ -60,7 +128,7 @@ ThemeData buildAppTheme() {
   const scheme = ColorScheme.dark(
     surface: AppColors.background,
     onSurface: AppColors.text,
-    primary: AppColors.text,
+    primary: AppColors.accent,
     onPrimary: AppColors.background,
     secondary: AppColors.accent,
     error: AppColors.danger,
@@ -120,7 +188,7 @@ ThemeData buildAppTheme() {
     ),
     textSelectionTheme: const TextSelectionThemeData(
       cursorColor: AppColors.text,
-      selectionColor: Color(0x554D8FD6),
+      selectionColor: Color(0x55789BB5),
     ),
   );
 }

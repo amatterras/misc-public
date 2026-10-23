@@ -1,3 +1,4 @@
+import 'paper.dart';
 import 'record.dart';
 
 /// `document` (PDF) files are stored and synced like photos and open in
@@ -25,6 +26,7 @@ class Asset implements Record {
     this.previewSha256,
     this.previewSize,
     this.linkTags = const [],
+    this.projectIds = const [],
   });
 
   @override
@@ -62,6 +64,21 @@ class Asset implements Record {
   /// set, so older files and older app versions are unaffected.
   final List<String> linkTags;
 
+  /// Projects and study subjects this resource belongs to (Archive).
+  final List<String> projectIds;
+
+  /// A link to a video page (YouTube, Vimeo …), shown with a video mark.
+  bool get isVideo {
+    final host = Uri.tryParse(url ?? '')?.host.toLowerCase() ?? '';
+    return const [
+      'youtube.com',
+      'youtu.be',
+      'vimeo.com',
+      'dailymotion.com',
+      'twitch.tv',
+    ].any((h) => host == h || host.endsWith('.$h'));
+  }
+
   /// What to show as a one-line name.
   String get label {
     if (title != null && title!.trim().isNotEmpty) return title!.trim();
@@ -81,6 +98,7 @@ class Asset implements Record {
     String? previewSha256,
     int? previewSize,
     List<String>? linkTags,
+    List<String>? projectIds,
   }) => Asset(
     id: id,
     kind: kind,
@@ -99,6 +117,7 @@ class Asset implements Record {
     previewSha256: previewSha256 ?? this.previewSha256,
     previewSize: previewSize ?? this.previewSize,
     linkTags: linkTags ?? this.linkTags,
+    projectIds: projectIds ?? this.projectIds,
   );
 
   @override
@@ -120,6 +139,7 @@ class Asset implements Record {
     'previewSha256': ?previewSha256,
     'previewSize': ?previewSize,
     if (linkTags.isNotEmpty) 'linkTags': linkTags,
+    if (projectIds.isNotEmpty) 'projectIds': projectIds,
   };
 
   factory Asset.fromJson(Map<String, dynamic> j) => Asset(
@@ -142,6 +162,10 @@ class Asset implements Record {
     linkTags: [
       for (final t in (j['linkTags'] as List?) ?? const [])
         ?(t is String ? t : null),
+    ],
+    projectIds: [
+      for (final p in (j['projectIds'] as List?) ?? const [])
+        ?(p is String ? p : null),
     ],
   );
 }
@@ -217,6 +241,12 @@ class NoteVersion implements Record {
     required this.title,
     required this.body,
     required this.savedAt,
+    this.deleted = false,
+    this.folderId,
+    this.tags = const [],
+    this.favorite = false,
+    this.assetIds = const [],
+    this.paper,
   });
 
   @override
@@ -228,6 +258,16 @@ class NoteVersion implements Record {
   /// When this version was set aside.
   final DateTime savedAt;
 
+  /// Made when the note was deleted: then it also keeps the note's folder,
+  /// tags, favourite mark and attachments, so a restore brings back the
+  /// whole note. (Written only then, so older files are unchanged.)
+  final bool deleted;
+  final String? folderId;
+  final List<String> tags;
+  final bool favorite;
+  final List<String> assetIds;
+  final NotePaper? paper;
+
   @override
   DateTime get updatedAt => savedAt;
 
@@ -238,6 +278,14 @@ class NoteVersion implements Record {
     'title': title,
     'body': body,
     'savedAt': utcIso(savedAt),
+    if (deleted) ...{
+      'deleted': true,
+      'folderId': ?folderId,
+      'tags': tags,
+      'favorite': favorite,
+      'assetIds': assetIds,
+      if (paper != null) 'paper': paper!.toJson(),
+    },
   };
 
   factory NoteVersion.fromJson(Map<String, dynamic> j) => NoteVersion(
@@ -246,6 +294,18 @@ class NoteVersion implements Record {
     title: j['title'] as String? ?? '',
     body: j['body'] as String? ?? '',
     savedAt: parseDate(j['savedAt']) ?? DateTime.now(),
+    deleted: j['deleted'] == true,
+    folderId: j['folderId'] as String?,
+    tags: [
+      for (final t in (j['tags'] as List?) ?? const [])
+        ?(t is String ? t : null),
+    ],
+    favorite: j['favorite'] == true,
+    assetIds: [
+      for (final a in (j['assetIds'] as List?) ?? const [])
+        ?(a is String ? a : null),
+    ],
+    paper: NotePaper.fromJson(j['paper']),
   );
 }
 
@@ -260,12 +320,22 @@ class Note implements Record {
     this.tags = const [],
     this.favorite = false,
     this.assetIds = const [],
+    this.paper,
+    this.projectIds = const [],
   });
 
   @override
   final String id;
   final String title;
   final String body;
+
+  /// Projects and study subjects this note belongs to.
+  final List<String> projectIds;
+
+  /// Notebook paper (template and its settings); null = standard grid.
+  final NotePaper? paper;
+
+  NotePaper get paperOrDefault => paper ?? const NotePaper();
   final String? folderId;
   final List<String> tags;
   final bool favorite;
@@ -292,8 +362,12 @@ class Note implements Record {
     List<String>? tags,
     bool? favorite,
     List<String>? assetIds,
+    NotePaper? paper,
+    List<String>? projectIds,
   }) => Note(
     id: id,
+    paper: paper ?? this.paper,
+    projectIds: projectIds ?? this.projectIds,
     title: title ?? this.title,
     body: body ?? this.body,
     folderId: folderId != null ? folderId() : this.folderId,
@@ -313,6 +387,8 @@ class Note implements Record {
     'tags': tags,
     'favorite': favorite,
     'assetIds': assetIds,
+    if (paper != null) 'paper': paper!.toJson(),
+    if (projectIds.isNotEmpty) 'projectIds': projectIds,
     'createdAt': utcIso(createdAt),
     'updatedAt': utcIso(updatedAt),
   };
@@ -325,6 +401,11 @@ class Note implements Record {
     tags: [...?(j['tags'] as List?)?.cast<String>()],
     favorite: j['favorite'] as bool? ?? false,
     assetIds: [...?(j['assetIds'] as List?)?.cast<String>()],
+    paper: NotePaper.fromJson(j['paper']),
+    projectIds: [
+      for (final p in (j['projectIds'] as List?) ?? const [])
+        ?(p is String ? p : null),
+    ],
     createdAt: parseDate(j['createdAt']) ?? DateTime.now(),
     updatedAt: parseDate(j['updatedAt']) ?? DateTime.now(),
   );
@@ -361,5 +442,42 @@ class InboxItem implements Record {
     text: j['text'] as String?,
     assetId: j['assetId'] as String?,
     createdAt: parseDate(j['createdAt']) ?? DateTime.now(),
+  );
+}
+
+/// A piece of text copied on one of the user's devices, shared with the
+/// others (only while "Clipboard between my devices" is on).
+class ClipboardClip implements Record {
+  const ClipboardClip({
+    required this.id,
+    required this.text,
+    required this.device,
+    required this.copiedAt,
+  });
+
+  @override
+  final String id;
+  final String text;
+
+  /// Name of the device it was copied on.
+  final String device;
+  final DateTime copiedAt;
+
+  @override
+  DateTime get updatedAt => copiedAt;
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'text': text,
+    'device': device,
+    'copiedAt': utcIso(copiedAt),
+  };
+
+  factory ClipboardClip.fromJson(Map<String, dynamic> j) => ClipboardClip(
+    id: j['id'] as String,
+    text: j['text'] as String? ?? '',
+    device: j['device'] as String? ?? '',
+    copiedAt: parseDate(j['copiedAt']) ?? DateTime.now(),
   );
 }

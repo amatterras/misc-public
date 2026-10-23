@@ -12,6 +12,7 @@ export 'windows_native.dart'
         NativeClipboard,
         flashMainWindow,
         focusMainWindow,
+        pickFolder,
         openFolder,
         readNativeClipboard;
 
@@ -37,3 +38,12 @@ bool openDocument(String path) => Platform.isIOS
 
 /// Whether this platform has a folder browser to show the data folder in.
 bool get canOpenFolders => Platform.isWindows;
+
+/// Whether THEapp's window can be kept above other windows here (Windows
+/// only; iPhone/iPad apps cannot float over other apps).
+bool get supportsAlwaysOnTop => Platform.isWindows;
+
+/// Keeps THEapp's window above other windows, or stops; false if this
+/// platform cannot or the window was not found.
+bool setAlwaysOnTop(bool on) =>
+    Platform.isWindows && win.setMainWindowTopmost(on);

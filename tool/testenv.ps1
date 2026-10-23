@@ -90,7 +90,8 @@ switch ($Command) {
   'build' {
     Need-Setup
     Push-Location $Project
-    try { & $Flutter build windows --profile } finally { Pop-Location }
+    $build = (git -C $Project rev-parse --short HEAD)
+    try { & $Flutter build windows --profile "--dart-define=THEAPP_BUILD=$build" } finally { Pop-Location }
     if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
     $out = Join-Path $Project 'build\windows\x64\runner\Profile'
     # Mirrors only into <root>\bin (test-only folder).

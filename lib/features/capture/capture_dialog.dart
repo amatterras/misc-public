@@ -368,11 +368,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                 if (url != null) ...[
                   Row(
                     children: [
-                      const Icon(
-                        Icons.link,
-                        size: 16,
-                        color: OrganizerColors.blue,
-                      ),
+                      const Icon(Icons.link, size: 16, color: AppColors.accent),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
@@ -669,7 +665,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                       value: e.id,
                       child: Row(
                         children: [
-                          ColorDot(index: e.colorIndex),
+                          ColorDot(color: calendarCategoryColor(e.category)),
                           const SizedBox(width: 8),
                           Text('${e.category.label}: ${e.name}'),
                         ],

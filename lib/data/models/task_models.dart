@@ -53,6 +53,9 @@ class Project implements Record {
 
 enum Recurrence { none, daily, weekly, monthly }
 
+/// Board column of an unfinished task (finished = [Task.done]).
+enum TaskStatus { todo, doing }
+
 class Task implements Record {
   const Task({
     required this.id,
@@ -71,6 +74,13 @@ class Task implements Record {
     this.recurrence = Recurrence.none,
     this.assetIds = const [],
     this.remindBefore,
+    this.labels = const [],
+    this.properties = const {},
+    this.dependsOn = const [],
+    this.status = TaskStatus.todo,
+    this.startDate,
+    this.seriesDate,
+    this.noteIds = const [],
   });
 
   @override
@@ -81,6 +91,7 @@ class Task implements Record {
   final DateTime? completedAt;
 
   /// Date-only deadline/schedule; shown on Calendar as this same record.
+  /// For a recurring task: the date of its current occurrence.
   final DateTime? dueDate;
   final int? dueMinutes;
 
@@ -97,6 +108,29 @@ class Task implements Record {
   /// Reminder, in minutes before the due time (0 = at the due time); null
   /// = no reminder. Relative, so a recurring task's reminder moves with it.
   final int? remindBefore;
+
+  /// The user's own labels (free text; no fixed colors).
+  final List<String> labels;
+
+  /// The user's own properties (name → value), shown in the table view.
+  final Map<String, String> properties;
+
+  /// Tasks that should be finished first (a gentle warning, never a block).
+  final List<String> dependsOn;
+
+  /// Board column while unfinished.
+  final TaskStatus status;
+
+  /// Optional start (the Gantt bar runs from here to [dueDate]).
+  final DateTime? startDate;
+
+  /// Recurring task whose current occurrence was moved on its own: the
+  /// date the series rule gave it. The next occurrence is counted from
+  /// here, so moving one occurrence never shifts the series.
+  final DateTime? seriesDate;
+
+  /// Notes this task is about (each note lists its tasks).
+  final List<String> noteIds;
 
   /// Tasks with a date but no time are reminded at this time of day.
   static const defaultReminderMinutes = 9 * 60;
@@ -131,6 +165,13 @@ class Task implements Record {
     Recurrence? recurrence,
     List<String>? assetIds,
     int? Function()? remindBefore,
+    List<String>? labels,
+    Map<String, String>? properties,
+    List<String>? dependsOn,
+    TaskStatus? status,
+    DateTime? Function()? startDate,
+    DateTime? Function()? seriesDate,
+    List<String>? noteIds,
   }) => Task(
     id: id,
     title: title ?? this.title,
@@ -146,24 +187,80 @@ class Task implements Record {
     recurrence: recurrence ?? this.recurrence,
     assetIds: assetIds ?? this.assetIds,
     remindBefore: remindBefore != null ? remindBefore() : this.remindBefore,
+    labels: labels ?? this.labels,
+    properties: properties ?? this.properties,
+    dependsOn: dependsOn ?? this.dependsOn,
+    status: status ?? this.status,
+    startDate: startDate != null ? startDate() : this.startDate,
+    seriesDate: seriesDate != null ? seriesDate() : this.seriesDate,
+    noteIds: noteIds ?? this.noteIds,
     createdAt: createdAt,
     updatedAt: DateTime.now(),
   );
 
+  /// The occurrence after [from] by this task's rule.
+  DateTime nextOccurrence(DateTime from) => switch (recurrence) {
+    Recurrence.daily => addDays(from, 1),
+    Recurrence.weekly => addDays(from, 7),
+    Recurrence.monthly => DateTime(from.year, from.month + 1, from.day),
+    Recurrence.none => from,
+  };
+
   /// Completing a recurring task moves it to its next date instead of
   /// creating a copy, so it stays one record.
   Task completed() {
-    final due = dueDate;
-    if (recurrence == Recurrence.none || due == null) {
+    if (recurrence == Recurrence.none || dueDate == null) {
       return copyWith(done: true, completedAt: () => DateTime.now());
     }
-    final next = switch (recurrence) {
-      Recurrence.daily => addDays(due, 1),
-      Recurrence.weekly => addDays(due, 7),
-      Recurrence.monthly => DateTime(due.year, due.month + 1, due.day),
-      Recurrence.none => due,
-    };
-    return copyWith(dueDate: () => next, completedAt: () => DateTime.now());
+    return _advanced(completedAt: DateTime.now());
+  }
+
+  /// Recurring task: skips its current occurrence (it is not completed)
+  /// and moves on to the next one. The series is unchanged.
+  Task skippedOccurrence() {
+    if (recurrence == Recurrence.none || dueDate == null) return this;
+    return _advanced();
+  }
+
+  /// Moves only the current occurrence to [day]; for a recurring task the
+  /// later occurrences keep following the series.
+  Task movedOccurrence(DateTime day) {
+    final due = dueDate;
+    if (recurrence == Recurrence.none || due == null) {
+      return copyWith(dueDate: () => dateOnly(day));
+    }
+    final series = seriesDate ?? due;
+    return copyWith(
+      dueDate: () => dateOnly(day),
+      seriesDate: () => daysBetween(series, day) == 0 ? null : series,
+    );
+  }
+
+  Task _advanced({DateTime? completedAt}) {
+    final series = seriesDate ?? dueDate!;
+    final next = nextOccurrence(series);
+    final start = startDate;
+    return copyWith(
+      dueDate: () => next,
+      seriesDate: () => null,
+      startDate: start == null
+          ? null
+          : () => addDays(start, daysBetween(series, next)),
+      completedAt: completedAt == null ? null : () => completedAt,
+      status: TaskStatus.todo,
+    );
+  }
+
+  /// The same task with its dates [days] later (or earlier), keeping the
+  /// gaps between them.
+  Task shifted(int days) {
+    if (days == 0) return this;
+    DateTime? move(DateTime? d) => d == null ? null : addDays(d, days);
+    return copyWith(
+      dueDate: () => move(dueDate),
+      startDate: () => move(startDate),
+      seriesDate: () => move(seriesDate),
+    );
   }
 
   @override
@@ -182,28 +279,68 @@ class Task implements Record {
     'recurrence': recurrence.name,
     'assetIds': assetIds,
     'remindBefore': remindBefore,
+    // Newer fields are written only when used, so files of tasks that do
+    // not use them stay exactly as before (older builds keep them as
+    // unknown fields).
+    if (labels.isNotEmpty) 'labels': labels,
+    if (properties.isNotEmpty) 'properties': properties,
+    if (dependsOn.isNotEmpty) 'dependsOn': dependsOn,
+    if (status != TaskStatus.todo) 'status': status.name,
+    if (startDate != null) 'startDate': dayKey(startDate!),
+    if (seriesDate != null) 'seriesDate': dayKey(seriesDate!),
+    if (noteIds.isNotEmpty) 'noteIds': noteIds,
     'createdAt': utcIso(createdAt),
     'updatedAt': utcIso(updatedAt),
   };
 
-  factory Task.fromJson(Map<String, dynamic> j) => Task(
-    id: j['id'] as String,
-    title: j['title'] as String,
-    notes: j['notes'] as String? ?? '',
-    done: j['done'] as bool? ?? false,
-    completedAt: parseDate(j['completedAt']),
-    dueDate: j['dueDate'] is String
-        ? parseDayKey(j['dueDate'] as String)
-        : null,
-    dueMinutes: j['dueMinutes'] as int?,
-    priority: j['priority'] as int? ?? 0,
-    projectId: j['projectId'] as String?,
-    parentId: j['parentId'] as String?,
-    isExam: j['isExam'] as bool? ?? false,
-    recurrence: Recurrence.values.byName(j['recurrence'] as String? ?? 'none'),
-    assetIds: [...?(j['assetIds'] as List?)?.cast<String>()],
-    remindBefore: j['remindBefore'] as int?,
-    createdAt: parseDate(j['createdAt']) ?? DateTime.now(),
-    updatedAt: parseDate(j['updatedAt']) ?? DateTime.now(),
-  );
+  static List<String> _strings(Object? raw) => [
+    for (final v in raw is List ? raw : const []) ?(v is String ? v : null),
+  ];
+
+  static DateTime? _day(Object? raw) {
+    if (raw is! String) return null;
+    try {
+      return parseDayKey(raw);
+    } catch (_) {
+      return null; // not a date: ignored
+    }
+  }
+
+  factory Task.fromJson(Map<String, dynamic> j) {
+    final props = j['properties'];
+    return Task(
+      id: j['id'] as String,
+      title: j['title'] as String,
+      notes: j['notes'] as String? ?? '',
+      done: j['done'] as bool? ?? false,
+      completedAt: parseDate(j['completedAt']),
+      dueDate: j['dueDate'] is String
+          ? parseDayKey(j['dueDate'] as String)
+          : null,
+      dueMinutes: j['dueMinutes'] as int?,
+      priority: j['priority'] as int? ?? 0,
+      projectId: j['projectId'] as String?,
+      parentId: j['parentId'] as String?,
+      isExam: j['isExam'] as bool? ?? false,
+      recurrence: Recurrence.values.byName(
+        j['recurrence'] as String? ?? 'none',
+      ),
+      assetIds: [...?(j['assetIds'] as List?)?.cast<String>()],
+      remindBefore: j['remindBefore'] as int?,
+      labels: _strings(j['labels']),
+      properties: {
+        if (props is Map)
+          for (final e in props.entries)
+            if (e.key is String && e.value is String)
+              e.key as String: e.value as String,
+      },
+      dependsOn: _strings(j['dependsOn']),
+      status: TaskStatus.values.asNameMap()[j['status']] ?? TaskStatus.todo,
+      startDate: _day(j['startDate']),
+      seriesDate: _day(j['seriesDate']),
+      noteIds: _strings(j['noteIds']),
+      createdAt: parseDate(j['createdAt']) ?? DateTime.now(),
+      updatedAt: parseDate(j['updatedAt']) ?? DateTime.now(),
+    );
+  }
 }

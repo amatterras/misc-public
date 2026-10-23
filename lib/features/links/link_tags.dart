@@ -3,12 +3,18 @@
 // touching stored data.
 import 'package:flutter/painting.dart';
 
+import '../../app/theme.dart';
+
 enum LinkTag {
-  resource('resource', 'Resource', Color(0xFF3B82F6)), // blue
-  projects('projects', 'Projects', Color(0xFFEF4444)), // red
-  other('other', 'Other', Color(0xFFEAB308)), // yellow
-  shopping('shopping', 'Shopping', Color(0xFF22C55E)), // green
-  secondBrain('second-brain', 'Second-brain', Color(0xFFEC4899)); // pink
+  resource('resource', 'Resource', ArchiveCategoryColors.resource),
+  projects('projects', 'Projects', ArchiveCategoryColors.projects),
+  other('other', 'Other', ArchiveCategoryColors.other),
+  shopping('shopping', 'Shopping', ArchiveCategoryColors.shopping),
+  secondBrain(
+    'second-brain',
+    'Second-brain',
+    ArchiveCategoryColors.secondBrain,
+  );
 
   const LinkTag(this.id, this.label, this.color);
 

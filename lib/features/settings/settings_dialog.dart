@@ -3,13 +3,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/build_info.dart';
 import '../../app/test_environment.dart';
 import '../../app/theme.dart';
+import '../../data/storage/app_log.dart';
 import '../../platform/input_hints.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../capture/send_to.dart';
 import 'sync_section.dart';
+import '../tasks/completion_messages.dart';
+import '../ai/ai_settings_section.dart';
 
 Future<void> showSettingsDialog(BuildContext context, AppState state) {
   return showDialog<void>(
@@ -55,11 +59,31 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     final reason = switch (m.group(6)) {
       'auto' => 'automatic daily backup',
       'manual' => 'manual backup',
-      'pre-v2' => 'before data upgrade',
+      'auto-full' => 'automatic weekly backup with photos and PDFs',
+      final r? when r.startsWith('pre-') => 'before data upgrade',
       'before-restore' => 'before a restore',
       final other => other ?? '',
     };
     return '${m.group(1)}-${m.group(2)}-${m.group(3)} ${m.group(4)}:${m.group(5)}  ·  $reason';
+  }
+
+  Future<void> _saveCopy() async {
+    setState(() => _busy = true);
+    try {
+      final copy = await s.saveBackupCopy();
+      if (copy != null) {
+        s.showToast(
+          'Backup saved in the Files app: On My iPad (or iPhone) → THEapp → '
+          'THEapp Backups. '
+          'Move it to iCloud Drive or your PC to keep it safe.',
+        );
+      }
+    } catch (e, st) {
+      AppLog.error('Saving a backup copy failed', e, st);
+      s.showToast('Could not save the backup copy. Nothing was changed.');
+    }
+    await _loadBackups();
+    if (mounted) setState(() => _busy = false);
   }
 
   Future<void> _backupNow() async {
@@ -132,6 +156,153 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 icon: const Icon(Icons.folder_open, size: 16),
                 label: const Text('Open data folder'),
               ),
+              const _Heading('Clipboard between my devices'),
+              SwitchListTile(
+                key: const ValueKey('share-clipboard'),
+                contentPadding: EdgeInsets.zero,
+                value: s.shareClipboard,
+                onChanged: (v) async {
+                  await s.setShareClipboard(v);
+                  if (mounted) setState(() {});
+                },
+                title: const Text(
+                  'Share copied text with my other devices',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: Text(
+                  touchFirst
+                      ? 'Text copied on your PC arrives here, ready to paste '
+                            'in any app (while THEapp is open). To send text '
+                            'from here, use “Share clipboard now”. Goes only '
+                            'through your own hub.'
+                      : 'While THEapp runs, text you copy in any app is sent '
+                            'to your other devices through your own hub, and '
+                            'text copied there arrives on this clipboard. Off '
+                            'by default: copied passwords would be shared too. '
+                            'The hub must run this version of THEapp.',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textFaint,
+                  ),
+                ),
+              ),
+              if (s.shareClipboard && touchFirst)
+                OutlinedButton(
+                  onPressed: () async {
+                    final clip = await s.checkClipboard();
+                    s.showToast(
+                      clip == null
+                          ? 'Nothing new on the clipboard.'
+                          : 'Shared with your other devices.',
+                    );
+                  },
+                  child: const Text('Share clipboard now'),
+                ),
+              const _Heading('AI'),
+              AiSettingsSection(state: s),
+              const _Heading('Window'),
+              SwitchListTile(
+                key: const ValueKey('always-on-top'),
+                contentPadding: EdgeInsets.zero,
+                value: s.alwaysOnTop && s.alwaysOnTopSupported,
+                onChanged: s.alwaysOnTopSupported
+                    ? (v) async {
+                        await s.setAlwaysOnTop(v);
+                        if (mounted) setState(() {});
+                      }
+                    : null,
+                title: const Text(
+                  'Always on top',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: Text(
+                  s.alwaysOnTopSupported
+                      ? 'Keeps the THEapp window above other windows. '
+                            'Saved on this device only.'
+                      : 'Not available here: iPhone and iPad apps cannot '
+                            'stay above other apps.',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textFaint,
+                  ),
+                ),
+              ),
+              const _Heading('Calendar'),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Date format', style: TextStyle(fontSize: 14)),
+                  ),
+                  DropdownButton<DateOrder>(
+                    key: const ValueKey('date-order'),
+                    value: DatePrefs.order,
+                    items: [
+                      for (final o in DateOrder.values)
+                        DropdownMenuItem(value: o, child: Text(o.label)),
+                    ],
+                    onChanged: (v) async {
+                      await s.setDatePrefs(order: v);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Week starts on',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  DropdownButton<int>(
+                    key: const ValueKey('first-weekday'),
+                    value: DatePrefs.firstWeekday,
+                    items: const [
+                      DropdownMenuItem(
+                        value: DateTime.monday,
+                        child: Text('Monday'),
+                      ),
+                      DropdownMenuItem(
+                        value: DateTime.saturday,
+                        child: Text('Saturday'),
+                      ),
+                      DropdownMenuItem(
+                        value: DateTime.sunday,
+                        child: Text('Sunday'),
+                      ),
+                    ],
+                    onChanged: (v) async {
+                      await s.setDatePrefs(firstWeekday: v);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ],
+              ),
+              const _Heading('Tasks'),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Message when a task is completed',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  DropdownButton<CompletionStyle>(
+                    key: const ValueKey('completion-style'),
+                    value: s.completionStyle,
+                    items: [
+                      for (final c in CompletionStyle.values)
+                        DropdownMenuItem(value: c, child: Text(c.label)),
+                    ],
+                    onChanged: (v) async {
+                      if (v == null) return;
+                      await s.setCompletionStyle(v);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ],
+              ),
               const _Heading('Links'),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -180,16 +351,34 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               const _Heading('Sync hub'),
               SyncSection(state: s),
               const _Heading('Backups'),
-              const Text(
+              Text(
                 'A backup of all records is made automatically once a day (the '
-                'last 14 are kept). Photos are stored separately and never deleted.',
-                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+                'last 14 are kept), and once a week one that also holds photos '
+                'and PDFs (the last 4 are kept). Backups stay on $thisDevice'
+                '${s.workspace.backups.copiesDir == null ? '.' : ': use “Save a copy to Files” to keep one elsewhere.'}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textMuted,
+                ),
               ),
               const SizedBox(height: Space.sm),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _backupNow,
-                icon: const Icon(Icons.backup_outlined, size: 16),
-                label: const Text('Back up now'),
+              Wrap(
+                spacing: Space.sm,
+                runSpacing: Space.sm,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _backupNow,
+                    icon: const Icon(Icons.backup_outlined, size: 16),
+                    label: const Text('Back up now'),
+                  ),
+                  if (s.workspace.backups.copiesDir != null)
+                    OutlinedButton.icon(
+                      key: const ValueKey('save-backup-copy'),
+                      onPressed: _busy ? null : _saveCopy,
+                      icon: const Icon(Icons.save_alt, size: 16),
+                      label: const Text('Save a copy to Files'),
+                    ),
+                ],
               ),
               const SizedBox(height: Space.sm),
               for (final b in _backups.take(20))
@@ -202,7 +391,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     color: AppColors.textFaint,
                   ),
                   title: Text(
-                    _describe(b),
+                    '${_describe(b)}${s.workspace.backups.isCopy(b) ? '  ·  copy in Files' : ''}',
                     style: const TextStyle(fontSize: 13),
                   ),
                   trailing: TextButton(
@@ -215,6 +404,17 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   'No backups yet.',
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
+              const _Heading('About'),
+              const SelectableText(
+                'THEapp build $appBuild',
+                key: ValueKey('about-build'),
+                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              ),
+              const Text(
+                'Every device paired with the same hub should run the same '
+                'build (at least 371c6ca).',
+                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+              ),
             ],
           ),
         ),

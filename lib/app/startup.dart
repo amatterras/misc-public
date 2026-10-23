@@ -126,7 +126,7 @@ class _StartupScreenState extends State<StartupScreen> {
                       '(${DateTime.now().difference(p.stepSince).inSeconds} s). '
                       'Please take a screenshot of this screen.',
                       key: const ValueKey('startup-stuck'),
-                      style: const TextStyle(color: OrganizerColors.amber),
+                      style: const TextStyle(color: AppColors.warm),
                     ),
                   if (failed) ...[
                     Text(

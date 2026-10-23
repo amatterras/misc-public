@@ -241,6 +241,34 @@ class JsonFileStore {
 
   /// Moves a document into `<collection>/.trash` rather than deleting it,
   /// so nothing is lost permanently by accident.
+  /// The newest copy of [id] in the collection's trash folder, or null.
+  /// The trash file stays where it is (reading never removes anything).
+  Future<Map<String, dynamic>?> readFromTrash(
+    String collection,
+    String id,
+  ) async {
+    final trash = Directory(
+      '${_dir(collection).path}${Platform.pathSeparator}.trash',
+    );
+    if (!await trash.exists()) return null;
+    final pattern = RegExp('^${RegExp.escape(id)}-(\\d+)\\.json\$');
+    File? newest;
+    var newestStamp = -1;
+    await for (final f in trash.list()) {
+      if (f is! File) continue;
+      final m = pattern.firstMatch(f.uri.pathSegments.last);
+      final stamp = m == null ? -1 : int.parse(m.group(1)!);
+      if (stamp > newestStamp) (newest, newestStamp) = (f, stamp);
+    }
+    if (newest == null) return null;
+    try {
+      final decoded = jsonDecode(await newest.readAsString());
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
   Future<void> moveToTrash(String collection, String id) async {
     final file = _file(collection, id);
     if (!await file.exists()) return;

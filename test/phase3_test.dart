@@ -56,11 +56,11 @@ void main() {
       expect(
         [for (final t in LinkTag.values) (t.label, t.color.toARGB32())],
         [
-          ('Resource', 0xFF3B82F6), // blue
-          ('Projects', 0xFFEF4444), // red
-          ('Other', 0xFFEAB308), // yellow
-          ('Shopping', 0xFF22C55E), // green
-          ('Second-brain', 0xFFEC4899), // pink
+          ('Resource', 0xFF3060B0),
+          ('Projects', 0xFFB03040),
+          ('Other', 0xFFF0C060),
+          ('Shopping', 0xFF409060),
+          ('Second-brain', 0xFFE0A0D0),
         ],
       );
       expect(LinkTag.byId('second-brain'), LinkTag.secondBrain);
@@ -261,9 +261,16 @@ void main() {
         'https://one.example': false,
         'https://two.example': true,
       });
+      final highlights = {
+        for (final c in cards)
+          s.workspace.assets[c.assetId]!.url: board.highlighted!(c),
+      };
+      expect(highlights['https://one.example'], LinkTag.resource.color);
+      expect(highlights['https://two.example'], isNull);
       await tester.tap(find.byKey(const ValueKey('links-filter-all')));
       await tester.pump();
       expect(board.dimmed, isNull);
+      expect(board.highlighted, isNull);
 
       // Select the second card: the tag bar appears and sets its tags.
       board.select([cards[1].id]);
@@ -392,7 +399,8 @@ void main() {
       final s = await appState();
       final t = s.workspace.createTask('Essay', dueDate: today);
       expect(s.openWidgetLink(Uri.parse('theapp://open?task=${t.id}')), isTrue);
-      expect(s.page, AppPage.tasks);
+      expect(s.page, AppPage.calendar); // Tasks live in its task column
+      expect(s.calendarTasksOpen, isTrue);
       expect(s.selectedTaskId, t.id);
       expect(
         s.openWidgetLink(Uri.parse('theapp://open?day=2026-10-24')),
@@ -401,6 +409,7 @@ void main() {
       expect(s.page, AppPage.calendar);
       expect(s.focusDay, tomorrow);
       expect(s.openWidgetLink(Uri.parse('theapp://capture?url=x')), isFalse);
+      await s.flush(); // pending page and task-column settings
       s.dispose();
     });
   });

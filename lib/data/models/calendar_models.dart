@@ -20,14 +20,14 @@ enum CalendarCategory {
 ///   (empty = every day); [checkoffs] are the days marked done.
 /// A habit is one record however many days it occurs on.
 class CalendarEntry implements Record {
-  const CalendarEntry({
+  CalendarEntry({
     required this.id,
     required this.category,
     required this.name,
     required this.createdAt,
     required this.updatedAt,
     this.description = '',
-    this.colorIndex = 5,
+    int? colorIndex,
     this.archived = false,
     this.notes = '',
     this.assetIds = const [],
@@ -43,7 +43,7 @@ class CalendarEntry implements Record {
     this.highlights = '',
     this.weekdays = const {},
     this.checkoffs = const {},
-  });
+  }) : colorIndex = colorIndex ?? category.index;
 
   static const int maxActivePerCategory = 5;
 
@@ -53,7 +53,8 @@ class CalendarEntry implements Record {
   final String name;
   final String description;
 
-  /// Index into the ten organiser colours.
+  /// Compatibility index, normalized to the entry's category palette slot.
+  /// Rendering derives the color from [category], never from an ink palette.
   final int colorIndex;
   final bool archived;
   final String notes;
@@ -210,12 +211,13 @@ class CalendarEntry implements Record {
 
   factory CalendarEntry.fromJson(Map<String, dynamic> j) {
     DateTime? day(Object? v) => v is String ? parseDayKey(v) : null;
+    final category = CalendarCategory.values.byName(j['category'] as String);
     return CalendarEntry(
       id: j['id'] as String,
-      category: CalendarCategory.values.byName(j['category'] as String),
+      category: category,
       name: j['name'] as String,
       description: j['description'] as String? ?? '',
-      colorIndex: j['colorIndex'] as int? ?? 5,
+      colorIndex: j['colorIndex'] as int? ?? category.index,
       archived: j['archived'] as bool? ?? false,
       notes: j['notes'] as String? ?? '',
       assetIds: [...?(j['assetIds'] as List?)?.cast<String>()],

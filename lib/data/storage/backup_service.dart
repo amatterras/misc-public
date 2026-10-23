@@ -13,26 +13,53 @@ class BackupService {
   final Directory root;
 
   /// Folders that hold records.
-  static const _sources = ['canvases', 'data', 'settings', 'sync'];
+  static const _sources = [
+    'canvases',
+    'data',
+    'settings',
+    'sync',
+    'canvas_snapshots', // named mindmap versions
+  ];
   static const _attachments = 'attachments';
   static const keepAutomatic = 14;
 
   /// Manual, pre-upgrade and before-restore backups kept (oldest go first).
   static const keepOther = 20;
 
+  /// Weekly automatic backups that include photos and PDFs.
+  static const keepFull = 4;
+  static const fullEvery = Duration(days: 7);
+
+  /// Copies saved outside the data folder (iPhone/iPad: Documents/THEapp
+  /// Backups, visible in the Files app). Listed with the others so they can
+  /// be restored; never pruned or changed by THEapp.
+  Directory? copiesDir;
+
   String get _sep => Platform.pathSeparator;
   Directory get backupsDir => Directory('${root.path}${_sep}backups');
 
   Future<List<Directory>> list() async {
-    if (!await backupsDir.exists()) return [];
-    final dirs = await backupsDir
+    final dirs = [
+      ...await _listIn(backupsDir),
+      if (copiesDir != null) ...await _listIn(copiesDir!),
+    ];
+    // Newest first (names start with the time stamp).
+    dirs.sort((a, b) => _name(b).compareTo(_name(a)));
+    return dirs;
+  }
+
+  Future<List<Directory>> _listIn(Directory parent) async {
+    if (!await parent.exists()) return [];
+    return parent
         .list()
         .where((e) => e is Directory)
         .cast<Directory>()
         .toList();
-    dirs.sort((a, b) => b.path.compareTo(a.path)); // newest first
-    return dirs;
   }
+
+  /// Whether [backup] is one of the copies outside the data folder.
+  bool isCopy(Directory backup) =>
+      copiesDir != null && backup.parent.path == copiesDir!.path;
 
   static String _stamp(DateTime t) {
     String two(int v) => v.toString().padLeft(2, '0');
@@ -67,9 +94,10 @@ class BackupService {
   Future<Directory> snapshot(
     String reason, {
     bool includeAttachments = false,
+    DateTime? now,
   }) async {
     var target = Directory(
-      '${backupsDir.path}$_sep${_stamp(DateTime.now())}-$reason',
+      '${backupsDir.path}$_sep${_stamp(now ?? DateTime.now())}-$reason',
     );
     var n = 1;
     while (await target.exists()) {
@@ -114,12 +142,64 @@ class BackupService {
     }
   }
 
-  /// Makes a daily automatic backup.
-  Future<void> automaticBackup() async {
-    final autos = (await list()).where((d) => d.path.endsWith('-auto'));
-    final today = _stamp(DateTime.now()).substring(0, 8);
-    final hasToday = autos.any((d) => _name(d).startsWith(today));
-    if (!hasToday) await snapshot('auto');
+  /// Makes a daily automatic backup of the records, and once a week one
+  /// that also holds photos and PDFs (so a copy of everything exists even
+  /// if the attachments folder is lost).
+  Future<void> automaticBackup({DateTime? now}) async {
+    final at = now ?? DateTime.now();
+    final own = await _listIn(backupsDir);
+    final fulls = own.where((d) => _isReason(d, 'auto-full'));
+    final weekAgo = _stamp(at.subtract(fullEvery));
+    if (!fulls.any((d) => _name(d).compareTo(weekAgo) > 0)) {
+      await snapshot('auto-full', includeAttachments: true, now: at);
+      return; // it holds today's records too
+    }
+    final today = _stamp(at).substring(0, 8);
+    final hasToday = own.any(
+      (d) =>
+          (_isReason(d, 'auto') || _isReason(d, 'auto-full')) &&
+          _name(d).startsWith(today),
+    );
+    if (!hasToday) await snapshot('auto', now: at);
+  }
+
+  /// Copies [backup] into [destination] (e.g. Documents/THEapp Backups on
+  /// iPhone/iPad, visible in the Files app) and checks every file arrived
+  /// unchanged. Returns the copy.
+  Future<Directory> copyTo(Directory backup, Directory destination) async {
+    final target = Directory('${destination.path}$_sep${_name(backup)}');
+    if (await target.exists()) {
+      throw FileSystemException(
+        'A copy with this name already exists',
+        target.path,
+      );
+    }
+    var staging = Directory('${target.path}.partial');
+    var suffix = 1;
+    while (await staging.exists()) {
+      staging = Directory('${target.path}.partial-$suffix');
+      suffix++;
+    }
+    await for (final entity in backup.list(recursive: true)) {
+      if (entity is! File) continue;
+      final rel = entity.path.substring(backup.path.length + 1);
+      final dest = File('${staging.path}$_sep$rel');
+      await dest.parent.create(recursive: true);
+      await entity.copy(dest.path);
+      final sourceBytes = await entity.readAsBytes();
+      final copiedBytes = await dest.readAsBytes();
+      if (sourceBytes.length != copiedBytes.length) {
+        throw FileSystemException('Copy is incomplete', dest.path);
+      }
+      for (var i = 0; i < sourceBytes.length; i++) {
+        if (sourceBytes[i] != copiedBytes[i]) {
+          throw FileSystemException('Copy verification failed', dest.path);
+        }
+      }
+    }
+    await staging.create(recursive: true);
+    // Only a complete copy gets its final name.
+    return staging.rename(target.path);
   }
 
   String _name(Directory d) =>
@@ -129,20 +209,36 @@ class BackupService {
   /// folder name): the state before the first sync with a hub.
   static const protectedReasons = {'before-first-sync'};
 
+  /// Whether [d] was made for [reason] (a second backup in the same second
+  /// gets "-1", "-2", … after it).
+  bool _isReason(Directory d, String reason) =>
+      RegExp('-${RegExp.escape(reason)}(-\\d+)?\$').hasMatch(_name(d));
+
   bool _isProtected(Directory d) =>
       protectedReasons.any((r) => RegExp('-$r(-\\d+)?\$').hasMatch(_name(d)));
 
   /// Keeps a bounded number of backups. The newest pre-upgrade backup and
   /// [protectedReasons] backups are never removed.
   Future<void> _prune() async {
-    final all = (await list()).where((d) => !_isProtected(d)).toList();
-    final autos = all.where((d) => _name(d).endsWith('-auto')).toList();
+    // Only backups in the data folder; copies saved elsewhere are the
+    // user's and are never removed.
+    final all =
+        (await _listIn(backupsDir)).where((d) => !_isProtected(d)).toList()
+          ..sort((a, b) => _name(b).compareTo(_name(a)));
+    final autos = all.where((d) => _isReason(d, 'auto')).toList();
     for (final old in autos.skip(keepAutomatic)) {
       await old.delete(recursive: true);
     }
-    final others = all.where((d) => !_name(d).endsWith('-auto')).toList();
+    final fulls = all.where((d) => _isReason(d, 'auto-full')).toList();
+    for (final old in fulls.skip(keepFull)) {
+      await old.delete(recursive: true);
+    }
+    final others = all
+        .where((d) => !_isReason(d, 'auto') && !_isReason(d, 'auto-full'))
+        .toList();
+    // Pre-upgrade backups: "pre-v<schema>" and "pre-level<n>".
     final newestPre = others
-        .where((d) => _name(d).contains('-pre-v'))
+        .where((d) => _name(d).contains('-pre-'))
         .firstOrNull;
     for (final old in others.skip(keepOther)) {
       if (old.path == newestPre?.path) continue;
@@ -184,6 +280,9 @@ class BackupService {
       } else {
         await current.create(recursive: true);
       }
+      // Trash folders are not in backups: keep them (e.g. deleted notes'
+      // handwriting, which "Recently deleted" can still bring back).
+      await _keepTrash(old, current);
       if (await old.exists()) await old.delete(recursive: true);
     }
     // Forget what the restored data last synced, so a paired hub treats the
@@ -206,5 +305,27 @@ class BackupService {
       }
     }
     await staging.delete(recursive: true);
+  }
+
+  /// Moves every `.trash` folder (at any depth) from [from] into the same
+  /// place under [to], merging with what is there.
+  Future<void> _keepTrash(Directory from, Directory to) async {
+    if (!await from.exists()) return;
+    final trashes = await from
+        .list(recursive: true)
+        .where((e) => e is Directory && e.uri.pathSegments.contains('.trash'))
+        .cast<Directory>()
+        .where((d) => _name(d) == '.trash')
+        .toList();
+    for (final trash in trashes) {
+      final rel = trash.path.substring(from.path.length);
+      final dest = Directory('${to.path}$rel');
+      await dest.create(recursive: true);
+      await for (final f in trash.list()) {
+        if (f is! File) continue;
+        final target = File('${dest.path}$_sep${f.uri.pathSegments.last}');
+        if (!await target.exists()) await f.rename(target.path);
+      }
+    }
   }
 }

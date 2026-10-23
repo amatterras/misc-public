@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
@@ -5,17 +7,21 @@ import '../../data/models/canvas_models.dart';
 import '../../platform/input_hints.dart';
 import 'canvas_controller.dart';
 
-const organizerColorNames = [
-  'Coral',
-  'Amber',
-  'Yellow',
-  'Green',
-  'Teal',
-  'Blue',
-  'Indigo',
-  'Purple',
-  'Pink',
-  'Grey',
+const _canvasFormatColors = [
+  AppColors.text,
+  AppColors.textMuted,
+  AppColors.accent,
+  AppColors.accentSecondary,
+  AppColors.success,
+  AppColors.warm,
+];
+const _canvasFormatColorNames = [
+  'Soft White',
+  'Warm Grey',
+  'Steel Blue',
+  'Dusty Blue',
+  'Dusty Mint',
+  'Champagne',
 ];
 
 /// Floating vertical tool palette on the left of the canvas.
@@ -26,12 +32,17 @@ class CanvasToolbar extends StatelessWidget {
     required this.onAddImage,
     required this.onAddLink,
     this.onAddDocument,
+    this.onMore,
   });
 
   final CanvasController controller;
   final VoidCallback onAddImage;
   final VoidCallback onAddLink;
   final VoidCallback? onAddDocument;
+
+  /// Opens the canvas menu (versions, components, links to mindmaps);
+  /// on Windows it is also on right-click.
+  final ValueChanged<Offset>? onMore;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +140,18 @@ class CanvasToolbar extends StatelessWidget {
               tooltip: 'Redo  (Ctrl+Y)',
               onPressed: controller.canRedo ? controller.redo : null,
             ),
+            if (onMore != null)
+              Builder(
+                builder: (context) => ToolButton(
+                  key: const ValueKey('canvas-more'),
+                  icon: const Icon(Icons.more_horiz, size: 18),
+                  tooltip: 'More: versions, components, links to mindmaps',
+                  onPressed: () {
+                    final box = context.findRenderObject() as RenderBox;
+                    onMore!(box.localToGlobal(box.size.center(Offset.zero)));
+                  },
+                ),
+              ),
           ],
         ),
       ],
@@ -150,16 +173,9 @@ class CanvasContextBar extends StatelessWidget {
   final void Function(CanvasItem) onActivate;
   final void Function(LinkItem) onRefreshLink;
 
-  static const _penColors = [AppColors.text, ...OrganizerColors.all];
+  static const _penColors = InkColors.all;
   static const _penWidths = [1.5, 2.5, 5.0, 9.0];
-  static const _highlighterColors = [
-    Color(0xFFFFD54F), // Amber/Yellow
-    Color(0xFF81C784), // Light Green
-    Color(0xFF64B5F6), // Light Blue
-    Color(0xFFFF8A65), // Coral/Orange
-    Color(0xFFBA68C8), // Purple
-    Color(0xFFF06292), // Pink
-  ];
+  static const _highlighterColors = InkColors.all;
   static const _highlighterWidths = [12.0, 18.0, 26.0, 36.0];
   static const _fontSizes = {'S': 13.0, 'M': 16.0, 'L': 22.0, 'XL': 32.0};
 
@@ -191,6 +207,19 @@ class CanvasContextBar extends StatelessWidget {
                 ),
               ),
             ),
+          const _PanelDivider(vertical: true),
+          ToolButton(
+            key: const ValueKey('canvas-shapes'),
+            tooltip: c.recognizeShapes
+                ? 'Clean shapes: on (rough lines, triangles, rectangles '
+                      'and circles become neat)'
+                : 'Clean shapes: off',
+            active: c.recognizeShapes,
+            onPressed: () {
+              c.recognizeShapes = !c.recognizeShapes;
+            },
+            icon: const Icon(Icons.category_outlined, size: 17),
+          ),
         ],
       );
     }
@@ -316,6 +345,119 @@ class CanvasContextBar extends StatelessWidget {
           ),
           const _PanelDivider(vertical: true),
         ],
+        if (selected.any((i) => i is StrokeItem || i is TextItem))
+          PopupMenuButton<Color>(
+            key: const ValueKey('canvas-recolor'),
+            tooltip: 'Recolor ink and text',
+            position: PopupMenuPosition.under,
+            onSelected: c.recolorSelection,
+            itemBuilder: (_) => [
+              for (final color in InkColors.all)
+                PopupMenuItem(
+                  value: color,
+                  height: 30,
+                  child: Container(width: 70, height: 14, color: color),
+                ),
+            ],
+            child: const SizedBox(
+              width: 36,
+              height: 36,
+              child: Icon(
+                Icons.palette_outlined,
+                size: 17,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+        PopupMenuButton<int>(
+          key: const ValueKey('canvas-tag'),
+          tooltip: 'Tag (colored dots, glows in the minimap)',
+          position: PopupMenuPosition.under,
+          onSelected: (i) => c.tagSelection(i < 0 ? null : i),
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: -1, height: 30, child: Text('No tag')),
+            for (var i = 0; i < CanvasTagColors.selected.length; i++)
+              PopupMenuItem(
+                value: i,
+                height: 30,
+                child: Row(
+                  children: [
+                    for (var k = 0; k < 2; k++)
+                      Container(
+                        width: 12,
+                        height: 12,
+                        margin: const EdgeInsets.only(right: 6),
+                        decoration: BoxDecoration(
+                          color: CanvasTagColors.selected[i],
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    Text('Tag ${i + 1}'),
+                  ],
+                ),
+              ),
+          ],
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: Icon(
+              Icons.sell_outlined,
+              size: 17,
+              color: single != null && c.tagOf(single.id) != null
+                  ? CanvasTagColors.selected[c.tagOf(single.id)!]
+                  : AppColors.textMuted,
+            ),
+          ),
+        ),
+        ToolButton(
+          key: const ValueKey('canvas-lock'),
+          tooltip: selected.every((i) => c.isLocked(i.id))
+              ? 'Unlock'
+              : 'Lock (cannot be moved, edited or deleted)',
+          active: selected.every((i) => c.isLocked(i.id)),
+          onPressed: c.toggleLockSelection,
+          icon: Icon(
+            selected.every((i) => c.isLocked(i.id))
+                ? Icons.lock
+                : Icons.lock_open,
+            size: 17,
+          ),
+        ),
+        if (selected.length > 1 || c.groupOf(selected.first.id) != null)
+          ToolButton(
+            key: const ValueKey('canvas-group'),
+            tooltip:
+                c.groupOf(selected.first.id) != null &&
+                    selected.every(
+                      (i) => c.groupOf(i.id) == c.groupOf(selected.first.id),
+                    )
+                ? 'Ungroup'
+                : 'Group (select and move together)',
+            onPressed: () {
+              final g = c.groupOf(selected.first.id);
+              if (g != null && selected.every((i) => c.groupOf(i.id) == g)) {
+                c.ungroupSelection();
+              } else {
+                c.groupSelection();
+              }
+            },
+            icon: const Icon(Icons.workspaces_outline, size: 17),
+          ),
+        if (selected.any((i) => i is StrokeItem))
+          ToolButton(
+            key: const ValueKey('canvas-rotate'),
+            tooltip: 'Rotate ink 90°',
+            onPressed: () => c.rotateSelection(math.pi / 2),
+            icon: const Icon(Icons.rotate_90_degrees_cw_outlined, size: 17),
+          ),
+        if (selected.any((i) => i is ImageItem || i is LinkItem))
+          ToolButton(
+            key: const ValueKey('canvas-reference'),
+            tooltip: 'Use as reference (faint, behind the ink, not selectable)',
+            onPressed: c.makeSelectionReference,
+            icon: const Icon(Icons.layers_outlined, size: 17),
+          ),
+        const _PanelDivider(vertical: true),
         ToolButton(
           tooltip: 'Duplicate  (Ctrl+D)',
           onPressed: c.duplicateSelection,
@@ -361,7 +503,7 @@ class _ColorMenu extends StatelessWidget {
     return PopupMenuButton<int>(
       tooltip: tooltip,
       position: PopupMenuPosition.under,
-      onSelected: (i) => onSelected(i < 0 ? null : OrganizerColors.all[i]),
+      onSelected: (i) => onSelected(i < 0 ? null : _canvasFormatColors[i]),
       itemBuilder: (_) => [
         PopupMenuItem(
           value: -1,
@@ -374,7 +516,7 @@ class _ColorMenu extends StatelessWidget {
             ],
           ),
         ),
-        for (var i = 0; i < OrganizerColors.all.length; i++)
+        for (var i = 0; i < _canvasFormatColors.length; i++)
           PopupMenuItem(
             value: i,
             height: 34,
@@ -384,12 +526,12 @@ class _ColorMenu extends StatelessWidget {
                   width: 14,
                   height: 14,
                   decoration: BoxDecoration(
-                    color: OrganizerColors.all[i],
+                    color: _canvasFormatColors[i],
                     shape: BoxShape.circle,
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(organizerColorNames[i]),
+                Text(_canvasFormatColorNames[i]),
               ],
             ),
           ),

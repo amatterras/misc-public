@@ -1,19 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'dart:async';
+
 import '../data/models/library_models.dart';
 import '../data/models/task_models.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/canvas/canvas_page.dart';
+import '../features/ai/ai_window.dart';
 import '../features/capture/capture_dialog.dart';
 import '../features/capture/capture_service.dart';
 import '../features/home/home_page.dart';
 import '../features/notes/notes_page.dart';
+import '../features/palette/app_switcher.dart';
+import '../features/palette/command_palette.dart';
 import '../features/links/links_page.dart';
+import '../features/motivation/motivation_service.dart';
 import '../features/search/search_dialog.dart';
 import '../features/settings/settings_dialog.dart';
-import '../features/tasks/tasks_page.dart';
 import '../widgets/common.dart' show GhostIconButton;
+import '../widgets/floating_layer.dart';
 import 'app_state.dart';
 import 'sidebar.dart';
 import 'test_environment.dart';
@@ -47,11 +53,64 @@ Future<void> openQuickAdd(BuildContext context, AppState state) async {
   );
 }
 
+/// Opens the command palette (every command and place, by typing).
+Future<void> openCommandPalette(BuildContext context, AppState state) =>
+    showCommandPalette(
+      context,
+      paletteCommands(
+        state,
+        quickAdd: (c) => openQuickAdd(c, state),
+        search: (c) => showSearchDialog(c, state),
+        settings: (c) => showSettingsDialog(c, state),
+        appSwitcher: (c) => openAppSwitcher(c, state, floating: true),
+      ),
+    );
+
+List<SwitcherAction> _switcherActions(AppState state) => switcherActions(
+  state,
+  quickAdd: (c) => openQuickAdd(c, state),
+  search: (c) => showSearchDialog(c, state),
+  palette: (c) => openCommandPalette(c, state),
+);
+
+/// Opens the app switcher as a panel, or straight away as a floating
+/// window ([floating]).
+Future<void> openAppSwitcher(
+  BuildContext context,
+  AppState state, {
+  bool floating = false,
+}) async {
+  void float() => state.floating.show(
+    appSwitcherWindow(state, () => _switcherActions(state)),
+  );
+  if (floating) return float();
+  await showDialog<void>(
+    context: context,
+    builder: (context) => Dialog(
+      alignment: Alignment.topRight,
+      insetPadding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
+      child: SizedBox(
+        width: 280,
+        child: AppSwitcherGrid(
+          state: state,
+          actions: () => _switcherActions(state),
+          closeAfter: true,
+          onPopOut: () {
+            Navigator.pop(context);
+            float();
+          },
+        ),
+      ),
+    ),
+  );
+}
+
 /// Main window layout: workspace on the left, sidebar on the right.
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.state});
+  const AppShell({super.key, required this.state, this.motivation});
 
   final AppState state;
+  final MotivationService? motivation;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -61,8 +120,31 @@ class _AppShellState extends State<AppShell> {
   // Keeps the pages (and what is typed in them) when the window crosses the
   // phone-width threshold and the layout around them changes.
   final _pagesKey = GlobalKey();
+  late final MotivationService _motivation;
 
   AppState get state => widget.state;
+
+  @override
+  void initState() {
+    super.initState();
+    _motivation = widget.motivation ?? MotivationService();
+    state.aiWindow = () => aiWindowSpec(state);
+    if (widget.motivation == null) unawaited(_loadMotivation());
+  }
+
+  Future<void> _loadMotivation() async {
+    try {
+      await _motivation.load();
+    } catch (error, stack) {
+      debugPrint('Could not load motivational content: $error\n$stack');
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.motivation == null) _motivation.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +154,12 @@ class _AppShellState extends State<AppShell> {
             openQuickAdd(context, state),
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): () =>
             showSearchDialog(context, state),
+        const SingleActivator(
+          LogicalKeyboardKey.keyP,
+          control: true,
+          shift: true,
+        ): () =>
+            openCommandPalette(context, state),
       },
       child: Focus(
         autofocus: true,
@@ -91,7 +179,8 @@ class _AppShellState extends State<AppShell> {
                   NotesPage(state: state),
                   LinksPage(state: state),
                   CalendarPage(state: state),
-                  TasksPage(state: state),
+                  // Tasks are shown inside Calendar (its task column).
+                  const SizedBox.shrink(),
                 ],
               ),
             );
@@ -105,13 +194,20 @@ class _AppShellState extends State<AppShell> {
                       bottom: false,
                       child: Column(
                         children: [
-                          _CompactTopBar(state: state),
+                          ListenableBuilder(
+                            // Its Inbox badge follows new captures.
+                            listenable: state.workspace.changes,
+                            builder: (context, _) =>
+                                _CompactTopBar(state: state),
+                          ),
                           Expanded(child: mainContent),
                           ListenableBuilder(
                             // The Inbox badge follows new captures.
                             listenable: state.workspace.changes,
-                            builder: (context, _) =>
-                                _CompactBottomNav(state: state),
+                            builder: (context, _) => _CompactBottomNav(
+                              state: state,
+                              motivation: _motivation,
+                            ),
                           ),
                         ],
                       ),
@@ -119,11 +215,31 @@ class _AppShellState extends State<AppShell> {
                   else
                     Row(
                       children: [
-                        Expanded(child: mainContent),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Expanded(child: mainContent),
+                              _MotivationalQuoteBar(service: _motivation),
+                            ],
+                          ),
+                        ),
                         Sidebar(state: state),
                       ],
                     ),
+                  Positioned.fill(
+                    child: FloatingLayer(windows: state.floating),
+                  ),
                   _Toast(state: state, bottomOffset: isCompact ? 72 : 28),
+                  ListenableBuilder(
+                    listenable: _motivation,
+                    builder: (context, _) => _motivation.greetingVisible
+                        ? Positioned(
+                            top: isCompact ? 56 : 16,
+                            left: 16,
+                            child: _GreetingWindow(service: _motivation),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                   if (TestEnvironment.active) const _TestDataBanner(),
                   _UnsavedNotice(state: state),
                   _ReminderNotice(state: state),
@@ -145,12 +261,11 @@ class _CompactTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pageTitle = switch (state.page) {
-      AppPage.home => 'Home',
-      AppPage.canvas => state.canvas?.title ?? 'Canvas',
-      AppPage.notes => 'Notes',
-      AppPage.links => 'Links',
-      AppPage.calendar => 'Calendar',
-      AppPage.tasks => 'Tasks',
+      AppPage.home => 'THEapp',
+      AppPage.canvas => state.canvas?.title ?? 'mindmap',
+      AppPage.notes => 'notes',
+      AppPage.links => 'archive',
+      AppPage.calendar || AppPage.tasks => 'calendar',
     };
 
     return Container(
@@ -182,14 +297,32 @@ class _CompactTopBar extends StatelessWidget {
                 width: 7,
                 height: 7,
                 decoration: BoxDecoration(
-                  color: state.syncing
-                      ? OrganizerColors.blue
-                      : OrganizerColors.green,
+                  color: state.syncing ? AppColors.accent : AppColors.success,
                   shape: BoxShape.circle,
                 ),
               ),
             ),
           const Spacer(),
+          // Start page (today, Inbox): not one of the four destinations.
+          IconButton(
+            key: const ValueKey('compact-start-page'),
+            icon: Badge(
+              isLabelVisible: state.workspace.inbox.length > 0,
+              label: Text('${state.workspace.inbox.length}'),
+              backgroundColor: AppColors.accent,
+              child: Icon(
+                Icons.wb_sunny_outlined,
+                size: 20,
+                color: state.page == AppPage.home
+                    ? AppColors.accent
+                    : AppColors.textMuted,
+              ),
+            ),
+            tooltip: 'Start page',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            onPressed: () => state.goTo(AppPage.home),
+          ),
           IconButton(
             icon: const Icon(
               Icons.search,
@@ -230,20 +363,14 @@ class _CompactTopBar extends StatelessWidget {
 }
 
 class _CompactBottomNav extends StatelessWidget {
-  const _CompactBottomNav({required this.state});
+  const _CompactBottomNav({required this.state, required this.motivation});
 
   final AppState state;
+  final MotivationService motivation;
 
   @override
   Widget build(BuildContext context) {
-    const items = [
-      (AppPage.home, Icons.home_outlined, 'Home'),
-      (AppPage.canvas, Icons.grid_view, 'Canvas'),
-      (AppPage.notes, Icons.description_outlined, 'Notes'),
-      (AppPage.links, Icons.bookmarks_outlined, 'Links'),
-      (AppPage.calendar, Icons.calendar_today_outlined, 'Calendar'),
-      (AppPage.tasks, Icons.check_box_outlined, 'Tasks'),
-    ];
+    const items = appDestinations;
 
     return Container(
       decoration: const BoxDecoration(
@@ -252,80 +379,157 @@ class _CompactBottomNav extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          height: 54,
-          child: Row(
-            children: [
-              for (final (page, icon, label) in items)
-                Expanded(
-                  child: InkWell(
-                    onTap: () => state.goTo(page),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Stack(
-                          clipBehavior: Clip.none,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _MotivationalQuoteBar(service: motivation),
+            SizedBox(
+              height: 54,
+              child: Row(
+                children: [
+                  for (final (page, icon, label) in items)
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => state.goTo(page),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
-                              icon,
-                              size: 22,
-                              color: state.page == page
-                                  ? AppColors.accent
-                                  : AppColors.textMuted,
-                            ),
-                            if (page == AppPage.home &&
-                                state.workspace.inbox.length > 0)
-                              Positioned(
-                                right: -8,
-                                top: -4,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: OrganizerColors.blue,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  constraints: const BoxConstraints(
-                                    minWidth: 14,
-                                  ),
-                                  child: Text(
-                                    '${state.workspace.inbox.length}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Icon(
+                                  icon,
+                                  size: 22,
+                                  color: state.page == page
+                                      ? AppColors.accent
+                                      : AppColors.textMuted,
                                 ),
+                                if (page == AppPage.home &&
+                                    state.workspace.inbox.length > 0)
+                                  Positioned(
+                                    right: -8,
+                                    top: -4,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                        vertical: 1,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.accent,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      constraints: const BoxConstraints(
+                                        minWidth: 14,
+                                      ),
+                                      child: Text(
+                                        '${state.workspace.inbox.length}',
+                                        style: const TextStyle(
+                                          color: AppColors.text,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: state.page == page
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                                color: state.page == page
+                                    ? AppColors.accent
+                                    : AppColors.textMuted,
                               ),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: state.page == page
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                            color: state.page == page
-                                ? AppColors.accent
-                                : AppColors.textMuted,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-            ],
-          ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+class _MotivationalQuoteBar extends StatelessWidget {
+  const _MotivationalQuoteBar({required this.service});
+
+  final MotivationService service;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: service,
+    builder: (context, _) {
+      final quote = service.quote;
+      if (quote == null) return const SizedBox.shrink();
+      final text = quote.attribution.isEmpty
+          ? '“${quote.text}”'
+          : '“${quote.text}”  ${quote.attribution}';
+      return Container(
+        key: const ValueKey('motivational-quote'),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+        decoration: const BoxDecoration(
+          color: AppColors.sidebar,
+          border: Border(top: BorderSide(color: AppColors.border)),
+        ),
+        child: Tooltip(
+          message: quote.attribution,
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11,
+              height: 1.4,
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _GreetingWindow extends StatelessWidget {
+  const _GreetingWindow({required this.service});
+
+  final MotivationService service;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    key: const ValueKey('greeting-window'),
+    elevation: 12,
+    color: AppColors.cardRaised,
+    borderRadius: BorderRadius.circular(10),
+    child: Container(
+      width: 340,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(
+        service.greeting ?? '',
+        style: const TextStyle(
+          color: AppColors.text,
+          fontSize: 14,
+          height: 1.4,
+        ),
+      ),
+    ),
+  );
 }
 
 /// Shown on every page in test data mode, so test and real windows can't be
@@ -354,7 +558,7 @@ class _TestDataBanner extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: Colors.white,
+                color: AppColors.text,
               ),
             ),
           ),
@@ -392,7 +596,7 @@ class _UnsavedNotice extends StatelessWidget {
               child: const Text(
                 'Some changes are not saved yet. THEapp keeps retrying — '
                 'keep the app open (details in the log).',
-                style: TextStyle(fontSize: 13, color: Colors.white),
+                style: TextStyle(fontSize: 13, color: AppColors.text),
               ),
             ),
           ),

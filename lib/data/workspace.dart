@@ -56,6 +56,14 @@ class TaskOnDay extends DayItem {
   String get label => task.isExam ? 'Exam: ${task.title}' : task.title;
 }
 
+/// Payload while dragging a calendar label (or a task from the task list)
+/// to a day. [from] is the day it came from; null for an undated task.
+class DayDrag {
+  const DayDrag(this.item, this.from);
+  final DayItem item;
+  final DateTime? from;
+}
+
 /// All non-canvas records plus attachments and backups, shared by every
 /// screen. Business rules (limits, de-duplication) live here so each view
 /// behaves the same way.
@@ -73,6 +81,7 @@ class Workspace {
     tasks = _c('tasks', Task.fromJson);
     projects = _c('projects', Project.fromJson);
     conflicts = _c('conflicts', SyncConflict.fromJson);
+    clipboard = _c('clipboard', ClipboardClip.fromJson);
     // Version history stays on this device (not in [syncCollections]).
     noteVersions = _c('note_versions', NoteVersion.fromJson);
     notes.onReplace = _keepNoteVersion;
@@ -94,6 +103,11 @@ class Workspace {
   late final RecordCollection<Project> projects;
   late final RecordCollection<SyncConflict> conflicts;
 
+  /// Text shared between the user's devices (synced only while
+  /// [shareClipboard] is on).
+  late final RecordCollection<ClipboardClip> clipboard;
+  bool shareClipboard = false;
+
   /// The record collections that sync, by their protocol name.
   Map<String, RecordCollection> get syncCollections => {
     'assets': assets,
@@ -105,6 +119,7 @@ class Workspace {
     'tasks': tasks,
     'projects': projects,
     'conflicts': conflicts,
+    if (shareClipboard) 'clipboard': clipboard,
   };
 
   final List<RecordCollection> _all = [];
@@ -169,10 +184,23 @@ class Workspace {
     });
   }
 
+  /// A deleted canvas came back (restored here, or by a newer change from
+  /// another device): stop announcing its deletion.
+  Future<void> forgetCanvasDeletion(String canvasId) async {
+    if (canvasTombstones.remove(canvasId) == null) return;
+    await store.write('sync', 'canvas_tombstones', {
+      'schema': 1,
+      'tombstones': canvasTombstones,
+    });
+  }
+
   /// Newest schema among the record files as loaded.
   int get newestRecordSchema => _all.isEmpty
       ? 0
       : _all.map((c) => c.loadedSchema).reduce((a, b) => a > b ? a : b);
+
+  /// Whether any record (note, task, link, entry, …) exists.
+  bool get hasRecords => _all.any((c) => c.length > 0);
 
   /// Oldest schema among the record files as loaded (for migrations).
   int get oldestRecordSchema => _all.isEmpty
@@ -360,8 +388,45 @@ class Workspace {
     }
   }
 
+  /// Deletes a note, first keeping all of it (text, folder, tags,
+  /// attachments) as a version, so it can be restored from Recently deleted.
+  void deleteNote(String id) {
+    final note = notes[id];
+    if (note == null) return;
+    noteVersions.put(
+      NoteVersion(
+        id: newId(),
+        noteId: id,
+        title: note.title,
+        body: note.body,
+        savedAt: now(),
+        deleted: true,
+        folderId: note.folderId,
+        tags: note.tags,
+        favorite: note.favorite,
+        assetIds: note.assetIds,
+        paper: note.paper,
+      ),
+    );
+    notes.remove(id);
+  }
+
+  /// Deleted notes that can be restored (newest deletion first): the latest
+  /// kept version of each note that no longer exists.
+  List<NoteVersion> deletedNotes() {
+    final latest = <String, NoteVersion>{};
+    for (final v in noteVersions.all) {
+      if (notes.contains(v.noteId)) continue;
+      final seen = latest[v.noteId];
+      if (seen == null || v.savedAt.isAfter(seen.savedAt)) latest[v.noteId] = v;
+    }
+    return latest.values.toList()
+      ..sort((a, b) => b.savedAt.compareTo(a.savedAt));
+  }
+
   /// Puts an earlier version back as a new edit (so the replaced text
-  /// becomes a version itself). Also brings back a deleted note.
+  /// becomes a version itself). Also brings back a deleted note, with its
+  /// folder, tags and attachments when the version kept them.
   Note? restoreNoteVersion(String versionId) {
     final v = noteVersions[versionId];
     if (v == null) return null;
@@ -374,6 +439,13 @@ class Workspace {
             body: v.body,
             createdAt: v.savedAt,
             updatedAt: now(),
+            folderId: v.folderId != null && folders.contains(v.folderId!)
+                ? v.folderId
+                : null,
+            tags: v.tags,
+            favorite: v.favorite,
+            assetIds: v.assetIds,
+            paper: v.paper,
           );
     notes.put(restored);
     return restored;
@@ -574,7 +646,7 @@ class Workspace {
     for (final e in entries.all) {
       if (e.archived) continue;
       if (categories != null && !categories.contains(e.category)) continue;
-      if (colors != null && !colors.contains(e.colorIndex)) continue;
+      if (colors != null && !colors.contains(e.category.index)) continue;
       if (e.occursOn(day)) result.add(EntryOnDay(e));
     }
     if (includeTasks) {
@@ -582,7 +654,7 @@ class Workspace {
         // Done tasks stay on their day (shown ticked), like in Tasks.
         final due = t.dueDate;
         if (due == null || daysBetween(due, day) != 0) continue;
-        final color = projects[t.projectId]?.colorIndex ?? 9;
+        final color = CalendarCategory.events.index;
         if (colors != null && !colors.contains(color)) continue;
         result.add(TaskOnDay(t, color));
       }
@@ -600,13 +672,16 @@ class Workspace {
     return result;
   }
 
-  /// Drag-and-drop on the grid: moves one occurrence or a task's due date.
-  void moveDayItem(DayItem item, DateTime from, DateTime to) {
+  /// Drag-and-drop on the grid: moves one occurrence or a task's due date
+  /// (an undated task, [from] null, gets [to] as its date).
+  void moveDayItem(DayItem item, DateTime? from, DateTime to) {
     switch (item) {
       case EntryOnDay(:final entry):
+        if (from == null) return;
         entries.put(entry.movedOccurrence(from, to));
       case TaskOnDay(:final task):
-        tasks.put(task.copyWith(dueDate: () => dateOnly(to)));
+        // A recurring task: only this occurrence moves.
+        tasks.put(task.movedOccurrence(to));
     }
   }
 
@@ -643,6 +718,108 @@ class Workspace {
           : task.completed(),
     );
   }
+
+  /// Tasks that link note [noteId] (the note's incoming task links).
+  List<Task> tasksForNote(String noteId) => [
+    for (final t in tasks.all)
+      if (t.noteIds.contains(noteId)) t,
+  ];
+
+  /// Notes that belong to project [projectId].
+  List<Note> notesOfProject(String projectId) => [
+    for (final n in notes.all)
+      if (n.projectIds.contains(projectId)) n,
+  ];
+
+  /// Other notes whose title appears in [note]'s text but is not linked
+  /// with [[…]] yet: link suggestions (the text is never changed without
+  /// the user choosing one).
+  List<Note> mentionedNotes(Note note) {
+    // Text outside [[…]] links.
+    final plain = note.body
+        .replaceAll(RegExp(r'\[\[[^\[\]]*\]\]'), ' ')
+        .toLowerCase();
+    if (plain.trim().isEmpty) return const [];
+    final linked = {for (final t in note.linkedTitles) t.toLowerCase()};
+    return [
+      for (final other in notes.all)
+        if (other.id != note.id &&
+            other.title.trim().length >= 3 &&
+            !linked.contains(other.displayTitle.toLowerCase()) &&
+            RegExp(
+              '(^|[^\\p{L}\\p{N}])${RegExp.escape(other.displayTitle.toLowerCase())}(\$|[^\\p{L}\\p{N}])',
+              unicode: true,
+            ).hasMatch(plain))
+          other,
+    ];
+  }
+
+  /// Turns the first unlinked mention of [title] in note [noteId] into a
+  /// [[link]], keeping the text as typed. False if there is none.
+  bool linkMention(String noteId, String title) {
+    final note = notes[noteId];
+    if (note == null) return false;
+    final pattern = RegExp(
+      '(\\[\\[[^\\[\\]]*\\]\\])|(?<![\\p{L}\\p{N}])(${RegExp.escape(title)})(?![\\p{L}\\p{N}])',
+      caseSensitive: false,
+      unicode: true,
+    );
+    for (final m in pattern.allMatches(note.body)) {
+      if (m.group(1) != null) continue; // inside an existing link
+      final body = note.body.replaceRange(m.start, m.end, '[[${m.group(2)}]]');
+      notes.put(note.copyWith(body: body));
+      return true;
+    }
+    return false;
+  }
+
+  /// Unfinished tasks that [task] waits for (missing ones are ignored).
+  List<Task> openPrerequisites(Task task) => [
+    for (final id in task.dependsOn)
+      if (tasks[id] case final t? when !t.done) t,
+  ];
+
+  /// Whether [taskId] may wait for [otherId] without a loop (A waits for
+  /// B waits for A).
+  bool canDependOn(String taskId, String otherId) {
+    if (taskId == otherId) return false;
+    final seen = <String>{};
+    final stack = [otherId];
+    while (stack.isNotEmpty) {
+      final id = stack.removeLast();
+      if (id == taskId) return false;
+      if (!seen.add(id)) continue;
+      stack.addAll(tasks[id]?.dependsOn ?? const []);
+    }
+    return true;
+  }
+
+  /// Moves the dates of [ids] by [days], keeping the gaps between them.
+  /// Returns how many tasks moved.
+  int shiftTasks(Iterable<String> ids, int days) {
+    var moved = 0;
+    for (final id in ids.toSet()) {
+      final t = tasks[id];
+      if (t == null || (t.dueDate == null && t.startDate == null)) continue;
+      tasks.put(t.shifted(days));
+      moved++;
+    }
+    return moved;
+  }
+
+  /// Moves every unfinished dated task of a project (and its subtasks) by
+  /// [days], keeping their spacing.
+  int shiftProject(String projectId, int days) => shiftTasks([
+    for (final t in tasks.all)
+      if (!t.done &&
+          (t.projectId == projectId ||
+              tasks[t.parentId ?? '']?.projectId == projectId))
+        t.id,
+  ], days);
+
+  /// Every label used by a task, sorted.
+  List<String> get taskLabels =>
+      {for (final t in tasks.all) ...t.labels}.toList()..sort();
 
   /// Deletes a task and its subtasks.
   void deleteTask(String id) {

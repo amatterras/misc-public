@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
+import '../../app/canvas_ops.dart' show canvasLinkTarget;
 import '../../data/models/canvas_models.dart';
 import 'canvas_controller.dart';
 import 'canvas_text.dart';
@@ -46,6 +47,26 @@ class CanvasPainter extends CustomPainter {
     }
     canvas.scale(scale);
 
+    // Reference overlays first and faint: they sit behind everything.
+    for (final item in controller.items) {
+      if (!controller.isReference(item.id)) continue;
+      final bounds = controller.itemBounds(item);
+      if (!bounds.overlaps(visible)) continue;
+      canvas.saveLayer(
+        bounds.inflate(2),
+        Paint()..color = const Color.fromRGBO(0, 0, 0, 0.55),
+      );
+      switch (item) {
+        case ImageItem():
+          _paintImage(canvas, item, bounds);
+        case LinkItem():
+          _paintLink(canvas, item, bounds);
+        case _:
+          break;
+      }
+      canvas.restore();
+    }
+
     // Mind-map connections first, so they run underneath the items.
     final selectedIds = controller.selection;
     for (final c in controller.items.whereType<ConnectorItem>()) {
@@ -64,7 +85,7 @@ class CanvasPainter extends CustomPainter {
     }
 
     for (final item in controller.items) {
-      if (item is ConnectorItem) continue;
+      if (item is ConnectorItem || controller.isReference(item.id)) continue;
       final bounds = controller.itemBounds(item);
       if (!bounds.overlaps(visible)) continue;
       final faded = controller.dimmed?.call(item) ?? false;
@@ -88,6 +109,25 @@ class CanvasPainter extends CustomPainter {
         case ConnectorItem():
           break; // drawn above
       }
+      final highlight = controller.highlighted?.call(item);
+      if (highlight != null) {
+        final ring = _card(bounds).outerRect.inflate(2.5 / scale);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(ring, const Radius.circular(12)),
+          Paint()
+            ..color = highlight.withValues(alpha: 0.28)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 7 / scale,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(ring, const Radius.circular(12)),
+          Paint()
+            ..color = highlight
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2 / scale,
+        );
+      }
+      _paintMarks(canvas, item, bounds, scale);
       if (faded) canvas.restore();
     }
     _paintSelection(canvas, scale);
@@ -116,6 +156,42 @@ class CanvasPainter extends CustomPainter {
         ..strokeWidth = 1.6
         ..strokeCap = StrokeCap.round,
     );
+  }
+
+  /// A lasso tag: a colored dot at the item's top-left and top-right
+  /// corners. A locked item: a small padlock at its top-right.
+  void _paintMarks(Canvas canvas, CanvasItem item, Rect bounds, double scale) {
+    final tag = controller.tagOf(item.id);
+    if (tag != null) {
+      final dot = Paint()..color = CanvasTagColors.selected[tag];
+      final ring = Paint()
+        ..color = AppColors.background
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5 / scale;
+      for (final corner in [bounds.topLeft, bounds.topRight]) {
+        canvas.drawCircle(corner, 6 / scale, dot);
+        canvas.drawCircle(corner, 6 / scale, ring);
+      }
+    }
+    if (controller.isLocked(item.id)) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: String.fromCharCode(Icons.lock.codePoint),
+          style: TextStyle(
+            fontFamily: Icons.lock.fontFamily,
+            package: Icons.lock.fontPackage,
+            fontSize: 13 / scale,
+            color: AppColors.textMuted,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(
+        canvas,
+        bounds.topRight + Offset(-painter.width - 10 / scale, 2 / scale),
+      );
+      painter.dispose();
+    }
   }
 
   static RRect _card(Rect r) =>
@@ -220,11 +296,15 @@ class CanvasPainter extends CustomPainter {
     );
     _paintIcon(
       canvas,
-      Icons.link,
+      asset?.isVideo ?? false
+          ? Icons.play_circle_outline
+          : canvasLinkTarget(asset?.url) != null
+          ? Icons.hub_outlined
+          : Icons.link,
       bounds.topLeft +
           Offset(kCardPadding + 8, layout.previewHeight + kCardPadding + 9),
       16,
-      color: OrganizerColors.blue,
+      color: AppColors.accent,
     );
     for (final (offset, painter) in layout.lines) {
       painter.paint(canvas, bounds.topLeft + offset);
@@ -320,7 +400,7 @@ class CanvasPainter extends CustomPainter {
     double scale, {
     required bool selected,
   }) {
-    final color = selected ? AppColors.accent : const Color(0xFF8A8A8A);
+    final color = selected ? AppColors.accent : AppColors.textMuted;
     final line = Paint()
       ..color = color
       ..strokeWidth = (selected ? 2.5 : 1.6) / scale
@@ -382,7 +462,10 @@ class CanvasPainter extends CustomPainter {
 
     final marquee = controller.marquee;
     if (marquee != null) {
-      canvas.drawRect(marquee, Paint()..color = const Color(0x1A4D8FD6));
+      canvas.drawRect(
+        marquee,
+        Paint()..color = AppColors.accent.withValues(alpha: 0.10),
+      );
       canvas.drawRect(marquee, outline..strokeWidth = 1 / scale);
     }
 
@@ -393,7 +476,10 @@ class CanvasPainter extends CustomPainter {
         lassoPath.lineTo(lasso[i].dx, lasso[i].dy);
       }
       lassoPath.close();
-      canvas.drawPath(lassoPath, Paint()..color = const Color(0x1A4D8FD6));
+      canvas.drawPath(
+        lassoPath,
+        Paint()..color = AppColors.accent.withValues(alpha: 0.10),
+      );
       canvas.drawPath(
         lassoPath,
         outline
@@ -446,6 +532,28 @@ class MinimapPainter extends CustomPainter {
     final itemPaint = Paint()..color = const Color(0x55FFFFFF);
     for (final item in controller.items) {
       final r = map(controller.itemBounds(item));
+      // Archive tag selection, or the item's lasso tag color.
+      final tag = controller.tagOf(item.id);
+      final highlight =
+          controller.highlighted?.call(item) ??
+          (tag == null ? null : CanvasTagColors.selected[tag]);
+      if (highlight != null) {
+        final glow = r.inflate(2);
+        canvas.drawRect(
+          glow,
+          Paint()
+            ..color = highlight.withValues(alpha: 0.34)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 5,
+        );
+        canvas.drawRect(
+          glow,
+          Paint()
+            ..color = highlight
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5,
+        );
+      }
       canvas.drawRect(
         Rect.fromLTWH(
           r.left,
@@ -459,7 +567,10 @@ class MinimapPainter extends CustomPainter {
       );
     }
     final view = map(controller.visibleWorld(viewport));
-    canvas.drawRect(view, Paint()..color = const Color(0x144D8FD6));
+    canvas.drawRect(
+      view,
+      Paint()..color = AppColors.accent.withValues(alpha: 0.08),
+    );
     canvas.drawRect(
       view,
       Paint()

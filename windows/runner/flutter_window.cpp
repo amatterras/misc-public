@@ -1,8 +1,12 @@
 #include "flutter_window.h"
 
+#include <shellapi.h>
+
 #include <optional>
+#include <string>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "utils.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -25,7 +29,12 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "theapp/windows",
+      &flutter::StandardMethodCodec::GetInstance());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  // Files dragged from File Explorer arrive as WM_DROPFILES.
+  DragAcceptFiles(GetHandle(), TRUE);
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -65,6 +74,25 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
+    case WM_DROPFILES: {
+      HDROP drop = reinterpret_cast<HDROP>(wparam);
+      UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+      flutter::EncodableList files;
+      for (UINT i = 0; i < count; i++) {
+        UINT length = DragQueryFileW(drop, i, nullptr, 0);
+        std::wstring path(length + 1, L'\0');
+        DragQueryFileW(drop, i, path.data(), length + 1);
+        path.resize(length);
+        files.push_back(flutter::EncodableValue(Utf8FromUtf16(path.c_str())));
+      }
+      DragFinish(drop);
+      if (channel_ && !files.empty()) {
+        channel_->InvokeMethod(
+            "filesDropped",
+            std::make_unique<flutter::EncodableValue>(std::move(files)));
+      }
+      return 0;
+    }
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
