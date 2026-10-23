@@ -94,6 +94,8 @@ class AiSession extends ChangeNotifier {
     final budget = settings.maxContextChars;
     final parts = <String>[
       if (tool.instruction.isNotEmpty) tool.instruction,
+      if (settings.workingRules.isNotEmpty)
+        'User-defined working rules:\n${settings.workingRules}',
       if (question.trim().isNotEmpty) 'Question: ${question.trim()}',
     ];
     var used = 0;
@@ -122,10 +124,18 @@ class AiSession extends ChangeNotifier {
       if (settings.sources.contains(c.source)) c,
   ];
 
-  static const _system =
+  static const _baseSystem =
       'You help the user with their own notes and study material. Base '
       'answers on the numbered material given; say so when it does not '
       'cover the question. Refer to material by its number, like [1].';
+
+  String get _system {
+    final rules = settings.workingRules;
+    return rules.isEmpty
+        ? _baseSystem
+        : '$_baseSystem\n\nUser-defined working rules (follow when compatible '
+              'with safety and the supplied material):\n$rules';
+  }
 
   /// Sends [question] with the attached material. Never called unless the
   /// user pressed Send.
@@ -156,7 +166,7 @@ class AiSession extends ChangeNotifier {
     ];
     try {
       final answer = await (await client()).complete([
-        const AiMessage('system', _system),
+        AiMessage('system', _system),
         ...history,
         AiMessage(
           'user',

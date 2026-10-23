@@ -85,6 +85,20 @@ void main() {
   }
 
   group('AI', () {
+    test('working rules persist and cap at 4,000 Unicode characters', () async {
+      final s = await app();
+      final rules = '${'a' * 3999}${String.fromCharCode(0x1f9e0)}extra';
+      await s.ai.setWorkingRules(rules);
+      expect(s.ai.workingRules.runes.length, 4000);
+      expect(s.ai.workingRules.endsWith(String.fromCharCode(0x1f9e0)), isTrue);
+      final saved = s.ai.workingRules;
+      await s.flush();
+      s.dispose();
+      final reopened = await app();
+      expect(reopened.ai.workingRules, saved);
+      reopened.dispose();
+    });
+
     test('off by default: nothing can be sent', () async {
       final s = await app();
       expect(s.ai.enabled, isFalse);
@@ -106,6 +120,9 @@ void main() {
       await s.ai.setEnabled(true);
       await s.ai.setEndpoint(model.url.toString());
       await s.ai.setMaxContextChars(500);
+      await s.ai.setWorkingRules(
+        'Separate verified facts from assumptions. Use concise bullets.',
+      );
       s.aiWindow = null; // no window in this test
       expect(
         s.sendToAi(
@@ -132,9 +149,14 @@ void main() {
       await s.aiSession.send(AiTool.explain, 'What is a cell?');
       expect(s.aiSession.error, isNull);
       expect(model.requests, hasLength(1));
-      final sent =
-          (model.requests.single['messages'] as List).last['content'] as String;
+      final messages = model.requests.single['messages'] as List;
+      final system = messages.first['content'] as String;
+      expect(system, contains('Separate verified facts from assumptions'));
+      expect(system, contains('Use concise bullets.'));
+      final sent = messages.last['content'] as String;
       expect(sent, preview); // exactly what was shown
+      expect(sent, contains('User-defined working rules:'));
+      expect(sent, contains('Separate verified facts from assumptions.'));
       expect(sent, isNot(contains('task')));
       expect(s.aiSession.turns.single.answer, 'OK');
       expect(s.aiSession.turns.single.sources, ['Biology']);

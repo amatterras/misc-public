@@ -182,6 +182,7 @@ iPad (see the manual checklist in `MANUAL_CHECKLIST.md`).
 | Requirement | Status | Evidence | Gap |
 |---|---|---|---|
 | AI off by default; master switch; per-source permissions; context limit | VERIFIED | `ai/ai_service.dart` (`AiSettings`) | |
+| User-authored AI working rules saved locally and included in each sent system message | VERIFIED (fake provider request) | `AiSettings.workingRules`, `AiSession._system`, AI settings UI; `roadmap_phase4_test` | Rules guide the model; citation validation and per-task profiles remain missing |
 | Nothing sent without Send; window shows exactly what is sent | VERIFIED | `ai/ai_session.dart` (`preview` = sent text) | |
 | Floating, draggable, resizable AI window opens when content is sent | IMPLEMENTED | `ai/ai_window.dart` | not clicked through |
 | Lasso/mindmap selection sent as a picture | VERIFIED (render) | `canvas/canvas_export.dart` | real model not run |

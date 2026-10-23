@@ -14,8 +14,10 @@ Everything is local, in `%APPDATA%\THEapp` (Settings → "Open data folder"):
 | `logs\app.log` | Local log of errors, recoveries, start and close (never sent anywhere) |
 
 Safety rules:
-- Only one THEapp window uses the data folder at a time; a second launch brings the
-  open window forward and quits.
+- A single-instance/focus guard is intended to keep one THEapp window on each
+  data folder. A 2026-10-23 manual run produced two responsive instances on the
+  same disposable profile, so this behavior is currently under investigation
+  and must not be assumed reliable.
 - A damaged file is renamed `*.corrupt-<time>` (never overwritten) and its `.bak` is
   restored; you're told once after start-up. Records this version can't read are kept
   and written back unchanged.
@@ -64,11 +66,25 @@ Not covered by automated tests — try these by hand:
 - the date pickers and time pickers (Flutter's own dialogs);
 - look and feel, and speed with very large canvases (thousands of items).
 
-Known limitations: images can't be copied *out* to other apps yet; no drag-and-drop
-from Explorer; no PDFs on the canvas; reminders don't notify; no version history;
-records and fields written by a newer app version are kept: unknown *records* are
-written back unchanged, and unknown *fields* inside known records, canvas items, canvas
-files and canvas metadata are kept, saved and synced with them
+Known limitations as of the 2026-10-23 audit: Windows PDF files can be attached
+and opened externally, but PDF pages are not rendered/searchable inside the app;
+Windows reminders require the app to be running; Archive folders and the three
+Graveyard/archive areas are not implemented; there is no hosted read-only sharing
+service; the app does not provide personal ChatGPT account authentication;
+cross-network sync is not verified on a second app-capable device; and the
+single-instance/focus guard needs a deterministic repair and regression test.
+Native iOS share-extension, physical iPad/iPhone behavior, and real Pencil
+interaction remain unverified. The Windows UI itself was not observable in the
+latest manual run even though the process reached startup-ready.
+
+Implemented and covered by current tests, but previously misreported above:
+Windows drag-and-drop support, PDF attachments, note version history and named
+canvas snapshots, task reminders while the app runs, AI with local Ollama and
+OpenAI-compatible API clients (optional and off by default), import/export,
+calendar views, and cross-device clipboard sharing when explicitly enabled.
+
+Unknown *records* are written back unchanged, and unknown *fields* inside known
+records, canvas items, canvas files and canvas metadata are kept, saved and synced
 (`lib/data/models/unknown_fields.dart`, `test/unknown_fields_test.dart`). An older
 version still cannot *edit* a newer field; it only leaves it untouched.
 
@@ -86,9 +102,13 @@ only on Windows.
 
 ## iOS / iPad
 Dart side implemented and tested on Windows with a simulated native channel; Swift side
-written but **never compiled or run** (no Mac). Status, blockers and free test options:
+was cloud-compiled in a historical Codemagic run, but no current physical-device
+run was independently verified in this audit. Status, blockers and free test options:
 [ios/README_IOS.md](ios/README_IOS.md).
 
 ## AI
-Not implemented. Any future AI feature must only send content the user selects, after
-explicit confirmation each time.
+AI is optional and off by default. The current implementation supports user-selected
+content, an outgoing preview, per-source/image permissions, context limits, a local
+Ollama route, and an OpenAI-compatible API-key route. Sending requires explicit user
+action; proposed changes require approval. A personal ChatGPT subscription is not API
+access. See `lib/features/ai/` and the requirement inventory for remaining gaps.

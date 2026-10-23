@@ -19,6 +19,7 @@ class AiSettingsSection extends StatefulWidget {
 class _AiSettingsSectionState extends State<AiSettingsSection> {
   late final _endpoint = TextEditingController(text: ai.endpoint);
   late final _model = TextEditingController(text: ai.model);
+  late final _workingRules = TextEditingController(text: ai.workingRules);
   final _key = TextEditingController();
   String? _test;
   bool _hasKey = false;
@@ -37,6 +38,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
   void dispose() {
     _endpoint.dispose();
     _model.dispose();
+    _workingRules.dispose();
     _key.dispose();
     super.dispose();
   }
@@ -123,6 +125,20 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
             controller: _model,
             decoration: const InputDecoration(labelText: 'Model'),
             onChanged: (v) => ai.setModel(v),
+          ),
+          const SizedBox(height: Space.sm),
+          TextField(
+            controller: _workingRules,
+            minLines: 2,
+            maxLines: 5,
+            maxLength: 4000,
+            decoration: const InputDecoration(
+              labelText: 'Your AI working rules',
+              helperText:
+                  'Included with each request you send. These guide the model; '
+                  'source permissions below still control what can be sent.',
+            ),
+            onChanged: (v) => ai.setWorkingRules(v),
           ),
           if (ai.provider == AiProvider.openAiCompatible)
             Row(

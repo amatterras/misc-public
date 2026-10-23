@@ -67,6 +67,14 @@ class AiSettings {
   int get maxContextChars => _get('maxContext', 4000).clamp(500, 50000);
   Future<void> setMaxContextChars(int n) => _set('maxContext', n);
 
+  /// User-authored guidance added to the system instructions for each turn.
+  /// This guides the model; it cannot grant access to sources disabled below.
+  String get workingRules => _get('workingRules', '');
+  Future<void> setWorkingRules(String rules) {
+    final value = String.fromCharCodes(rules.trim().runes.take(4000));
+    return _set('workingRules', value);
+  }
+
   /// Whether mindmap selections may be sent as pictures.
   bool get allowImages => _get('allowImages', true);
   Future<void> setAllowImages(bool on) => _set('allowImages', on);
