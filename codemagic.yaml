@@ -33,7 +33,13 @@ workflows:
       - name: Static analysis
         script: flutter analyze
       - name: Build iOS app without code signing
-        script: flutter build ios --release --no-codesign
+        script: |
+          # On failure, show Xcode's own errors (the summary above them is short).
+          flutter build ios --release --no-codesign || {
+            grep -h -B3 -A8 "error:" /tmp/xcodebuild_logs/*.log | head -200
+            grep -h -o -- "-target [a-z0-9_.-]*" /tmp/xcodebuild_logs/*.log | sort | uniq -c
+            exit 1
+          }
       - name: Pack unsigned IPA
         script: |
           set -e

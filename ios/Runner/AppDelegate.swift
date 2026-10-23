@@ -6,7 +6,6 @@ import Security
 import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
-import WidgetKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -357,7 +356,7 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     } catch {
       return false
     }
-    WidgetCenter.shared.reloadAllTimelines()
+    WidgetReload.all()
     return true
   }
 
