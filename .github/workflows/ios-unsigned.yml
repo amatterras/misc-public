@@ -1,0 +1,72 @@
+name: THEapp iOS unsigned IPA
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/ios-unsigned.yml'
+      - 'lib/**'
+      - 'ios/**'
+      - 'assets/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'analysis_options.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    name: Build unsigned iPad/iOS IPA
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show tool versions
+        run: |
+          flutter --version
+          xcodebuild -version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart code
+        run: flutter analyze
+
+      - name: Build iOS without code signing
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=THEAPP_BUILD="$(git rev-parse --short HEAD)"
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd build/ios/iphoneos
+          rm -rf Payload THEapp-unsigned.ipa
+          mkdir -p Payload
+          cp -R Runner.app Payload/
+          # Keep the primary IPA compatible with the existing unsigned
+          # sideloading workflow; widget support may require re-signing.
+          rm -rf Payload/Runner.app/PlugIns
+          zip -qry THEapp-unsigned.ipa Payload
+          test -s THEapp-unsigned.ipa
+          ls -lh THEapp-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: THEapp-unsigned-IPA
+          path: build/ios/iphoneos/THEapp-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
