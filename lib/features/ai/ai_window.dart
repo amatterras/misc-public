@@ -4,23 +4,18 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
-import '../../app/floating_windows.dart';
 import '../../app/theme.dart';
+import '../../data/models/ai_models.dart';
 import 'ai_service.dart';
 import 'ai_session.dart';
 
-FloatingWindowSpec aiWindowSpec(AppState state) => FloatingWindowSpec(
-  id: AppState.aiWindowId,
-  title: 'AI',
-  initialRect: const Rect.fromLTWH(120, 70, 440, 560),
-  minSize: const Size(320, 300),
-  builder: (_) => AiPanel(state: state),
-);
-
 class AiPanel extends StatefulWidget {
-  const AiPanel({super.key, required this.state});
+  const AiPanel({super.key, required this.state, this.session});
 
   final AppState state;
+
+  /// The conversation shown (default: the main AI session).
+  final AiSession? session;
 
   @override
   State<AiPanel> createState() => _AiPanelState();
@@ -31,7 +26,7 @@ class _AiPanelState extends State<AiPanel> {
   AiTool _tool = AiTool.ask;
 
   AppState get s => widget.state;
-  AiSession get session => s.aiSession;
+  AiSession get session => widget.session ?? s.aiSession;
 
   @override
   void dispose() {
@@ -184,18 +179,20 @@ class _AiPanelState extends State<AiPanel> {
                   ),
                 ),
               ),
-              FilledButton.icon(
-                key: const ValueKey('ai-send'),
-                onPressed: session.busy ? null : _send,
-                icon: session.busy
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.send, size: 16),
-                label: const Text('Send'),
-              ),
+              if (session.busy)
+                OutlinedButton.icon(
+                  key: const ValueKey('ai-stop'),
+                  onPressed: session.cancel,
+                  icon: const Icon(Icons.stop, size: 16),
+                  label: const Text('Stop'),
+                )
+              else
+                FilledButton.icon(
+                  key: const ValueKey('ai-send'),
+                  onPressed: _send,
+                  icon: const Icon(Icons.send, size: 16),
+                  label: const Text('Send'),
+                ),
             ],
           ),
           if (session.error != null)
@@ -261,6 +258,14 @@ class _AiPanelState extends State<AiPanel> {
               ),
             ),
           ],
+          if (session.busy) ...[
+            const Divider(),
+            SelectableText(
+              session.streaming.isEmpty ? '…' : session.streaming,
+              key: const ValueKey('ai-streaming'),
+              style: const TextStyle(fontSize: 13),
+            ),
+          ],
           for (final t in session.turns.reversed) ...[
             const Divider(),
             Text(
@@ -269,6 +274,20 @@ class _AiPanelState extends State<AiPanel> {
             ),
             const SizedBox(height: 4),
             SelectableText(t.answer, style: const TextStyle(fontSize: 13)),
+            if (t.status != AiMessageStatus.complete)
+              Text(switch (t.status) {
+                AiMessageStatus.stopped => 'Stopped by you.',
+                AiMessageStatus.interrupted =>
+                  'Interrupted (THEapp closed while it was written).',
+                AiMessageStatus.failed => t.error ?? 'Failed.',
+                _ => '',
+              }, style: const TextStyle(fontSize: 11, color: AppColors.warm)),
+            if (t.badCitations.isNotEmpty)
+              Text(
+                'Note: the answer refers to ${t.badCitations.map((n) => '[$n]').join(', ')}, '
+                'which is not part of the material sent.',
+                style: const TextStyle(fontSize: 11, color: AppColors.warm),
+              ),
             if (t.sources.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),

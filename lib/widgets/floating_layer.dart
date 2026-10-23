@@ -123,11 +123,30 @@ class _FloatingWindowState extends State<_FloatingWindow> {
                                 ),
                               ),
                             ),
+                            if (spec.onMinimize != null)
+                              GhostIconButton(
+                                key: ValueKey('floating-${spec.id}-minimize'),
+                                icon: Icons.minimize,
+                                tooltip: 'Minimize',
+                                size: 16,
+                                onTap: spec.onMinimize,
+                              ),
+                            if (spec.onDock != null)
+                              GhostIconButton(
+                                key: ValueKey('floating-${spec.id}-dock'),
+                                icon: Icons.fullscreen_exit,
+                                tooltip: 'Put back in the main area',
+                                size: 16,
+                                onTap: spec.onDock,
+                              ),
                             GhostIconButton(
+                              key: ValueKey('floating-${spec.id}-close'),
                               icon: Icons.close,
                               tooltip: 'Close',
                               size: 16,
-                              onTap: () => widget.windows.close(spec.id),
+                              onTap:
+                                  spec.onClose ??
+                                  () => widget.windows.close(spec.id),
                             ),
                           ],
                         ),

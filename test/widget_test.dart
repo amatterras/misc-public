@@ -356,6 +356,8 @@ void main() {
     final moved = ws.entries[e.id]!;
     expect(dayKey(moved.startDate!), dayKey(addDays(start, 8)));
     expect(ws.entries.length, 1);
+    // The drop's result (with Undo) stays a few seconds.
+    await tester.pump(const Duration(seconds: 9));
 
     // A task due in range shows on the grid; ticking it there completes the task.
     final t = ws.createTask('Hand in essay', dueDate: addDays(start, 2));

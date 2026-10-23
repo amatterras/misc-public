@@ -4,6 +4,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+
 import 'ios_bridge.dart';
 import 'windows_native.dart' as win;
 
@@ -31,6 +33,10 @@ FutureOr<List<String>> pickDocumentFiles() => Platform.isIOS
     ? win.pickDocumentFiles()
     : const <String>[];
 
+/// Lets the user choose .ics calendar files (Windows only for now).
+List<String> pickCalendarFiles() =>
+    Platform.isWindows ? win.pickCalendarFiles() : const <String>[];
+
 /// Opens a stored document in its default app (iOS: Quick Look preview).
 bool openDocument(String path) => Platform.isIOS
     ? IosBridge.instance.openDocument(path)
@@ -47,3 +53,20 @@ bool get supportsAlwaysOnTop => Platform.isWindows;
 /// platform cannot or the window was not found.
 bool setAlwaysOnTop(bool on) =>
     Platform.isWindows && win.setMainWindowTopmost(on);
+
+/// Full screen without system bars where the OS allows it: Windows hides
+/// the window frame; iPhone/iPad hide the status bar (the home indicator
+/// stays, as iOS requires). Never touches the window during tests.
+bool setImmersive(bool on) {
+  if (Platform.environment.containsKey('FLUTTER_TEST')) return false;
+  if (Platform.isWindows) return win.setMainWindowFullScreen(on);
+  if (Platform.isIOS) {
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(
+        on ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+      ),
+    );
+    return true;
+  }
+  return false;
+}

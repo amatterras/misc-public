@@ -13,6 +13,7 @@ import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import 'canvas_controller.dart';
 import 'canvas_menu.dart';
+import '../transfer/transfer.dart';
 import 'canvas_painter.dart';
 import 'canvas_text.dart';
 import 'canvas_toolbar.dart';
@@ -321,6 +322,40 @@ class _CanvasViewState extends State<CanvasView> {
     return KeyEventResult.handled;
   }
 
+  /// The selection's top-left dot: drag it to send the selected items to
+  /// another place (a note, another mindmap, Archive, a day, the tasks).
+  Widget? _transferGrip() {
+    final bounds = c.selectionBounds;
+    if (bounds == null ||
+        c.isDragging ||
+        (c.tool != CanvasTool.select && c.tool != CanvasTool.lasso)) {
+      return null;
+    }
+    final box = bounds.inflate(4 / c.scale);
+    final left = c.toScreen(box.topLeft), right = c.toScreen(box.topRight);
+    const size = 22.0;
+    // On a tiny object the two dots are close: keep the grip clear of the
+    // resize dot so both can be grabbed.
+    final dot = Offset(math.min(left.dx, right.dx - 26), left.dy);
+    return Positioned(
+      left: dot.dx - size / 2,
+      top: dot.dy - size / 2,
+      width: size,
+      height: size,
+      child: TransferSource(
+        key: const ValueKey('canvas-transfer-grip'),
+        transfer: () => CanvasItemsTransfer(c, [...c.selection]),
+        child: const MouseRegion(
+          cursor: SystemMouseCursors.grab,
+          child: Tooltip(
+            message: 'Drag to a note, another mindmap, Archive, a day or Tasks',
+            child: SizedBox.expand(),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ------------------------------------------------------------ pointer --
 
   void _onPointerDown(PointerDownEvent e) {
@@ -516,46 +551,57 @@ class _CanvasViewState extends State<CanvasView> {
             return Stack(
               children: [
                 Positioned.fill(
-                  child: Focus(
-                    focusNode: _focusNode,
-                    onKeyEvent: _onKey,
-                    child: MouseRegion(
-                      cursor: _cursor(),
-                      onExit: (_) => c.pointerHover(null),
-                      child: Listener(
-                        behavior: HitTestBehavior.opaque,
-                        onPointerDown: _onPointerDown,
-                        onPointerMove: _onPointerMove,
-                        onPointerUp: _onPointerUp,
-                        onPointerCancel: _onPointerCancel,
-                        onPointerHover: (e) => c.pointerHover(e.localPosition),
-                        onPointerSignal: _onPointerSignal,
-                        onPointerPanZoomStart: _onPanZoomStart,
-                        onPointerPanZoomUpdate: _onPanZoomUpdate,
-                        // Two layers: the canvas repaints when items change;
-                        // the stroke being drawn repaints on its own, so a
-                        // pen movement does not redraw everything.
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            RepaintBoundary(
-                              child: CustomPaint(
-                                painter: CanvasPainter(c),
-                                size: Size.infinite,
+                  child: TransferTarget(
+                    state: s,
+                    place: CanvasPlace(c.id),
+                    placeAt: (global) {
+                      final box = context.findRenderObject() as RenderBox?;
+                      final local = box?.globalToLocal(global) ?? Offset.zero;
+                      return CanvasPlace(c.id, at: c.toWorld(local));
+                    },
+                    child: Focus(
+                      focusNode: _focusNode,
+                      onKeyEvent: _onKey,
+                      child: MouseRegion(
+                        cursor: _cursor(),
+                        onExit: (_) => c.pointerHover(null),
+                        child: Listener(
+                          behavior: HitTestBehavior.opaque,
+                          onPointerDown: _onPointerDown,
+                          onPointerMove: _onPointerMove,
+                          onPointerUp: _onPointerUp,
+                          onPointerCancel: _onPointerCancel,
+                          onPointerHover: (e) =>
+                              c.pointerHover(e.localPosition),
+                          onPointerSignal: _onPointerSignal,
+                          onPointerPanZoomStart: _onPanZoomStart,
+                          onPointerPanZoomUpdate: _onPanZoomUpdate,
+                          // Two layers: the canvas repaints when items change;
+                          // the stroke being drawn repaints on its own, so a
+                          // pen movement does not redraw everything.
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              RepaintBoundary(
+                                child: CustomPaint(
+                                  painter: CanvasPainter(c),
+                                  size: Size.infinite,
+                                ),
                               ),
-                            ),
-                            RepaintBoundary(
-                              child: CustomPaint(
-                                painter: LiveInkPainter(c),
-                                size: Size.infinite,
+                              RepaintBoundary(
+                                child: CustomPaint(
+                                  painter: LiveInkPainter(c),
+                                  size: Size.infinite,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
+                ?_transferGrip(),
                 if (editing != null)
                   _TextEditorOverlay(
                     key: ValueKey(editing.id),

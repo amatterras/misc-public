@@ -27,6 +27,7 @@ class Asset implements Record {
     this.previewSize,
     this.linkTags = const [],
     this.projectIds = const [],
+    this.folderId,
   });
 
   @override
@@ -67,6 +68,9 @@ class Asset implements Record {
   /// Projects and study subjects this resource belongs to (Archive).
   final List<String> projectIds;
 
+  /// Archive folder (an `archive_folders` record), or null for the top.
+  final String? folderId;
+
   /// A link to a video page (YouTube, Vimeo …), shown with a video mark.
   bool get isVideo {
     final host = Uri.tryParse(url ?? '')?.host.toLowerCase() ?? '';
@@ -99,6 +103,7 @@ class Asset implements Record {
     int? previewSize,
     List<String>? linkTags,
     List<String>? projectIds,
+    String? Function()? folderId,
   }) => Asset(
     id: id,
     kind: kind,
@@ -118,6 +123,7 @@ class Asset implements Record {
     previewSize: previewSize ?? this.previewSize,
     linkTags: linkTags ?? this.linkTags,
     projectIds: projectIds ?? this.projectIds,
+    folderId: folderId != null ? folderId() : this.folderId,
   );
 
   @override
@@ -140,6 +146,7 @@ class Asset implements Record {
     'previewSize': ?previewSize,
     if (linkTags.isNotEmpty) 'linkTags': linkTags,
     if (projectIds.isNotEmpty) 'projectIds': projectIds,
+    if (folderId != null) 'folderId': folderId,
   };
 
   factory Asset.fromJson(Map<String, dynamic> j) => Asset(
@@ -167,6 +174,7 @@ class Asset implements Record {
       for (final p in (j['projectIds'] as List?) ?? const [])
         ?(p is String ? p : null),
     ],
+    folderId: j['folderId'] as String?,
   );
 }
 

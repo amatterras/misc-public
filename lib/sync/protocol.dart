@@ -36,6 +36,23 @@ const syncedCollections = {
   'canvas_items', // id = "<canvasId>/<itemId>"
   'conflicts', // preserved losing versions of concurrent edits
   'clipboard', // shared clipboard text (only while the user turns it on)
+  'archive_folders', // Archive folder tree
+  'shares', // read-only share links (id = SHA-256 of the token)
+  'thought_experiments',
+  'vault_meta', // private vault key record (wrapped key only)
+  'vault_items', // private vault items (ciphertext only)
+  'templates', // the user's own note and project templates
+};
+
+/// Kinds an older hub may not know yet; they are pushed last, on their own.
+const newerCollections = {
+  'clipboard',
+  'archive_folders',
+  'shares',
+  'thought_experiments',
+  'vault_meta',
+  'vault_items',
+  'templates',
 };
 
 /// `0001792610475963-0000-a1b2c3d4`: see SyncClock.

@@ -81,7 +81,11 @@ class CalendarGridView extends StatelessWidget {
     required this.onDay,
     required this.onItem,
     this.overlay,
+    this.dropOn,
   });
+
+  /// Wraps each day so things can be dropped on it.
+  final Widget Function(DateTime day, Widget cell)? dropOn;
 
   /// Drawn over each day (the Calendar drawings).
   final Widget Function(DateTime day)? overlay;
@@ -91,6 +95,8 @@ class CalendarGridView extends StatelessWidget {
   final ItemsOn itemsOn;
   final ValueChanged<DateTime> onDay;
   final void Function(DayItem item, DateTime day) onItem;
+
+  Widget _wrap(DateTime day, Widget cell) => dropOn?.call(day, cell) ?? cell;
 
   @override
   Widget build(BuildContext context) {
@@ -128,22 +134,25 @@ class CalendarGridView extends StatelessWidget {
                     children: [
                       for (var c = 0; c < 7; c++)
                         Expanded(
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              _CompactDayCell(
-                                day: days[r * 7 + c],
-                                items: itemsOn(days[r * 7 + c]),
-                                isToday:
-                                    daysBetween(today, days[r * 7 + c]) == 0,
-                                dimmed:
-                                    view == CalendarView.month &&
-                                    days[r * 7 + c].month != anchor.month,
-                                onTap: () => onDay(days[r * 7 + c]),
-                                onItem: (i) => onItem(i, days[r * 7 + c]),
-                              ),
-                              if (overlay != null) overlay!(days[r * 7 + c]),
-                            ],
+                          child: _wrap(
+                            days[r * 7 + c],
+                            Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                _CompactDayCell(
+                                  day: days[r * 7 + c],
+                                  items: itemsOn(days[r * 7 + c]),
+                                  isToday:
+                                      daysBetween(today, days[r * 7 + c]) == 0,
+                                  dimmed:
+                                      view == CalendarView.month &&
+                                      days[r * 7 + c].month != anchor.month,
+                                  onTap: () => onDay(days[r * 7 + c]),
+                                  onItem: (i) => onItem(i, days[r * 7 + c]),
+                                ),
+                                if (overlay != null) overlay!(days[r * 7 + c]),
+                              ],
+                            ),
                           ),
                         ),
                     ],

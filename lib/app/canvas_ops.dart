@@ -240,8 +240,8 @@ extension CanvasOps on AppState {
     }
     if (!workspace.notes.contains(noteId) || items.isEmpty) return 0;
     final id = notebookIdFor(noteId);
-    final target = openNotebook?.id == id
-        ? openNotebook!
+    final target = openNotebookFor(id) != null
+        ? openNotebookFor(id)!
         : await _temporary(
             id,
             'notebook',
@@ -321,7 +321,7 @@ extension CanvasOps on AppState {
   ) async {
     await target.flush();
     final keepOpen =
-        identical(target, openNotebook) ||
+        openNotebooks.contains(target) ||
         identical(target, canvas) ||
         identical(target, linksBoard);
     if (!keepOpen) target.dispose();

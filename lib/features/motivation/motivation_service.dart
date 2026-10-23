@@ -113,6 +113,7 @@ class MotivationService extends ChangeNotifier with WidgetsBindingObserver {
   void loadFromSources(String quoteSource, String greetingSource) {
     if (_loaded || _disposed) return;
     quotes = parseQuotes(quoteSource);
+    _deck.clear();
     slots = parseGreetingSlots(greetingSource);
     if (quotes.length != 1000 ||
         !quotes.asMap().entries.every(
@@ -204,15 +205,31 @@ class MotivationService extends ChangeNotifier with WidgetsBindingObserver {
     );
     if (hourKey == _quoteHourKey) return;
     _quoteHourKey = hourKey;
-    final dayNumber = DateTime.utc(
-      now.year,
-      now.month,
-      now.day,
-    ).difference(DateTime.utc(1970)).inDays;
-    final localHourNumber =
-        dayNumber * 24 + now.hour + time.utcOffset.inMinutes;
-    final index = localHourNumber % quotes.length;
-    quote = quotes[index];
+    quote = quotes[_nextQuoteIndex()];
+  }
+
+  // A shuffled deck of quote positions: every quote comes once before any
+  // repeats, the order is random, and a new deck never starts with the
+  // quote just shown. Each quote keeps its own attribution (whole records).
+  final List<int> _deck = [];
+  int? _lastQuote;
+
+  int _nextQuoteIndex() {
+    if (_deck.isEmpty) {
+      _deck.addAll(List.generate(quotes.length, (i) => i));
+      for (var i = _deck.length - 1; i > 0; i--) {
+        final j = _nextIndex(i + 1);
+        final t = _deck[i];
+        _deck[i] = _deck[j];
+        _deck[j] = t;
+      }
+      if (_deck.length > 1 && _deck.last == _lastQuote) {
+        final t = _deck.last;
+        _deck[_deck.length - 1] = _deck.first;
+        _deck[0] = t;
+      }
+    }
+    return _lastQuote = _deck.removeLast();
   }
 
   void _scheduleQuoteTimer(LocalTimeSnapshot time) {

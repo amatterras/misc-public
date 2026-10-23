@@ -2,14 +2,26 @@
 // app command or open any place by typing. Different from the right-click
 // menus, which only offer actions for what was clicked.
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
+import '../../app/page_windows.dart';
+import '../../app/top_bar.dart';
+import '../../data/models/canvas_models.dart' show newId;
 import '../../app/theme.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
+import '../../platform/platform.dart' as native;
+import '../calendar/ics.dart';
+import '../export/exports.dart';
+import '../links/archive_library_page.dart';
+import '../sharing/share_dialog.dart';
+import '../review/review_center.dart';
+import '../templates/templates.dart';
+import '../think/experiment_page.dart';
 
 class PaletteCommand {
   const PaletteCommand(this.label, this.icon, this.run, {this.hint = ''});
@@ -85,6 +97,117 @@ List<PaletteCommand> paletteCommands(
       s.openTask(t.id);
     }),
     PaletteCommand('App switcher (floating)', Icons.apps, appSwitcher),
+    PaletteCommand(
+      'Add this page to the bar',
+      Icons.add_box_outlined,
+      (_) => addCurrentPage(s),
+    ),
+    PaletteCommand('Float this page in a window', Icons.open_in_new, (_) {
+      final p = addCurrentPage(s);
+      s.windows.float(p.id);
+    }),
+    PaletteCommand('New Safari window', Icons.explore_outlined, (_) {
+      s.windows.open(
+        AppPage.browser,
+        refId: newId(),
+        title: 'Safari',
+        mode: PageMode.floating,
+      );
+    }),
+    PaletteCommand('New AI chat window', Icons.auto_awesome_outlined, (_) {
+      s.windows.open(
+        AppPage.ai,
+        refId: 'new-${newId()}',
+        title: 'New chat',
+        mode: PageMode.floating,
+      );
+    }),
+    PaletteCommand(
+      'Go to safari',
+      Icons.explore_outlined,
+      (_) => s.goTo(AppPage.browser),
+    ),
+    PaletteCommand(
+      'Go to ai',
+      Icons.auto_awesome_outlined,
+      (_) => s.goTo(AppPage.ai),
+    ),
+    PaletteCommand(
+      'Archive library (folders, uses, link check)',
+      Icons.folder_copy_outlined,
+      (c) => showArchiveLibrary(c, s),
+    ),
+    PaletteCommand(
+      'Export the calendar (.ics file)',
+      Icons.event_available_outlined,
+      (_) async {
+        final dir = exportsFolder(s);
+        await dir.create(recursive: true);
+        final f = freshFile(dir, 'THEapp calendar', 'ics');
+        await f.writeAsString(calendarIcs(s.workspace));
+        s.showToast('Saved ${f.path}');
+        await revealExport(s, f);
+      },
+    ),
+    PaletteCommand('Import a calendar file (.ics)', Icons.event_note_outlined, (
+      _,
+    ) async {
+      if (!Platform.isWindows) {
+        s.showToast('Importing calendar files works on Windows for now.');
+        return;
+      }
+      var added = 0;
+      for (final path in native.pickCalendarFiles()) {
+        final file = File(path);
+        if (await file.length() > 20 * 1024 * 1024) {
+          s.showToast('That calendar file is too large (over 20 MB).');
+          continue;
+        }
+        added += importIcs(s.workspace, await file.readAsString());
+      }
+      s.showToast('$added events added to the days’ notes.');
+    }),
+    PaletteCommand(
+      'Review: today and this week',
+      Icons.fact_check_outlined,
+      (c) => showReviewCenter(c, s),
+    ),
+    PaletteCommand(
+      'New note from a template',
+      Icons.note_add_outlined,
+      (c) => newNoteFromTemplate(c, s),
+    ),
+    PaletteCommand(
+      'New project from a template',
+      Icons.create_new_folder_outlined,
+      (c) => newProjectFromTemplate(c, s),
+    ),
+    PaletteCommand(
+      'How things connect (graph)',
+      Icons.bubble_chart_outlined,
+      (_) => s.openGraph(),
+    ),
+    PaletteCommand('Private vault', Icons.lock_outline, (_) => s.openVault()),
+    PaletteCommand(
+      'Thought experiments',
+      Icons.psychology_outlined,
+      (c) => showExperiments(c, s),
+    ),
+    PaletteCommand(
+      'New thought experiment',
+      Icons.psychology_alt_outlined,
+      (c) => newExperiment(c, s),
+    ),
+    PaletteCommand(
+      'Shared links (revoke)',
+      Icons.ios_share,
+      (c) => showSharedLinks(c, s),
+    ),
+    PaletteCommand(
+      'Full screen on or off',
+      Icons.fullscreen,
+      (_) => s.toggleImmersive(),
+    ),
     PaletteCommand('Open AI window', Icons.auto_awesome_outlined, (_) {
       if (!s.ai.enabled) {
         s.showToast('AI is off. Turn it on in Settings → AI.');

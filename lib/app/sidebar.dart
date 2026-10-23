@@ -1,29 +1,42 @@
 import 'package:flutter/material.dart';
 
 import '../data/models/canvas_models.dart';
+import '../data/models/record.dart' show dateOnly;
 import '../features/search/search_dialog.dart';
 import '../features/settings/settings_dialog.dart';
 import '../platform/input_hints.dart';
 import '../widgets/common.dart';
+import '../features/motivation/motivation_service.dart';
 import 'app_state.dart';
+import 'page_windows.dart';
 import 'shell.dart' show openAppSwitcher, openCommandPalette, openQuickAdd;
 import 'theme.dart';
+import '../features/transfer/transfer.dart';
 
 /// Compact, collapsible navigation on the right side of the window.
 /// The four top-level destinations, in this order and spelling. Tasks are
 /// in Calendar's task column; the start page (Home, with the Inbox) opens
 /// from the THEapp button at the top, not as a fifth destination.
+/// The six primary destinations, in this order. Every navigation surface
+/// (sidebar, phone tabs, command palette, top bar) uses this one list.
+/// Home is the start page behind the THEapp identity control; Tasks live in
+/// Calendar.
 const appDestinations = [
   (AppPage.canvas, Icons.hub_outlined, 'mindmap'),
   (AppPage.notes, Icons.description_outlined, 'notes'),
   (AppPage.calendar, Icons.calendar_today_outlined, 'calendar'),
   (AppPage.links, Icons.bookmarks_outlined, 'archive'),
+  (AppPage.browser, Icons.explore_outlined, 'safari'),
+  (AppPage.ai, Icons.auto_awesome_outlined, 'ai'),
 ];
 
 class Sidebar extends StatelessWidget {
-  const Sidebar({super.key, required this.state});
+  const Sidebar({super.key, required this.state, this.motivation});
 
   final AppState state;
+
+  /// The hourly motivational quote is shown at the bottom of the sidebar.
+  final MotivationService? motivation;
 
   static const expandedWidth = 272.0;
   static const collapsedWidth = 60.0;
@@ -60,6 +73,26 @@ class Sidebar extends StatelessWidget {
   }
 
   int get _inboxCount => state.workspace.inbox.length;
+
+  /// Dropping on a top-level entry: notes → a new note, archive → the
+  /// Archive board, calendar → today, mindmap → the open mindmap.
+  Widget _navDropTarget(AppPage page, Widget child) {
+    final open = state.canvas;
+    final DropPlace? place = switch (page) {
+      AppPage.notes => const NewNotePlace(),
+      AppPage.links => const CanvasPlace(linksBoardId),
+      AppPage.calendar => DayPlace(dateOnly(DateTime.now())),
+      AppPage.canvas when open != null => CanvasPlace(open.id),
+      _ => null,
+    };
+    if (place == null) return child;
+    return TransferTarget(
+      key: ValueKey('drop-nav-${page.name}'),
+      state: state,
+      place: place,
+      child: child,
+    );
+  }
 
   Widget _buildCollapsed(BuildContext context) {
     return Column(
@@ -109,6 +142,8 @@ class Sidebar extends StatelessWidget {
             ),
           ),
         const Spacer(),
+        if (motivation != null)
+          SidebarQuote(service: motivation!, compact: true),
         if (state.timer.running)
           Padding(
             padding: const EdgeInsets.only(bottom: Space.sm),
@@ -230,20 +265,23 @@ class Sidebar extends StatelessWidget {
             child: ListView(
               children: [
                 for (final (page, icon, label) in _pages) ...[
-                  _NavItem(
-                    icon: icon,
-                    label: label,
-                    active: state.page == page,
-                    onTap: () => state.goTo(page),
-                    trailing: page == AppPage.calendar && state.timer.running
-                        ? Text(
-                            state.timer.label,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textMuted,
-                            ),
-                          )
-                        : null,
+                  _navDropTarget(
+                    page,
+                    _NavItem(
+                      icon: icon,
+                      label: label,
+                      active: state.page == page,
+                      onTap: () => state.goTo(page),
+                      trailing: page == AppPage.calendar && state.timer.running
+                          ? Text(
+                              state.timer.label,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textMuted,
+                              ),
+                            )
+                          : null,
+                    ),
                   ),
                   if (page == AppPage.canvas) _CanvasList(state: state),
                   if (page == AppPage.notes) _RecentNotes(state: state),
@@ -295,6 +333,7 @@ class Sidebar extends StatelessWidget {
               ],
             ),
           ),
+          if (motivation != null) SidebarQuote(service: motivation!),
         ],
       ),
     );
@@ -438,6 +477,11 @@ class _CanvasList extends StatelessWidget {
       context: context,
       position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
       items: const [
+        PopupMenuItem(
+          value: 'window',
+          height: 36,
+          child: Text('Open in a window'),
+        ),
         PopupMenuItem(value: 'rename', height: 36, child: Text('Rename')),
         PopupMenuItem(
           value: 'delete',
@@ -447,6 +491,15 @@ class _CanvasList extends StatelessWidget {
       ],
     );
     if (!context.mounted) return;
+    if (choice == 'window') {
+      state.windows.open(
+        AppPage.canvas,
+        refId: canvas.id,
+        title: canvas.title,
+        mode: PageMode.floating,
+      );
+      return;
+    }
     if (choice == 'rename') {
       final title = await promptText(
         context,
@@ -480,46 +533,53 @@ class _CanvasList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final canvas in state.canvasList)
-            GestureDetector(
-              onSecondaryTapUp: (d) => _menu(context, canvas, d.globalPosition),
-              // Touch (iPad/iPhone): press and hold opens the same menu.
-              onLongPressStart: (d) => _menu(context, canvas, d.globalPosition),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(6),
-                hoverColor: AppColors.hover,
-                onTap: () => state.openCanvas(canvas.id),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 7,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.crop_square,
-                        size: 14,
-                        color:
-                            canvas.id == currentId &&
-                                state.page == AppPage.canvas
-                            ? AppColors.text
-                            : AppColors.textFaint,
-                      ),
-                      const SizedBox(width: Space.sm),
-                      Expanded(
-                        child: Text(
-                          canvas.title,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color:
-                                canvas.id == currentId &&
-                                    state.page == AppPage.canvas
-                                ? AppColors.text
-                                : AppColors.textMuted,
+            TransferTarget(
+              key: ValueKey('drop-canvas-${canvas.id}'),
+              state: state,
+              place: CanvasPlace(canvas.id),
+              child: GestureDetector(
+                onSecondaryTapUp: (d) =>
+                    _menu(context, canvas, d.globalPosition),
+                // Touch (iPad/iPhone): press and hold opens the same menu.
+                onLongPressStart: (d) =>
+                    _menu(context, canvas, d.globalPosition),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  hoverColor: AppColors.hover,
+                  onTap: () => state.openCanvas(canvas.id),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 7,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.crop_square,
+                          size: 14,
+                          color:
+                              canvas.id == currentId &&
+                                  state.page == AppPage.canvas
+                              ? AppColors.text
+                              : AppColors.textFaint,
+                        ),
+                        const SizedBox(width: Space.sm),
+                        Expanded(
+                          child: Text(
+                            canvas.title,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color:
+                                  canvas.id == currentId &&
+                                      state.page == AppPage.canvas
+                                  ? AppColors.text
+                                  : AppColors.textMuted,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -629,19 +689,30 @@ class _RecentNotes extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final note in recent.take(count))
-            InkWell(
-              key: ValueKey('recent-note-${note.id}'),
-              borderRadius: BorderRadius.circular(6),
-              onTap: () => state.openNote(note.id),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Text(
-                  note.displayTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textMuted,
+            TransferTarget(
+              state: state,
+              place: NotePlace(note.id),
+              child: TransferSource(
+                transfer: () => NoteTransfer(note.id, note.displayTitle),
+                touch: true,
+                child: InkWell(
+                  key: ValueKey('recent-note-${note.id}'),
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => state.openNote(note.id),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    child: Text(
+                      note.displayTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -650,4 +721,59 @@ class _RecentNotes extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The hourly motivational quote at the bottom of the sidebar (collapsed:
+/// a small mark that shows the quote on hover or press).
+class SidebarQuote extends StatelessWidget {
+  const SidebarQuote({super.key, required this.service, this.compact = false});
+
+  final MotivationService service;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: service,
+    builder: (context, _) {
+      final quote = service.quote;
+      if (quote == null) return const SizedBox.shrink();
+      final text = quote.attribution.isEmpty
+          ? '“${quote.text}”'
+          : '“${quote.text}”  ${quote.attribution}';
+      if (compact) {
+        return Tooltip(
+          key: const ValueKey('sidebar-quote-compact'),
+          message: text,
+          triggerMode: TooltipTriggerMode.tap,
+          child: const Padding(
+            padding: EdgeInsets.all(10),
+            child: Icon(
+              Icons.format_quote,
+              size: 18,
+              color: AppColors.textFaint,
+              semanticLabel: 'Quote of the hour',
+            ),
+          ),
+        );
+      }
+      return Container(
+        key: const ValueKey('motivational-quote'),
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.border)),
+        ),
+        child: Text(
+          text,
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 12,
+            height: 1.4,
+          ),
+        ),
+      );
+    },
+  );
 }

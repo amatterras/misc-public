@@ -295,6 +295,12 @@ List<String> pickImageFiles() => _pickFiles(
 List<String> pickDocumentFiles() =>
     _pickFiles('PDF documents\u0000*.pdf\u0000\u0000', 'Add PDFs to THEapp');
 
+/// The same dialog for calendar files.
+List<String> pickCalendarFiles() => _pickFiles(
+  'Calendar files\u0000*.ics\u0000\u0000',
+  'Import a calendar file',
+);
+
 List<String> _pickFiles(String filterSpec, String dialogTitle) {
   final w = _win;
   if (w == null) return const [];
@@ -508,5 +514,116 @@ String? pickFolder(String title) {
       ..free(path)
       ..free(caption)
       ..free(cls);
+  }
+}
+
+final class _Rect extends Struct {
+  @Int32()
+  external int left;
+  @Int32()
+  external int top;
+  @Int32()
+  external int right;
+  @Int32()
+  external int bottom;
+}
+
+final class _MonitorInfo extends Struct {
+  @Uint32()
+  external int cbSize;
+  external _Rect rcMonitor;
+  external _Rect rcWork;
+  @Uint32()
+  external int dwFlags;
+}
+
+int? _savedStyle;
+(int, int, int, int)? _savedRect;
+
+/// Borderless full screen on the window's monitor, or back to the window
+/// it was before. False if the window was not found.
+bool setMainWindowFullScreen(bool on) {
+  final w = _win;
+  if (w == null) return false;
+  final user32 = DynamicLibrary.open('user32.dll');
+  final getLong = user32
+      .lookupFunction<IntPtr Function(IntPtr, Int32), int Function(int, int)>(
+        'GetWindowLongPtrW',
+      );
+  final setLong = user32
+      .lookupFunction<
+        IntPtr Function(IntPtr, Int32, IntPtr),
+        int Function(int, int, int)
+      >('SetWindowLongPtrW');
+  final getRect = user32
+      .lookupFunction<
+        Int32 Function(IntPtr, Pointer<_Rect>),
+        int Function(int, Pointer<_Rect>)
+      >('GetWindowRect');
+  final monitorFrom = user32
+      .lookupFunction<IntPtr Function(IntPtr, Uint32), int Function(int, int)>(
+        'MonitorFromWindow',
+      );
+  final monitorInfo = user32
+      .lookupFunction<
+        Int32 Function(IntPtr, Pointer<_MonitorInfo>),
+        int Function(int, Pointer<_MonitorInfo>)
+      >('GetMonitorInfoW');
+  final cls = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
+  final title = 'THEapp'.toNativeUtf16();
+  final rect = calloc<_Rect>();
+  final info = calloc<_MonitorInfo>();
+  try {
+    final hwnd = w.findWindow(cls, title);
+    if (hwnd == 0) return false;
+    const gwlStyle = -16;
+    const overlapped = 0x00CF0000; // WS_OVERLAPPEDWINDOW
+    const flags = 0x0020 | 0x0004 | 0x0010; // FRAMECHANGED|NOZORDER|NOACTIVATE
+    if (on) {
+      if (_savedStyle != null) return true;
+      _savedStyle = getLong(hwnd, gwlStyle);
+      getRect(hwnd, rect);
+      _savedRect = (
+        rect.ref.left,
+        rect.ref.top,
+        rect.ref.right,
+        rect.ref.bottom,
+      );
+      info.ref.cbSize = sizeOf<_MonitorInfo>();
+      monitorInfo(monitorFrom(hwnd, 2), info); // MONITOR_DEFAULTTONEAREST
+      final m = info.ref.rcMonitor;
+      setLong(hwnd, gwlStyle, _savedStyle! & ~overlapped);
+      return w.setWindowPos(
+            hwnd,
+            0,
+            m.left,
+            m.top,
+            m.right - m.left,
+            m.bottom - m.top,
+            flags,
+          ) !=
+          0;
+    }
+    final style = _savedStyle, r = _savedRect;
+    if (style == null || r == null) return true;
+    _savedStyle = null;
+    _savedRect = null;
+    setLong(hwnd, gwlStyle, style);
+    return w.setWindowPos(
+          hwnd,
+          0,
+          r.$1,
+          r.$2,
+          r.$3 - r.$1,
+          r.$4 - r.$2,
+          flags,
+        ) !=
+        0;
+  } finally {
+    calloc
+      ..free(cls)
+      ..free(title)
+      ..free(rect)
+      ..free(info);
   }
 }

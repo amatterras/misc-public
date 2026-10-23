@@ -16,7 +16,16 @@ class FloatingWindowSpec {
     required this.builder,
     this.initialRect = const Rect.fromLTWH(80, 80, 380, 420),
     this.minSize = const Size(220, 140),
+    this.onMinimize,
+    this.onDock,
+    this.onClose,
   });
+
+  /// Window buttons for pages (minimize, put back in the main area,
+  /// close). Without [onClose] the close button just hides the window.
+  final VoidCallback? onMinimize;
+  final VoidCallback? onDock;
+  final VoidCallback? onClose;
 
   final String id;
   final String title;

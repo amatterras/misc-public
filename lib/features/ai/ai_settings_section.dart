@@ -48,6 +48,67 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
     if (mounted) setState(() {});
   }
 
+  /// The AI activity log: when, where to, what kinds and how much.
+  Future<void> _showActivity(BuildContext context) {
+    final ai = widget.state.ai;
+    final list = ai.activity.reversed.toList();
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'What was sent to AI',
+          style: TextStyle(fontSize: 16),
+        ),
+        content: SizedBox(
+          width: 460,
+          height: 340,
+          child: list.isEmpty
+              ? const Center(child: Text('Nothing has been sent.'))
+              : ListView(
+                  children: [
+                    const Text(
+                      'Only a record of each request is kept here (on this '
+                      'device), not what was in it.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textFaint,
+                      ),
+                    ),
+                    for (final e in list)
+                      ListTile(
+                        dense: true,
+                        title: Text(
+                          '${'${e['at']}'.replaceFirst('T', ' ').split('.').first} UTC · ${e['tool']}',
+                        ),
+                        subtitle: Text(
+                          '${e['local'] == true ? 'This PC' : e['host']} '
+                          '(${e['model']}) · ${e['chars']} characters'
+                          '${(e['images'] ?? 0) == 0 ? '' : ' · ${e['images']} picture(s)'}'
+                          '${(e['sources'] as List?)?.isNotEmpty ?? false ? ' · ${(e['sources'] as List).join(', ')}' : ''}',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await ai.clearActivity();
+              if (context.mounted) Navigator.pop(context);
+              if (mounted) setState(() {});
+            },
+            child: const Text('Clear'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _testConnection() async {
     setState(() => _test = 'Testing…');
     try {
@@ -174,6 +235,15 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
                   ),
               ],
             ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const ValueKey('ai-activity'),
+              onPressed: () => _showActivity(context),
+              icon: const Icon(Icons.receipt_long_outlined, size: 16),
+              label: Text('What was sent (${ai.activity.length})'),
+            ),
+          ),
           const SizedBox(height: Space.sm),
           Text(
             'Most text sent at once: ${ai.maxContextChars} characters',

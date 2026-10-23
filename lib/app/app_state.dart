@@ -18,6 +18,8 @@ import '../data/storage/json_file_store.dart' show iosDocuments, iosFolder;
 import '../data/workspace.dart';
 import '../features/canvas/canvas_controller.dart';
 import '../features/ai/ai_service.dart';
+import '../features/browser/browser_engine.dart';
+import '../features/browser/browser_workspace.dart';
 import '../features/ai/ai_session.dart';
 import '../features/ai/similarity.dart';
 import '../features/canvas/canvas_resources.dart';
@@ -35,11 +37,18 @@ import '../sync/record_merge.dart';
 import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
+import '../features/graph/relationship_graph.dart';
+import '../features/links/archive_library.dart';
+import '../features/search/text_index.dart';
+import '../features/think/experiment_page.dart';
+import '../features/vault/vault_page.dart';
+import '../features/vault/vault_service.dart';
 import 'canvas_ops.dart';
 import 'floating_windows.dart';
+import 'page_windows.dart';
 import 'test_environment.dart';
 
-enum AppPage { home, canvas, notes, links, calendar, tasks }
+enum AppPage { home, canvas, notes, links, calendar, tasks, browser, ai }
 
 /// A simple focus (Pomodoro-style) timer that keeps running while you
 /// switch pages.
@@ -147,7 +156,13 @@ class AppState extends ChangeNotifier {
 
   /// The handwriting of the note open in the note editor, if any (set by
   /// the editor), so sync merges remote changes into it.
-  CanvasController? openNotebook;
+  ///
+  /// Several notes can be open at once (in windows): all are kept here.
+  final Set<CanvasController> openNotebooks = {};
+
+  /// The note handwriting with document id [id], if it is open.
+  CanvasController? openNotebookFor(String id) =>
+      openNotebooks.where((c) => c.id == id).firstOrNull;
 
   /// Note to show when the Notes page opens (set by "open note" links).
   String? selectedNoteId;
@@ -182,6 +197,8 @@ class AppState extends ChangeNotifier {
     AppPage.notes,
     AppPage.links,
     AppPage.calendar,
+    AppPage.browser,
+    AppPage.ai,
   };
 
   /// Short message shown at the bottom of the window.
@@ -210,6 +227,7 @@ class AppState extends ChangeNotifier {
     }
     capture.fetchPreviews = settings.get<bool>('linkPreviews') ?? true;
     if (alwaysOnTop && alwaysOnTopSupported) applyAlwaysOnTop(true);
+    if (immersive) applyImmersive(true);
     DatePrefs.order =
         DateOrder.values.asNameMap()[settings.get<String>('dateOrder')] ??
         DateOrder.monthDay;
@@ -313,6 +331,13 @@ class AppState extends ChangeNotifier {
     }
     step('Starting sync');
     await _startSyncIfPaired();
+    // Replies that were being written when the app closed are marked
+    // interrupted (never shown as finished).
+    for (final c in workspace.aiConversations.all.toList()) {
+      final fixed = c.recovered();
+      if (fixed != null) workspace.aiConversations.put(fixed);
+    }
+    windows.restore();
     step('Starting reminders');
     _startReminders();
     _applyClipboardSetting();
@@ -576,6 +601,8 @@ class AppState extends ChangeNotifier {
   /// in the background, where timers do not run). Imports shared items and
   /// syncs if the last sync is more than [resumeSyncAfter] old.
   Future<void> appResumed() async {
+    // iOS shows its bars again after the app was in the background.
+    if (immersive) applyImmersive(true);
     await importSharedItems();
     final last = lastSynced;
     if (_sync == null || syncNeedsPairing || syncing) return;
@@ -946,6 +973,30 @@ class AppState extends ChangeNotifier {
     return count;
   }
 
+  /// The last drag-and-drop's result while it can still be taken back
+  /// (shown with an Undo button for a few seconds).
+  final ValueNotifier<({String message, FutureOr<void> Function()? undo})?>
+  lastTransfer = ValueNotifier(null);
+  Timer? _transferTimer;
+
+  void showTransferResult(
+    ({String message, FutureOr<void> Function()? undo}) r,
+  ) {
+    _transferTimer?.cancel();
+    lastTransfer.value = r;
+    _transferTimer = Timer(const Duration(seconds: 8), () {
+      lastTransfer.value = null;
+    });
+  }
+
+  /// Takes the last drop back.
+  Future<void> undoLastTransfer() async {
+    final undo = lastTransfer.value?.undo;
+    lastTransfer.value = null;
+    _transferTimer?.cancel();
+    if (undo != null) await undo();
+  }
+
   void showToast(String message) {
     toast.value = message;
     Timer(const Duration(seconds: 3), () {
@@ -958,6 +1009,18 @@ class AppState extends ChangeNotifier {
       // Tasks are shown in Calendar's task column.
       page = AppPage.calendar;
       if (!_calendarTasksOpen) setCalendarTasksOpen(true);
+    }
+    // A destination already floating in a window is brought forward
+    // instead of opening it twice.
+    final own = windows.find(page, null);
+    if (own != null && own.mode == PageMode.floating) {
+      windows.focus(own.id);
+      return;
+    }
+    if (own != null) {
+      windows.dock(own.id); // that page instance is the destination now
+    } else {
+      windows.showDestination();
     }
     if (page == _page) {
       notifyListeners(); // e.g. a task was selected
@@ -999,6 +1062,9 @@ class AppState extends ChangeNotifier {
 
   // ------------------------------------------------------------------ ai --
 
+  /// Safari: tabs, history, bookmarks, downloads (see browser_workspace).
+  late final BrowserWorkspace browser = BrowserWorkspace(workspace, settings);
+
   /// AI settings of this device (off by default).
   late final AiSettings ai = AiSettings(settings);
 
@@ -1030,6 +1096,7 @@ class AppState extends ChangeNotifier {
   late final AiSession aiSession = AiSession(
     settings: ai,
     client: () => aiClient(),
+    store: workspace.aiConversations,
   );
 
   /// Embeddings from the local model; replaceable in tests.
@@ -1055,9 +1122,6 @@ class AppState extends ChangeNotifier {
 
   static const aiWindowId = 'ai';
 
-  /// Builds the AI window (set by the shell, which knows its widgets).
-  FloatingWindowSpec Function()? aiWindow;
-
   /// Gives [context] to the AI and opens the AI window. Nothing is sent
   /// yet: the user reviews it and presses Send. Returns false (with a
   /// message) when AI is off or this kind of content is not allowed.
@@ -1077,9 +1141,135 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  /// Opens (or brings forward) the floating AI window: the AI page in a
+  /// window, sharing [aiSession] (so attached material shows there).
   void openAiWindow() {
-    final spec = aiWindow?.call();
-    if (spec != null) floating.show(spec);
+    final open = windows.find(AppPage.ai, null);
+    if (open != null && open.mode == PageMode.docked && _page == AppPage.ai) {
+      return; // already in front in the main area
+    }
+    if (open != null && open.mode != PageMode.floating) {
+      windows.float(open.id);
+    } else {
+      windows.open(AppPage.ai, title: 'AI', mode: PageMode.floating);
+    }
+  }
+
+  // ----------------------------------------------------- page windows --
+
+  /// Pages added to the top bar, docked, floating or minimized.
+  late final PageWindows windows = PageWindows(settings, floating)
+    ..onClosed = forgetPage
+    ..onShow = (p) {
+      // The page shown in the main area is the current destination.
+      final kind = p.kind == AppPage.tasks ? AppPage.calendar : p.kind;
+      if (_page != kind) {
+        _page = kind;
+        if (_restorablePages.contains(kind)) {
+          unawaited(settings.set('lastPage', kind.name));
+        }
+      }
+    };
+
+  final Map<String, AiSession> _aiSessions = {};
+  final Map<String, BrowserWorkspace> _browsers = {};
+
+  /// The AI conversation of one AI window ([aiSession] for the main one).
+  AiSession aiSessionFor(PageInstance? p) {
+    if (p == null || p.refId == null) return aiSession;
+    return _aiSessions.putIfAbsent(p.id, () {
+      final session = AiSession(
+        settings: ai,
+        client: () => aiClient(),
+        store: workspace.aiConversations,
+      );
+      if (p.refId != 'new') session.openConversation(p.refId!);
+      return session;
+    });
+  }
+
+  /// The tabs of one Safari window ([browser] for the main one).
+  BrowserWorkspace browserFor(PageInstance? p) {
+    if (p == null || p.refId == null) return browser;
+    return _browsers.putIfAbsent(
+      p.id,
+      () => BrowserWorkspace(
+        workspace,
+        settings,
+        sessionKey: 'browser.session.${p.id}',
+      ),
+    );
+  }
+
+  /// Lets go of what a closed page window used.
+  void forgetPage(String id) {
+    _aiSessions.remove(id)?.dispose();
+    _browsers.remove(id)?.dispose();
+  }
+
+  /// Reopens AI conversation [id] on the AI page.
+  void openAiConversation(String id) {
+    aiSession.openConversation(id);
+    goTo(AppPage.ai);
+  }
+
+  /// Opens [url] in a new Safari tab (in the default browser where THEapp
+  /// has no browser engine yet, i.e. Windows).
+  void openInSafari(String url) {
+    if (!BrowserEngine.available) {
+      native.openUrl(url);
+      return;
+    }
+    browser.newTab(url: url);
+    goTo(AppPage.browser);
+  }
+
+  /// Opens thought experiment [id] in a floating window.
+  void openExperiment(String id) => floating.show(experimentWindow(this, id));
+
+  /// The private vault (locked until the user opens it).
+  late final VaultService vault = VaultService(
+    meta: workspace.vaultMeta,
+    items: workspace.vaultItems,
+  );
+
+  /// Opens the relationship graph in a floating window.
+  void openGraph() => floating.show(graphWindow(this));
+
+  /// Opens the private vault in a floating window.
+  void openVault() => floating.show(vaultWindow(this));
+
+  /// Text of PDF documents for search (read on this device, cached).
+  late final PdfTextCache pdfTexts = PdfTextCache(workspace);
+
+  // -------------------------------------------------------- archive --
+
+  /// The last Archive repair, to undo it.
+  ArchiveUndo? lastArchiveRepair;
+
+  /// Checks every reference to Archive resources (all canvases are read).
+  Future<(LinkReport, Map<String, Set<ResourceRef>>)> checkArchive() async {
+    await flush();
+    final refs = await referenceMap(workspace, canvases);
+    return (checkLinks(workspace, refs), refs);
+  }
+
+  /// Runs an Archive repair after a backup; it can be undone.
+  Future<void> repairArchive(ArchiveUndo Function() repair) async {
+    await flush();
+    await workspace.backups.snapshot('before-archive-repair');
+    final undo = repair();
+    lastArchiveRepair = undo.isEmpty ? null : undo;
+    notifyListeners();
+  }
+
+  void undoArchiveRepair() {
+    final undo = lastArchiveRepair;
+    if (undo == null) return;
+    undo.apply(workspace);
+    lastArchiveRepair = null;
+    showToast('${undo.label}: undone.');
+    notifyListeners();
   }
 
   // ----------------------------------------------------------- clipboard --
@@ -1233,6 +1423,20 @@ class AppState extends ChangeNotifier {
 
   Future<void> setHomeSections(List<String> sections) async {
     await settings.set('homeSections', sections);
+    notifyListeners();
+  }
+
+  // ----------------------------------------------------- full screen --
+
+  bool get immersive => settings.get<bool>('immersive') ?? false;
+
+  /// Applies full screen to the window/system bars; replaceable in tests.
+  bool Function(bool on) applyImmersive = native.setImmersive;
+
+  Future<void> toggleImmersive() async {
+    final on = !immersive;
+    await settings.set('immersive', on);
+    applyImmersive(on);
     notifyListeners();
   }
 
@@ -1392,16 +1596,21 @@ class AppState extends ChangeNotifier {
   Future<void> openCanvas(String id, {bool show = true}) async {
     if (_canvas?.id != id) {
       await _sync?.whenIdle();
-      final doc = await canvases.load(id);
-      if (doc == null) return;
+      // Already open in a window: share that controller (never two
+      // controllers on one document).
+      final shared = _canvasRefs[id]?.$1;
+      final doc = shared == null ? await canvases.load(id) : null;
+      if (shared == null && doc == null) return;
       await _closeCanvas();
-      _canvas = CanvasController(
-        document: doc,
-        onSave: _saveCanvas,
-        resources: resources,
-        onActivate: _activateCanvasItem,
-        clock: workspace.clock,
-      );
+      _canvas =
+          shared ??
+          CanvasController(
+            document: doc!,
+            onSave: _saveCanvas,
+            resources: resources,
+            onActivate: _activateCanvasItem,
+            clock: workspace.clock,
+          );
       await settings.set('lastCanvasId', id);
     }
     if (show) {
@@ -1438,7 +1647,59 @@ class AppState extends ChangeNotifier {
     old.endEditing();
     await old.flush();
     _canvas = null;
-    old.dispose();
+    // Still shown in a window: that window keeps it.
+    if (!_canvasRefs.containsKey(old.id)) old.dispose();
+  }
+
+  // Mindmaps open in windows: one shared controller per document, counted.
+  final Map<String, (CanvasController, int)> _canvasRefs = {};
+
+  /// The controller for mindmap [id] for a window (shared with the main
+  /// mindmap when it is the same one). Call [releaseCanvas] when done.
+  Future<CanvasController?> acquireCanvas(String id) async {
+    final known = _canvasRefs[id];
+    if (known != null) {
+      _canvasRefs[id] = (known.$1, known.$2 + 1);
+      return known.$1;
+    }
+    CanvasController? c = _canvas?.id == id ? _canvas : null;
+    if (c == null) {
+      final doc = await canvases.load(id);
+      if (doc == null) return null;
+      // Opened meanwhile by another window or the main view.
+      final again = _canvasRefs[id];
+      if (again != null) {
+        _canvasRefs[id] = (again.$1, again.$2 + 1);
+        return again.$1;
+      }
+      c = _canvas?.id == id
+          ? _canvas
+          : CanvasController(
+              document: doc,
+              onSave: _saveCanvas,
+              resources: resources,
+              onActivate: _activateCanvasItem,
+              clock: workspace.clock,
+            );
+    }
+    _canvasRefs[id] = (c!, 1);
+    return c;
+  }
+
+  Future<void> releaseCanvas(String id) async {
+    final known = _canvasRefs[id];
+    if (known == null) return;
+    if (known.$2 > 1) {
+      _canvasRefs[id] = (known.$1, known.$2 - 1);
+      return;
+    }
+    _canvasRefs.remove(id);
+    final c = known.$1;
+    if (!identical(c, _canvas)) {
+      c.endEditing();
+      await c.flush();
+      c.dispose();
+    }
   }
 
   // --------------------------------------------------------------- links --
@@ -1743,6 +2004,7 @@ class AppState extends ChangeNotifier {
     _firstSync?.cancel();
     _reminderTimer?.cancel();
     _clipTimer?.cancel();
+    _transferTimer?.cancel();
     workspace.tasks.removeListener(checkReminders);
     _sync?.client.close();
     sendTo.dispose();
@@ -1751,6 +2013,12 @@ class AppState extends ChangeNotifier {
     _links?.dispose();
     for (final c in _special.values) {
       c.dispose();
+    }
+    for (final (c, _) in _canvasRefs.values) {
+      if (!identical(c, _canvas)) c.dispose();
+    }
+    for (final s in [..._aiSessions.values, ..._browsers.values]) {
+      s.dispose();
     }
     resources.dispose();
     super.dispose();
@@ -1765,7 +2033,8 @@ class _SyncBridge implements OpenCanvasBridge {
 
   CanvasController? _open(String id) {
     if (state._canvas?.id == id) return state._canvas;
-    if (state.openNotebook?.id == id) return state.openNotebook;
+    if (state.openNotebookFor(id) case final c?) return c;
+    if (state._canvasRefs[id] case (final c, _)) return c;
     if (state._links?.id == id) return state._links;
     if (state._special[id] case final c?) return c;
     return null;
@@ -1777,7 +2046,12 @@ class _SyncBridge implements OpenCanvasBridge {
   @override
   Future<void> flushOpenCanvas() async {
     await state._canvas?.flush();
-    await state.openNotebook?.flush();
+    for (final c in [...state.openNotebooks]) {
+      await c.flush();
+    }
+    for (final (c, _) in state._canvasRefs.values.toList()) {
+      await c.flush();
+    }
     await state._links?.flush();
     for (final c in state._special.values) {
       await c.flush();

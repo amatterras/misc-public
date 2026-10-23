@@ -10,6 +10,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
+
 import '../sync/protocol.dart';
 import 'hub_auth.dart';
 import 'hub_backup.dart';
@@ -241,8 +243,13 @@ class HubServer {
           segments[0] == 'v1' &&
           segments[1] == 'attachments') {
         route = '/v1/attachments/:sha';
+      } else if (segments.length == 2 && segments[0] == 's') {
+        route = '/s/:token'; // never logged with the token
       }
       switch ((r.method, route)) {
+        case ('GET', '/s/:token'):
+          who = 'share';
+          status = await _serveShare(r, segments[1]);
         case ('GET', '/v1/status'):
           await _send(r, 200, {
             'service': 'THEapp hub',
@@ -403,6 +410,55 @@ class HubServer {
       _log('${r.method} $route -> $status ${ms}ms by $shortWho');
     }
   }
+
+  /// A read-only share page (see ShareLink): no device token, only the
+  /// link's secret. Unknown, revoked and expired links all get the same
+  /// "not available" answer.
+  Future<int> _serveShare(HttpRequest r, String token) async {
+    Map<String, dynamic>? data;
+    if (_shareToken.hasMatch(token)) {
+      final id = sha256.convert(utf8.encode(token)).toString();
+      final c = await store.current('shares', id);
+      data = c == null || c.deleted ? null : c.data;
+    }
+    final expires = DateTime.tryParse('${data?['expiresAt'] ?? ''}');
+    final ok =
+        data != null &&
+        data['revoked'] != true &&
+        (expires == null || DateTime.now().toUtc().isBefore(expires.toUtc()));
+    final title = ok ? '${data['title'] ?? ''}' : 'Not available';
+    final body = ok
+        ? '${data['body'] ?? ''}'
+        : 'This link does not exist, was revoked or has expired.';
+    const esc = HtmlEscape();
+    final status = ok ? 200 : 404;
+    r.response
+      ..statusCode = status
+      ..headers.contentType = ContentType.html
+      ..headers.set('cache-control', 'no-store')
+      ..headers.set('x-content-type-options', 'nosniff')
+      ..headers.set('referrer-policy', 'no-referrer')
+      ..headers.set('x-frame-options', 'DENY')
+      ..headers.set(
+        'content-security-policy',
+        "default-src 'none'; style-src 'unsafe-inline'",
+      )
+      ..write(
+        '<!doctype html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="robots" content="noindex">'
+        '<title>${esc.convert(title)}</title><style>body{font:16px/1.5 '
+        'system-ui,sans-serif;max-width:720px;margin:2em auto;padding:0 16px;'
+        'color:#222;background:#fafafa}pre{white-space:pre-wrap;font:inherit}'
+        '</style></head><body><h1>${esc.convert(title)}</h1><pre>'
+        '${esc.convert(body)}</pre><p style="color:#888;font-size:12px">'
+        'Shared read-only from THEapp.</p></body></html>',
+      );
+    await r.response.close();
+    return status;
+  }
+
+  static final _shareToken = RegExp(r'^[A-Za-z0-9_-]{20,100}$');
 
   static Future<void> _drain(HttpRequest r) async {
     try {

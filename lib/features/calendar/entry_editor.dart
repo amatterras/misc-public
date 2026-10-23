@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../ai/ai_service.dart';
+import '../ai/ai_session.dart';
 import '../../app/shell.dart';
 import '../../app/theme.dart';
 import '../../data/models/calendar_models.dart';
@@ -565,6 +567,23 @@ class _EntryEditorState extends State<_EntryEditor> {
       ),
       actions: [
         if (!widget.isNew) ...[
+          if (widget.state.ai.enabled)
+            TextButton(
+              key: const ValueKey('entry-ask-ai'),
+              onPressed: () => widget.state.sendToAi(
+                AiContext(
+                  title: 'Calendar: ${e.name}',
+                  source: AiSource.calendar,
+                  text: [
+                    e.name,
+                    e.category.label,
+                    if (e.description.isNotEmpty) e.description,
+                    if (e.notes.isNotEmpty) e.notes,
+                  ].join('\n'),
+                ),
+              ),
+              child: const Text('Ask AI'),
+            ),
           TextButton(
             onPressed: () async {
               final ok = await confirm(

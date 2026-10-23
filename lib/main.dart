@@ -169,7 +169,11 @@ class _TheAppState extends State<TheApp> {
         return AppExitResponse.exit;
       },
       onInactive: () => unawaited(widget.state.flush()),
-      onHide: () => unawaited(widget.state.flush()),
+      onHide: () {
+        widget.state.vault.lock(); // the private vault never stays open hidden
+        unawaited(widget.state.flush());
+      },
+      onPause: widget.state.vault.lock,
       // Back in front: pick up items shared while away (iPhone/iPad) and
       // sync if the last sync is not recent (timers stop in the background).
       onResume: () => unawaited(widget.state.appResumed()),

@@ -332,6 +332,60 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ------------------------------------------------------ selection units --
+  //
+  // What the user sees as one object: a group (all items with the same
+  // group mark) or one ungrouped item. The selection is drawn as ONE
+  // boundary around everything selected, with exactly two dots: top-left
+  // (marks the selection) and top-right (drag it to resize / scale).
+  // Tags are drawn once per unit, never on every stroke inside it.
+
+  /// The units the selection is made of (connections excluded).
+  List<List<CanvasItem>> get selectionUnits => unitsOf(selectedItems);
+
+  /// [items] split into units: each group together, each loose item alone.
+  List<List<CanvasItem>> unitsOf(Iterable<CanvasItem> items) {
+    final groups = <String, List<CanvasItem>>{};
+    final units = <List<CanvasItem>>[];
+    for (final i in items) {
+      if (i is ConnectorItem) continue;
+      final g = groupOf(i.id);
+      if (g == null) {
+        units.add([i]);
+      } else {
+        (groups[g] ??= () {
+          final list = <CanvasItem>[];
+          units.add(list);
+          return list;
+        }()).add(i);
+      }
+    }
+    return units;
+  }
+
+  /// Bounds of [items] (connections excluded), or null when there are none.
+  Rect? boundsOf(Iterable<CanvasItem> items) {
+    Rect? r;
+    for (final i in items) {
+      if (i is ConnectorItem) continue;
+      final b = itemBounds(i);
+      r = r == null ? b : r.expandToInclude(b);
+    }
+    return r;
+  }
+
+  /// The one boundary drawn around the whole selection.
+  Rect? get selectionBounds => boundsOf(selectedItems);
+
+  /// Every unit of the canvas that has a tag, with its bounds: one pair of
+  /// dots per unit. A group shows its tag when all its members share it.
+  List<(Rect, int)> get taggedUnits => [
+    for (final unit in unitsOf(_items.where((i) => !isReference(i.id))))
+      if (tagOf(unit.first.id) case final tag?
+          when unit.every((i) => tagOf(i.id) == tag))
+        (boundsOf(unit)!, tag),
+  ];
+
   // ----------------------------------------------------------- item marks --
   //
   // Lock, lasso tag and group are kept with each item as extra fields, the
@@ -427,8 +481,20 @@ class CanvasController extends ChangeNotifier {
     setMark(_selection, lockedMark, allLocked ? null : true);
   }
 
-  /// Gives the selection lasso tag [index] (null removes the tag).
-  void tagSelection(int? index) => setMark(_selection, tagMark, index);
+  /// Gives the selection lasso tag [index] (null removes the tag). Several
+  /// loose items tagged together (an area of strokes) become one compound
+  /// object first, so the tag shows once, around all of them; existing
+  /// groups keep their own boundaries.
+  void tagSelection(int? index) {
+    if (index != null && selectionUnits.length > 1) {
+      final loose = [
+        for (final i in selectedItems)
+          if (i is! ConnectorItem && groupOf(i.id) == null) i.id,
+      ];
+      if (loose.length > 1) setMark(loose, groupMark, newId());
+    }
+    setMark(_selection, tagMark, index);
+  }
 
   /// Joins the selected items into one group (selected and moved together).
   void groupSelection() {
@@ -894,6 +960,10 @@ class CanvasController extends ChangeNotifier {
   // --------------------------------------------------------- hit testing --
 
   /// Topmost item under [world], or null.
+  /// The item under [world] in the order things are drawn: objects and
+  /// strokes from the top down, then the connections (which are drawn
+  /// underneath them), then nothing (empty canvas). Reference overlays are
+  /// never hit.
   CanvasItem? hitTest(Offset world) {
     final tolerance = 6 / _scale;
     for (final item in _items.reversed) {
@@ -904,11 +974,14 @@ class CanvasController extends ChangeNotifier {
         case StrokeItem():
           if (item.hitTest(world, tolerance)) return item;
         case ConnectorItem():
-          final ends = connectorEnds(item);
-          if (ends != null &&
-              distanceToSegment(world, ends.$1, ends.$2) <= tolerance) {
-            return item;
-          }
+          break;
+      }
+    }
+    for (final item in _items.reversed.whereType<ConnectorItem>()) {
+      final ends = connectorEnds(item);
+      if (ends != null &&
+          distanceToSegment(world, ends.$1, ends.$2) <= tolerance) {
+        return item;
       }
     }
     return null;
@@ -930,15 +1003,20 @@ class CanvasController extends ChangeNotifier {
       ? 6
       : 24;
 
-  /// The single selected item whose resize handle is under [screen].
+  /// The selection's resize dot (top-right corner of its boundary) when
+  /// it is under [screen]: returns the first selected item, else null.
   CanvasItem? resizeHandleAt(
     Offset screen, {
     PointerDeviceKind kind = PointerDeviceKind.mouse,
   }) {
-    if (_tool != CanvasTool.select || _selection.length != 1) return null;
-    final item = itemById(_selection.first);
-    if (item == null || item is ConnectorItem) return null;
-    final corner = toScreen(itemBounds(item).bottomRight);
+    if (_tool != CanvasTool.select) return null;
+    final items = [
+      for (final i in selectedItems)
+        if (i is! ConnectorItem) i,
+    ];
+    if (items.isEmpty || items.any((i) => isLocked(i.id))) return null;
+    final item = items.first;
+    final corner = toScreen(boundsOf(items)!.topRight);
     final size = handleHitSize(kind);
     final hit = Rect.fromCenter(center: corner, width: size, height: size);
     return hit.contains(screen) ? item : null;
@@ -1065,7 +1143,13 @@ class CanvasController extends ChangeNotifier {
   Offset _lastScreen = Offset.zero;
   Offset _dragStartWorld = Offset.zero;
   Set<String> _selectionAtDragStart = const {};
+
+  /// Set by a click on an already selected group: on release without a
+  /// drag, only this item stays selected.
+  String? _narrowTo;
   CanvasItem? _resizeOriginal;
+  List<CanvasItem> _resizeItems = const [];
+  Rect? _resizeBounds;
   Duration? _lastDownTime;
   Offset? _lastDownPos;
   PointerDeviceKind _kind = PointerDeviceKind.mouse;
@@ -1273,6 +1357,11 @@ class CanvasController extends ChangeNotifier {
       _beginTransaction();
       _drag = _Drag.resize;
       _resizeOriginal = handle;
+      _resizeItems = [
+        for (final i in selectedItems)
+          if (i is! ConnectorItem) i,
+      ];
+      _resizeBounds = boundsOf(_resizeItems);
       return;
     }
 
@@ -1307,6 +1396,12 @@ class CanvasController extends ChangeNotifier {
         _selection = Set.unmodifiable(next);
       } else if (!_selection.contains(hit.id)) {
         _selection = Set.unmodifiable(picked);
+      } else if (picked.length > 1 &&
+          _selection.length == picked.length &&
+          _selection.containsAll(picked)) {
+        // A second click on a selected group (without dragging) picks
+        // just the item under the pointer.
+        _narrowTo = hit.id;
       }
       if (_selection.contains(hit.id)) {
         _beginTransaction();
@@ -1343,8 +1438,17 @@ class CanvasController extends ChangeNotifier {
         });
       case _Drag.resize:
         final original = _resizeOriginal;
-        if (original != null) {
+        final bounds = _resizeBounds;
+        if (_resizeItems.length == 1 && original != null) {
           _replaceItems({original.id: _resized(original, world)});
+        } else if (bounds != null && bounds.width > 0) {
+          // A group or several objects scale together, keeping their
+          // proportions, from the bottom-left corner of their boundary.
+          final f = math.max(0.1, (world.dx - bounds.left) / bounds.width);
+          _replaceItems({
+            for (final i in _resizeItems)
+              i.id: scaledItem(i, f, bounds.bottomLeft),
+          });
         }
       case _Drag.marquee:
         _marquee = Rect.fromPoints(_dragStartWorld, world);
@@ -1428,6 +1532,11 @@ class CanvasController extends ChangeNotifier {
         if (stroke != null) _setItems([..._items, _cleanShape(stroke)]);
         _endTransaction();
       case _Drag.move || _Drag.resize || _Drag.erase:
+        final narrow = _narrowTo;
+        if (narrow != null &&
+            (_lastScreen - toScreen(_dragStartWorld)).distance < 4) {
+          _selection = {narrow};
+        }
         _endTransaction();
       case _Drag.marquee:
         _marquee = null;
@@ -1451,34 +1560,48 @@ class CanvasController extends ChangeNotifier {
         break;
     }
     _drag = _Drag.none;
+    _narrowTo = null;
     _resizeOriginal = null;
+    _resizeItems = const [];
+    _resizeBounds = null;
     notifyListeners();
   }
 
-  /// [original] resized so its bottom-right corner follows [corner].
+  /// [original] resized so its top-right corner follows [corner]; the
+  /// bottom-left corner stays where it is.
   CanvasItem _resized(CanvasItem original, Offset corner) {
+    final b = itemBounds(original);
     switch (original) {
       case ImageItem():
         // Photos keep their aspect ratio.
         final ratio = original.height / math.max(1, original.width);
-        final width = math.max(40.0, corner.dx - original.position.dx);
-        return original.withBox(width: width, minHeight: width * ratio);
-      case TextItem():
+        final width = math.max(40.0, corner.dx - b.left);
+        final height = width * ratio;
         return original.withBox(
-          width: math.max(TextItem.minWidth, corner.dx - original.position.dx),
-          minHeight: math.max(0, corner.dy - original.position.dy),
+          position: Offset(b.left, b.bottom - height),
+          width: width,
+          minHeight: height,
+        );
+      case TextItem():
+        final top = math.min(corner.dy, b.bottom - 20);
+        return original.withBox(
+          position: Offset(b.left, top),
+          width: math.max(TextItem.minWidth, corner.dx - b.left),
+          minHeight: math.max(0, b.bottom - top),
         );
       case final BoxItem box when box is LinkItem || box is NoteCardItem:
+        final top = math.min(corner.dy, b.bottom - 40);
         return box.withBox(
-          width: math.max(160, corner.dx - box.position.dx),
-          minHeight: math.max(0, corner.dy - box.position.dy),
+          position: Offset(b.left, top),
+          width: math.max(160, corner.dx - b.left),
+          minHeight: math.max(0, b.bottom - top),
         );
       case LinkItem() || NoteCardItem() || ConnectorItem():
         return original;
       case StrokeItem():
-        final b = original.bounds;
-        final sx = math.max(8, corner.dx - b.left) / math.max(1, b.width);
-        final sy = math.max(8, corner.dy - b.top) / math.max(1, b.height);
+        final sb = original.bounds;
+        final sx = math.max(8, corner.dx - sb.left) / math.max(1, sb.width);
+        final sy = math.max(8, sb.bottom - corner.dy) / math.max(1, sb.height);
         return StrokeItem(
           id: original.id,
           color: original.color,
@@ -1487,12 +1610,50 @@ class CanvasController extends ChangeNotifier {
           points: [
             for (final p in original.points)
               StrokePoint(
-                b.left + (p.x - b.left) * sx,
-                b.top + (p.y - b.top) * sy,
+                sb.left + (p.x - sb.left) * sx,
+                sb.bottom - (sb.bottom - p.y) * sy,
                 p.pressure,
               ),
           ],
         );
+    }
+  }
+
+  /// [item] scaled by [f] around [anchor] (a group or several objects
+  /// resized together). Text grows with its box; line widths stay.
+  CanvasItem scaledItem(CanvasItem item, double f, Offset anchor) {
+    Offset at(Offset p) => anchor + (p - anchor) * f;
+    switch (item) {
+      case StrokeItem():
+        return StrokeItem(
+          id: item.id,
+          color: item.color,
+          strokeWidth: item.strokeWidth,
+          pressureWidth: item.pressureWidth,
+          points: [
+            for (final p in item.points)
+              () {
+                final q = at(Offset(p.x, p.y));
+                return StrokePoint(q.dx, q.dy, p.pressure);
+              }(),
+          ],
+        );
+      case TextItem():
+        return item
+            .withBox(
+              position: at(item.position),
+              width: math.max(TextItem.minWidth, item.width * f),
+              minHeight: item.minHeight * f,
+            )
+            .copyWith(fontSize: (item.fontSize * f).clamp(6.0, 200.0));
+      case BoxItem():
+        return item.withBox(
+          position: at(item.position),
+          width: math.max(40, item.width * f),
+          minHeight: item.minHeight * f,
+        );
+      case ConnectorItem():
+        return item;
     }
   }
 

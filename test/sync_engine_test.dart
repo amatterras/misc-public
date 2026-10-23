@@ -16,6 +16,10 @@ import 'package:flutter_application_1/hub/hub_server.dart';
 import 'package:flutter_application_1/sync/sync_client.dart';
 import 'package:flutter_application_1/sync/sync_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_application_1/features/links/archive_library.dart';
+import 'package:flutter_application_1/features/templates/templates.dart';
+import 'package:flutter_application_1/features/vault/vault_crypto.dart';
+import 'package:flutter_application_1/features/vault/vault_service.dart';
 
 class Device {
   Device(this.ws, this.canvases, this.engine);
@@ -469,6 +473,44 @@ void main() {
     },
     skip: !Platform.isWindows,
   );
+
+  test('newer record kinds reach the other device; the vault stays '
+      'encrypted on the hub and opens there with the password', () async {
+    final pc = await device('pc');
+    final ipad = await device('ipad');
+    const fast = KdfParams(memoryKiB: 64, iterations: 1);
+    final vault = VaultService(
+      meta: pc.ws.vaultMeta,
+      items: pc.ws.vaultItems,
+      kdf: fast,
+    );
+    addTearDown(vault.dispose);
+    await vault.create('long enough password');
+    vault.save(title: 'Private', text: 'HUBMUSTNOTSEE');
+    final folder = pc.ws.createArchiveFolder('Study');
+    pc.ws.templates.put(noteTemplate('Daily', 'Log', 'Mood:'));
+    expect((await pc.sync()).problems, isEmpty);
+    expect((await ipad.sync()).problems, isEmpty);
+
+    expect(ipad.ws.archiveFolders[folder.id]?.name, 'Study');
+    expect(ipad.ws.templates.all.single.name, 'Daily');
+    final journal = Directory('${root.path}${Platform.pathSeparator}hub')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.jsonl'))
+        .map((f) => f.readAsStringSync())
+        .join();
+    expect(journal, contains('vault_items'));
+    expect(journal, isNot(contains('HUBMUSTNOTSEE')));
+    final there = VaultService(
+      meta: ipad.ws.vaultMeta,
+      items: ipad.ws.vaultItems,
+      kdf: fast,
+    );
+    addTearDown(there.dispose);
+    await there.unlock('long enough password');
+    expect(there.entries().single.text, 'HUBMUSTNOTSEE');
+  });
 }
 
 /// Restores a backup folder (copied elsewhere) into [target], also copying

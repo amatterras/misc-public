@@ -118,3 +118,50 @@ class _DayInkLayerState extends State<DayInkLayer> {
     },
   );
 }
+
+/// Apple Pencil Pro squeeze while the Calendar is shown: the pen becomes
+/// the eraser while the squeeze is held (Draw mode is switched on for that
+/// time if it was off), and everything goes back as it was when the
+/// squeeze ends, is cancelled, the app goes to the background or another
+/// page opens. Only the native squeeze event (iOS 17.5+, Pencil Pro)
+/// calls [phase]; ordinary pointer events never do.
+class CalendarSqueeze {
+  CalendarSqueeze(
+    this.ink, {
+    required this.visible,
+    required this.drawing,
+    required this.setDrawing,
+  });
+
+  final CanvasController ink;
+  final bool Function() visible;
+  final bool Function() drawing;
+  final void Function(bool on) setDrawing;
+
+  bool? _drawingBefore;
+
+  /// Whether a squeeze is being held now.
+  bool get active => _drawingBefore != null;
+
+  /// A squeeze phase from iOS: "began", "ended" or "cancelled".
+  void phase(String phase) {
+    switch (phase) {
+      case 'began':
+        if (!visible() || active) return;
+        _drawingBefore = drawing();
+        setDrawing(true);
+        ink.squeezeBegan();
+      case 'ended' || 'cancelled':
+        end();
+    }
+  }
+
+  /// Ends a held squeeze (also on lifecycle and page changes).
+  void end() {
+    final before = _drawingBefore;
+    if (before == null) return;
+    _drawingBefore = null;
+    ink.squeezeEnded();
+    setDrawing(before);
+  }
+}

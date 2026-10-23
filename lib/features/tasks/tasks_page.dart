@@ -12,6 +12,8 @@ import '../../widgets/common.dart';
 import '../ai/ai_service.dart';
 import '../ai/ai_session.dart';
 import 'task_views.dart';
+import '../transfer/transfer.dart';
+import '../templates/templates.dart';
 
 sealed class TaskList {
   const TaskList();
@@ -482,11 +484,28 @@ class _TasksPageState extends State<TasksPage> {
           height: 36,
           child: Text('Shift deadlines…'),
         ),
+        PopupMenuItem(
+          value: 'template',
+          height: 36,
+          child: Text('Save as a template'),
+        ),
         PopupMenuItem(value: 'archive', height: 36, child: Text('Archive')),
       ],
     );
     if (!mounted) return;
     switch (choice) {
+      case 'template':
+        final name = await promptText(
+          context,
+          title: 'Template name',
+          initial: p.name,
+          action: 'Save',
+        );
+        if (name != null && name.trim().isNotEmpty) {
+          final t = projectTemplate(ws, name.trim(), p.id);
+          ws.templates.put(t);
+          s.showToast('Saved the template with ${t.tasks.length} tasks.');
+        }
       case 'shift':
         final days = await askShiftDays(context);
         if (days != null) {
@@ -745,65 +764,73 @@ class _TasksPageState extends State<TasksPage> {
           ),
           const SizedBox(height: Space.md),
           Expanded(
-            child: tasks.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Nothing here.',
-                      style: TextStyle(color: AppColors.textFaint),
-                    ),
-                  )
-                : switch (_view) {
-                    TaskView.list => ListView(
-                      children: [
-                        for (final t in tasks)
-                          Row(
-                            children: [
-                              if (_selecting)
-                                Checkbox(
-                                  key: ValueKey('pick-${t.id}'),
-                                  value: _picked.contains(t.id),
-                                  onChanged: (on) => setState(
-                                    () => on == true
-                                        ? _picked.add(t.id)
-                                        : _picked.remove(t.id),
+            child: TransferTarget(
+              state: s,
+              place: TasksPlace(
+                projectId: _list is ProjectTaskList
+                    ? (_list as ProjectTaskList).projectId
+                    : null,
+              ),
+              child: tasks.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'Nothing here.',
+                        style: TextStyle(color: AppColors.textFaint),
+                      ),
+                    )
+                  : switch (_view) {
+                      TaskView.list => ListView(
+                        children: [
+                          for (final t in tasks)
+                            Row(
+                              children: [
+                                if (_selecting)
+                                  Checkbox(
+                                    key: ValueKey('pick-${t.id}'),
+                                    value: _picked.contains(t.id),
+                                    onChanged: (on) => setState(
+                                      () => on == true
+                                          ? _picked.add(t.id)
+                                          : _picked.remove(t.id),
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: TaskRow(
+                                    state: s,
+                                    task: t,
+                                    selected: t.id == _selectedId,
+                                    onTap: () => setState(() {
+                                      if (_selecting) {
+                                        _picked.contains(t.id)
+                                            ? _picked.remove(t.id)
+                                            : _picked.add(t.id);
+                                      } else {
+                                        _selectedId = t.id;
+                                      }
+                                    }),
                                   ),
                                 ),
-                              Expanded(
-                                child: TaskRow(
-                                  state: s,
-                                  task: t,
-                                  selected: t.id == _selectedId,
-                                  onTap: () => setState(() {
-                                    if (_selecting) {
-                                      _picked.contains(t.id)
-                                          ? _picked.remove(t.id)
-                                          : _picked.add(t.id);
-                                    } else {
-                                      _selectedId = t.id;
-                                    }
-                                  }),
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                    TaskView.board => TaskBoardView(
-                      state: s,
-                      tasks: tasks,
-                      onOpen: (id) => setState(() => _selectedId = id),
-                    ),
-                    TaskView.table => TaskTableView(
-                      state: s,
-                      tasks: tasks,
-                      onOpen: (id) => setState(() => _selectedId = id),
-                    ),
-                    TaskView.gantt => TaskGanttView(
-                      state: s,
-                      tasks: tasks,
-                      onOpen: (id) => setState(() => _selectedId = id),
-                    ),
-                  },
+                              ],
+                            ),
+                        ],
+                      ),
+                      TaskView.board => TaskBoardView(
+                        state: s,
+                        tasks: tasks,
+                        onOpen: (id) => setState(() => _selectedId = id),
+                      ),
+                      TaskView.table => TaskTableView(
+                        state: s,
+                        tasks: tasks,
+                        onOpen: (id) => setState(() => _selectedId = id),
+                      ),
+                      TaskView.gantt => TaskGanttView(
+                        state: s,
+                        tasks: tasks,
+                        onOpen: (id) => setState(() => _selectedId = id),
+                      ),
+                    },
+            ),
           ),
         ],
       ),
@@ -930,22 +957,11 @@ class TaskRow extends StatelessWidget {
     );
     if (compact) return row;
     // Drag onto a Calendar day to schedule it there (the same record).
-    final drag = DayDrag(TaskOnDay(t, 0), t.dueDate);
-    final feedback = Material(
-      color: AppColors.cardRaised,
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Text(t.title, style: const TextStyle(fontSize: 13)),
-      ),
+    return TransferSource(
+      transfer: () => TaskTransfer(t.id, t.title, from: t.dueDate),
+      touch: touchFirst,
+      child: row,
     );
-    return touchFirst
-        ? LongPressDraggable<DayDrag>(
-            data: drag,
-            feedback: feedback,
-            child: row,
-          )
-        : Draggable<DayDrag>(data: drag, feedback: feedback, child: row);
   }
 }
 

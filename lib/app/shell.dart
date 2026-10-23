@@ -7,7 +7,8 @@ import '../data/models/library_models.dart';
 import '../data/models/task_models.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/canvas/canvas_page.dart';
-import '../features/ai/ai_window.dart';
+import '../features/ai/ai_chat_page.dart';
+import '../features/browser/browser_page.dart';
 import '../features/capture/capture_dialog.dart';
 import '../features/capture/capture_service.dart';
 import '../features/home/home_page.dart';
@@ -20,7 +21,10 @@ import '../features/search/search_dialog.dart';
 import '../features/settings/settings_dialog.dart';
 import '../widgets/common.dart' show GhostIconButton;
 import '../widgets/floating_layer.dart';
+import 'page_host.dart';
+import 'page_windows.dart';
 import 'app_state.dart';
+import 'top_bar.dart';
 import 'sidebar.dart';
 import 'test_environment.dart';
 import 'theme.dart';
@@ -49,6 +53,7 @@ Future<void> openQuickAdd(BuildContext context, AppState state) async {
       AppPage.home => CaptureDestination.inbox,
       AppPage.canvas => CaptureDestination.canvas,
       AppPage.links => CaptureDestination.links,
+      AppPage.browser || AppPage.ai => CaptureDestination.inbox,
     },
   );
 }
@@ -128,7 +133,6 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _motivation = widget.motivation ?? MotivationService();
-    state.aiWindow = () => aiWindowSpec(state);
     if (widget.motivation == null) unawaited(_loadMotivation());
   }
 
@@ -160,29 +164,97 @@ class _AppShellState extends State<AppShell> {
           shift: true,
         ): () =>
             openCommandPalette(context, state),
+        const SingleActivator(LogicalKeyboardKey.tab, control: true): () =>
+            state.windows.cycle(),
+        const SingleActivator(LogicalKeyboardKey.f11): () =>
+            state.toggleImmersive(),
       },
       child: Focus(
         autofocus: true,
         child: ListenableBuilder(
-          listenable: state,
+          listenable: Listenable.merge([state, state.windows]),
           builder: (context, _) {
             final width = MediaQuery.sizeOf(context).width;
             final isCompact = width < 640;
+            final windows = state.windows;
+            windows.builder ??= (context, p) =>
+                buildPageInstance(context, state, p);
+            final active = windows.active;
+            // A destination moved into its own page window is not built
+            // twice.
+            Widget page(AppPage kind, Widget Function() build) =>
+                windows.find(kind, null) != null
+                ? const SizedBox.shrink()
+                : build();
 
-            final mainContent = ClipRect(
-              child: IndexedStack(
-                key: _pagesKey,
-                index: state.page.index,
-                children: [
-                  HomePage(state: state),
-                  CanvasPage(state: state),
-                  NotesPage(state: state),
-                  LinksPage(state: state),
-                  CalendarPage(state: state),
-                  // Tasks are shown inside Calendar (its task column).
-                  const SizedBox.shrink(),
-                ],
-              ),
+            final mainContent = Column(
+              children: [
+                TopBar(state: state),
+                Expanded(
+                  child: ClipRect(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Offstage(
+                          offstage: active != null,
+                          child: TickerMode(
+                            enabled: active == null,
+                            child: IndexedStack(
+                              key: _pagesKey,
+                              index: state.page.index,
+                              children: [
+                                page(
+                                  AppPage.home,
+                                  () => HomePage(state: state),
+                                ),
+                                page(
+                                  AppPage.canvas,
+                                  () => CanvasPage(state: state),
+                                ),
+                                page(
+                                  AppPage.notes,
+                                  () => NotesPage(state: state),
+                                ),
+                                page(
+                                  AppPage.links,
+                                  () => LinksPage(state: state),
+                                ),
+                                page(
+                                  AppPage.calendar,
+                                  () => CalendarPage(state: state),
+                                ),
+                                // Tasks are shown inside Calendar (its task column).
+                                const SizedBox.shrink(),
+                                page(
+                                  AppPage.browser,
+                                  () => BrowserPage(state: state),
+                                ),
+                                page(
+                                  AppPage.ai,
+                                  () => AiChatPage(state: state),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // Pages in the bar that are not floating: the active
+                        // one is shown; the others (and minimized ones) stay
+                        // alive off screen without painting or animating.
+                        for (final p in windows.all)
+                          if (p.mode != PageMode.floating)
+                            Offstage(
+                              key: ValueKey('host-${p.id}'),
+                              offstage: p.id != active?.id,
+                              child: TickerMode(
+                                enabled: p.id == active?.id,
+                                child: windows.instanceHost(context, p),
+                              ),
+                            ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             );
 
             return Scaffold(
@@ -215,21 +287,18 @@ class _AppShellState extends State<AppShell> {
                   else
                     Row(
                       children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Expanded(child: mainContent),
-                              _MotivationalQuoteBar(service: _motivation),
-                            ],
-                          ),
-                        ),
-                        Sidebar(state: state),
+                        Expanded(child: mainContent),
+                        Sidebar(state: state, motivation: _motivation),
                       ],
                     ),
                   Positioned.fill(
                     child: FloatingLayer(windows: state.floating),
                   ),
                   _Toast(state: state, bottomOffset: isCompact ? 72 : 28),
+                  _TransferBar(
+                    state: state,
+                    bottomOffset: isCompact ? 120 : 76,
+                  ),
                   ListenableBuilder(
                     listenable: _motivation,
                     builder: (context, _) => _motivation.greetingVisible
@@ -266,6 +335,8 @@ class _CompactTopBar extends StatelessWidget {
       AppPage.notes => 'notes',
       AppPage.links => 'archive',
       AppPage.calendar || AppPage.tasks => 'calendar',
+      AppPage.browser => 'safari',
+      AppPage.ai => 'ai',
     };
 
     return Container(
@@ -759,3 +830,46 @@ List<Asset> assetsFor(AppState state, Iterable<String> ids) => [
   for (final id in ids)
     if (state.workspace.assets[id] != null) state.workspace.assets[id]!,
 ];
+
+/// The result of the last drag-and-drop, with Undo, for a few seconds.
+class _TransferBar extends StatelessWidget {
+  const _TransferBar({required this.state, required this.bottomOffset});
+
+  final AppState state;
+  final double bottomOffset;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder(
+    valueListenable: state.lastTransfer,
+    builder: (context, result, _) {
+      if (result == null) return const SizedBox.shrink();
+      return Positioned(
+        left: 0,
+        right: 0,
+        bottom: bottomOffset,
+        child: Center(
+          child: Material(
+            key: const ValueKey('transfer-result'),
+            color: AppColors.cardRaised,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16, right: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(result.message, style: const TextStyle(fontSize: 13)),
+                  if (result.undo != null)
+                    TextButton(
+                      key: const ValueKey('transfer-undo'),
+                      onPressed: state.undoLastTransfer,
+                      child: const Text('Undo'),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}

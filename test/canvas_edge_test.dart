@@ -29,8 +29,9 @@ void main() {
 
   test('resize: undo restores, redo reapplies', () {
     final c = make([t('a', Offset.zero)])..select(['a']);
-    c.pointerDown(const Offset(200, 100));
-    c.pointerMove(const Offset(320, 150));
+    // Resize dot: top-right corner.
+    c.pointerDown(Offset(c.itemBounds(c.itemById('a')!).right, 0));
+    c.pointerMove(const Offset(320, -50));
     c.pointerUp();
     expect((c.itemById('a') as TextItem).width, 320);
     c.undo();

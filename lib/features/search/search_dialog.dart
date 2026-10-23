@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
@@ -124,13 +126,15 @@ List<SearchResult> searchEverything(AppState s, String query) {
           },
         ),
       );
-    } else if (a.kind == AssetKind.document && has(a.title)) {
+    } else if (a.kind == AssetKind.document &&
+        (has(a.title) || has(s.pdfTexts[a.id]))) {
+      final body = s.pdfTexts[a.id] ?? '';
       results.add(
         SearchResult(
           icon: Icons.picture_as_pdf_outlined,
           kind: 'Document',
           title: a.label,
-          subtitle: 'PDF',
+          subtitle: has(body) ? snippet(body) : 'PDF',
           open: () {
             final file = ws.documentFile(a);
             if (file != null) s.openDocument(file.path);
@@ -197,6 +201,47 @@ List<SearchResult> searchEverything(AppState s, String query) {
       );
     }
   }
+  for (final c in ws.aiConversations.all) {
+    final text = c.messages.map((m) => m.text).join(' ');
+    if (has(c.title) || has(text)) {
+      results.add(
+        SearchResult(
+          icon: Icons.auto_awesome_outlined,
+          kind: 'AI chat',
+          title: c.title,
+          subtitle: has(text) ? snippet(text) : '',
+          open: () => s.openAiConversation(c.id),
+        ),
+      );
+    }
+  }
+  for (final x in ws.experiments.all) {
+    final text = x.toText();
+    if (has(text)) {
+      results.add(
+        SearchResult(
+          icon: Icons.psychology_outlined,
+          kind: 'Thought experiment',
+          title: x.title,
+          subtitle: snippet(text),
+          open: () => s.openExperiment(x.id),
+        ),
+      );
+    }
+  }
+  for (final b in ws.bookmarks.all) {
+    if (has(b.title) || has(b.url)) {
+      results.add(
+        SearchResult(
+          icon: Icons.bookmark_outline,
+          kind: 'Bookmark',
+          title: b.title,
+          subtitle: b.url,
+          open: () => s.openInSafari(b.url),
+        ),
+      );
+    }
+  }
   return results;
 }
 
@@ -216,8 +261,22 @@ class _SearchDialog extends StatefulWidget {
   State<_SearchDialog> createState() => _SearchDialogState();
 }
 
+/// What PDF text search covers right now.
+String _pdfLine(AppState s) {
+  final p = s.pdfTexts;
+  if (p.running) return 'Reading PDF text… ${p.done} of ${p.total}';
+  return 'Text inside PDFs is searched on this device. Scanned PDFs '
+      '(pictures of text) are not: there is no text recognition yet.';
+}
+
 class _SearchDialogState extends State<_SearchDialog> {
   String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(widget.state.pdfTexts.indexAll());
+  }
 
   /// Results of a search by meaning (local AI), until the text changes.
   List<SearchResult>? _meaning;
@@ -279,12 +338,15 @@ class _SearchDialogState extends State<_SearchDialog> {
               padding: const EdgeInsets.symmetric(horizontal: Space.lg),
               child: Row(
                 children: [
-                  const Expanded(
-                    child: Text(
-                      'Text inside PDF files is not searched (only their names).',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textFaint,
+                  Expanded(
+                    child: ListenableBuilder(
+                      listenable: widget.state.pdfTexts,
+                      builder: (context, _) => Text(
+                        _pdfLine(widget.state),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textFaint,
+                        ),
                       ),
                     ),
                   ),

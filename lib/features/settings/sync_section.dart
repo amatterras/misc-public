@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
 import '../../app/test_environment.dart';
 import '../../app/theme.dart';
+import '../../sync/local_hub.dart';
 import '../../sync/sync_client.dart';
 import '../../widgets/common.dart';
 
@@ -58,6 +61,29 @@ class _SyncSectionState extends State<SyncSection> {
     });
   }
 
+  /// What to type on an iPhone/iPad, after asking this PC's hub for a code.
+  String? _shownCode;
+
+  Future<void> _codeFromThisPc() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final r = await localPairingCode();
+      _code.text = r.code;
+      _url.text = 'http://127.0.0.1:${r.port}';
+      _shownCode =
+          'Code ${r.code} (valid ${r.minutes} minutes). '
+          '${widget.state.syncPaired ? '' : 'Press Pair to connect this PC, or '}'
+          'type the code on your iPhone/iPad with this PC’s '
+          'Tailscale address (http://100.x.y.z:${r.port}).';
+    } on LocalHubException catch (e) {
+      _error = e.message;
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.state;
@@ -81,22 +107,26 @@ class _SyncSectionState extends State<SyncSection> {
                     ),
                   ),
                 ),
-              Text(
-                mobile
-                    ? 'Optional. On your PC, start the hub with Tailscale '
-                          '(see SYNC_ARCHITECTURE.md §17) and run "thehub '
-                          'pair". Enter the PC’s Tailscale address '
-                          '(http://100.x.y.z:47710) and the code here. '
-                          'THEapp works the same without it.'
-                    : 'Optional. Start the hub on this PC (see '
-                          'SYNC_ARCHITECTURE.md), run "thehub pair", and '
-                          'enter the code here. THEapp works the same '
-                          'without it.',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textMuted,
+              _ConnectGuide(mobile: mobile),
+              if (!mobile && Platform.isWindows)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: const ValueKey('local-pair-code'),
+                    onPressed: _busy ? null : _codeFromThisPc,
+                    icon: const Icon(Icons.key_outlined, size: 16),
+                    label: const Text('Get a code from the hub on this PC'),
+                  ),
                 ),
-              ),
+              if (_shownCode != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: Space.sm),
+                  child: SelectableText(
+                    _shownCode!,
+                    key: const ValueKey('local-pair-result'),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
               const SizedBox(height: Space.sm),
               // Address on its own line when the dialog is narrow.
               if (MediaQuery.sizeOf(context).width < 640) ...[
@@ -224,8 +254,17 @@ class _SyncSectionState extends State<SyncSection> {
                   },
                   child: const Text('Disconnect'),
                 ),
+                if (s.ios == null && Platform.isWindows)
+                  TextButton(
+                    key: const ValueKey('local-pair-code'),
+                    onPressed: _busy ? null : _codeFromThisPc,
+                    child: const Text('Get a code for another device'),
+                  ),
               ],
             ),
+            if (_shownCode != null) SelectableText(_shownCode!),
+            if (_error != null)
+              Text(_error!, style: const TextStyle(color: AppColors.danger)),
           ],
         );
       },
@@ -325,4 +364,75 @@ Future<void> showConflictsDialog(BuildContext context, AppState state) {
       },
     ),
   );
+}
+
+/// The three steps of connecting, in plain words.
+class _ConnectGuide extends StatelessWidget {
+  const _ConnectGuide({required this.mobile});
+  final bool mobile;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = [
+      (
+        'What this is',
+        'Optional. Your own hub is a small program on your PC that keeps '
+            'your devices in step. It is not a cloud service: your data goes '
+            'only between your devices and that PC. THEapp works the same '
+            'without it.',
+      ),
+      (
+        'Start the hub on the PC',
+        'Run "thehub serve" once (or "thehub startup enable" to start it '
+            'with Windows). For an iPhone/iPad away from home, install '
+            'Tailscale on both (free; SYNC_ARCHITECTURE.md §17).',
+      ),
+      (
+        mobile ? 'Pair this iPhone/iPad' : 'Pair this PC',
+        mobile
+            ? 'On the PC, open THEapp → Settings → Sync → "Get a code" (or '
+                  'run "thehub pair"). Type the PC’s Tailscale address '
+                  '(http://100.x.y.z:47710) and the code below.'
+            : 'Press "Get a code from the hub on this PC", then Pair.',
+      ),
+    ];
+    return Column(
+      key: const ValueKey('connect-guide'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final (i, (title, text)) in steps.indexed)
+          Padding(
+            padding: const EdgeInsets.only(bottom: Space.sm),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 10,
+                  backgroundColor: AppColors.card,
+                  child: Text('${i + 1}', style: const TextStyle(fontSize: 11)),
+                ),
+                const SizedBox(width: Space.sm),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '$title. ',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        TextSpan(text: text),
+                      ],
+                    ),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 }

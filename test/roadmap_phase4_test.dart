@@ -123,7 +123,6 @@ void main() {
       await s.ai.setWorkingRules(
         'Separate verified facts from assumptions. Use concise bullets.',
       );
-      s.aiWindow = null; // no window in this test
       expect(
         s.sendToAi(
           AiContext(

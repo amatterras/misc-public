@@ -331,20 +331,26 @@ class SyncEngine {
       await _reconcileAttachments(report);
       _attachmentsReconciled = true;
     }
-    // Shared clipboard text goes last and on its own: a hub from before
-    // clipboard sharing refuses it, and that must not stop everything else.
-    final clips = [
-      for (final c in pending)
-        if (c.collection == 'clipboard') c,
-    ];
-    pending.removeWhere((c) => c.collection == 'clipboard');
+    // Kinds added after the first hub version go last, each on its own: an
+    // older hub refuses them, and that must not stop everything else.
+    final late = {
+      for (final name in newerCollections)
+        name: [
+          for (final c in pending)
+            if (c.collection == name) c,
+        ],
+    };
+    pending.removeWhere((c) => newerCollections.contains(c.collection));
     final groups = [
       for (var i = 0; i < pending.length; i += maxPushBatch)
         pending.skip(i).take(maxPushBatch).toList(),
-      for (var i = 0; i < clips.length; i += maxPushBatch)
-        clips.skip(i).take(maxPushBatch).toList(),
+      for (final list in late.values)
+        for (var i = 0; i < list.length; i += maxPushBatch)
+          list.skip(i).take(maxPushBatch).toList(),
     ];
+    final refused = <String>{};
     for (final group in groups) {
+      if (refused.contains(group.first.collection)) continue;
       final batch = [
         for (final c in group)
           SyncChange(
@@ -365,12 +371,17 @@ class SyncEngine {
       try {
         response = await client.push(batch);
       } on SyncFailure catch (e) {
-        if (e.code == 'bad_change' && group.first.collection == 'clipboard') {
+        final name = group.first.collection;
+        if (e.code == 'bad_change' && newerCollections.contains(name)) {
+          refused.add(name);
           report.problems.add(
-            'The hub does not accept the shared clipboard yet: restart it '
-            'with this version of THEapp.',
+            name == 'clipboard'
+                ? 'The hub does not accept the shared clipboard yet: restart '
+                      'it with this version of THEapp.'
+                : 'The hub does not accept $name yet: restart it with this '
+                      'version of THEapp.',
           );
-          break;
+          continue;
         }
         rethrow;
       }

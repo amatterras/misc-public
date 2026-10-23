@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
@@ -10,6 +12,7 @@ import '../../data/workspace.dart';
 import '../../widgets/common.dart';
 import '../tasks/tasks_page.dart';
 import '../canvas/canvas_controller.dart';
+import '../transfer/transfer.dart';
 import 'calendar_ink.dart';
 import 'calendar_views.dart';
 import 'entry_editor.dart';
@@ -72,8 +75,40 @@ class _CalendarPageState extends State<CalendarPage> {
   void initState() {
     super.initState();
     s.openCalendarInk().then((c) {
-      if (mounted) setState(() => _ink = c);
+      if (!mounted) return;
+      setState(() => _ink = c);
+      _startSqueeze(c);
     });
+  }
+
+  // Apple Pencil Pro squeeze: erase while squeezed (iPhone/iPad only).
+  CalendarSqueeze? _squeezer;
+  StreamSubscription<String>? _squeeze;
+  AppLifecycleListener? _lifecycle;
+
+  void _startSqueeze(CanvasController ink) {
+    final ios = s.ios;
+    if (ios == null) return;
+    _squeezer = CalendarSqueeze(
+      ink,
+      visible: () =>
+          mounted &&
+          s.page == AppPage.calendar &&
+          _tab == null &&
+          (ModalRoute.of(context)?.isCurrent ?? true),
+      drawing: () => _drawing,
+      setDrawing: (on) {
+        if (mounted && _drawing != on) setState(() => _drawing = on);
+      },
+    );
+    _squeeze = ios.pencilSqueeze.listen(_squeezer!.phase);
+    unawaited(ios.enablePencilSqueeze());
+    _lifecycle = AppLifecycleListener(onInactive: () => _squeezer?.end());
+    s.addListener(_endSqueezeOffPage);
+  }
+
+  void _endSqueezeOffPage() {
+    if (s.page != AppPage.calendar) _squeezer?.end();
   }
 
   Widget _inkOn(DateTime day) {
@@ -89,6 +124,10 @@ class _CalendarPageState extends State<CalendarPage> {
 
   @override
   void dispose() {
+    _squeezer?.end();
+    _squeeze?.cancel();
+    _lifecycle?.dispose();
+    s.removeListener(_endSqueezeOffPage);
     _viewer.dispose();
     super.dispose();
   }
@@ -204,18 +243,26 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   Widget _calendar() {
+    // Short windows (a phone held sideways) get tighter spacing.
+    final short = MediaQuery.sizeOf(context).height < 480;
+    final gap = short ? Space.xs : Space.md;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(Space.xl, Space.xl, Space.xl, 0),
+      padding: EdgeInsets.fromLTRB(
+        Space.xl,
+        short ? Space.sm : Space.xl,
+        Space.xl,
+        0,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _header(),
           ..._overLimitWarning(),
-          const SizedBox(height: Space.md),
+          SizedBox(height: gap),
           _viewBar(),
-          const SizedBox(height: Space.lg),
+          SizedBox(height: short ? Space.sm : Space.lg),
           _tabs(),
-          const SizedBox(height: Space.md),
+          SizedBox(height: gap),
           Expanded(
             child: _tab == null && _view != CalendarView.range
                 ? _otherView()
@@ -377,6 +424,8 @@ class _CalendarPageState extends State<CalendarPage> {
           onDay: _openDay,
           onItem: _editItem,
           overlay: _inkOn,
+          dropOn: (day, cell) =>
+              TransferTarget(state: s, place: DayPlace(day), child: cell),
         );
       case CalendarView.day:
         return DayPanel(
@@ -866,10 +915,12 @@ class DayCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final ws = state.workspace;
     final record = ws.days[dayKey(day)];
-    return DragTarget<DayDrag>(
+    final place = DayPlace(day);
+    return DragTarget<Transfer>(
       onWillAcceptWithDetails: (d) =>
-          d.data.from == null || daysBetween(d.data.from!, day) != 0,
-      onAcceptWithDetails: (d) => ws.moveDayItem(d.data.item, d.data.from, day),
+          state.transferChoices(d.data, place).isNotEmpty,
+      onAcceptWithDetails: (d) =>
+          dropTransfer(context, state, d.data, place, d.offset),
       builder: (context, candidates, _) {
         return Material(
           color: candidates.isNotEmpty
@@ -1077,8 +1128,8 @@ class DayLabel extends StatelessWidget {
       child: MouseRegion(cursor: SystemMouseCursors.click, child: label),
     );
     if (isHabit) return tappable; // Recurring: change its schedule instead.
-    return Draggable<DayDrag>(
-      data: DayDrag(item, day),
+    return Draggable<Transfer>(
+      data: CalendarItemTransfer(item, day),
       feedback: Material(
         color: Colors.transparent,
         child: SizedBox(

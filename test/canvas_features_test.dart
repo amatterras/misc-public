@@ -144,8 +144,9 @@ void main() {
         ),
       ],
     )..select(['i']);
-    c.pointerDown(const Offset(200, 100));
-    c.pointerMove(const Offset(400, 130));
+    // Resize dot: top-right corner; the bottom-left stays.
+    c.pointerDown(const Offset(200, 0));
+    c.pointerMove(const Offset(400, -30));
     c.pointerUp();
     final i = c.items.single as ImageItem;
     expect(i.width, 400);

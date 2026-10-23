@@ -17,6 +17,7 @@ import 'conversion.dart';
 import 'note_connections.dart';
 import 'note_diff.dart';
 import 'note_page.dart';
+import '../transfer/transfer.dart';
 
 /// Which notes the middle column shows.
 sealed class NoteFilter {
@@ -413,46 +414,64 @@ class _NotesPageState extends State<NotesPage> {
           ),
         ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: Space.md),
-            children: [
-              for (final c in canvases)
-                ListTile(
-                  dense: true,
-                  leading: const Icon(
-                    Icons.grid_view,
-                    size: 18,
-                    color: AppColors.textMuted,
+          // Dropping on the list (not on a note) makes a new note.
+          child: TransferTarget(
+            state: s,
+            place: const NewNotePlace(),
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: Space.md),
+              children: [
+                for (final c in canvases)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(
+                      Icons.grid_view,
+                      size: 18,
+                      color: AppColors.textMuted,
+                    ),
+                    title: Text(c.title),
+                    subtitle: const Text(
+                      'Canvas',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textFaint,
+                      ),
+                    ),
+                    onTap: () => s.openCanvas(c.id),
                   ),
-                  title: Text(c.title),
-                  subtitle: const Text(
-                    'Canvas',
-                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
-                  ),
-                  onTap: () => s.openCanvas(c.id),
-                ),
-              for (final n in notes) _noteTile(n),
-              if (notes.isEmpty && canvases.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(Space.xl),
-                  child: Text(
-                    touchFirst
-                        ? 'No notes here yet. Tap New, or use Quick Add.'
-                        : 'No notes here yet. Click New, or use Quick Add (Ctrl+N).',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textFaint,
+                for (final n in notes) _noteTile(n),
+                if (notes.isEmpty && canvases.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(Space.xl),
+                    child: Text(
+                      touchFirst
+                          ? 'No notes here yet. Tap New, or use Quick Add.'
+                          : 'No notes here yet. Click New, or use Quick Add (Ctrl+N).',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textFaint,
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _noteTile(Note n) {
+  Widget _noteTile(Note n) => TransferTarget(
+    state: s,
+    place: NotePlace(n.id),
+    child: TransferSource(
+      transfer: () => NoteTransfer(n.id, n.displayTitle),
+      touch: true,
+      child: _noteTileBody(n),
+    ),
+  );
+
+  Widget _noteTileBody(Note n) {
     final selected = n.id == _selectedId;
     final excerpt = n.body.trim().replaceAll('\n', ' ');
     return Padding(
@@ -868,23 +887,48 @@ class _NoteEditorState extends State<NoteEditor> {
         onChanged: (v) => _update((x) => x.copyWith(body: v)),
       ),
       if (_selected.trim().isNotEmpty)
-        ConversionBar(
-          open: _conversionOpen,
-          onToggle: () => setState(
-            () => s.settings.set('conversionBarOpen', !_conversionOpen),
-          ),
-          onConvert: (target) =>
-              convertSelection(context, s, widget.noteId, _selected, target),
-          onAskAi: s.ai.enabled
-              ? () => s.sendToAi(
-                  AiContext(
-                    title: 'Part of “${n.displayTitle}”',
-                    source: AiSource.notes,
-                    text: _selected,
-                    noteId: n.id,
-                  ),
-                )
-              : null,
+        Row(
+          children: [
+            TransferSource(
+              key: const ValueKey('text-transfer-grip'),
+              transfer: () =>
+                  TextTransfer(_selected, sourceNoteId: widget.noteId),
+              child: const Tooltip(
+                message:
+                    'Drag the selected text to a mindmap, day, task '
+                    'list or another note',
+                child: Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(Icons.drag_indicator, size: 18),
+                ),
+              ),
+            ),
+            Expanded(
+              child: ConversionBar(
+                open: _conversionOpen,
+                onToggle: () => setState(
+                  () => s.settings.set('conversionBarOpen', !_conversionOpen),
+                ),
+                onConvert: (target) => convertSelection(
+                  context,
+                  s,
+                  widget.noteId,
+                  _selected,
+                  target,
+                ),
+                onAskAi: s.ai.enabled
+                    ? () => s.sendToAi(
+                        AiContext(
+                          title: 'Part of “${n.displayTitle}”',
+                          source: AiSource.notes,
+                          text: _selected,
+                          noteId: n.id,
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+          ],
         ),
       const Divider(),
       const SizedBox(height: Space.md),
@@ -1006,13 +1050,17 @@ class _NoteEditorState extends State<NoteEditor> {
     ];
     // Notebook pages (full-page note): built only when scrolled into view.
     final pages = widget.pageBuilder == null ? 0 : widget.pageCount;
-    return ListView.builder(
-      controller: widget.scrollController,
-      padding: const EdgeInsets.fromLTRB(40, 28, 40, 40),
-      itemCount: header.length + pages,
-      itemBuilder: (context, i) => i < header.length
-          ? header[i]
-          : widget.pageBuilder!(context, i - header.length),
+    return TransferTarget(
+      state: s,
+      place: NotePlace(widget.noteId),
+      child: ListView.builder(
+        controller: widget.scrollController,
+        padding: const EdgeInsets.fromLTRB(40, 28, 40, 40),
+        itemCount: header.length + pages,
+        itemBuilder: (context, i) => i < header.length
+            ? header[i]
+            : widget.pageBuilder!(context, i - header.length),
+      ),
     );
   }
 }

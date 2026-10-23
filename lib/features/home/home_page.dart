@@ -11,6 +11,7 @@ import '../../widgets/common.dart';
 import '../../widgets/page_scaffold.dart';
 import '../capture/capture_dialog.dart';
 import '../tasks/tasks_page.dart' show TaskRow;
+import '../review/review_center.dart';
 import 'activity.dart';
 
 class HomePage extends StatelessWidget {
@@ -144,10 +145,21 @@ class HomePage extends StatelessWidget {
                         ),
                     ],
                   ),
-            action: GhostIconButton(
-              icon: Icons.add,
-              tooltip: 'Open Tasks',
-              onTap: () => state.goTo(AppPage.tasks),
+            action: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GhostIconButton(
+                  key: const ValueKey('home-review'),
+                  icon: Icons.fact_check_outlined,
+                  tooltip: 'Review today and this week',
+                  onTap: () => showReviewCenter(context, state),
+                ),
+                GhostIconButton(
+                  icon: Icons.add,
+                  tooltip: 'Open Tasks',
+                  onTap: () => state.goTo(AppPage.tasks),
+                ),
+              ],
             ),
           ),
           'upcoming': card(

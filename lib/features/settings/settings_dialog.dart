@@ -14,6 +14,7 @@ import '../capture/send_to.dart';
 import 'sync_section.dart';
 import '../tasks/completion_messages.dart';
 import '../ai/ai_settings_section.dart';
+import '../sharing/share_dialog.dart';
 
 Future<void> showSettingsDialog(BuildContext context, AppState state) {
   return showDialog<void>(
@@ -200,7 +201,63 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 ),
               const _Heading('AI'),
               AiSettingsSection(state: s),
+              const _Heading('Sharing'),
+              ListTile(
+                key: const ValueKey('shared-links'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Shared links',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: Text(
+                  '${s.workspace.shares.all.where((l) => l.activeAt(DateTime.now())).length} '
+                  'active. Read-only links served by your own hub; revoke '
+                  'them here.',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textFaint,
+                  ),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => showSharedLinks(context, s),
+              ),
+              ListTile(
+                key: const ValueKey('open-vault'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Private vault',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Notes encrypted with a password; never searched, sent to '
+                  'AI, shared or exported.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                ),
+                trailing: const Icon(Icons.lock_outline),
+                onTap: () {
+                  Navigator.pop(context);
+                  s.openVault();
+                },
+              ),
               const _Heading('Window'),
+              SwitchListTile(
+                key: const ValueKey('immersive'),
+                contentPadding: EdgeInsets.zero,
+                value: s.immersive,
+                onChanged: (_) async {
+                  await s.toggleImmersive();
+                  if (mounted) setState(() {});
+                },
+                title: const Text(
+                  'Full screen',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Windows: no window frame (F11). iPhone/iPad: no status bar '
+                  '(swipe from the edge to see it; the home indicator stays).',
+                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                ),
+              ),
               SwitchListTile(
                 key: const ValueKey('always-on-top'),
                 contentPadding: EdgeInsets.zero,

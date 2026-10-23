@@ -107,14 +107,14 @@ void main() {
     );
 
     test('the resize handle is a finger-sized target', () {
-      // Handle at (200, 100); a finger lands 15 px away.
-      const near = Offset(215, 112);
+      // Resize dot at the top-right (200, 0); a finger lands 15 px away.
+      const near = Offset(215, 12);
       final c = controller([box])..select(['a']);
       expect(c.resizeHandleAt(near), isNull, reason: 'mouse stays precise');
       expect(c.resizeHandleAt(near, kind: PointerDeviceKind.touch), isNotNull);
 
       c.pointerDown(near, kind: PointerDeviceKind.touch);
-      c.pointerMove(const Offset(315, 162));
+      c.pointerMove(const Offset(315, -50));
       c.pointerUp();
       expect(c.itemBounds(c.items.single).width, greaterThan(250));
     });
@@ -421,8 +421,11 @@ void main() {
       ).allMatches(dart))
         m.group(1)!,
     };
+    // The Safari web view has its own channel (checked below).
+    final webStart = swift.indexOf('final class TheAppWebViewFactory');
+    final bridge = webStart < 0 ? swift : swift.substring(0, webStart);
     final swiftCases = {
-      for (final m in RegExp(r'case "(\w+)"').allMatches(swift)) m.group(1)!,
+      for (final m in RegExp(r'case "(\w+)"').allMatches(bridge)) m.group(1)!,
     };
     expect(dartCalls, isNotEmpty);
     expect(swiftCases, dartCalls, reason: 'Dart and Swift must match');
@@ -431,5 +434,29 @@ void main() {
     expect(dart, contains("case 'openedUrl'"));
     expect(swift, contains('invokeMethod("pencilSqueeze"'));
     expect(dart, contains("case 'pencilSqueeze'"));
+  });
+
+  test('web view channel contract: Dart calls and Swift cases match', () {
+    final dart = File('lib/features/browser/browser_engine.dart')
+        .readAsStringSync();
+    final swift = File('ios/Runner/AppDelegate.swift').readAsStringSync();
+    final web = swift.substring(
+      swift.indexOf('final class TheAppWebViewFactory'),
+    );
+    final dartCalls = {
+      for (final m in RegExp(
+        r"""(?:_call|invokeMethod)<?[^(]*>?\(\s*'(\w+)'""",
+      ).allMatches(dart))
+        m.group(1)!,
+    };
+    final swiftCases = {
+      for (final m in RegExp(r'case "(\w+)"').allMatches(web)) m.group(1)!,
+    };
+    expect(dartCalls, isNotEmpty);
+    expect(swiftCases, dartCalls);
+    // Swift → Dart events all have a Dart case.
+    for (final m in RegExp(r'invokeMethod\("(\w+)"').allMatches(web)) {
+      expect(dart, contains("case '${m.group(1)}'"), reason: m.group(1));
+    }
   });
 }

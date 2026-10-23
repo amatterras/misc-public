@@ -323,10 +323,10 @@ void main() {
       final asset = h.s.workspace.assets[image.assetId]!;
       expect(asset.kind, AssetKind.image);
 
-      // Resize from the corner handle: the aspect ratio (4:3) is kept.
+      // Resize from the top-right dot: the aspect ratio (4:3) is kept.
       expect(c.selection, {image.id});
-      final corner = h.screen(c.itemBounds(image).bottomRight);
-      await h.drag(corner, corner + const Offset(100, 10));
+      final corner = h.screen(c.itemBounds(image).topRight);
+      await h.drag(corner, corner + const Offset(100, -10));
       final resized = c.itemById(image.id) as ImageItem;
       expect(resized.width, closeTo(resized.height * 4 / 3, 0.01));
       expect(resized.width, greaterThan(image.width));

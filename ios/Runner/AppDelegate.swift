@@ -6,6 +6,7 @@ import Security
 import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
+import WebKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -20,6 +21,11 @@ import UserNotifications
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "TheAppIosBridge") {
       TheAppIosBridge.shared.attach(messenger: registrar.messenger())
+    }
+    // Safari's engine on iPhone/iPad: WKWebView as a Flutter platform view.
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "TheAppWebView") {
+      registrar.register(
+        TheAppWebViewFactory(messenger: registrar.messenger()), withId: "theapp/webview")
     }
   }
 }
@@ -502,5 +508,267 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       top = presented
     }
     return top
+  }
+}
+
+// MARK: - Safari engine (WKWebView platform view)
+
+/// Native half of lib/features/browser/browser_engine.dart (WebKitEngine).
+/// Each view has its own channel "theapp/webview/<id>". Private tabs use a
+/// non-persistent data store. UNTESTED on a device: compiled only by the
+/// cloud build.
+final class TheAppWebViewFactory: NSObject, FlutterPlatformViewFactory {
+  private let messenger: FlutterBinaryMessenger
+
+  init(messenger: FlutterBinaryMessenger) {
+    self.messenger = messenger
+    super.init()
+  }
+
+  func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol {
+    FlutterStandardMessageCodec.sharedInstance()
+  }
+
+  func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?)
+    -> FlutterPlatformView
+  {
+    let isPrivate = (args as? [String: Any])?["private"] as? Bool ?? false
+    return TheAppWebView(frame: frame, viewId: viewId, messenger: messenger, isPrivate: isPrivate)
+  }
+}
+
+final class TheAppWebView: NSObject, FlutterPlatformView, WKNavigationDelegate, WKUIDelegate,
+  WKDownloadDelegate
+{
+  private let webView: WKWebView
+  private let channel: FlutterMethodChannel
+  private var observations: [NSKeyValueObservation] = []
+  private var lastError: String?
+  private var downloads: [ObjectIdentifier: (id: String, url: String, name: String, path: URL?)] =
+    [:]
+
+  init(frame: CGRect, viewId: Int64, messenger: FlutterBinaryMessenger, isPrivate: Bool) {
+    let config = WKWebViewConfiguration()
+    config.websiteDataStore = isPrivate ? .nonPersistent() : .default()
+    config.allowsInlineMediaPlayback = true
+    webView = WKWebView(frame: frame, configuration: config)
+    webView.allowsBackForwardNavigationGestures = true
+    channel = FlutterMethodChannel(name: "theapp/webview/\(viewId)", binaryMessenger: messenger)
+    super.init()
+    webView.navigationDelegate = self
+    webView.uiDelegate = self
+    if #available(iOS 16.0, *) { webView.isFindInteractionEnabled = true }
+    observations = [
+      webView.observe(\.url) { [weak self] _, _ in self?.sendState() },
+      webView.observe(\.title) { [weak self] _, _ in self?.sendState() },
+      webView.observe(\.isLoading) { [weak self] _, _ in self?.sendState() },
+      webView.observe(\.estimatedProgress) { [weak self] _, _ in self?.sendState() },
+      webView.observe(\.canGoBack) { [weak self] _, _ in self?.sendState() },
+      webView.observe(\.canGoForward) { [weak self] _, _ in self?.sendState() },
+    ]
+    channel.setMethodCallHandler { [weak self] call, result in self?.handle(call, result) }
+  }
+
+  func view() -> UIView { webView }
+
+  private func sendState() {
+    var state: [String: Any] = [
+      "url": webView.url?.absoluteString ?? "",
+      "title": webView.title ?? "",
+      "loading": webView.isLoading,
+      "progress": webView.estimatedProgress,
+      "canGoBack": webView.canGoBack,
+      "canGoForward": webView.canGoForward,
+    ]
+    if let error = lastError { state["error"] = error }
+    channel.invokeMethod("state", arguments: state)
+  }
+
+  private func handle(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    switch call.method {
+    case "load":
+      guard let text = call.arguments as? String, let url = URL(string: text),
+        url.scheme == "http" || url.scheme == "https"
+      else {
+        result(FlutterError(code: "bad_url", message: "Only web addresses can be opened", details: nil))
+        return
+      }
+      lastError = nil
+      webView.load(URLRequest(url: url))
+      result(nil)
+    case "back": webView.goBack(); result(nil)
+    case "forward": webView.goForward(); result(nil)
+    case "reload": lastError = nil; webView.reload(); result(nil)
+    case "stop": webView.stopLoading(); result(nil)
+    case "zoom":
+      if #available(iOS 14.0, *), let factor = call.arguments as? Double {
+        webView.pageZoom = CGFloat(factor)
+      }
+      result(nil)
+    case "find":
+      if #available(iOS 16.0, *) {
+        webView.findInteraction?.presentFindNavigator(showingReplace: false)
+      }
+      result(nil)
+    case "evaluate":
+      // Only the two fixed read-only scripts the app sends (selection and
+      // visible text); never code from a web page.
+      guard let script = call.arguments as? String,
+        script == "window.getSelection().toString()" || script == "document.body.innerText"
+      else {
+        result(nil)
+        return
+      }
+      webView.evaluateJavaScript(script) { value, _ in result(value as? String ?? "") }
+    case "clearData":
+      let store = webView.configuration.websiteDataStore
+      store.removeData(
+        ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast
+      ) { result(nil) }
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  // Navigation: only web pages load here; other schemes go to the app,
+  // which asks the user (mailto:, tel:, app links). Certificate errors are
+  // never bypassed.
+  func webView(
+    _ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+    decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+  ) {
+    guard let url = action.request.url, let scheme = url.scheme?.lowercased() else {
+      decisionHandler(.cancel)
+      return
+    }
+    if ["http", "https", "about", "blob", "data"].contains(scheme) {
+      if action.shouldPerformDownload {
+        decisionHandler(.download)
+      } else {
+        decisionHandler(.allow)
+      }
+    } else {
+      decisionHandler(.cancel)
+      if scheme != "javascript" && scheme != "file" {
+        channel.invokeMethod("external", arguments: url.absoluteString)
+      }
+    }
+  }
+
+  func webView(
+    _ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+    decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+  ) {
+    decisionHandler(response.canShowMIMEType ? .allow : .download)
+  }
+
+  func webView(_ webView: WKWebView, didFailProvisionalNavigation nav: WKNavigation!, withError error: Error) {
+    report(error)
+  }
+
+  func webView(_ webView: WKWebView, didFail nav: WKNavigation!, withError error: Error) {
+    report(error)
+  }
+
+  func webView(_ webView: WKWebView, didStartProvisionalNavigation nav: WKNavigation!) {
+    lastError = nil
+    sendState()
+  }
+
+  private func report(_ error: Error) {
+    let ns = error as NSError
+    if ns.code == NSURLErrorCancelled { return }
+    let certificate = [
+      NSURLErrorServerCertificateUntrusted, NSURLErrorServerCertificateHasBadDate,
+      NSURLErrorServerCertificateHasUnknownRoot, NSURLErrorServerCertificateNotYetValid,
+      NSURLErrorSecureConnectionFailed,
+    ].contains(ns.code)
+    lastError =
+      certificate
+      ? "This site's secure connection could not be verified, so it was not opened."
+      : "The page could not be opened: \(ns.localizedDescription)"
+    sendState()
+  }
+
+  // Pop-ups and target=_blank open as a new THEapp tab.
+  func webView(
+    _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+    for action: WKNavigationAction, windowFeatures: WKWindowFeatures
+  ) -> WKWebView? {
+    if let url = action.request.url?.absoluteString {
+      channel.invokeMethod("newWindow", arguments: url)
+    }
+    return nil
+  }
+
+  // Camera / microphone: the app asks the user (and remembers per site).
+  @available(iOS 15.0, *)
+  func webView(
+    _ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+    initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+    decisionHandler: @escaping (WKPermissionDecision) -> Void
+  ) {
+    let kind: String
+    switch type {
+    case .camera: kind = "camera"
+    case .microphone: kind = "microphone"
+    default: kind = "camera and microphone"
+    }
+    channel.invokeMethod("permission", arguments: ["host": origin.host, "kind": kind]) { answer in
+      decisionHandler((answer as? Bool) == true ? .grant : .deny)
+    }
+  }
+
+  // Downloads (iOS 14.5+): saved in Documents/THEapp Downloads.
+  func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+    download.delegate = self
+  }
+
+  func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+    download.delegate = self
+  }
+
+  func download(
+    _ download: WKDownload, decideDestinationUsing response: URLResponse,
+    suggestedFilename: String, completionHandler: @escaping (URL?) -> Void
+  ) {
+    let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("THEapp Downloads", isDirectory: true)
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let safe = (suggestedFilename as NSString).lastPathComponent
+    var target = folder.appendingPathComponent(safe.isEmpty ? "download" : safe)
+    var n = 2
+    while FileManager.default.fileExists(atPath: target.path) {
+      let base = (safe as NSString).deletingPathExtension
+      let ext = (safe as NSString).pathExtension
+      target = folder.appendingPathComponent(ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)")
+      n += 1
+    }
+    let id = UUID().uuidString
+    downloads[ObjectIdentifier(download)] = (id, response.url?.absoluteString ?? "", target.lastPathComponent, target)
+    observations.append(
+      download.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
+        DispatchQueue.main.async { self?.sendDownload(download, progress: progress.fractionCompleted) }
+      })
+    completionHandler(target)
+    sendDownload(download, progress: 0)
+  }
+
+  func downloadDidFinish(_ download: WKDownload) {
+    sendDownload(download, progress: 1, done: true)
+  }
+
+  func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+    sendDownload(download, progress: 0, error: error.localizedDescription)
+  }
+
+  private func sendDownload(_ download: WKDownload, progress: Double, done: Bool = false, error: String? = nil) {
+    guard let d = downloads[ObjectIdentifier(download)] else { return }
+    var args: [String: Any] = [
+      "id": d.id, "url": d.url, "fileName": d.name, "progress": progress, "done": done,
+    ]
+    if done, let path = d.path?.path { args["path"] = path }
+    if let error = error { args["error"] = error }
+    channel.invokeMethod("download", arguments: args)
   }
 }

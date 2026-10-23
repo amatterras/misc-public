@@ -133,8 +133,9 @@ void main() {
       text: 'x',
     );
     final c = makeController(items: [text])..select(['t']);
-    c.pointerDown(const Offset(200, 100));
-    c.pointerMove(const Offset(320, 150));
+    // The resize dot is the top-right corner; the bottom-left stays.
+    c.pointerDown(const Offset(200, 0));
+    c.pointerMove(const Offset(320, -50));
     c.pointerUp();
     final resized = c.items.single as TextItem;
     expect(resized.width, 320);

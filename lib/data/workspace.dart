@@ -14,6 +14,11 @@ import 'storage/attachment_store.dart';
 import 'storage/backup_service.dart';
 import 'storage/json_file_store.dart';
 import 'sync/sync_clock.dart';
+import 'models/ai_models.dart';
+import 'models/browser_models.dart';
+import 'models/knowledge_models.dart';
+import 'models/vault_models.dart';
+import 'models/template_models.dart';
 
 class CalendarLimitException implements Exception {
   const CalendarLimitException(this.category);
@@ -56,14 +61,6 @@ class TaskOnDay extends DayItem {
   String get label => task.isExam ? 'Exam: ${task.title}' : task.title;
 }
 
-/// Payload while dragging a calendar label (or a task from the task list)
-/// to a day. [from] is the day it came from; null for an undated task.
-class DayDrag {
-  const DayDrag(this.item, this.from);
-  final DayItem item;
-  final DateTime? from;
-}
-
 /// All non-canvas records plus attachments and backups, shared by every
 /// screen. Business rules (limits, de-duplication) live here so each view
 /// behaves the same way.
@@ -82,6 +79,19 @@ class Workspace {
     projects = _c('projects', Project.fromJson);
     conflicts = _c('conflicts', SyncConflict.fromJson);
     clipboard = _c('clipboard', ClipboardClip.fromJson);
+    archiveFolders = _c('archive_folders', Folder.fromJson);
+    shares = _c('shares', ShareLink.fromJson);
+    experiments = _c('thought_experiments', ThoughtExperiment.fromJson);
+    // Private vault: ciphertext only (see vault_service.dart).
+    vaultMeta = _c('vault_meta', VaultMeta.fromJson);
+    vaultItems = _c('vault_items', VaultItem.fromJson);
+    templates = _c('templates', ContentTemplate.fromJson);
+    // AI conversations stay on this device (not in [syncCollections]).
+    aiConversations = _c('ai_conversations', AiConversation.fromJson);
+    // Browser records stay on this device too.
+    bookmarks = _c('browser_bookmarks', Bookmark.fromJson);
+    history = _c('browser_history', HistoryEntry.fromJson);
+    sitePermissions = _c('browser_permissions', SitePermission.fromJson);
     // Version history stays on this device (not in [syncCollections]).
     noteVersions = _c('note_versions', NoteVersion.fromJson);
     notes.onReplace = _keepNoteVersion;
@@ -106,6 +116,20 @@ class Workspace {
   /// Text shared between the user's devices (synced only while
   /// [shareClipboard] is on).
   late final RecordCollection<ClipboardClip> clipboard;
+  late final RecordCollection<AiConversation> aiConversations;
+  late final RecordCollection<Bookmark> bookmarks;
+  late final RecordCollection<HistoryEntry> history;
+  late final RecordCollection<SitePermission> sitePermissions;
+
+  /// Archive folders (separate from note folders).
+  late final RecordCollection<Folder> archiveFolders;
+
+  /// Read-only share links served by the hub (see ShareLink).
+  late final RecordCollection<ShareLink> shares;
+  late final RecordCollection<ThoughtExperiment> experiments;
+  late final RecordCollection<VaultMeta> vaultMeta;
+  late final RecordCollection<VaultItem> vaultItems;
+  late final RecordCollection<ContentTemplate> templates;
   bool shareClipboard = false;
 
   /// The record collections that sync, by their protocol name.
@@ -119,6 +143,12 @@ class Workspace {
     'tasks': tasks,
     'projects': projects,
     'conflicts': conflicts,
+    'archive_folders': archiveFolders,
+    'shares': shares,
+    'thought_experiments': experiments,
+    'vault_meta': vaultMeta,
+    'vault_items': vaultItems,
+    'templates': templates,
     if (shareClipboard) 'clipboard': clipboard,
   };
 

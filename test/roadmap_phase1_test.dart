@@ -228,6 +228,10 @@ void main() {
       expect(resized.topLeft, moved.topLeft);
 
       // Remembered on this device: a fresh start finds the same place.
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
       await waitForBothClocks(tester, ws.store.flush, what: 'Saving');
       final again = SettingsRepository(Workspace(dir).store);
       await tester.runAsync(again.load);

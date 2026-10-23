@@ -13,6 +13,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/page_windows.dart';
 import '../../app/shell.dart' show WorkspaceBuilder;
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
@@ -29,6 +30,8 @@ import '../export/exports.dart';
 import 'paper_dialog.dart';
 import 'paper_painter.dart';
 import 'notes_page.dart' show NoteEditor;
+import '../sharing/share_dialog.dart';
+import '../templates/templates.dart';
 
 /// Opens note [noteId] as its own page (with a normal Back button).
 Future<void> openNotePage(BuildContext context, AppState state, String id) =>
@@ -119,7 +122,7 @@ class _NotePageState extends State<NotePage> {
         ? CanvasTool.pen
         : CanvasTool.text;
     if (doc.pageBackgrounds.isNotEmpty) c.setPen(color: notebookInk[1]);
-    s.openNotebook = c; // sync merges remote changes into this document
+    s.openNotebooks.add(c); // sync merges remote changes into this document
     setState(() => _c = c);
   }
 
@@ -145,7 +148,7 @@ class _NotePageState extends State<NotePage> {
     } catch (e, st) {
       AppLog.error('Saving a note\'s handwriting failed', e, st);
     }
-    if (identical(s.openNotebook, c)) s.openNotebook = null;
+    s.openNotebooks.remove(c);
   }
 
   @override
@@ -317,6 +320,60 @@ class _NotePageState extends State<NotePage> {
       child: Scaffold(
         appBar: AppBar(
           title: Text(note?.displayTitle ?? 'Note'),
+          actions: [
+            if (note != null)
+              IconButton(
+                key: const ValueKey('note-template'),
+                tooltip: 'Save as a template',
+                icon: const Icon(Icons.copy_all_outlined, size: 18),
+                onPressed: () async {
+                  final name = await promptText(
+                    context,
+                    title: 'Template name',
+                    initial: note.displayTitle,
+                    action: 'Save',
+                  );
+                  if (name == null || name.trim().isEmpty) return;
+                  s.workspace.templates.put(
+                    noteTemplate(name.trim(), note.title, note.body),
+                  );
+                  s.showToast(
+                    'Saved. Use it with “New note from a template” (Ctrl+Shift+P).',
+                  );
+                },
+              ),
+            if (note != null)
+              IconButton(
+                key: const ValueKey('note-share'),
+                tooltip: 'Share a read-only link',
+                icon: const Icon(Icons.ios_share, size: 18),
+                onPressed: () => showShareDialog(
+                  context,
+                  s,
+                  kind: 'note',
+                  sourceId: note.id,
+                  title: note.displayTitle,
+                  body: note.body,
+                ),
+              ),
+            // Inside a page window there is no route to leave.
+            if (Navigator.of(context).canPop())
+              IconButton(
+                key: const ValueKey('note-open-window'),
+                tooltip: 'Open in a window',
+                icon: const Icon(Icons.open_in_new, size: 18),
+                onPressed: () async {
+                  await _close();
+                  s.windows.open(
+                    AppPage.notes,
+                    refId: widget.noteId,
+                    title: note?.displayTitle ?? 'Note',
+                    mode: PageMode.floating,
+                  );
+                  if (context.mounted) Navigator.of(context).pop();
+                },
+              ),
+          ],
           bottom: c == null
               ? null
               : PreferredSize(

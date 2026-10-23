@@ -12,6 +12,7 @@ import '../../data/models/library_models.dart';
 import '../../widgets/common.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_page.dart';
+import 'archive_library_page.dart';
 import 'link_tags.dart';
 
 class LinksPage extends StatefulWidget {
@@ -182,6 +183,12 @@ class _LinksPageState extends State<LinksPage> {
                 ],
               ),
             ),
+          ),
+          IconButton(
+            key: const ValueKey('links-library'),
+            tooltip: 'Library: folders, where things are used, link check',
+            onPressed: () => showArchiveLibrary(context, s),
+            icon: const Icon(Icons.folder_copy_outlined, size: 18),
           ),
           TextButton.icon(
             key: const ValueKey('links-add'),

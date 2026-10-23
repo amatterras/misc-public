@@ -127,9 +127,9 @@ class CanvasPainter extends CustomPainter {
             ..strokeWidth = 2 / scale,
         );
       }
-      _paintMarks(canvas, item, bounds, scale);
       if (faded) canvas.restore();
     }
+    _paintMarks(canvas, scale, visible);
     _paintSelection(canvas, scale);
     canvas.restore();
   }
@@ -160,9 +160,9 @@ class CanvasPainter extends CustomPainter {
 
   /// A lasso tag: a colored dot at the item's top-left and top-right
   /// corners. A locked item: a small padlock at its top-right.
-  void _paintMarks(Canvas canvas, CanvasItem item, Rect bounds, double scale) {
-    final tag = controller.tagOf(item.id);
-    if (tag != null) {
+  void _paintMarks(Canvas canvas, double scale, Rect visible) {
+    for (final (bounds, tag) in controller.taggedUnits) {
+      if (!bounds.overlaps(visible)) continue;
       final dot = Paint()..color = CanvasTagColors.selected[tag];
       final ring = Paint()
         ..color = AppColors.background
@@ -173,7 +173,10 @@ class CanvasPainter extends CustomPainter {
         canvas.drawCircle(corner, 6 / scale, ring);
       }
     }
-    if (controller.isLocked(item.id)) {
+    for (final unit in controller.unitsOf(controller.items)) {
+      if (!unit.every((i) => controller.isLocked(i.id))) continue;
+      final bounds = controller.boundsOf(unit)!;
+      if (!bounds.overlaps(visible)) continue;
       final painter = TextPainter(
         text: TextSpan(
           text: String.fromCharCode(Icons.lock.codePoint),
@@ -431,33 +434,20 @@ class CanvasPainter extends CustomPainter {
           ..strokeWidth = 2.5 / scale,
       );
     }
-    final selected = controller.selectedItems
-        .where((i) => i is! ConnectorItem)
-        .toList();
-    for (final item in selected) {
+    // One boundary around the whole selection (a group or many strokes
+    // are one object), with exactly two dots: top-left and top-right
+    // (the top-right one resizes / scales).
+    final bounds = controller.selectionBounds;
+    if (bounds != null) {
+      final box = bounds.inflate(4 / scale);
       canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          controller.itemBounds(item).inflate(3 / scale),
-          Radius.circular(8 / scale),
-        ),
+        RRect.fromRectAndRadius(box, Radius.circular(8 / scale)),
         outline,
       );
-    }
-    if (selected.length == 1 && controller.tool == CanvasTool.select) {
-      final corner = controller.itemBounds(selected.first).bottomRight;
-      final handle = Rect.fromCenter(
-        center: corner,
-        width: CanvasController.handleSize / scale,
-        height: CanvasController.handleSize / scale,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(handle, Radius.circular(2 / scale)),
-        Paint()..color = AppColors.text,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(handle, Radius.circular(2 / scale)),
-        outline,
-      );
+      for (final dot in [box.topLeft, box.topRight]) {
+        canvas.drawCircle(dot, 5 / scale, Paint()..color = AppColors.text);
+        canvas.drawCircle(dot, 5 / scale, outline);
+      }
     }
 
     final marquee = controller.marquee;

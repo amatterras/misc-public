@@ -4,6 +4,7 @@
 //   - a model running on this PC with Ollama (free, nothing leaves the PC);
 //   - an OpenAI-compatible service with the user's own key (may cost money;
 //     a ChatGPT subscription does not include this).
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -90,6 +91,14 @@ class AiSettings {
 
   bool allows(AiSource source) => enabled && sources.contains(source);
 
+  /// Extra rules for one tool (e.g. "Quiz me: 10 questions, harder"),
+  /// added to that tool's requests only.
+  String toolRules(AiTool tool) => _get('rules.${tool.name}', '');
+  Future<void> setToolRules(AiTool tool, String rules) => _set(
+    'rules.${tool.name}',
+    String.fromCharCodes(rules.trim().runes.take(2000)),
+  );
+
   /// Whether the AI address is this PC (nothing leaves the device).
   bool get isLocal {
     final host = Uri.tryParse(endpoint)?.host.toLowerCase() ?? '';
@@ -98,6 +107,45 @@ class AiSettings {
         host == '::1' ||
         host == '[::1]';
   }
+
+  // AI activity log (governance): what kind of material went where and
+  // when, never the material itself. Kept on this device, newest last.
+  static const maxActivity = 200;
+
+  List<Map<String, dynamic>> get activity => [
+    for (final e in _get<List>('activity', const []))
+      if (e is Map) e.cast<String, dynamic>(),
+  ];
+
+  Future<void> logSend({
+    required String tool,
+    required List<String> sourceKinds,
+    required int chars,
+    required int images,
+  }) {
+    final next = [
+      ...activity,
+      {
+        'at': DateTime.now().toUtc().toIso8601String(),
+        'provider': provider.name,
+        'host': Uri.tryParse(endpoint)?.host ?? '',
+        'local': isLocal,
+        'model': model,
+        'tool': tool,
+        'sources': sourceKinds,
+        'chars': chars,
+        'images': images,
+      },
+    ];
+    return _set(
+      'activity',
+      next.length > maxActivity
+          ? next.sublist(next.length - maxActivity)
+          : next,
+    );
+  }
+
+  Future<void> clearActivity() => _set('activity', const []);
 }
 
 class AiMessage {
@@ -114,9 +162,23 @@ class AiFailure implements Exception {
   String toString() => message;
 }
 
-/// Sends a conversation and returns the reply.
+/// Sends a conversation and returns the reply, whole ([complete]) or piece
+/// by piece as it is written ([stream]); [cancel] stops a request.
 abstract class AiClient {
   Future<String> complete(List<AiMessage> messages);
+
+  /// The reply in pieces. Services that cannot stream give it in one piece.
+  Stream<String> stream(List<AiMessage> messages) async* {
+    yield await complete(messages);
+  }
+
+  /// Stops the request in progress (its stream ends with [AiCancelled]).
+  void cancel() {}
+}
+
+/// The user stopped the request.
+class AiCancelled extends AiFailure {
+  const AiCancelled() : super('Stopped.');
 }
 
 /// Picks the client for [settings]. [apiKey] only for the OpenAI-compatible
@@ -134,78 +196,214 @@ AiClient aiClientFor(AiSettings settings, {String? apiKey}) =>
       ),
     };
 
+/// Largest reply accepted (characters); anything beyond is cut off.
+const maxReplyChars = 200000;
+
+/// A plain explanation for an HTTP status from an AI service.
+AiFailure aiFailureFor(int status) => switch (status) {
+  401 || 403 => const AiFailure(
+    'The AI service refused the key (not signed in or not allowed).',
+  ),
+  404 => const AiFailure(
+    'The AI service does not know this address or model. Check Settings → AI.',
+  ),
+  408 || 504 => const AiFailure('The AI service took too long. Try again.'),
+  429 => const AiFailure(
+    'The AI service says too many requests or the usage limit is reached. '
+    'Wait a moment, or check your plan with the provider.',
+  ),
+  >= 500 => AiFailure(
+    'The AI service had a problem ($status). Try again later.',
+  ),
+  _ => AiFailure('The AI service answered with an error ($status).'),
+};
+
+/// One HTTP exchange that can be cancelled.
+class _Request {
+  _Request(this.url, this.body, this.headers, this.timeout);
+  final Uri url;
+  final Map<String, dynamic> body;
+  final Map<String, String> headers;
+  final Duration timeout;
+  HttpClient? _client;
+  bool cancelled = false;
+
+  void cancel() {
+    cancelled = true;
+    _client?.close(force: true);
+  }
+
+  /// The response's text lines.
+  Stream<String> lines() async* {
+    final client = _client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 8)
+      ..idleTimeout = timeout;
+    try {
+      final request = await client.postUrl(url).timeout(timeout);
+      request.headers.contentType = ContentType.json;
+      headers.forEach(request.headers.set);
+      request.add(utf8.encode(jsonEncode(body)));
+      final response = await request.close().timeout(timeout);
+      if (response.statusCode >= 400) {
+        await response.drain<void>().catchError((_) {});
+        throw aiFailureFor(response.statusCode);
+      }
+      yield* response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(timeout);
+    } on AiFailure {
+      rethrow;
+    } on TimeoutException {
+      if (cancelled) throw const AiCancelled();
+      throw const AiFailure('The AI service took too long. Try again.');
+    } on HandshakeException {
+      throw AiFailure(
+        'The secure connection to ${url.host} failed (its certificate was '
+        'not accepted). Nothing was sent.',
+      );
+    } on SocketException {
+      if (cancelled) throw const AiCancelled();
+      throw AiFailure(
+        'Could not reach the AI at ${url.host}:${url.port}. Is it running?',
+      );
+    } on HttpException {
+      if (cancelled) throw const AiCancelled();
+      throw const AiFailure('The connection to the AI service broke off.');
+    } finally {
+      client.close(force: true);
+    }
+  }
+}
+
 Future<Map<String, dynamic>> _postJson(
   Uri url,
   Map<String, dynamic> body, {
   Map<String, String> headers = const {},
   Duration timeout = const Duration(seconds: 120),
 }) async {
-  final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+  final text = await _Request(url, body, headers, timeout).lines().join('\n');
   try {
-    final request = await client.postUrl(url).timeout(timeout);
-    request.headers.contentType = ContentType.json;
-    headers.forEach(request.headers.set);
-    request.add(utf8.encode(jsonEncode(body)));
-    final response = await request.close().timeout(timeout);
-    final text = await response.transform(utf8.decoder).join().timeout(timeout);
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      throw const AiFailure('The AI service refused the key.');
-    }
-    if (response.statusCode >= 400) {
-      throw AiFailure(
-        'The AI service answered with an error (${response.statusCode}).',
-      );
-    }
     final json = jsonDecode(text);
     if (json is! Map<String, dynamic>) {
       throw const AiFailure('The AI service sent an unexpected answer.');
     }
     return json;
-  } on SocketException {
-    throw AiFailure(
-      'Could not reach the AI at ${url.host}:${url.port}. '
-      'Is it running?',
-    );
   } on FormatException {
     throw const AiFailure('The AI service sent an unreadable answer.');
-  } finally {
-    client.close(force: true);
   }
 }
 
-class OllamaClient implements AiClient {
+/// Pieces of a streamed reply, one per line of the response; cut off at
+/// [maxReplyChars].
+Stream<String> _pieces(
+  _Request request,
+  String? Function(String line) piece,
+) async* {
+  var total = 0;
+  await for (final line in request.lines()) {
+    if (request.cancelled) throw const AiCancelled();
+    final String? text;
+    try {
+      text = piece(line);
+    } on FormatException {
+      continue; // a broken line is skipped, not fatal
+    }
+    if (text == null || text.isEmpty) continue;
+    total += text.length;
+    if (total > maxReplyChars) return;
+    yield text;
+  }
+  if (request.cancelled) throw const AiCancelled();
+}
+
+class OllamaClient extends AiClient {
   OllamaClient(this.endpoint, this.model);
   final Uri endpoint;
   final String model;
+  _Request? _active;
+
+  Map<String, dynamic> _body(List<AiMessage> messages, bool stream) => {
+    'model': model,
+    'stream': stream,
+    'messages': [
+      for (final m in messages)
+        {
+          'role': m.role,
+          'content': m.content,
+          if (m.images.isNotEmpty)
+            'images': [for (final i in m.images) base64Encode(i)],
+        },
+    ],
+  };
 
   @override
   Future<String> complete(List<AiMessage> messages) async {
-    final json = await _postJson(endpoint.resolve('/api/chat'), {
-      'model': model,
-      'stream': false,
-      'messages': [
-        for (final m in messages)
-          {
-            'role': m.role,
-            'content': m.content,
-            if (m.images.isNotEmpty)
-              'images': [for (final i in m.images) base64Encode(i)],
-          },
-      ],
-    });
+    final json = await _postJson(
+      endpoint.resolve('/api/chat'),
+      _body(messages, false),
+    );
     final content = (json['message'] as Map?)?['content'];
     if (content is! String) {
       throw const AiFailure('The local model sent no answer.');
     }
     return content.trim();
   }
+
+  @override
+  Stream<String> stream(List<AiMessage> messages) {
+    final r = _active = _Request(
+      endpoint.resolve('/api/chat'),
+      _body(messages, true),
+      const {},
+      const Duration(seconds: 120),
+    );
+    // One JSON object per line.
+    return _pieces(r, (line) {
+      if (line.trim().isEmpty) return null;
+      final json = jsonDecode(line);
+      if (json is! Map) return null;
+      if (json['error'] is String) throw AiFailure('${json['error']}');
+      final content = (json['message'] as Map?)?['content'];
+      return content is String ? content : null;
+    });
+  }
+
+  @override
+  void cancel() => _active?.cancel();
 }
 
-class OpenAiCompatibleClient implements AiClient {
+class OpenAiCompatibleClient extends AiClient {
   OpenAiCompatibleClient(this.endpoint, this.model, this.apiKey);
   final Uri endpoint;
   final String model;
   final String apiKey;
+  _Request? _active;
+
+  Map<String, dynamic> _body(List<AiMessage> messages, bool stream) => {
+    'model': model,
+    if (stream) 'stream': true,
+    'messages': [
+      for (final m in messages)
+        {
+          'role': m.role,
+          'content': m.images.isEmpty
+              ? m.content
+              : [
+                  {'type': 'text', 'text': m.content},
+                  for (final i in m.images)
+                    {
+                      'type': 'image_url',
+                      'image_url': {
+                        'url': 'data:image/png;base64,${base64Encode(i)}',
+                      },
+                    },
+                ],
+        },
+    ],
+  };
+
+  Map<String, String> get _headers => {'Authorization': 'Bearer $apiKey'};
 
   @override
   Future<String> complete(List<AiMessage> messages) async {
@@ -214,28 +412,8 @@ class OpenAiCompatibleClient implements AiClient {
     }
     final json = await _postJson(
       endpoint.resolve('/v1/chat/completions'),
-      {
-        'model': model,
-        'messages': [
-          for (final m in messages)
-            {
-              'role': m.role,
-              'content': m.images.isEmpty
-                  ? m.content
-                  : [
-                      {'type': 'text', 'text': m.content},
-                      for (final i in m.images)
-                        {
-                          'type': 'image_url',
-                          'image_url': {
-                            'url': 'data:image/png;base64,${base64Encode(i)}',
-                          },
-                        },
-                    ],
-            },
-        ],
-      },
-      headers: {'Authorization': 'Bearer $apiKey'},
+      _body(messages, false),
+      headers: _headers,
     );
     final choices = json['choices'];
     final content = choices is List && choices.isNotEmpty
@@ -246,6 +424,35 @@ class OpenAiCompatibleClient implements AiClient {
     }
     return content.trim();
   }
+
+  @override
+  Stream<String> stream(List<AiMessage> messages) {
+    if (apiKey.isEmpty) {
+      return Stream.error(const AiFailure('No key is set for the AI service.'));
+    }
+    final r = _active = _Request(
+      endpoint.resolve('/v1/chat/completions'),
+      _body(messages, true),
+      _headers,
+      const Duration(seconds: 120),
+    );
+    // Server-sent events: "data: {...}" lines, ending with "data: [DONE]".
+    return _pieces(r, (line) {
+      if (!line.startsWith('data:')) return null;
+      final data = line.substring(5).trim();
+      if (data == '[DONE]' || data.isEmpty) return null;
+      final json = jsonDecode(data);
+      if (json is! Map) return null;
+      final choices = json['choices'];
+      final delta = choices is List && choices.isNotEmpty
+          ? (choices.first as Map?)?['delta']?['content']
+          : null;
+      return delta is String ? delta : null;
+    });
+  }
+
+  @override
+  void cancel() => _active?.cancel();
 }
 
 /// Study and thinking helpers: each is a fixed instruction sent with the

@@ -11,6 +11,7 @@ import '../../widgets/common.dart';
 import '../ai/ai_service.dart';
 import '../ai/ai_session.dart';
 import '../export/exports.dart';
+import 'branch_conversion.dart';
 import 'canvas_controller.dart';
 import 'canvas_export.dart';
 
@@ -56,6 +57,22 @@ Future<void> showCanvasMenu(
             ),
             item('toCanvas', 'Copy to another mindmap…', Icons.hub_outlined),
             item('component', 'Save as component…', Icons.widgets_outlined),
+            if (hit is TextItem) ...[
+              item('branchTasks', switch (branchProgress(
+                c,
+                s.workspace,
+                hit.id,
+              )) {
+                (_, 0) => 'Make tasks from this branch',
+                (final d, final t) =>
+                  'Update tasks from this branch ($d/$t done)',
+              }, Icons.account_tree_outlined),
+              item(
+                'branchNote',
+                'Branch as a note draft',
+                Icons.format_list_bulleted,
+              ),
+            ],
             if (s.ai.enabled)
               item(
                 'ai',
@@ -146,6 +163,20 @@ Future<void> showCanvasMenu(
           ].join('\n'),
         ),
       );
+    case 'branchTasks':
+      final r = convertBranch(c, s.workspace, hit!.id);
+      s.showToast(
+        r.created + r.updated == 0
+            ? 'The tasks are already up to date.'
+            : 'Tasks: ${r.created} new, ${r.updated} updated'
+                  '${r.projectId == null ? '' : ' (project “${s.workspace.projects[r.projectId]?.name}”)'}.',
+      );
+    case 'branchNote':
+      final n = s.workspace.createNote(
+        title: (hit as TextItem).text.trim().split('\n').first,
+        body: branchAsText(c, hit.id),
+      );
+      s.openNote(n.id);
     case 'lock':
       c.toggleLockSelection();
     case 'group':
