@@ -13,6 +13,8 @@ import 'package:flutter_application_1/sync/protocol.dart';
 import 'package:flutter_application_1/sync/sync_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/both_clocks.dart';
+
 final sep = Platform.pathSeparator;
 
 void main() {
@@ -141,7 +143,7 @@ void main() {
       await tester.pump();
       expect(warning, warn ? findsOneWidget : findsNothing, reason: address);
     }
-    await tester.runAsync(s.flush);
+    await waitForBothClocks(tester, s.flush, what: 'Saving');
     await tester.pumpWidget(const SizedBox());
     s.dispose();
   });

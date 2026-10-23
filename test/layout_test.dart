@@ -10,6 +10,8 @@ import 'package:flutter_application_1/features/settings/settings_dialog.dart';
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/both_clocks.dart';
+
 void main() {
   const sizes = [
     Size(1600, 1000),
@@ -81,7 +83,7 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
 
-        await tester.runAsync(state.flush);
+        await waitForBothClocks(tester, state.flush, what: 'Saving');
         await tester.pumpWidget(const SizedBox());
         await tester.pump(const Duration(seconds: 4));
         state.dispose();

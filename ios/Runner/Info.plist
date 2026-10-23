@@ -79,6 +79,10 @@
 			</array>
 		</dict>
 	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>THEapp syncs with the THEapp hub on your own PC.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

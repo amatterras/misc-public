@@ -11,6 +11,8 @@ import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/both_clocks.dart';
+
 Task task({
   DateTime? due,
   int? minutes,
@@ -195,7 +197,7 @@ void main() {
       await tester.pump();
       expect(s.page, AppPage.tasks);
       expect(find.byKey(const ValueKey('reminders')), findsNothing);
-      await tester.runAsync(s.flush);
+      await waitForBothClocks(tester, s.flush, what: 'Saving');
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 4));
       s.dispose();

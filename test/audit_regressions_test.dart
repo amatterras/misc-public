@@ -18,6 +18,8 @@ import 'package:flutter_application_1/features/capture/send_to.dart';
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/both_clocks.dart';
+
 final sep = Platform.pathSeparator;
 
 // A valid 1x1 PNG.
@@ -216,7 +218,7 @@ void main() {
     }
 
     Future<void> shutDown(WidgetTester tester) async {
-      await tester.runAsync(state.flush);
+      await waitForBothClocks(tester, state.flush, what: 'Saving');
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 4));
       state.dispose();

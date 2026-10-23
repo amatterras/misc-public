@@ -20,6 +20,8 @@ import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/platform/ios_bridge.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/both_clocks.dart';
+
 /// Records canvas deletions instead of doing them (see the trash test).
 class _RecordingState extends AppState {
   _RecordingState({
@@ -70,7 +72,7 @@ Future<void> settle(WidgetTester tester) async {
 }
 
 Future<void> shutDown(WidgetTester tester, AppState state) async {
-  await tester.runAsync(state.flush);
+  await waitForBothClocks(tester, state.flush, what: 'Saving');
   await tester.pumpWidget(const SizedBox());
   await tester.pump(const Duration(seconds: 4));
 }

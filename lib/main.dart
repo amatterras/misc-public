@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show AppExitResponse, PlatformDispatcher;
 
+import 'package:flutter/foundation.dart' show kProfileMode, kReleaseMode;
 import 'package:flutter/material.dart';
 
 import 'app/app_state.dart';
 import 'app/test_environment.dart';
 import 'app/shell.dart';
+import 'app/startup.dart';
 import 'app/theme.dart';
 import 'data/repositories/canvas_repository.dart';
 import 'data/storage/app_log.dart';
@@ -18,6 +20,18 @@ import 'sync/secret_store.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  final progress = StartupProgress();
+  try {
+    await _start(args, progress);
+  } catch (e, s) {
+    // Shown on screen (never a blank window), and logged.
+    AppLog.error('Start-up failed at "${progress.step}"', e, s);
+    progress.fail(e, s);
+    runApp(StartupApp(progress: progress));
+  }
+}
+
+Future<void> _start(List<String> args, StartupProgress progress) async {
   // Normally %APPDATA%\THEapp. `--data-dir=<test folder>` switches to a
   // prepared, disposable test folder (manual testing only).
   final real = defaultDataDirectory();
@@ -41,7 +55,21 @@ Future<void> main(List<String> args) async {
     );
     return;
   }
-  AppLog.init(root);
+  // iPhone/iPad: a copy of the log in the app's Documents folder, readable
+  // in the Files app (On My iPad → THEapp), unlike the data folder.
+  final home = Platform.environment['HOME'];
+  final logCopy = Platform.isIOS && home != null
+      ? File('$home/Documents/THEapp-log.txt')
+      : null;
+  if (logCopy != null) {
+    startupLogHint =
+        'Full log on the iPad: Files → On My iPad → THEapp → THEapp-log.txt';
+  }
+  AppLog.init(root, copy: logCopy);
+
+  // Release builds: a part of the screen that fails to build says why,
+  // instead of showing a plain grey box.
+  if (kReleaseMode || kProfileMode) ErrorWidget.builder = readableErrorWidget;
 
   // Unexpected errors are written to the local log instead of vanishing.
   final defaultOnError = FlutterError.onError;
@@ -68,12 +96,19 @@ Future<void> main(List<String> args) async {
       exit(0);
     }
   }
+  // Something on screen at once: the start-up steps below can take a moment
+  // (and if one fails or hangs, this screen says which).
+  runApp(StartupApp(progress: progress));
+
   // iPhone/iPad keep the hub token in the Keychain.
   if (Platform.isIOS) secretKeychain = IosBridge.instance;
   AppLog.info(
-    'Started (pid $pid)${TestEnvironment.active ? ' in TEST DATA mode' : ''}',
+    'Started (pid $pid, ${Platform.operatingSystem} '
+    '${Platform.operatingSystemVersion})'
+    '${TestEnvironment.active ? ' in TEST DATA mode' : ''}',
   );
 
+  progress.to('Opening the data folder');
   final workspace = Workspace(root);
   final state = AppState(
     canvases: FileCanvasRepository(workspace.store),
@@ -81,7 +116,7 @@ Future<void> main(List<String> args) async {
     workspace: workspace,
     enableSendTo: Platform.isWindows,
   );
-  await state.init();
+  await state.init(onStep: progress.to);
   runApp(TheApp(state: state));
 }
 

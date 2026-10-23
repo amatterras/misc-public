@@ -41,7 +41,14 @@ class DeviceIdentity {
     final json = await store.read('sync', 'device');
     var same = json != null && json['host'] == host && json['id'] is String;
     if (json != null && same && keychain != null) {
-      final mark = await _readMark(keychain);
+      final String? mark;
+      try {
+        mark = await keychain.read(keychainKey);
+      } catch (_) {
+        // A Keychain that fails or does not answer says nothing about where
+        // this folder came from: keep the identity, don't replace it.
+        return _fromJson(json, host);
+      }
       if (json['keychain'] == true) {
         // Bound earlier: a missing or different entry means this folder
         // came from another device (a restored backup).
@@ -55,16 +62,7 @@ class DeviceIdentity {
         same = false;
       }
     }
-    if (json != null && same) {
-      return DeviceIdentity(
-        id: json['id'] as String,
-        name: json['name'] as String? ?? host,
-        host: host,
-        createdAt:
-            DateTime.tryParse(json['createdAt'] as String? ?? '') ??
-            DateTime.now(),
-      );
-    }
+    if (json != null && same) return _fromJson(json, host);
     final identity = DeviceIdentity(
       id: _randomId(),
       name: host,
@@ -83,13 +81,15 @@ class DeviceIdentity {
     return identity;
   }
 
-  static Future<String?> _readMark(KeychainBackend keychain) async {
-    try {
-      return await keychain.read(keychainKey);
-    } catch (_) {
-      return null;
-    }
-  }
+  static DeviceIdentity _fromJson(Map<String, dynamic> json, String host) =>
+      DeviceIdentity(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? host,
+        host: host,
+        createdAt:
+            DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+            DateTime.now(),
+      );
 
   static Future<bool> _writeMark(KeychainBackend keychain, String id) async {
     try {

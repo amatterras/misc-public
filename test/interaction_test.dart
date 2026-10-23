@@ -21,6 +21,8 @@ import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/platform/windows_native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/both_clocks.dart';
+
 /// A real 4x3 PNG, drawn with Flutter (so it decodes everywhere).
 Future<Uint8List> makePng() async {
   final recorder = ui.PictureRecorder();
@@ -88,7 +90,7 @@ class Harness {
   Future<void> restart() async {
     // Let every debounced save (started on the fake clock) finish first.
     await settle(rounds: 25);
-    await tester.runAsync(s.flush);
+    await waitForBothClocks(tester, s.flush, what: 'Saving');
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 4));
     await boot();
@@ -96,7 +98,7 @@ class Harness {
 
   Future<void> shutDown() async {
     await settle(rounds: 25);
-    await tester.runAsync(s.flush);
+    await waitForBothClocks(tester, s.flush, what: 'Saving');
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 4));
   }

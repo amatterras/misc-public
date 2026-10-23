@@ -64,10 +64,18 @@ class IosBridge implements KeychainBackend {
   /// false if notifications are not allowed or not available.
   Future<bool> scheduleReminders(List<ScheduledReminder> reminders) async {
     try {
-      return await _invoke<bool>('scheduleReminders', [
-            for (final r in reminders)
-              {'id': r.id, 'title': r.title, 'at': r.at.millisecondsSinceEpoch},
-          ]) ??
+      return await _invoke<bool>(
+            'scheduleReminders',
+            [
+              for (final r in reminders)
+                {
+                  'id': r.id,
+                  'title': r.title,
+                  'at': r.at.millisecondsSinceEpoch,
+                },
+            ],
+            true, // iOS may ask the user for permission first
+          ) ??
           false;
     } on PlatformException {
       return false;
@@ -104,7 +112,7 @@ class IosBridge implements KeychainBackend {
   /// attachments folder (`Workspace.documentFile`).
   bool openDocument(String path) {
     if (!path.toLowerCase().endsWith('.pdf')) return false;
-    unawaited(_invoke<bool>('openDocument', path));
+    unawaited(_invoke<bool>('openDocument', path, true));
     return true;
   }
 
@@ -118,7 +126,7 @@ class IosBridge implements KeychainBackend {
             uri.isScheme('mailto'))) {
       return false;
     }
-    unawaited(_invoke<bool>('openUrl', uri.toString()));
+    unawaited(_invoke<bool>('openUrl', uri.toString(), true));
     return true;
   }
 
@@ -144,9 +152,28 @@ class IosBridge implements KeychainBackend {
     await _invoke<bool>('keychainDelete', key);
   }
 
-  Future<T?> _invoke<T>(String method, [Object? arguments]) async {
+  /// Longest wait for a native call that should answer at once (Keychain,
+  /// links, device model). A call that never answers then fails with a
+  /// [TimeoutException] instead of blocking, e.g. app start-up, forever.
+  static Duration callTimeout = const Duration(seconds: 5);
+
+  /// [waitsForUser]: the call shows something the user answers (permission
+  /// prompt, Safari), so it gets no time limit.
+  Future<T?> _invoke<T>(
+    String method, [
+    Object? arguments,
+    bool waitsForUser = false,
+  ]) async {
     try {
-      return await _channel.invokeMethod<T>(method, arguments);
+      final call = _channel.invokeMethod<T>(method, arguments);
+      if (waitsForUser) return await call;
+      return await call.timeout(
+        callTimeout,
+        onTimeout: () => throw TimeoutException(
+          'No answer from iOS for "$method"',
+          callTimeout,
+        ),
+      );
     } on MissingPluginException {
       return null; // Native side not present (e.g. tests, other platforms).
     }

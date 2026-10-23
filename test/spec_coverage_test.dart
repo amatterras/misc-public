@@ -16,6 +16,8 @@ import 'package:flutter_application_1/features/search/search_dialog.dart';
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/both_clocks.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   calendarCellAndColourTests();
@@ -223,7 +225,7 @@ void calendarCellAndColourTests() {
       reason: 'entry labels start at the left',
     );
 
-    await tester.runAsync(s.flush);
+    await waitForBothClocks(tester, s.flush, what: 'Saving');
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 4));
     s.dispose();

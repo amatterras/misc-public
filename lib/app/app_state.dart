@@ -148,14 +148,24 @@ class AppState extends ChangeNotifier {
   /// Short message shown at the bottom of the window.
   final ValueNotifier<String?> toast = ValueNotifier(null);
 
-  Future<void> init() async {
+  /// Opens the data and starts the background services. [onStep] is told
+  /// which step is running, for the start-up screen and the log.
+  Future<void> init({void Function(String step)? onStep}) async {
+    void step(String name) {
+      AppLog.info('Start-up: $name');
+      onStep?.call(name);
+    }
+
+    step('Loading settings');
     await settings.load();
+    step('Loading your data');
     await workspace.load();
     _sidebarCollapsed = settings.get<bool>('sidebarCollapsed') ?? false;
     capture.fetchPreviews = settings.get<bool>('linkPreviews') ?? true;
 
     // Data written by a newer version of THEapp must never be rewritten in
     // an older format: stop before anything is saved.
+    step('Checking the data version');
     if (await canvases.newestSchema() > CanvasDocument.schemaVersion ||
         workspace.newestRecordSchema > RecordCollection.schemaVersion) {
       workspace.store.readOnly = true;
@@ -199,12 +209,14 @@ class AppState extends ChangeNotifier {
       await workspace.flush();
       await settings.set('backupBeforeSchema', CanvasDocument.schemaVersion);
     }
+    step('Daily backup');
     try {
       await workspace.backups.automaticBackup();
     } catch (e, s) {
       AppLog.error('Automatic backup failed', e, s);
     }
 
+    step('Opening canvases');
     await _refreshList();
     if (_canvasList.isEmpty) {
       await createCanvas(
@@ -223,14 +235,26 @@ class AppState extends ChangeNotifier {
       sendTo.onFocusRequested = native.focusMainWindow;
       sendTo.start(capture);
     }
-    if (ios != null) await _startIosCapture(ios!);
+    if (ios != null) {
+      step('Starting iPhone/iPad services');
+      // Links from outside and shared items are extras: if iOS does not
+      // answer, THEapp still opens (the reason is in the log).
+      try {
+        await _startIosCapture(ios!);
+      } catch (e, s) {
+        AppLog.error('iPhone/iPad link and share services unavailable', e, s);
+      }
+    }
     final recoveries = workspace.store.recoveries;
     if (recoveries.isNotEmpty) {
       // Shown once the window is up; details are in the log.
       Timer(const Duration(seconds: 1), () => showToast(recoveries.join('  ')));
     }
+    step('Starting sync');
     await _startSyncIfPaired();
+    step('Starting reminders');
     _startReminders();
+    step('Ready');
   }
 
   // ---------------------------------------------------------------- sync --

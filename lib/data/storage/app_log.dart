@@ -6,23 +6,35 @@ import 'package:flutter/foundation.dart';
 /// errors and recoveries leave a trace that can be looked at later.
 abstract final class AppLog {
   static File? _file;
+  static File? _copy;
   static const _maxBytes = 1024 * 1024;
 
   /// Messages logged this session (shown to the user where relevant).
   static final List<String> session = [];
 
-  static void init(Directory root) {
-    final dir = Directory('${root.path}${Platform.pathSeparator}logs');
+  /// [copy]: a second file with the same lines, e.g. on iPhone/iPad one the
+  /// Files app can show (the data folder itself is not visible there).
+  static void init(Directory root, {File? copy}) {
+    _file = _open(
+      File(
+        '${root.path}${Platform.pathSeparator}logs'
+        '${Platform.pathSeparator}app.log',
+      ),
+    );
+    _copy = copy == null ? null : _open(copy);
+  }
+
+  static File? _open(File file) {
     try {
-      dir.createSync(recursive: true);
-      final file = File('${dir.path}${Platform.pathSeparator}app.log');
+      file.parent.createSync(recursive: true);
       // Keep one previous log when the current one gets large.
       if (file.existsSync() && file.lengthSync() > _maxBytes) {
         file.renameSync('${file.path}.1');
       }
-      _file = file;
+      return file;
     } catch (e) {
       debugPrint('Log unavailable: $e');
+      return null;
     }
   }
 
@@ -46,10 +58,12 @@ abstract final class AppLog {
     session.add(line);
     if (session.length > 200) session.removeAt(0);
     debugPrint(line);
-    try {
-      _file?.writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
-    } catch (_) {
-      // Logging must never break the app.
+    for (final file in [_file, _copy]) {
+      try {
+        file?.writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+      } catch (_) {
+        // Logging must never break the app.
+      }
     }
   }
 }

@@ -18,6 +18,8 @@ import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/sync/hlc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/both_clocks.dart';
+
 /// Boots the real app on a temporary data folder.
 Future<AppState> boot(WidgetTester tester, Directory dir) async {
   tester.view.physicalSize = const Size(1700, 1050);
@@ -48,7 +50,7 @@ Future<void> settle(WidgetTester tester) async {
 }
 
 Future<void> shutDown(WidgetTester tester, AppState state) async {
-  await tester.runAsync(state.flush);
+  await waitForBothClocks(tester, state.flush, what: 'Saving');
   await tester.pumpWidget(const SizedBox());
   await tester.pump(const Duration(seconds: 4));
 }
