@@ -98,19 +98,25 @@ List<SearchResult> searchEverything(AppState s, String query) {
   }
   for (final a in ws.assets.all) {
     final tags = LinkTag.of(a.linkTags);
+    final own = ws.tagsOfAsset(a); // the user's own tags
     if (a.kind == AssetKind.link &&
         (has(a.title) ||
             has(a.url) ||
             has(a.description) ||
             has(a.siteName) ||
-            tags.any((t) => has(t.label)))) {
+            tags.any((t) => has(t.label)) ||
+            own.any((t) => has(t.name)))) {
       results.add(
         SearchResult(
           icon: Icons.link,
           kind: 'Link',
           title: a.label,
           subtitle: [
-            if (tags.isNotEmpty) tags.map((t) => t.label).join(', '),
+            if (tags.isNotEmpty || own.isNotEmpty)
+              [
+                ...tags.map((t) => t.label),
+                ...own.map((t) => t.name),
+              ].join(', '),
             a.url ?? '',
           ].join('  ·  '),
           // The card in Archive if there is one, else the web page.

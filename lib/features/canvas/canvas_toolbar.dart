@@ -172,7 +172,12 @@ class CanvasContextBar extends StatelessWidget {
     this.onPenWidth,
     this.collapsed = false,
     this.onToggleCollapsed,
+    this.onTags,
   });
+
+  /// Opens the tag picker for the selected items (Mindmap: the items;
+  /// Archive board: their resources).
+  final void Function(CanvasController c, List<CanvasItem> items)? onTags;
 
   /// Folded away (see [CollapsibleBar]); [onToggleCollapsed] null: the
   /// strip cannot be folded (e.g. inside a dialog).
@@ -300,6 +305,15 @@ class CanvasContextBar extends StatelessWidget {
     return ToolPanel(
       horizontal: true,
       children: [
+        if (onTags != null) ...[
+          ToolButton(
+            key: const ValueKey('selection-tags'),
+            tooltip: 'Tags…',
+            onPressed: () => onTags!(c, selected),
+            icon: const Icon(Icons.sell_outlined, size: 17),
+          ),
+          const _PanelDivider(vertical: true),
+        ],
         if (first != null) ...[
           for (final entry in _fontSizes.entries)
             ToolButton(

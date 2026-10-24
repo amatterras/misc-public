@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 
 import '../../data/models/library_models.dart';
+import '../../data/models/tag_models.dart';
 import '../../data/workspace.dart';
 
 /// Gives the canvas access to shared records (link/image assets, notes)
@@ -18,6 +19,9 @@ abstract class CanvasResources implements Listenable {
   /// Completes once each of [fileNames] is decoded or has failed, so a
   /// picture drawn afterwards (an export) has every photo in it.
   Future<void> preload(Iterable<String> fileNames);
+
+  /// A custom tag (Archive and Mindmap; null when deleted or unknown).
+  CustomTag? tag(String id);
 }
 
 class WorkspaceCanvasResources extends ChangeNotifier
@@ -25,7 +29,11 @@ class WorkspaceCanvasResources extends ChangeNotifier
   WorkspaceCanvasResources(this.workspace) {
     workspace.assets.addListener(notifyListeners);
     workspace.notes.addListener(notifyListeners);
+    workspace.customTags.addListener(notifyListeners);
   }
+
+  @override
+  CustomTag? tag(String id) => workspace.customTags[id];
 
   final Workspace workspace;
   final Map<String, ui.Image> _images = {};
@@ -100,6 +108,7 @@ class WorkspaceCanvasResources extends ChangeNotifier
     _disposed = true;
     workspace.assets.removeListener(notifyListeners);
     workspace.notes.removeListener(notifyListeners);
+    workspace.customTags.removeListener(notifyListeners);
     for (final img in _images.values) {
       img.dispose();
     }

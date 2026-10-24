@@ -19,6 +19,7 @@ import 'sync/sync_clock.dart';
 import 'models/ai_models.dart';
 import 'models/browser_models.dart';
 import 'models/knowledge_models.dart';
+import 'models/tag_models.dart';
 import 'models/vault_models.dart';
 import 'models/template_models.dart';
 import 'models/calendar_sync_models.dart';
@@ -110,6 +111,7 @@ class Workspace {
     clipboard = _c('clipboard', ClipboardClip.fromJson);
     archiveFolders = _c('archive_folders', Folder.fromJson);
     shares = _c('shares', ShareLink.fromJson);
+    customTags = _c('custom_tags', CustomTag.fromJson);
     experiments = _c('thought_experiments', ThoughtExperiment.fromJson);
     // Private vault: ciphertext only (see vault_service.dart).
     vaultMeta = _c('vault_meta', VaultMeta.fromJson);
@@ -160,6 +162,9 @@ class Workspace {
 
   /// Read-only share links served by the hub (see ShareLink).
   late final RecordCollection<ShareLink> shares;
+
+  /// The user's own tags (Archive and Mindmap; see tag_models.dart).
+  late final RecordCollection<CustomTag> customTags;
   late final RecordCollection<ThoughtExperiment> experiments;
   late final RecordCollection<VaultMeta> vaultMeta;
   late final RecordCollection<VaultItem> vaultItems;
@@ -187,6 +192,7 @@ class Workspace {
     'conflicts': conflicts,
     'archive_folders': archiveFolders,
     'shares': shares,
+    'custom_tags': customTags,
     'thought_experiments': experiments,
     'vault_meta': vaultMeta,
     'vault_items': vaultItems,
@@ -574,6 +580,104 @@ class Workspace {
     );
     notes.put(note);
     return note;
+  }
+
+  // -------------------------------------------------------- custom tags --
+  //
+  // One registry for the Archive and the Mindmap (tag_models.dart).
+
+  /// Every tag, by name.
+  List<CustomTag> get tagsByName => customTags.all.toList()
+    ..sort(
+      (a, b) => CustomTag.keyOf(a.name).compareTo(CustomTag.keyOf(b.name)),
+    );
+
+  /// The tag called [name] (same letters in any case), if any.
+  CustomTag? tagNamed(String name) {
+    final key = CustomTag.keyOf(name);
+    for (final t in customTags.all) {
+      if (CustomTag.keyOf(t.name) == key) return t;
+    }
+    return null;
+  }
+
+  /// Creates a tag; a tag with the same name is reused instead of making
+  /// a second one. Throws [ArgumentError] for an empty or too long name.
+  ({CustomTag tag, bool existed}) createTag(String name, int color) {
+    final problem = CustomTag.problemWith(name);
+    if (problem != null) throw ArgumentError(problem);
+    final existing = tagNamed(name);
+    if (existing != null) return (tag: existing, existed: true);
+    final now = DateTime.now();
+    final tag = CustomTag(
+      id: newId(),
+      name: CustomTag.clean(name),
+      color: color,
+      createdAt: now,
+      updatedAt: now,
+    );
+    customTags.put(tag);
+    return (tag: tag, existed: false);
+  }
+
+  /// Renames tag [id]; returns why it cannot be done, or null.
+  String? renameTag(String id, String name) {
+    final tag = customTags[id];
+    if (tag == null) return 'That tag is gone.';
+    final problem = CustomTag.problemWith(name);
+    if (problem != null) return problem;
+    final other = tagNamed(name);
+    if (other != null && other.id != id) {
+      return 'There is already a tag called “${other.name}”.';
+    }
+    customTags.put(tag.copyWith(name: CustomTag.clean(name)));
+    return null;
+  }
+
+  void recolorTag(String id, int color) {
+    final tag = customTags[id];
+    if (tag != null && tag.color != color) {
+      customTags.put(tag.copyWith(color: color));
+    }
+  }
+
+  /// Deletes tag [id]: it is taken off every Archive resource (the
+  /// resources themselves stay). Mindmap items that still name it simply
+  /// no longer show it. Returns how many resources had it.
+  int deleteTag(String id) {
+    final ref = CustomTag.assetRef(id);
+    var n = 0;
+    for (final a in assets.all.toList()) {
+      if (!a.linkTags.contains(ref)) continue;
+      assets.put(a.copyWith(linkTags: [...a.linkTags]..remove(ref)));
+      n++;
+    }
+    customTags.remove(id);
+    return n;
+  }
+
+  /// The custom tags on resource [a] that still exist, by name.
+  List<CustomTag> tagsOfAsset(Asset a) => [
+    for (final ref in a.linkTags)
+      if (CustomTag.idOfAssetRef(ref) case final id?) ?customTags[id],
+  ]..sort((x, y) => CustomTag.keyOf(x.name).compareTo(CustomTag.keyOf(y.name)));
+
+  /// Sets the custom tags of resource [assetId] to [tagIds]; its fixed
+  /// categories (and anything unknown) are kept as they are.
+  void setAssetTags(String assetId, Set<String> tagIds) {
+    final a = assets[assetId];
+    if (a == null) return;
+    final next = [
+      for (final ref in a.linkTags)
+        if (CustomTag.idOfAssetRef(ref) == null) ref,
+      for (final id in tagIds)
+        if (customTags[id] != null) CustomTag.assetRef(id),
+    ];
+    if (next.length == a.linkTags.length &&
+        next.toSet().containsAll(a.linkTags)) {
+      return;
+    }
+    assets.put(a.copyWith(linkTags: next));
   }
 
   void attachToNote(String noteId, String assetId) {

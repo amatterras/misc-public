@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
+import '../../data/models/tag_models.dart';
 import '../../data/storage/app_log.dart';
 import '../../data/sync/sync_clock.dart';
 import '../../sync/canvas_merge.dart';
@@ -438,6 +439,39 @@ class CanvasController extends ChangeNotifier {
   int? tagOf(String id) {
     final v = markOf(id, tagMark);
     return v is int && v >= 0 && v < CanvasTagColors.selected.length ? v : null;
+  }
+
+  /// The user's own tags on an item (ids into the shared registry; see
+  /// tag_models.dart). Stored as a mark, so the item, its position and
+  /// its geometry never change.
+  static const customTagsMark = 'customTags';
+
+  List<String> customTagsOf(String id) => [
+    for (final v in markOf(id, customTagsMark) as List? ?? const [])
+      if (v is String) v,
+  ];
+
+  /// Sets the custom tags of [ids] (empty removes them).
+  void setCustomTags(Iterable<String> ids, List<String> tagIds) =>
+      setMark(ids, customTagsMark, tagIds.isEmpty ? null : [...tagIds]);
+
+  /// The custom tags shown on [item]: its own (mindmaps) and, for a link
+  /// or photo, its Archive resource's.
+  List<CustomTag> shownTagsOf(CanvasItem item) {
+    final r = resources;
+    if (r == null) return const [];
+    final ids = <String>{...customTagsOf(item.id)};
+    final assetId = switch (item) {
+      LinkItem() => item.assetId,
+      ImageItem() => item.assetId,
+      _ => null,
+    };
+    if (assetId != null) {
+      for (final ref in r.asset(assetId)?.linkTags ?? const <String>[]) {
+        if (CustomTag.idOfAssetRef(ref) case final id?) ids.add(id);
+      }
+    }
+    return [for (final id in ids) ?r.tag(id)];
   }
 
   String? groupOf(String id) {

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
+import '../../data/models/tag_models.dart';
 import '../../data/models/library_models.dart';
 import '../../widgets/common.dart';
 import '../canvas/canvas_controller.dart';
@@ -29,36 +30,54 @@ class _LinksPageState extends State<LinksPage> {
   AppState get s => widget.state;
   LinkTag? _filter;
 
+  /// A custom tag to filter by instead (its id); one filter at a time.
+  String? _customFilter;
+
+  /// What the active filter looks for in a resource's linkTags.
+  String? get _filterRef =>
+      _filter?.id ??
+      (_customFilter == null ? null : CustomTag.assetRef(_customFilter!));
+
+  /// The temporary highlight of the active filter (the tag's own colour
+  /// is never changed by it).
+  Color? get _filterColor =>
+      _filter?.color ??
+      (_customFilter == null
+          ? null
+          : Color(s.workspace.customTags[_customFilter!]?.color ?? 0));
+
   /// Show only resources of this project (others are dimmed).
   String? _project;
 
   bool _matches(LinkItem item) {
     final asset = s.workspace.assets[item.assetId];
     if (asset == null) return false;
-    final tag = _filter, project = _project;
-    return (tag == null || asset.linkTags.contains(tag.id)) &&
+    final ref = _filterRef, project = _project;
+    return (ref == null || asset.linkTags.contains(ref)) &&
         (project == null || asset.projectIds.contains(project));
   }
 
   void _setProject(CanvasController board, String? project) {
     _project = project;
-    _setFilter(board, _filter);
+    _setFilter(board, _filter, custom: _customFilter);
   }
 
-  void _setFilter(CanvasController board, LinkTag? tag) {
-    setState(() => _filter = tag);
-    board.dimmed = tag == null && _project == null
+  void _setFilter(CanvasController board, LinkTag? tag, {String? custom}) {
+    setState(() {
+      _filter = tag;
+      _customFilter = tag == null ? custom : null;
+    });
+    final ref = _filterRef, color = _filterColor;
+    board.dimmed = ref == null && _project == null
         ? null
         : (item) => item is LinkItem && !_matches(item);
-    board.highlighted = tag == null
+    board.highlighted = ref == null
         ? null
         : (item) =>
               item is LinkItem &&
-                  (s.workspace.assets[item.assetId]?.linkTags.contains(
-                        tag.id,
-                      ) ??
+                  (s.workspace.assets[item.assetId]?.linkTags.contains(ref) ??
                       false)
-              ? tag.color
+              ? color
               : null;
   }
 
@@ -76,7 +95,7 @@ class _LinksPageState extends State<LinksPage> {
       return;
     }
     final asset = s.capture.link(url);
-    await s.addToLinks(asset, tags: [?_filter?.id]);
+    await s.addToLinks(asset, tags: [?_filterRef]);
   }
 
   @override
@@ -86,7 +105,11 @@ class _LinksPageState extends State<LinksPage> {
       return const ColoredBox(color: AppColors.canvas);
     }
     return ListenableBuilder(
-      listenable: Listenable.merge([board, s.workspace.assets]),
+      listenable: Listenable.merge([
+        board,
+        s.workspace.assets,
+        s.workspace.customTags, // tag chips follow new, renamed, deleted tags
+      ]),
       builder: (context, _) {
         final selected = board.selectedItems;
         final link = selected.length == 1 && selected.single is LinkItem
@@ -170,6 +193,19 @@ class _LinksPageState extends State<LinksPage> {
                       on: _filter == tag,
                       onTap: () =>
                           _setFilter(board, _filter == tag ? null : tag),
+                    ),
+                  // The user's own tags (shared with the Mindmap).
+                  for (final t in s.workspace.tagsByName)
+                    _chip(
+                      key: ValueKey('links-filter-tag-${t.id}'),
+                      label: t.name,
+                      color: Color(t.color),
+                      on: _customFilter == t.id,
+                      onTap: () => _setFilter(
+                        board,
+                        null,
+                        custom: _customFilter == t.id ? null : t.id,
+                      ),
                     ),
                   const SizedBox(width: Space.sm),
                   _projectMenu(

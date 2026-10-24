@@ -1100,9 +1100,16 @@ class AppState extends ChangeNotifier {
     // A mindmap saved after an edit: sync it soon (canvas files are not
     // workspace records, so they do not tell the scheduler themselves).
     _editedLocally();
+    final tagNames = {
+      for (final fields in doc.itemUnknownFields.values)
+        for (final id
+            in fields[CanvasController.customTagsMark] as List? ?? const [])
+          if (id is String) ?workspace.customTags[id]?.name,
+    };
     final text = [
       for (final i in doc.items)
         if (i is TextItem) i.text,
+      ...tagNames, // items' own tags make the mindmap findable by tag
     ].join('\n');
     if (text.trim().isEmpty) {
       _pageText.remove(doc.id);

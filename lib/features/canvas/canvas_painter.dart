@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme.dart';
 import '../../app/canvas_ops.dart' show canvasLinkTarget;
 import '../../data/models/canvas_models.dart';
+import '../tags/tag_ui.dart' show tagForeground;
 import 'canvas_controller.dart';
 import 'canvas_text.dart';
 import '../ink/stroke_geometry.dart';
@@ -183,7 +184,41 @@ class CanvasPainter extends CustomPainter {
 
   /// A lasso tag: a colored dot at the item's top-left and top-right
   /// corners. A locked item: a small padlock at its top-right.
+  /// Custom tags: small pills in each tag's own colour just above the
+  /// item's top-left corner (screen-sized, so readable at any zoom).
+  void _paintCustomTags(Canvas canvas, double scale, Rect visible) {
+    for (final item in controller.items) {
+      final bounds = controller.itemBounds(item);
+      if (!bounds.overlaps(visible.inflate(40 / scale))) continue;
+      final tags = controller.shownTagsOf(item);
+      if (tags.isEmpty) continue;
+      var x = bounds.left;
+      final y = bounds.top - 20 / scale;
+      for (final t in tags.take(4)) {
+        final bg = Color(t.color);
+        final text = TextPainter(
+          text: TextSpan(
+            text: t.name,
+            style: TextStyle(fontSize: 10 / scale, color: tagForeground(bg)),
+          ),
+          maxLines: 1,
+          ellipsis: '…',
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: 120 / scale);
+        final pill = RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, y, text.width + 12 / scale, text.height + 4 / scale),
+          Radius.circular(8 / scale),
+        );
+        canvas.drawRRect(pill, Paint()..color = bg);
+        text.paint(canvas, Offset(x + 6 / scale, y + 2 / scale));
+        x = pill.right + 4 / scale;
+        text.dispose();
+      }
+    }
+  }
+
   void _paintMarks(Canvas canvas, double scale, Rect visible) {
+    _paintCustomTags(canvas, scale, visible);
     for (final (bounds, tag) in controller.taggedUnits) {
       if (!bounds.overlaps(visible)) continue;
       final dot = Paint()..color = CanvasTagColors.selected[tag];

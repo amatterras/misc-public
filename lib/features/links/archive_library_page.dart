@@ -7,6 +7,7 @@ import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/library_models.dart';
 import '../../widgets/common.dart';
+import '../tags/tag_ui.dart';
 import '../sharing/share_dialog.dart';
 import '../../platform/input_hints.dart';
 import '../transfer/transfer.dart';
@@ -225,7 +226,12 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
   Widget build(BuildContext context) {
     final ws = s.workspace;
     return ListenableBuilder(
-      listenable: Listenable.merge([ws.assets, ws.archiveFolders, s]),
+      listenable: Listenable.merge([
+        ws.assets,
+        ws.archiveFolders,
+        ws.customTags,
+        s,
+      ]),
       builder: (context, _) {
         final items =
             ws.assets.all
@@ -341,10 +347,32 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
                                       a.label,
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                    subtitle: Text(
-                                      '${_refs?[a.id]?.length ?? 0} uses'
-                                      '${a.folderId == null ? '' : ' · ${ws.archiveFolderLabel(a.folderId)}'}',
-                                      style: const TextStyle(fontSize: 11),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${_refs?[a.id]?.length ?? 0} uses'
+                                          '${a.folderId == null ? '' : ' · ${ws.archiveFolderLabel(a.folderId)}'}',
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                        // The user's own tags, in their colours.
+                                        if (ws.tagsOfAsset(a) case final tags
+                                            when tags.isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 3,
+                                            ),
+                                            child: Wrap(
+                                              spacing: 4,
+                                              runSpacing: 3,
+                                              children: [
+                                                for (final t in tags)
+                                                  TagChip(t, small: true),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                     onTap: () =>
                                         setState(() => _selected = a.id),
@@ -423,6 +451,19 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
         Wrap(
           spacing: 4,
           children: [
+            TextButton(
+              key: const ValueKey('archive-tags'),
+              onPressed: () async {
+                final chosen = await showTagPicker(
+                  context,
+                  s,
+                  selected: {for (final t in ws.tagsOfAsset(a)) t.id},
+                  what: '“${a.label}”',
+                );
+                if (chosen != null) ws.setAssetTags(a.id, chosen);
+              },
+              child: const Text('Tags'),
+            ),
             TextButton(
               key: const ValueKey('archive-move'),
               onPressed: () async {

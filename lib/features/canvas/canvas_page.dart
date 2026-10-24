@@ -17,6 +17,7 @@ import '../transfer/transfer.dart';
 import 'canvas_painter.dart';
 import 'canvas_text.dart';
 import 'canvas_toolbar.dart';
+import '../tags/tag_ui.dart' show showTagPicker;
 import '../ink/stroke_geometry.dart';
 
 class CanvasPage extends StatelessWidget {
@@ -252,6 +253,51 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     for (final a in assets) {
       c.insertLink(a, at);
       at += const Offset(32, 32);
+    }
+  }
+
+  /// Tags for the selection. On the Archive board they belong to the
+  /// links' and photos' resources (so they show in the Archive library
+  /// too); on a mindmap to the items. The picker starts with every tag any
+  /// of them has; what is ticked on Apply is what they all get. Nothing
+  /// moves, and the selection and zoom stay as they are.
+  Future<void> _editTags(CanvasController c, List<CanvasItem> items) async {
+    final ws = s.workspace;
+    final archive = c.id == linksBoardId;
+    final assetIds = archive
+        ? {
+            for (final i in items)
+              if (i is LinkItem) i.assetId else if (i is ImageItem) i.assetId,
+          }
+        : <String>{};
+    if (archive && assetIds.isEmpty) {
+      s.showToast('Tags on the Archive board go on links and photos.');
+      return;
+    }
+    final current = archive
+        ? {
+            for (final id in assetIds)
+              if (ws.assets[id] case final a?)
+                for (final t in ws.tagsOfAsset(a)) t.id,
+          }
+        : {
+            for (final i in items)
+              for (final id in c.customTagsOf(i.id))
+                if (ws.customTags[id] != null) id,
+          };
+    final chosen = await showTagPicker(
+      context,
+      s,
+      selected: current,
+      what: items.length == 1 ? '1 item' : '${items.length} items',
+    );
+    if (chosen == null || !mounted) return; // cancelled: nothing changes
+    if (archive) {
+      for (final id in assetIds) {
+        ws.setAssetTags(id, chosen);
+      }
+    } else {
+      c.setCustomTags([for (final i in items) i.id], chosen.toList()..sort());
     }
   }
 
@@ -744,6 +790,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       onRefreshLink: (l) => s.capture.refreshPreview(l.assetId),
                       onEraser: s.setEraser,
                       onPenWidth: s.setCanvasPenWidth,
+                      onTags: _editTags,
                       collapsed: s.canvasOptionsCollapsed,
                       onToggleCollapsed: () {
                         unawaited(s.toggleCanvasOptions());
