@@ -11,6 +11,7 @@ import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
 import '../../data/workspace.dart';
 import '../../widgets/common.dart';
+import 'reading_goal.dart';
 
 const weekdayLetters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
@@ -87,6 +88,10 @@ class _EntryEditorState extends State<_EntryEditor> {
   late final _current = TextEditingController(
     text: e.currentPage == 0 ? '' : '${e.currentPage}',
   );
+  late final _pagesPerDay = TextEditingController(
+    text: e.targetPagesPerDay?.toString() ?? '',
+  );
+  late DateTime? _goalStartDate = e.goalStartDate;
   late final _highlights = TextEditingController(text: e.highlights);
   late final _duration = TextEditingController(
     text: e.durationMinutes?.toString() ?? '',
@@ -107,6 +112,7 @@ class _EntryEditorState extends State<_EntryEditor> {
       _author,
       _total,
       _current,
+      _pagesPerDay,
       _highlights,
       _duration,
       _logPages,
@@ -123,6 +129,8 @@ class _EntryEditorState extends State<_EntryEditor> {
     author: _author.text.trim(),
     totalPages: () => int.tryParse(_total.text.trim()),
     currentPage: int.tryParse(_current.text.trim()) ?? 0,
+    targetPagesPerDay: () => int.tryParse(_pagesPerDay.text.trim()),
+    goalStartDate: () => _goalStartDate,
     highlights: _highlights.text,
     durationMinutes: () => int.tryParse(_duration.text.trim()),
   );
@@ -132,6 +140,44 @@ class _EntryEditorState extends State<_EntryEditor> {
     if (entry.name.isEmpty) {
       setState(() => _error = 'Give it a name.');
       return;
+    }
+    if (entry.category == CalendarCategory.reading) {
+      final target = entry.targetPagesPerDay;
+      if (_pagesPerDay.text.trim().isNotEmpty && target == null) {
+        setState(() => _error = 'Enter pages per day as a whole number.');
+        return;
+      }
+      if (target != null && target <= 0) {
+        setState(() => _error = 'Pages per day must be greater than zero.');
+        return;
+      }
+      if (target != null && entry.totalPages == null) {
+        setState(() => _error = 'Enter the book’s total page count.');
+        return;
+      }
+      if (_total.text.trim().isNotEmpty &&
+          int.tryParse(_total.text.trim()) == null) {
+        setState(() => _error = 'Total pages must be a whole number.');
+        return;
+      }
+      if (_current.text.trim().isNotEmpty &&
+          int.tryParse(_current.text.trim()) == null) {
+        setState(() => _error = 'Current page must be a whole number.');
+        return;
+      }
+      if (target != null && entry.goalStartDate == null) {
+        setState(() => _error = 'Choose a start date for this reading goal.');
+        return;
+      }
+      if (entry.totalPages != null && entry.totalPages! <= 0) {
+        setState(() => _error = 'Total pages must be greater than zero.');
+        return;
+      }
+      if (entry.currentPage < 0 ||
+          (entry.totalPages != null && entry.currentPage > entry.totalPages!)) {
+        setState(() => _error = 'Current page must be within the book.');
+        return;
+      }
     }
     try {
       ws.saveEntry(entry);
@@ -355,6 +401,7 @@ class _EntryEditorState extends State<_EntryEditor> {
                     controller: _current,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(hintText: 'Current page'),
+                    onChanged: (_) => setState(() {}),
                   ),
                 ),
                 const Padding(
@@ -367,11 +414,53 @@ class _EntryEditorState extends State<_EntryEditor> {
                     controller: _total,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(hintText: 'Total pages'),
+                    onChanged: (_) => setState(() {}),
                   ),
                 ),
               ],
             ),
           ),
+          LabeledField(
+            label: 'Goal start',
+            child: Row(
+              children: [
+                TextButton.icon(
+                  icon: const Icon(Icons.event, size: 16),
+                  label: Text(
+                    _goalStartDate == null
+                        ? 'Choose start date'
+                        : formatLongDate(_goalStartDate!),
+                  ),
+                  onPressed: () async {
+                    final date = await _pickDate(_goalStartDate);
+                    if (date != null) {
+                      setState(() => _goalStartDate = dateOnly(date));
+                    }
+                  },
+                ),
+                if (_goalStartDate != null)
+                  GhostIconButton(
+                    icon: Icons.close,
+                    tooltip: 'Clear goal start date',
+                    size: 14,
+                    onTap: () => setState(() => _goalStartDate = null),
+                  ),
+              ],
+            ),
+          ),
+          LabeledField(
+            label: 'Target pages per day',
+            child: SizedBox(
+              width: 150,
+              child: TextField(
+                controller: _pagesPerDay,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(hintText: 'e.g. 20'),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+          ),
+          _goalForecast(),
           LabeledField(
             label: 'Log reading',
             child: Row(
@@ -447,6 +536,55 @@ class _EntryEditorState extends State<_EntryEditor> {
             ),
           ),
         ];
+    }
+  }
+
+  Widget _goalForecast() {
+    final target = int.tryParse(_pagesPerDay.text.trim());
+    final total = int.tryParse(_total.text.trim());
+    final current = int.tryParse(_current.text.trim()) ?? 0;
+    final start = _goalStartDate;
+    if (_pagesPerDay.text.trim().isEmpty && start == null) {
+      return const SizedBox.shrink();
+    }
+    if (target == null || total == null || start == null) {
+      return const LabeledField(
+        label: 'Estimate',
+        child: Text(
+          'Enter a valid total page count, daily target, and start date.',
+          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+        ),
+      );
+    }
+    try {
+      final estimate = estimateReadingGoal(
+        totalPages: total,
+        currentPage: current,
+        pagesPerDay: target,
+        startDate: start,
+        today: DateTime.now(),
+      );
+      return LabeledField(
+        label: 'Estimate',
+        child: Text(
+          estimate.isComplete
+              ? 'Goal complete.'
+              : '${estimate.pagesRemaining} pages left · '
+                    '${estimate.daysLabel} · finish '
+                    '${formatLongDate(estimate.completionDate!)}\n'
+                    'Assumes $target pages every calendar day, starting on '
+                    'the later of today and ${formatShortDate(start)}.',
+          style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+        ),
+      );
+    } on ArgumentError {
+      return const LabeledField(
+        label: 'Estimate',
+        child: Text(
+          'Use positive page counts and keep current progress within the book.',
+          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+        ),
+      );
     }
   }
 

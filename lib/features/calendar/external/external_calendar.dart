@@ -44,6 +44,8 @@ class RemoteEvent {
     this.allDay = false,
     this.location = '',
     this.link = '',
+    this.description = '',
+    this.updatedAt,
     this.removed = false,
   });
   final String remoteId;
@@ -53,6 +55,8 @@ class RemoteEvent {
   final bool allDay;
   final String location;
   final String link;
+  final String description;
+  final DateTime? updatedAt;
 
   /// Cancelled (Google) or removed (Graph @removed).
   final bool removed;
@@ -72,15 +76,24 @@ class EventDraft {
   const EventDraft({
     required this.title,
     required this.day,
+    this.endDay,
     this.description = '',
     this.startMinutes,
     this.durationMinutes,
+    this.entryId,
+    this.idempotencyKey,
   });
   final String title;
   final String description;
   final DateTime day;
+
+  /// Inclusive last local calendar day for a multi-day THEapp event.
+  /// Null means [day].
+  final DateTime? endDay;
   final int? startMinutes;
   final int? durationMinutes;
+  final String? entryId;
+  final String? idempotencyKey;
 
   bool get allDay => startMinutes == null;
   DateTime get start => DateTime(
@@ -90,9 +103,15 @@ class EventDraft {
     (startMinutes ?? 0) ~/ 60,
     (startMinutes ?? 0) % 60,
   );
-  DateTime get end => allDay
-      ? DateTime(day.year, day.month, day.day + 1)
-      : start.add(Duration(minutes: durationMinutes ?? 60));
+  DateTime get end {
+    final lastDay = endDay ?? day;
+    final endDayStart = DateTime(lastDay.year, lastDay.month, lastDay.day);
+    if (allDay) return endDayStart.add(const Duration(days: 1));
+    final startOfDay = DateTime(day.year, day.month, day.day);
+    return startOfDay.add(
+      Duration(minutes: (startMinutes ?? 0) + (durationMinutes ?? 0)),
+    );
+  }
 
   String get hash => sha256
       .convert(
@@ -101,6 +120,7 @@ class EventDraft {
             title,
             description,
             dayKey(day),
+            endDay == null ? null : dayKey(endDay!),
             startMinutes,
             durationMinutes,
           ]),
@@ -133,6 +153,11 @@ abstract class CalendarProvider {
   Future<String> create(String calendarId, EventDraft d);
   Future<void> update(String calendarId, String remoteId, EventDraft d);
   Future<void> delete(String calendarId, String remoteId);
+
+  /// Provider-assigned stable ID that allows a create retry after a lost
+  /// response to recover the same event. Providers without this capability
+  /// return null and retain their own normal create behavior.
+  String? createId(EventDraft draft) => null;
 
   /// One authorised JSON request; refreshes the token once on 401.
   Future<Map<String, dynamic>?> request(
@@ -203,8 +228,16 @@ String _localWithOffset(DateTime t) {
   return '${_date(t)}T${_two(t.hour)}:${_two(t.minute)}:00$sign${_two(m ~/ 60)}:${_two(m % 60)}';
 }
 
+/// Stable provider-safe idempotency key for a local calendar record.
+String googleCalendarEventId(String key) =>
+    sha256.convert(utf8.encode(key)).toString();
+
+String? _googleCalendarEventIdOrNull(String? key) =>
+    key == null ? null : googleCalendarEventId(key);
+
 class GoogleCalendarProvider extends CalendarProvider {
-  GoogleCalendarProvider(super.token);
+  GoogleCalendarProvider(super.token, {Uri? baseUri})
+    : _base = baseUri ?? Uri.parse('https://www.googleapis.com/calendar/v3/');
 
   static const scopes = [
     'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
@@ -225,12 +258,17 @@ class GoogleCalendarProvider extends CalendarProvider {
     mobileRedirect: iosRedirect,
   );
 
-  static final _base = Uri.parse('https://www.googleapis.com/calendar/v3/');
+  final Uri _base;
 
   @override
   String get name => 'google';
   @override
   String get label => 'Google Calendar';
+
+  @override
+  String? createId(EventDraft draft) => draft.idempotencyKey == null
+      ? null
+      : googleCalendarEventId(draft.idempotencyKey!);
 
   @override
   Future<List<RemoteCalendar>> calendars() async {
@@ -268,13 +306,7 @@ class GoogleCalendarProvider extends CalendarProvider {
         'singleEvents': 'true',
         'showDeleted': 'true',
         'maxResults': '250',
-        if (cursor != null)
-          'syncToken': cursor
-        else
-          'timeMin': DateTime.now()
-              .toUtc()
-              .subtract(const Duration(days: 60))
-              .toIso8601String(),
+        'syncToken': ?cursor,
         'pageToken': ?page,
       };
       final Map<String, dynamic>? json;
@@ -300,19 +332,27 @@ class GoogleCalendarProvider extends CalendarProvider {
             allDay: (e['start'] as Map?)?['date'] != null,
             location: '${e['location'] ?? ''}',
             link: '${e['htmlLink'] ?? ''}',
+            description: '${e['description'] ?? ''}',
+            updatedAt: DateTime.tryParse('${e['updated'] ?? ''}')?.toUtc(),
             removed: e['status'] == 'cancelled',
           ),
         );
       }
       page = json?['nextPageToken'] as String?;
       next = json?['nextSyncToken'] as String? ?? next;
-    } while (page != null && events.length < 20000);
-    return DeltaPage(events, next ?? cursor, full: cursor == null);
+    } while (page != null);
+    if (next == null) {
+      throw const ProviderException(
+        'Google Calendar did not return an incremental sync token; changes were not checkpointed.',
+      );
+    }
+    return DeltaPage(events, next, full: cursor == null);
   }
 
-  Map<String, dynamic> _body(EventDraft d) => {
+  Map<String, dynamic> _body(EventDraft d, {bool includeId = false}) => {
+    if (includeId) 'id': ?_googleCalendarEventIdOrNull(d.idempotencyKey),
     'summary': d.title,
-    if (d.description.isNotEmpty) 'description': d.description,
+    'description': d.description,
     'start': d.allDay
         ? {'date': _date(d.start)}
         : {'dateTime': _localWithOffset(d.start)},
@@ -320,17 +360,40 @@ class GoogleCalendarProvider extends CalendarProvider {
         ? {'date': _date(d.end)}
         : {'dateTime': _localWithOffset(d.end)},
     'extendedProperties': {
-      'private': {'theapp': '1'},
+      'private': {
+        'theapp': '1',
+        if (d.idempotencyKey != null) 'theappKey': d.idempotencyKey,
+      },
     },
   };
 
   @override
   Future<String> create(String calendarId, EventDraft d) async {
-    final json = await request(
-      'POST',
-      _base.resolve('calendars/${Uri.encodeComponent(calendarId)}/events'),
-      body: _body(d),
-    );
+    Map<String, dynamic>? json;
+    try {
+      json = await request(
+        'POST',
+        _base.resolve('calendars/${Uri.encodeComponent(calendarId)}/events'),
+        body: _body(d, includeId: true),
+      );
+    } on ProviderException catch (error) {
+      if (error.status != 409 || d.idempotencyKey == null) rethrow;
+      // A prior request may have reached Google while its response was lost.
+      // Accept the existing resource only when its private key proves it is
+      // the event for this THEapp record.
+      final id = googleCalendarEventId(d.idempotencyKey!);
+      final existing = await request(
+        'GET',
+        _base.resolve(
+          'calendars/${Uri.encodeComponent(calendarId)}/events/$id',
+        ),
+      );
+      final private = (existing?['extendedProperties'] as Map?)?['private'];
+      if (private is! Map || private['theappKey'] != d.idempotencyKey) {
+        rethrow;
+      }
+      return id;
+    }
     final id = json?['id'];
     if (id is! String) throw ProviderException('$label sent no event id.');
     return id;
@@ -365,7 +428,10 @@ class GoogleCalendarProvider extends CalendarProvider {
 }
 
 class MicrosoftCalendarProvider extends CalendarProvider {
-  MicrosoftCalendarProvider(super.token);
+  MicrosoftCalendarProvider(super.token, {Uri? baseUri})
+    : _base = baseUri ?? Uri.parse('https://graph.microsoft.com/v1.0/');
+
+  final Uri _base;
 
   static const scopes = ['offline_access', 'Calendars.ReadWrite'];
 
@@ -383,7 +449,6 @@ class MicrosoftCalendarProvider extends CalendarProvider {
         loopbackHost: 'localhost',
       );
 
-  static final _base = Uri.parse('https://graph.microsoft.com/v1.0/');
   static const _prefer = {
     'Prefer': 'outlook.timezone="UTC", odata.maxpagesize=200',
   };
@@ -392,6 +457,10 @@ class MicrosoftCalendarProvider extends CalendarProvider {
   String get name => 'microsoft';
   @override
   String get label => 'Outlook Calendar';
+
+  @override
+  String? createId(EventDraft draft) =>
+      draft.idempotencyKey == null ? null : 'pending-${draft.idempotencyKey}';
 
   @override
   Future<List<RemoteCalendar>> calendars() async {
@@ -466,6 +535,9 @@ class MicrosoftCalendarProvider extends CalendarProvider {
             allDay: allDay,
             location: '${(e['location'] as Map?)?['displayName'] ?? ''}',
             link: '${e['webLink'] ?? ''}',
+            description: '${(e['body'] as Map?)?['content'] ?? ''}',
+            updatedAt: DateTime.tryParse('${e['lastModifiedDateTime'] ?? ''}')
+                ?.toUtc(),
             removed: e.containsKey('@removed') || e['isCancelled'] == true,
           ),
         );
@@ -484,8 +556,12 @@ class MicrosoftCalendarProvider extends CalendarProvider {
     return '${_date(u)}T${_two(u.hour)}:${_two(u.minute)}:00';
   }
 
-  Map<String, dynamic> _body(EventDraft d) => {
+  Map<String, dynamic> _body(EventDraft d, {bool forCreate = false}) => {
     'subject': d.title,
+    if (forCreate && d.idempotencyKey != null)
+      // Graph uses this stable operation id to avoid duplicate events when
+      // a create reaches the server but its response is lost.
+      'transactionId': d.idempotencyKey,
     if (d.description.isNotEmpty)
       'body': {'contentType': 'text', 'content': d.description},
     'isAllDay': d.allDay,
@@ -505,7 +581,7 @@ class MicrosoftCalendarProvider extends CalendarProvider {
     final json = await request(
       'POST',
       _base.resolve('me/calendars/${Uri.encodeComponent(calendarId)}/events'),
-      body: _body(d),
+      body: _body(d, forCreate: true),
     );
     final id = json?['id'];
     if (id is! String) throw ProviderException('$label sent no event id.');
@@ -644,19 +720,169 @@ class ExternalCalendarSync {
     final out = <String, EventDraft>{};
     for (final e in ws.entries.all) {
       if (e.archived || e.category != CalendarCategory.events) continue;
-      for (final key in e.dates) {
-        final day = parseDayKey(key);
-        if (day.isBefore(from) || day.isAfter(to)) continue;
-        out[CalendarLink.idFor(provider, e.id, key)] = EventDraft(
-          title: e.name,
-          description: e.description,
-          day: day,
-          startMinutes: e.startMinutes,
-          durationMinutes: e.durationMinutes,
-        );
-      }
+      final day = e.startDate;
+      if (day == null || day.isBefore(from) || day.isAfter(to)) continue;
+      final endDay = e.endDate ?? day;
+      // A calendar event is one provider event, including when it spans
+      // multiple days. Other-category entries remain independent dated items.
+      final key = CalendarLink.idFor(provider, e.id, dayKey(day));
+      out[key] = EventDraft(
+        title: e.name,
+        description: e.description,
+        day: day,
+        endDay: endDay,
+        startMinutes: e.startMinutes,
+        durationMinutes: e.durationMinutes,
+        entryId: e.id,
+        idempotencyKey: sha256
+            .convert(utf8.encode('$provider|$calendarId|${e.id}'))
+            .toString(),
+      );
     }
     return out;
+  }
+
+  CalendarLink? _linkForEntry(String entryId, DateTime day) {
+    final currentId = CalendarLink.idFor(provider, entryId, dayKey(day));
+    final current = ws.calendarLinks[currentId];
+    if (current != null) return current;
+    final prefix = '$provider|$entryId|'.replaceAll(
+      RegExp(r'[^A-Za-z0-9._-]'),
+      '_',
+    );
+    final legacy =
+        ws.calendarLinks.all
+            .where(
+              (link) =>
+                  link.provider == provider &&
+                  (link.entryId == entryId || link.id.startsWith(prefix)),
+            )
+            .toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return legacy.firstOrNull;
+  }
+
+  CalendarEntry? _entryForLink(CalendarLink link) {
+    if (link.entryId != null) return ws.entries[link.entryId!];
+    for (final entry in ws.entries.all) {
+      if (entry.category != CalendarCategory.events) continue;
+      if (_linkForEntry(entry.id, entry.startDate ?? DateTime.now())?.id ==
+          link.id) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  EventDraft _draftForEntry(CalendarEntry entry) {
+    final day = entry.startDate!;
+    return EventDraft(
+      title: entry.name,
+      description: entry.description,
+      day: day,
+      endDay: entry.endDate ?? day,
+      startMinutes: entry.startMinutes,
+      durationMinutes: entry.durationMinutes,
+      entryId: entry.id,
+      idempotencyKey: sha256
+          .convert(utf8.encode('$provider|$calendarId|${entry.id}'))
+          .toString(),
+    );
+  }
+
+  EventDraft _draftForRemote(RemoteEvent event, String entryId) {
+    final rawStart = event.start!;
+    final rawEnd = event.end ?? rawStart;
+    final start = event.allDay ? rawStart : rawStart.toLocal();
+    final end = event.allDay ? rawEnd : rawEnd.toLocal();
+    final day = DateTime(start.year, start.month, start.day);
+    final endDay = event.allDay
+        ? DateTime(end.year, end.month, end.day - 1)
+        : DateTime(end.year, end.month, end.day);
+    final duration = event.allDay ? null : end.difference(start).inMinutes;
+    return EventDraft(
+      title: event.title,
+      description: event.description,
+      day: day,
+      endDay: endDay.isBefore(day) ? day : endDay,
+      startMinutes: event.allDay ? null : start.hour * 60 + start.minute,
+      durationMinutes: duration != null && duration > 0 ? duration : null,
+      entryId: entryId,
+      idempotencyKey: sha256
+          .convert(utf8.encode('$provider|$calendarId|$entryId'))
+          .toString(),
+    );
+  }
+
+  CalendarEntry _entryWithRemote(CalendarEntry old, EventDraft remote) =>
+      old.copyWith(
+        name: remote.title,
+        description: remote.description,
+        startDate: () => remote.day,
+        endDate: () => remote.endDay ?? remote.day,
+        startMinutes: () => remote.startMinutes,
+        durationMinutes: () => remote.durationMinutes,
+      );
+
+  Future<void> _mergeLinkedRemote(
+    CalendarLink link,
+    RemoteEvent remote, {
+    required void Function() onRemoteEdit,
+    required void Function() onConflict,
+  }) async {
+    final entry = _entryForLink(link);
+    if (remote.removed) {
+      if (entry != null && !entry.archived) {
+        // Keep local notes and photos recoverable after a provider deletion.
+        ws.entries.put(
+          entry.copyWith(archived: true, archivedAt: () => DateTime.now()),
+        );
+      }
+      ws.calendarLinks.remove(link.id);
+      onRemoteEdit();
+      return;
+    }
+    if (entry == null || remote.start == null) return;
+
+    final fromRemote = _draftForRemote(remote, entry.id);
+    final local = _draftForEntry(entry);
+    final baselineRemoteHash = link.remoteHash ?? link.hash;
+    final remoteChanged = fromRemote.hash != baselineRemoteHash;
+    final localChanged = local.hash != link.hash;
+    if (!remoteChanged) return;
+
+    // A newer provider timestamp wins a simultaneous edit. Ties and missing
+    // timestamps are local-wins; both cases are reported in sync status.
+    final remoteWins =
+        !localChanged ||
+        (remote.updatedAt != null &&
+            !remote.updatedAt!.isBefore(entry.updatedAt));
+    if (!remoteWins) {
+      onConflict();
+      return;
+    }
+
+    ws.entries.put(_entryWithRemote(entry, fromRemote));
+    final stableId = CalendarLink.idFor(
+      provider,
+      entry.id,
+      dayKey(fromRemote.day),
+    );
+    ws.calendarLinks.put(
+      CalendarLink(
+        id: stableId,
+        provider: provider,
+        calendarId: link.calendarId,
+        remoteId: link.remoteId,
+        entryId: entry.id,
+        hash: fromRemote.hash,
+        remoteHash: fromRemote.hash,
+        remoteUpdatedAt: remote.updatedAt,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    if (link.id != stableId) ws.calendarLinks.remove(link.id);
+    onRemoteEdit();
   }
 
   /// One sync run. Returns a short report (also kept as [status]).
@@ -668,14 +894,26 @@ class ExternalCalendarSync {
     try {
       // 1. Pull.
       final page = await api.changes(cal, settings.get<String>(_key('cursor')));
-      final ours = {
+      final linkedByRemote = {
         for (final l in ws.calendarLinks.all)
-          if (l.provider == provider) l.remoteId,
+          if (l.provider == provider && l.calendarId == cal) l.remoteId: l,
       };
       final seen = <String>{};
-      var added = 0, removed = 0;
+      var added = 0, removed = 0, remoteEdits = 0, conflicts = 0;
       for (final r in page.events) {
-        if (ours.contains(r.remoteId)) continue; // our own export echoed back
+        final linked = linkedByRemote[r.remoteId];
+        if (linked != null) {
+          await _mergeLinkedRemote(
+            linked,
+            r,
+            onRemoteEdit: () {
+              remoteEdits++;
+              if (r.removed) removed++;
+            },
+            onConflict: () => conflicts++,
+          );
+          continue;
+        }
         final id = ExternalEvent.idFor(provider, cal, r.remoteId);
         seen.add(id);
         if (r.removed || r.start == null) {
@@ -696,6 +934,7 @@ class ExternalCalendarSync {
           allDay: r.allDay,
           location: r.location,
           link: r.link,
+          description: r.description,
           updatedAt: DateTime.now(),
         );
         final old = ws.externalEvents[id];
@@ -721,21 +960,60 @@ class ExternalCalendarSync {
           removed++;
         }
       }
+      // Commit the provider delta locally before advancing its cursor. If the
+      // process exits after this checkpoint, a later run must not skip remote
+      // records that were only still in the debounce window.
+      await ws.externalEvents.flush();
+      await ws.entries.flush();
+      await ws.calendarLinks.flush();
       await settings.set(_key('cursor'), page.cursor);
 
       // 2. Push (only when the user turned it on).
-      var sent = 0, deleted = 0;
+      var sent = 0, deleted = 0, missingDuration = 0;
       if (exportEntries) {
         final wanted = _wanted();
+        final protectedLinkIds = <String>{};
         var writes = 0;
         for (final MapEntry(key: id, value: d) in wanted.entries) {
-          if (writes >= maxWritesPerRun) break;
-          final link = ws.calendarLinks[id];
-          if (link != null && link.calendarId == cal && link.hash == d.hash) {
+          var link = _linkForEntry(d.entryId!, d.day);
+          if (link != null && link.calendarId != cal) link = null;
+          // Google/Outlook require a non-empty end for timed events. Preserve
+          // the locally entered start without inventing an end time.
+          if (d.startMinutes != null &&
+              (d.durationMinutes == null || d.durationMinutes! <= 0)) {
+            missingDuration++;
+            if (link != null) protectedLinkIds.add(link.id);
+            continue;
+          }
+          if (writes >= maxWritesPerRun) {
+            if (link != null) protectedLinkIds.add(link.id);
+            continue;
+          }
+          if (link != null && link.id != id && link.hash == d.hash) {
+            final migrated = CalendarLink(
+              id: id,
+              provider: provider,
+              calendarId: cal,
+              remoteId: link.remoteId,
+              entryId: d.entryId,
+              hash: link.hash,
+              remoteHash: link.remoteHash ?? link.hash,
+              remoteUpdatedAt: link.remoteUpdatedAt,
+              pendingCreate: link.pendingCreate,
+              updatedAt: DateTime.now(),
+            );
+            ws.calendarLinks.put(migrated);
+            ws.calendarLinks.remove(link.id);
+            link = migrated;
+          }
+          if (link != null && link.hash == d.hash && !link.pendingCreate) {
             continue;
           }
           String remoteId;
-          if (link != null && link.calendarId == cal) {
+          if (link != null && link.pendingCreate) {
+            remoteId = await api.create(cal, d);
+            if (link.hash != d.hash) await api.update(cal, remoteId, d);
+          } else if (link != null && link.calendarId == cal) {
             try {
               await api.update(cal, link.remoteId, d);
               remoteId = link.remoteId;
@@ -744,7 +1022,27 @@ class ExternalCalendarSync {
               remoteId = await api.create(cal, d); // deleted over there
             }
           } else {
-            remoteId = await api.create(cal, d);
+            final plannedId = api.createId(d);
+            if (plannedId != null) {
+              link = CalendarLink(
+                id: id,
+                provider: provider,
+                calendarId: cal,
+                remoteId: plannedId,
+                entryId: d.entryId,
+                hash: d.hash,
+                remoteHash: d.hash,
+                pendingCreate: true,
+                updatedAt: DateTime.now(),
+              );
+              ws.calendarLinks.put(link);
+              // Persist the operation identity before the network write. A
+              // process exit or lost response can safely retry this create.
+              await ws.calendarLinks.flush();
+              remoteId = await api.create(cal, d);
+            } else {
+              remoteId = await api.create(cal, d);
+            }
           }
           // Saved right after each write, so a failure later in the run
           // never leads to a second copy next time.
@@ -754,17 +1052,28 @@ class ExternalCalendarSync {
               provider: provider,
               calendarId: cal,
               remoteId: remoteId,
+              entryId: d.entryId,
               hash: d.hash,
+              remoteHash: d.hash,
               updatedAt: DateTime.now(),
             ),
           );
+          ws.externalEvents.remove(
+            ExternalEvent.idFor(provider, cal, remoteId),
+          );
+          if (link != null && link.id != id) {
+            ws.calendarLinks.remove(link.id);
+          }
           writes++;
           sent++;
         }
         for (final link
             in ws.calendarLinks.all
                 .where(
-                  (l) => l.provider == provider && !wanted.containsKey(l.id),
+                  (l) =>
+                      l.provider == provider &&
+                      !wanted.containsKey(l.id) &&
+                      !protectedLinkIds.contains(l.id),
                 )
                 .toList()) {
           if (writes >= maxWritesPerRun) break;
@@ -776,7 +1085,10 @@ class ExternalCalendarSync {
       }
       final report =
           'Synced: $added new, $removed removed'
-          '${exportEntries ? ', $sent sent, $deleted deleted there' : ''}.';
+          '${exportEntries ? ', $sent sent, $deleted deleted there' : ''}'
+          '${remoteEdits == 0 ? '' : ', $remoteEdits provider change(s) applied'}'
+          '${conflicts == 0 ? '' : ', $conflicts simultaneous edit(s) kept locally'}'
+          '${missingDuration == 0 ? '' : '; $missingDuration timed event(s) need a duration before export'}.';
       await settings.set(_key('lastSuccess'), DateTime.now().toIso8601String());
       await _setStatus(report);
       return report;

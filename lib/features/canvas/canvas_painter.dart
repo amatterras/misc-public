@@ -15,8 +15,14 @@ import '../ink/stroke_geometry.dart';
 /// separate widgets, so the space is truly unbounded and stays fast with
 /// many items (anything off-screen is skipped).
 class CanvasPainter extends CustomPainter {
-  CanvasPainter(this.controller, {this.page, this.pageScale = 1})
-    : super(repaint: controller);
+  CanvasPainter(
+    this.controller, {
+    this.page,
+    this.pageScale = 1,
+    this.itemOpacity = const {},
+    this.itemOpacityFor,
+    Listenable? repaint,
+  }) : super(repaint: repaint ?? controller);
 
   final CanvasController controller;
 
@@ -24,6 +30,13 @@ class CanvasPainter extends CustomPainter {
   /// with no grid (the page widget draws the paper). Null for a canvas.
   final Rect? page;
   final double pageScale;
+
+  /// Per-item alpha overrides used for short, item-specific transitions.
+  final Map<String, double> itemOpacity;
+
+  /// Optional live opacity lookup for animations that should repaint without
+  /// rebuilding the canvas widget tree on every animation tick.
+  final double Function(CanvasItem item)? itemOpacityFor;
 
   static final Expando<Path> _pathCache = Expando();
 
@@ -88,6 +101,14 @@ class CanvasPainter extends CustomPainter {
       if (item is ConnectorItem || controller.isReference(item.id)) continue;
       final bounds = controller.itemBounds(item);
       if (!bounds.overlaps(visible)) continue;
+      final opacity = (itemOpacityFor?.call(item) ?? itemOpacity[item.id] ?? 1)
+          .clamp(0.0, 1.0);
+      if (opacity < 1) {
+        canvas.saveLayer(
+          bounds.inflate(4),
+          Paint()..color = Colors.white.withValues(alpha: opacity),
+        );
+      }
       final faded = controller.dimmed?.call(item) ?? false;
       if (faded) {
         canvas.saveLayer(
@@ -128,6 +149,7 @@ class CanvasPainter extends CustomPainter {
         );
       }
       if (faded) canvas.restore();
+      if (opacity < 1) canvas.restore();
     }
     _paintMarks(canvas, scale, visible);
     _paintSelection(canvas, scale);
@@ -508,7 +530,12 @@ class CanvasPainter extends CustomPainter {
   bool shouldRepaint(CanvasPainter oldDelegate) =>
       oldDelegate.controller != controller ||
       oldDelegate.page != page ||
-      oldDelegate.pageScale != pageScale;
+      oldDelegate.pageScale != pageScale ||
+      oldDelegate.itemOpacityFor != itemOpacityFor ||
+      oldDelegate.itemOpacity.length != itemOpacity.length ||
+      oldDelegate.itemOpacity.entries.any(
+        (entry) => oldDelegate.itemOpacity[entry.key] != entry.value,
+      );
 }
 
 /// A small overview of the whole canvas with the visible area marked.

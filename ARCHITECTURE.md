@@ -7,10 +7,12 @@ Everything is local, in `%APPDATA%\THEapp` (Settings → "Open data folder"):
 |---|---|
 | `canvases\<id>.json` | One file per canvas: items, positions, sizes, styling, drawings, camera |
 | `data\*.json` | Notes, folders, assets (links/photos), inbox, calendar entries, calendar days, tasks, projects |
-| `attachments\` | Copies of photos and link preview images (never modified or deleted) |
+| `attachments\` | Managed copies of photos, documents and link preview images; shared asset bytes are retained while asset ownership is ambiguous |
 | `backups\<time>-<reason>\` | Daily automatic snapshots (14 kept), manual ones, `pre-v2`, `before-restore` |
 | `inbox_requests\` | Hand-off files from Explorer "Send to" launches |
 | `sync\` | Device identity and deleted-canvas markers (for future sync) |
+| `calendar\` | Protected Google/Outlook OAuth token files, when configured |
+| `retention\` | Durable ledger preventing an expired Calendar archive from being restored |
 | `logs\app.log` | Local log of errors, recoveries, start and close (never sent anywhere) |
 
 Safety rules:
@@ -112,3 +114,34 @@ content, an outgoing preview, per-source/image permissions, context limits, a lo
 Ollama route, and an OpenAI-compatible API-key route. Sending requires explicit user
 action; proposed changes require approval. A personal ChatGPT subscription is not API
 access. See `lib/features/ai/` and the requirement inventory for remaining gaps.
+
+## Current implementation update (2026-10-24)
+
+This section supersedes contradictory status statements in the historical 2026-10-23
+audit above; the audit remains intact as a record of its earlier inspection.
+
+- Calendar entries, Calendar day records, photos and their asset metadata use the
+  shared workspace and attachment transfer mechanisms. Google Calendar and Outlook
+  imports appear as read-only provider events. THEapp Reminder/Event records can be
+  optionally exported and reconciled both ways. Provider-created entries are not
+  editable inside THEapp. Refresh runs on startup, app resume, manual request, and
+  every five minutes while the app is open.
+- Google uses incremental sync tokens and a stable event id plus a private operation
+  key for duplicate-safe create retries. Outlook uses Microsoft Graph's
+  `transactionId`. The link is durably stored before retryable create requests.
+- Calendar archive records expire after seven days; the expiration tombstone and
+  ledger are carried through the managed local/hub backups. The attachment model is
+  shared with Archive, so expiration removes the Calendar reference but does not
+  delete bytes that may remain independently saved as an Archive asset.
+- Calendar handwriting recognition has native Windows Ink and iOS Vision paths and
+  requires user review before a record is created. It is not represented as verified
+  on this Windows host: its recognizer currently returns HRESULT `0x80280008`.
+- AI conversations, including streaming, cancel, retry and persistent history, are
+  implemented in the current source. Provider interaction is covered with local
+  deterministic test servers/fakes; no real AI credentials were used in this
+  validation.
+- Windows widget/integration tests exercise exports, welcome dismissal, drawing
+  gestures, inter-window drag, reading goals, note zoom, compact floating browser and
+  sync. Passing tests establish code behavior, not a fresh visible native-window or
+  physical iPad/Pencil check. See `THEAPP_VERIFICATION_REPORT.md` for the exact
+  commands and current environment limits.

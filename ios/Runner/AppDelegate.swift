@@ -104,6 +104,8 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       pdfRenderPage(call.arguments as? [String: Any] ?? [:], result)
     case "ocrPdf":
       ocrPdf(call.arguments as? [String: Any] ?? [:], result)
+    case "ocrImage":
+      ocrImage(call.arguments as? String, result)
     case "pdfExport":
       pdfExport(call.arguments as? [String: Any] ?? [:], result)
     case "shareFile":
@@ -238,6 +240,32 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
         }
       }
       DispatchQueue.main.async { result(pages) }
+    }
+  }
+
+  /// On-device Vision recognition for a temporary calendar handwriting image.
+  /// No image data or recognized text leaves the device.
+  private func ocrImage(_ path: String?, _ result: @escaping FlutterResult) {
+    guard let path = path else {
+      result(FlutterError(code: "ocr_image", message: "Missing image path", details: nil))
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+      let url = URL(fileURLWithPath: path)
+      let request = VNRecognizeTextRequest()
+      request.recognitionLevel = .accurate
+      request.usesLanguageCorrection = true
+      do {
+        try VNImageRequestHandler(url: url, options: [:]).perform([request])
+        let lines = (request.results ?? [])
+          .sorted { $0.boundingBox.midY > $1.boundingBox.midY }
+          .compactMap { $0.topCandidates(1).first?.string }
+        DispatchQueue.main.async { result(lines.joined(separator: "\n")) }
+      } catch {
+        DispatchQueue.main.async {
+          result(FlutterError(code: "ocr_image", message: error.localizedDescription, details: nil))
+        }
+      }
     }
   }
 

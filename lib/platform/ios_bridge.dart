@@ -132,6 +132,11 @@ class IosBridge implements KeychainBackend {
     return r == null ? null : [for (final p in r) p is String ? p : ''];
   }
 
+  /// Recognizes text from a temporary rendered calendar-ink image using the
+  /// on-device Vision framework. The image is not uploaded or retained.
+  Future<String> ocrImage(String path) async =>
+      await _invoke<String>('ocrImage', path) ?? '';
+
   /// Writes a copy of the PDF at [source] to [target] with [pages] drawn
   /// on top (the original file is not changed). Each page entry:
   /// {page, strokes: [{color, width, points: [[x, y, w], …]}]} in PDF

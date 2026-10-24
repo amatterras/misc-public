@@ -31,11 +31,12 @@ extension AiProviderInfo on AiProvider {
 
   // Checked against the providers' model and deprecation pages on
   // 2026-10-24: gpt-4o-mini shuts down on 2027-01-14 (replacement
-  // gpt-6-luna); gemini-2.5-flash has no shutdown date announced.
+  // gpt-6-luna). New Gemini projects should use 3.8 Flash; 2.5 Flash remains
+  // available to existing users but is capacity-limited for new projects.
   String get defaultModel => switch (this) {
     AiProvider.ollama => 'llama3.2',
     AiProvider.openAiCompatible => 'gpt-6-luna',
-    AiProvider.gemini => 'gemini-2.5-flash',
+    AiProvider.gemini => 'gemini-3.8-flash',
   };
 
   /// Needs an API key (stored protected, per service).

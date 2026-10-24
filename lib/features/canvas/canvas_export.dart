@@ -2,6 +2,7 @@
 // a note's pages (image export). Drawn with the same painter as the
 // screen, on the app's dark background, so what you see is what you get.
 // The source document is never changed.
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -15,6 +16,24 @@ import 'canvas_painter.dart';
 /// PNG of [items] (or of everything in [source] when null), with a margin.
 /// Null when there is nothing to draw. [maxSide] limits the picture size.
 Future<Uint8List?> renderItemsPng(
+  CanvasController source, {
+  Iterable<String>? items,
+  double margin = 24,
+  double maxSide = 2400,
+  Color background = AppColors.background,
+}) async {
+  final picture = await renderItemsPicture(
+    source,
+    items: items,
+    margin: margin,
+    maxSide: maxSide,
+    background: background,
+  );
+  return picture?.png;
+}
+
+/// Like [renderItemsPng], also counting photos that could not be drawn.
+Future<({Uint8List png, int missingImages})?> renderItemsPicture(
   CanvasController source, {
   Iterable<String>? items,
   double margin = 24,
@@ -44,18 +63,49 @@ Future<Uint8List?> renderItemsPng(
       final b = copy.itemBounds(i);
       area = area == null ? b : area.expandToInclude(b);
     }
-    return await renderRectPng(
+    final rect = area!.inflate(margin);
+    final png = await renderRectPng(
       copy,
-      area!.inflate(margin),
+      rect,
       maxSide: maxSide,
       background: background,
     );
+    if (png == null) return null;
+    return (png: png, missingImages: missingImagesIn(copy, rect));
   } finally {
     copy.dispose();
   }
 }
 
-/// PNG of the world rectangle [rect] of [c].
+/// The attachment files the pictures and link previews in [rect] of [c]
+/// show.
+List<String> imageFilesIn(CanvasController c, Rect rect) {
+  final r = c.resources;
+  if (r == null) return const [];
+  return [
+    for (final i in c.items)
+      if (c.itemBounds(i).overlaps(rect))
+        if (i is ImageItem)
+          ?r.asset(i.assetId)?.file
+        else if (i is LinkItem)
+          ?r.asset(i.assetId)?.previewFile,
+  ];
+}
+
+/// Photos in [rect] that still cannot be drawn (missing or unreadable
+/// files): they appear as a placeholder, and an export says so.
+int missingImagesIn(CanvasController c, Rect rect) {
+  final r = c.resources;
+  if (r == null) return 0;
+  return [
+    for (final i in c.items.whereType<ImageItem>())
+      if (c.itemBounds(i).overlaps(rect)) r.asset(i.assetId)?.file,
+  ].where((file) => file == null || r.image(file) == null).length;
+}
+
+/// PNG of the world rectangle [rect] of [c]. Photos are loaded first (the
+/// screen loads them lazily; a picture must not miss them). The longest
+/// side is at most [maxSide] pixels, however large the area.
 Future<Uint8List?> renderRectPng(
   CanvasController c,
   Rect rect, {
@@ -64,10 +114,13 @@ Future<Uint8List?> renderRectPng(
   void Function(Canvas canvas, Size size)? underlay,
 }) async {
   if (rect.isEmpty) return null;
-  final scale = (maxSide / rect.longestSide).clamp(0.1, 2.0);
+  await c.resources
+      ?.preload(imageFilesIn(c, rect))
+      .timeout(const Duration(seconds: 20), onTimeout: () {});
+  final scale = math.min(2.0, maxSide / rect.longestSide);
   final size = Size(
-    (rect.width * scale).ceilToDouble(),
-    (rect.height * scale).ceilToDouble(),
+    math.max(1, (rect.width * scale).ceilToDouble()),
+    math.max(1, (rect.height * scale).ceilToDouble()),
   );
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);

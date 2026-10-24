@@ -347,6 +347,8 @@ class AppState extends ChangeNotifier {
     step('Starting reminders');
     _startReminders();
     _applyClipboardSetting();
+    _startCalendarSyncSchedule();
+    unawaited(syncCalendarAccounts());
     step('Ready');
   }
 
@@ -690,6 +692,7 @@ class AppState extends ChangeNotifier {
     // iOS shows its bars again after the app was in the background.
     if (immersive) applyImmersive(true);
     await importSharedItems();
+    _startCalendarSyncSchedule();
     unawaited(syncCalendarAccounts());
     // Timers and the live connection stop in the background (iOS): start
     // again and catch up.
@@ -704,6 +707,16 @@ class AppState extends ChangeNotifier {
   }
 
   static const resumeSyncAfter = Duration(seconds: 20);
+
+  static const calendarSyncInterval = Duration(minutes: 5);
+  Timer? _calendarSyncTimer;
+
+  void _startCalendarSyncSchedule() {
+    _calendarSyncTimer?.cancel();
+    _calendarSyncTimer = Timer.periodic(calendarSyncInterval, (_) {
+      unawaited(syncCalendarAccounts());
+    });
+  }
 
   /// The app went to the background (iPhone/iPad): stop the live
   /// connection and timers; [appResumed] starts them again.
@@ -1565,8 +1578,21 @@ class AppState extends ChangeNotifier {
 
   /// Syncs every connected calendar account that has a calendar chosen.
   Future<void> syncCalendarAccounts() async {
-    for (final a in calendarAccounts.values) {
-      if (a.calendarId != null && await a.connected) await a.syncOnce();
+    for (final MapEntry(:key, :value) in calendarAccounts.entries) {
+      try {
+        if (value.calendarId != null && await value.connected) {
+          await value.syncOnce();
+        }
+      } catch (error, stack) {
+        // Scheduled runs are launched without awaiting them. Keep one
+        // provider's unexpected storage/runtime failure from becoming an
+        // unhandled background error or preventing the other account syncing.
+        AppLog.error('Unexpected $key calendar sync failure', null, stack);
+        await settings.set(
+          'calendar.$key.status',
+          'Calendar sync could not complete. Check the app log and account setup.',
+        );
+      }
     }
     notifyListeners();
   }
@@ -2371,13 +2397,14 @@ class AppState extends ChangeNotifier {
 
   static List<CanvasItem> _welcomeItems() => [
     TextItem(
-      id: newId(),
+      id: welcomeGuideItemId,
       position: const Offset(0, 0),
       width: 460,
       minHeight: 0,
       fontSize: 16,
       text: touchFirst
           ? '# Welcome to your canvas\n'
+                '- Drag this guide to the top or either side to dismiss it\n'
                 '- Double-tap empty space to write a note\n'
                 '- Drag to move, use the corner handle to resize\n'
                 '- Select a note to change size, **bold**, colours\n'
@@ -2386,6 +2413,7 @@ class AppState extends ChangeNotifier {
                 '- Pinch with two fingers to zoom and move around\n'
                 '- **Quick Add** captures text, links and photos from anywhere'
           : '# Welcome to your canvas\n'
+                '- Drag this guide to the top or either side to dismiss it\n'
                 '- Double-click empty space to write a note\n'
                 '- Drag to move, use the corner handle to resize\n'
                 '- Select a note to change size, **bold**, colours\n'
@@ -2399,6 +2427,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _scheduler?.stop();
+    _calendarSyncTimer?.cancel();
     _pencilTaps?.cancel();
     if (_listeningForEdits) workspace.changes.removeListener(_editedLocally);
     _widgetTimer?.cancel();

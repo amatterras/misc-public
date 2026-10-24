@@ -147,6 +147,11 @@ class HubServer {
       log ?? (_) {},
     );
     server._paused = await server._pausedFile.exists();
+    try {
+      await server._purgeExpiredArchives();
+    } catch (error) {
+      server._log('Calendar retention cleanup FAILED: ${error.runtimeType}');
+    }
     for (final http in servers) {
       http.idleTimeout = const Duration(seconds: 30);
       http.listen(server._handle);
@@ -170,6 +175,17 @@ class HubServer {
       _log('Backup ok: ${b.uri.pathSegments.where((s) => s.isNotEmpty).last}');
     } catch (e) {
       _log('Backup FAILED: ${e.runtimeType}');
+    }
+  }
+
+  Future<void> _purgeExpiredArchives() async {
+    final ids = await store.expiredCalendarEntryIds();
+    if (ids.isEmpty) return;
+    // The current hub journal is compacted to current versions first; the
+    // backup sanitizer then replaces historical copies with the tombstone.
+    await store.compact();
+    for (final id in ids) {
+      await backups.purgeExpiredCalendarEntry(id);
     }
   }
 
@@ -365,6 +381,13 @@ class HubServer {
             for (final c in raw) SyncChange.fromJson(c as Map<String, dynamic>),
           ];
           final results = await store.push(d.id, changes);
+          if (changes.any(
+            (change) =>
+                change.collection == 'calendar_entry_expirations' &&
+                !change.deleted,
+          )) {
+            await _purgeExpiredArchives();
+          }
           await _send(r, 200, {
             'results': [for (final x in results) x.toJson()],
             'lastSeq': store.lastSeq,

@@ -56,6 +56,8 @@ Future<void> shutDown(WidgetTester tester, AppState state) async {
   await waitForBothClocks(tester, state.flush, what: 'Saving');
   await tester.pumpWidget(const SizedBox());
   await tester.pump(const Duration(seconds: 4));
+  state.dispose();
+  state.workspace.dispose();
 }
 
 void main() {

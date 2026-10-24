@@ -234,15 +234,7 @@ Future<void> showCanvasMenu(
     case 'versions':
       await showCanvasVersions(context, s, c);
     case 'exportPicture' || 'exportWeb':
-      final file = choice == 'exportPicture'
-          ? await exportCanvasPicture(s, c)
-          : await exportCanvasWebPage(s, c);
-      if (file == null) {
-        s.showToast('This mindmap is empty.');
-        return;
-      }
-      s.showToast('Saved ${file.path}');
-      await revealExport(s, file);
+      await exportCanvasFromMenu(s, c, web: choice == 'exportWeb');
     case 'release':
       c.releaseReferences();
     case 'selectAll':

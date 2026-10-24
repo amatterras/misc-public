@@ -10,6 +10,8 @@ import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/app/page_windows.dart';
 import 'package:flutter_application_1/data/models/ai_models.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
+import 'package:flutter_application_1/data/models/calendar_sync_models.dart';
+import 'package:flutter_application_1/data/models/record.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/models/task_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
@@ -50,6 +52,8 @@ class FakeProvider extends CalendarProvider {
   FakeProvider() : super(({bool force = false}) async => 'token');
   final Map<String, RemoteEvent> remote = {};
   final List<String> writes = [];
+  final Map<String, String> _createdForKey = {};
+  var failAfterCreateOnce = false;
   var _n = 0;
 
   @override
@@ -63,20 +67,36 @@ class FakeProvider extends CalendarProvider {
   ];
 
   @override
+  String? createId(EventDraft draft) => draft.idempotencyKey == null
+      ? null
+      : googleCalendarEventId(draft.idempotencyKey!);
+
+  @override
   Future<DeltaPage> changes(String calendarId, String? cursor) async =>
       DeltaPage(remote.values.toList(), 'cursor', full: true);
 
   @override
   Future<String> create(String calendarId, EventDraft d) async {
-    final id = 'r${_n++}';
+    final id = d.idempotencyKey == null
+        ? 'r${_n++}'
+        : _createdForKey.putIfAbsent(
+            d.idempotencyKey!,
+            () => createId(d) ?? 'r${_n++}',
+          );
     writes.add('create ${d.title}');
     remote[id] = RemoteEvent(
       remoteId: id,
       title: d.title,
+      description: d.description,
       start: d.start,
       end: d.end,
       allDay: d.allDay,
+      updatedAt: DateTime.now(),
     );
+    if (failAfterCreateOnce) {
+      failAfterCreateOnce = false;
+      throw const ProviderException('response lost after remote create');
+    }
     return id;
   }
 
@@ -86,8 +106,11 @@ class FakeProvider extends CalendarProvider {
     remote[remoteId] = RemoteEvent(
       remoteId: remoteId,
       title: d.title,
+      description: d.description,
       start: d.start,
       end: d.end,
+      allDay: d.allDay,
+      updatedAt: DateTime.now(),
     );
   }
 
@@ -403,7 +426,7 @@ void main() {
       await s.ai.setProvider(AiProvider.openAiCompatible);
       await s.ai.setModel('gpt-test');
       await s.ai.setProvider(AiProvider.gemini);
-      expect(s.ai.model, 'gemini-2.5-flash');
+      expect(s.ai.model, 'gemini-3.8-flash');
       expect(s.ai.endpoint, 'https://generativelanguage.googleapis.com');
       await s.ai.setProvider(AiProvider.openAiCompatible);
       expect(s.ai.model, 'gpt-test');
@@ -423,6 +446,184 @@ void main() {
   });
 
   group('P3 calendar sync', () {
+    test(
+      'Google initial and incremental sync use compatible parameters',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        final queries = <Map<String, String>>[];
+        server.listen((request) async {
+          queries.add(request.uri.queryParameters);
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(
+            jsonEncode({
+              'items': [],
+              'nextSyncToken': queries.length == 1 ? 'cursor-1' : 'cursor-2',
+            }),
+          );
+          await request.response.close();
+        });
+        final provider = GoogleCalendarProvider(
+          ({bool force = false}) async => 'token',
+          baseUri: Uri.parse('http://127.0.0.1:${server.port}/calendar/v3/'),
+        );
+
+        final full = await provider.changes('cal', null);
+        final incremental = await provider.changes('cal', full.cursor);
+
+        expect(full.full, isTrue);
+        expect(incremental.full, isFalse);
+        expect(queries, hasLength(2));
+        for (final query in queries) {
+          expect(query['singleEvents'], 'true');
+          expect(query['showDeleted'], 'true');
+          expect(query['maxResults'], '250');
+          expect(query, isNot(contains('timeMin')));
+        }
+        expect(queries.first, isNot(contains('syncToken')));
+        expect(queries.last['syncToken'], 'cursor-1');
+      },
+    );
+
+    test(
+      'provider delta records are durable before cursor checkpoint',
+      () async {
+        final ws = Workspace(dir);
+        await ws.load();
+        final settings = SettingsRepository(ws.store);
+        final fake = FakeProvider();
+        final sync = ExternalCalendarSync(
+          ws: ws,
+          settings: settings,
+          provider: 'google',
+          oauth: () => GoogleCalendarProvider.config(clientId: 'x'),
+          apiOverride: fake,
+        );
+        await sync.chooseCalendar(const RemoteCalendar('cal', 'Main'));
+        fake.remote['provider-event'] = RemoteEvent(
+          remoteId: 'provider-event',
+          title: 'Durable import',
+          start: DateTime.utc(2026, 10, 24, 8),
+          end: DateTime.utc(2026, 10, 24, 9),
+        );
+
+        await sync.syncOnce();
+
+        final importedFile = File(
+          '${dir.path}${Platform.pathSeparator}data'
+          '${Platform.pathSeparator}external_events.json',
+        );
+        final settingsFile = File(
+          '${dir.path}${Platform.pathSeparator}settings'
+          '${Platform.pathSeparator}app.json',
+        );
+        final imported = jsonDecode(await importedFile.readAsString());
+        final savedSettings = jsonDecode(await settingsFile.readAsString());
+        expect((imported['records'] as List).single['title'], 'Durable import');
+        expect(savedSettings['calendar.google.cursor'], 'cursor');
+        await ws.flush();
+        ws.dispose();
+      },
+    );
+
+    test(
+      'Google create recovers a lost response using its stable event id',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        final key = 'opaque-stable-calendar-key';
+        final id = googleCalendarEventId(key);
+        var postCount = 0;
+        server.listen((request) async {
+          final bodyText = await utf8.decoder.bind(request).join();
+          expect(
+            request.headers.value(HttpHeaders.authorizationHeader),
+            'Bearer token',
+          );
+          if (request.method == 'POST') {
+            final body = jsonDecode(bodyText) as Map<String, dynamic>;
+            expect(body['id'], id);
+            expect(
+              ((body['extendedProperties'] as Map)['private']
+                  as Map)['theappKey'],
+              key,
+            );
+            postCount++;
+            request.response.statusCode = postCount == 1 ? 503 : 409;
+            request.response.headers.contentType = ContentType.json;
+            request.response.write(
+              jsonEncode({
+                'error': {'code': request.response.statusCode},
+              }),
+            );
+          } else {
+            expect(request.method, 'GET');
+            expect(request.uri.path, endsWith('/events/$id'));
+            request.response.headers.contentType = ContentType.json;
+            request.response.write(
+              jsonEncode({
+                'id': id,
+                'extendedProperties': {
+                  'private': {'theappKey': key},
+                },
+              }),
+            );
+          }
+          await request.response.close();
+        });
+
+        final provider = GoogleCalendarProvider(
+          ({bool force = false}) async => 'token',
+          baseUri: Uri.parse('http://127.0.0.1:${server.port}/calendar/v3/'),
+        );
+        final draft = EventDraft(
+          title: 'Recovered event',
+          day: DateTime(2026, 10, 24),
+          idempotencyKey: key,
+        );
+        await expectLater(
+          provider.create('cal', draft),
+          throwsA(isA<ProviderException>()),
+        );
+        expect(await provider.create('cal', draft), id);
+        expect(postCount, 2);
+      },
+    );
+
+    test('Outlook create sends a stable Graph transactionId', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final bodies = <Map<String, dynamic>>[];
+      server.listen((request) async {
+        expect(request.method, 'POST');
+        bodies.add(
+          jsonDecode(await utf8.decoder.bind(request).join())
+              as Map<String, dynamic>,
+        );
+        request.response
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode({'id': 'graph-event-id'}));
+        await request.response.close();
+      });
+      final provider = MicrosoftCalendarProvider(
+        ({bool force = false}) async => 'token',
+        baseUri: Uri.parse('http://127.0.0.1:${server.port}/v1.0/'),
+      );
+      final draft = EventDraft(
+        title: 'Retry-safe Outlook event',
+        day: DateTime(2026, 10, 24),
+        idempotencyKey: 'stable-operation-key',
+      );
+
+      expect(provider.createId(draft), startsWith('pending-'));
+      expect(await provider.create('calendar', draft), 'graph-event-id');
+      expect(await provider.create('calendar', draft), 'graph-event-id');
+      expect(bodies, hasLength(2));
+      expect(bodies[0]['transactionId'], 'stable-operation-key');
+      expect(bodies[1]['transactionId'], bodies[0]['transactionId']);
+      expect(bodies[0]['subject'], 'Retry-safe Outlook event');
+    });
+
     test('pull, export without loops or copies, update and delete', () async {
       final ws = Workspace(dir);
       await ws.load();
@@ -460,9 +661,8 @@ void main() {
           name: 'Exam',
           createdAt: now,
           updatedAt: now,
-          dates: {
-            '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}',
-          },
+          startDate: day,
+          endDate: day,
         ),
       );
       await sync.setExport(true);
@@ -484,6 +684,339 @@ void main() {
       expect(ws.calendarLinks.all, isEmpty);
       expect(ws.externalEvents.all, isEmpty);
     });
+
+    test('exports event date ranges as one complete provider event', () async {
+      final ws = Workspace(dir);
+      await ws.load();
+      final settings = SettingsRepository(ws.store);
+      final fake = FakeProvider();
+      final sync = ExternalCalendarSync(
+        ws: ws,
+        settings: settings,
+        provider: 'google',
+        oauth: () => GoogleCalendarProvider.config(clientId: 'x'),
+        apiOverride: fake,
+      );
+      await sync.chooseCalendar(const RemoteCalendar('cal', 'Main'));
+      await sync.setExport(true);
+
+      final firstDay = DateTime.now().add(const Duration(days: 4));
+      final start = DateTime(firstDay.year, firstDay.month, firstDay.day);
+      final last = start.add(const Duration(days: 2));
+      ws.entries.put(
+        CalendarEntry(
+          id: 'multi-day',
+          category: CalendarCategory.events,
+          name: 'Conference',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          startDate: start,
+          endDate: last,
+        ),
+      );
+
+      await sync.syncOnce();
+
+      expect(fake.remote, hasLength(1));
+      final exported = fake.remote.values.single;
+      expect(exported.title, 'Conference');
+      expect(exported.start, start);
+      expect(exported.end, last.add(const Duration(days: 1)));
+      expect(ws.calendarLinks.all, hasLength(1));
+      await ws.flush();
+      ws.dispose();
+    });
+
+    test('provider edits update the linked local event without a loop', () async {
+      final ws = Workspace(dir);
+      await ws.load();
+      final settings = SettingsRepository(ws.store);
+      final fake = FakeProvider();
+      final sync = ExternalCalendarSync(
+        ws: ws,
+        settings: settings,
+        provider: 'google',
+        oauth: () => GoogleCalendarProvider.config(clientId: 'x'),
+        apiOverride: fake,
+      );
+      await sync.chooseCalendar(const RemoteCalendar('cal', 'Main'));
+      await sync.setExport(true);
+      final start = DateTime.now().add(const Duration(days: 4));
+      final day = DateTime(start.year, start.month, start.day);
+      ws.entries.put(
+        CalendarEntry(
+          id: 'linked-event',
+          category: CalendarCategory.events,
+          name: 'Original title',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          startDate: day,
+          endDate: day,
+          startMinutes: 9 * 60,
+          durationMinutes: 30,
+        ),
+      );
+      await sync.syncOnce();
+      final remoteId = ws.calendarLinks.all.single.remoteId;
+      final writesAfterCreate = fake.writes.length;
+
+      fake.remote[remoteId] = RemoteEvent(
+        remoteId: remoteId,
+        title: 'Changed in Google',
+        description: 'provider description',
+        start: day.add(const Duration(days: 1, hours: 14)),
+        end: day.add(const Duration(days: 1, hours: 15)),
+        updatedAt: DateTime.now().add(const Duration(days: 1)),
+      );
+      final report = await sync.syncOnce();
+
+      expect(ws.entries['linked-event']!.name, 'Changed in Google');
+      expect(ws.entries['linked-event']!.description, 'provider description');
+      expect(
+        ws.entries['linked-event']!.startDate,
+        day.add(const Duration(days: 1)),
+      );
+      expect(ws.entries['linked-event']!.startMinutes, 14 * 60);
+      expect(ws.entries['linked-event']!.durationMinutes, 60);
+      expect(ws.calendarLinks.all.single.remoteId, remoteId);
+      expect(fake.writes, hasLength(writesAfterCreate));
+      expect(report, contains('provider change(s) applied'));
+
+      // Moving the linked local record reuses its provider ID and stable link.
+      ws.entries.put(
+        ws.entries['linked-event']!.copyWith(
+          name: 'Changed in THEapp',
+          startDate: () => day.add(const Duration(days: 2)),
+          endDate: () => day.add(const Duration(days: 2)),
+        ),
+      );
+      await sync.syncOnce();
+      expect(fake.remote, hasLength(1));
+      expect(fake.remote[remoteId]!.title, 'Changed in THEapp');
+      expect(ws.calendarLinks.all.single.remoteId, remoteId);
+      expect(
+        ws.calendarLinks.all.single.id,
+        CalendarLink.idFor(
+          'google',
+          'linked-event',
+          dayKey(day.add(const Duration(days: 2))),
+        ),
+      );
+      await ws.flush();
+      ws.dispose();
+    });
+
+    test(
+      'local wins a simultaneous edit when provider timestamp is older',
+      () async {
+        final ws = Workspace(dir);
+        await ws.load();
+        final settings = SettingsRepository(ws.store);
+        final fake = FakeProvider();
+        final sync = ExternalCalendarSync(
+          ws: ws,
+          settings: settings,
+          provider: 'google',
+          oauth: () => GoogleCalendarProvider.config(clientId: 'x'),
+          apiOverride: fake,
+        );
+        await sync.chooseCalendar(const RemoteCalendar('cal', 'Main'));
+        await sync.setExport(true);
+        final day = DateTime.now().add(const Duration(days: 3));
+        final entry = CalendarEntry(
+          id: 'conflict-event',
+          category: CalendarCategory.events,
+          name: 'Baseline',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          startDate: day,
+          endDate: day,
+        );
+        ws.entries.put(entry);
+        await sync.syncOnce();
+        final link = ws.calendarLinks.all.single;
+        ws.entries.put(entry.copyWith(name: 'Local newer'));
+        fake.remote[link.remoteId] = RemoteEvent(
+          remoteId: link.remoteId,
+          title: 'Remote older',
+          start: day,
+          end: day.add(const Duration(days: 1)),
+          allDay: true,
+          updatedAt: DateTime.now().subtract(const Duration(days: 1)),
+        );
+
+        final report = await sync.syncOnce();
+        expect(ws.entries['conflict-event']!.name, 'Local newer');
+        expect(fake.remote[link.remoteId]!.title, 'Local newer');
+        expect(report, contains('simultaneous edit(s) kept locally'));
+        await ws.flush();
+        ws.dispose();
+      },
+    );
+
+    test(
+      'provider deletion archives the linked entry without losing content',
+      () async {
+        final ws = Workspace(dir);
+        await ws.load();
+        final settings = SettingsRepository(ws.store);
+        final fake = FakeProvider();
+        final sync = ExternalCalendarSync(
+          ws: ws,
+          settings: settings,
+          provider: 'google',
+          oauth: () => GoogleCalendarProvider.config(clientId: 'x'),
+          apiOverride: fake,
+        );
+        await sync.chooseCalendar(const RemoteCalendar('cal', 'Main'));
+        await sync.setExport(true);
+        final day = DateTime.now().add(const Duration(days: 4));
+        ws.entries.put(
+          CalendarEntry(
+            id: 'deleted-remotely',
+            category: CalendarCategory.events,
+            name: 'Keep my notes',
+            description: 'Preserve this description',
+            notes: 'Preserve this note',
+            assetIds: const ['photo-id'],
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            startDate: day,
+            endDate: day,
+          ),
+        );
+        await sync.syncOnce();
+        final link = ws.calendarLinks.all.single;
+        fake.remote[link.remoteId] = RemoteEvent(
+          remoteId: link.remoteId,
+          removed: true,
+        );
+
+        await sync.syncOnce();
+
+        final archived = ws.entries['deleted-remotely']!;
+        expect(archived.archived, isTrue);
+        expect(archived.description, 'Preserve this description');
+        expect(archived.notes, 'Preserve this note');
+        expect(archived.assetIds, ['photo-id']);
+        expect(ws.calendarLinks.all, isEmpty);
+        await ws.flush();
+        ws.dispose();
+      },
+    );
+
+    test(
+      'a lost create response retries with the same id and no echo copy',
+      () async {
+        final ws = Workspace(dir);
+        await ws.load();
+        final settings = SettingsRepository(ws.store);
+        final fake = FakeProvider()..failAfterCreateOnce = true;
+        final sync = ExternalCalendarSync(
+          ws: ws,
+          settings: settings,
+          provider: 'google',
+          oauth: () => GoogleCalendarProvider.config(clientId: 'x'),
+          apiOverride: fake,
+        );
+        await sync.chooseCalendar(const RemoteCalendar('cal', 'Main'));
+        await sync.setExport(true);
+        final day = DateTime.now().add(const Duration(days: 3));
+        ws.entries.put(
+          CalendarEntry(
+            id: 'retry-event',
+            category: CalendarCategory.events,
+            name: 'Retry event',
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            startDate: day,
+            endDate: day,
+          ),
+        );
+        await sync.syncOnce(); // remote create succeeded; response was lost
+        expect(ws.calendarLinks.all, hasLength(1));
+        expect(ws.calendarLinks.all.single.pendingCreate, isTrue);
+        await ws.flush();
+        ws.dispose();
+
+        // A fresh workspace instance simulates the process restarting before
+        // the provider acknowledged the create.
+        final reopened = Workspace(dir);
+        await reopened.load();
+        final reopenedSettings = SettingsRepository(reopened.store);
+        await reopenedSettings.load();
+        final retrySync = ExternalCalendarSync(
+          ws: reopened,
+          settings: reopenedSettings,
+          provider: 'google',
+          oauth: () => GoogleCalendarProvider.config(clientId: 'x'),
+          apiOverride: fake,
+        );
+        final retryReport = await retrySync.syncOnce();
+        expect(fake.remote, hasLength(1));
+        expect(reopened.calendarLinks.all, hasLength(1));
+        expect(
+          reopened.calendarLinks.all.single.pendingCreate,
+          isFalse,
+          reason: retryReport,
+        );
+        expect(reopened.externalEvents.all, isEmpty);
+        await reopened.flush();
+        reopened.dispose();
+      },
+    );
+
+    test(
+      'does not invent a timed event duration before provider export',
+      () async {
+        final ws = Workspace(dir);
+        await ws.load();
+        final settings = SettingsRepository(ws.store);
+        final fake = FakeProvider();
+        final sync = ExternalCalendarSync(
+          ws: ws,
+          settings: settings,
+          provider: 'google',
+          oauth: () => GoogleCalendarProvider.config(clientId: 'x'),
+          apiOverride: fake,
+        );
+        await sync.chooseCalendar(const RemoteCalendar('cal', 'Main'));
+        await sync.setExport(true);
+        final day = DateTime.now().add(const Duration(days: 2));
+        ws.entries.put(
+          CalendarEntry(
+            id: 'timed-no-duration',
+            category: CalendarCategory.events,
+            name: 'Appointment',
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            startDate: day,
+            endDate: day,
+            startMinutes: 10 * 60,
+          ),
+        );
+
+        final pending = await sync.syncOnce();
+        expect(fake.remote, isEmpty);
+        expect(pending, contains('need a duration'));
+
+        ws.entries.put(
+          ws.entries['timed-no-duration']!.copyWith(durationMinutes: () => 45),
+        );
+        await sync.syncOnce();
+        expect(fake.remote, hasLength(1));
+        expect(
+          fake.remote.values.single.start,
+          DateTime(day.year, day.month, day.day, 10),
+        );
+        expect(
+          fake.remote.values.single.end,
+          DateTime(day.year, day.month, day.day, 10, 45),
+        );
+        await ws.flush();
+        ws.dispose();
+      },
+    );
 
     test('OAuth with PKCE through a loopback address', () async {
       final tokenServer = await HttpServer.bind(

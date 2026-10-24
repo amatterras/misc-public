@@ -29,6 +29,7 @@ const syncedCollections = {
   'folders',
   'inbox',
   'calendar_entries',
+  'calendar_entry_expirations',
   'calendar_days',
   'tasks',
   'projects',

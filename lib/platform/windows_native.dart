@@ -140,6 +140,19 @@ class _Win {
           Int32 Function(Pointer<_OpenFileNameW>),
           int Function(Pointer<_OpenFileNameW>)
         >('GetOpenFileNameW');
+    getSaveFileName = comdlg32
+        .lookupFunction<
+          Int32 Function(Pointer<_OpenFileNameW>),
+          int Function(Pointer<_OpenFileNameW>)
+        >('GetSaveFileNameW');
+    moveFileEx = kernel32
+        .lookupFunction<
+          Int32 Function(Pointer<Utf16>, Pointer<Utf16>, Uint32),
+          int Function(Pointer<Utf16>, Pointer<Utf16>, int)
+        >('MoveFileExW');
+    getLastError = kernel32.lookupFunction<Uint32 Function(), int Function()>(
+      'GetLastError',
+    );
   }
 
   late final int Function(int) openClipboard;
@@ -166,6 +179,9 @@ class _Win {
   )
   shellExecute;
   late final int Function(Pointer<_OpenFileNameW>) getOpenFileName;
+  late final int Function(Pointer<_OpenFileNameW>) getSaveFileName;
+  late final int Function(Pointer<Utf16>, Pointer<Utf16>, int) moveFileEx;
+  late final int Function() getLastError;
 }
 
 _Win? _winInstance;
@@ -300,6 +316,86 @@ List<String> pickCalendarFiles() => _pickFiles(
   'Calendar files\u0000*.ics\u0000\u0000',
   'Import a calendar file',
 );
+
+/// The standard Windows "Save as" dialog, starting in [initialDir] with
+/// [suggestedName]. Asks before replacing an existing file. Returns the
+/// chosen path (with [extension] added if the user left it out), or null
+/// if cancelled.
+String? saveFileDialog({
+  required String suggestedName,
+  required String extension,
+  required String filterSpec,
+  required String dialogTitle,
+  String? initialDir,
+}) {
+  final w = _win;
+  if (w == null) return null;
+  const bufferChars = 4096;
+  final ofn = calloc<_OpenFileNameW>();
+  final buffer = calloc<Uint16>(bufferChars);
+  final name = suggestedName.codeUnits.take(bufferChars - 1).toList();
+  buffer.asTypedList(bufferChars).setAll(0, name);
+  final filter = filterSpec.toNativeUtf16();
+  final title = dialogTitle.toNativeUtf16();
+  final defExt = extension.toNativeUtf16();
+  final dir = (initialDir ?? '').toNativeUtf16();
+  final windowClass = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
+  try {
+    ofn.ref
+      ..lStructSize = sizeOf<_OpenFileNameW>()
+      ..hwndOwner = w.findWindow(windowClass, nullptr)
+      ..lpstrFilter = filter
+      ..lpstrFile = buffer.cast()
+      ..nMaxFile = bufferChars
+      ..lpstrTitle = title
+      ..lpstrDefExt = defExt
+      ..lpstrInitialDir = initialDir == null ? nullptr : dir
+      // EXPLORER | OVERWRITEPROMPT | PATHMUSTEXIST | NOCHANGEDIR
+      ..Flags = 0x80000 | 0x2 | 0x800 | 0x8;
+    if (w.getSaveFileName(ofn) == 0) return null;
+    final units = buffer.asTypedList(bufferChars);
+    final end = units.indexOf(0);
+    final path = String.fromCharCodes(
+      units.sublist(0, end < 0 ? bufferChars : end),
+    );
+    return path.isEmpty ? null : path;
+  } finally {
+    calloc
+      ..free(ofn)
+      ..free(buffer)
+      ..free(filter)
+      ..free(title)
+      ..free(defExt)
+      ..free(dir)
+      ..free(windowClass);
+  }
+}
+
+/// Replaces [destination] with [source] in one filesystem operation.
+/// Both files must be on the same volume; export temp files are created beside
+/// their destination. Existing exports remain intact if Windows refuses the
+/// replacement (for example, because the file is open without delete access).
+void replaceFileAtomically(String source, String destination) {
+  final w = _win;
+  if (w == null) throw UnsupportedError('Windows file replacement only.');
+  final from = source.toNativeUtf16();
+  final to = destination.toNativeUtf16();
+  try {
+    // MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+    if (w.moveFileEx(from, to, 0x1 | 0x8) == 0) {
+      final code = w.getLastError();
+      throw FileSystemException(
+        'Could not replace the export file (Windows error $code).',
+        destination,
+        OSError('MoveFileExW failed', code),
+      );
+    }
+  } finally {
+    calloc
+      ..free(from)
+      ..free(to);
+  }
+}
 
 List<String> _pickFiles(String filterSpec, String dialogTitle) {
   final w = _win;

@@ -150,7 +150,10 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
                   ChoiceChip(
                     label: Text(c.name + (c.primary ? ' (main)' : '')),
                     selected: c.id == a.calendarId,
-                    onSelected: (_) => _run(key, () => a.chooseCalendar(c)),
+                    onSelected: (_) => _run(key, () async {
+                      await a.chooseCalendar(c);
+                      await a.syncOnce();
+                    }),
                   ),
               ],
             ),
@@ -158,14 +161,18 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: a.exportEntries,
-              onChanged: (v) => _run(key, () => a.setExport(v)),
+              onChanged: (v) => _run(key, () async {
+                await a.setExport(v);
+                if (a.calendarId != null && connected) await a.syncOnce();
+              }),
               title: const Text(
                 'Also send my Reminder/Event entries there',
                 style: TextStyle(fontSize: 13),
               ),
               subtitle: const Text(
-                'Their events in THEapp come from that calendar either way. '
-                'Events from there are shown here read-only; edit them there.',
+                'THEapp entries sync both ways. Provider-created events are '
+                'shown here read-only; edit those in Google Calendar or Outlook. '
+                'Connected calendars refresh every 5 minutes while the app is open.',
                 style: small,
               ),
             ),

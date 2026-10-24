@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -11,6 +12,7 @@ import 'models/sync_models.dart';
 import 'models/task_models.dart';
 import 'repositories/record_collection.dart';
 import 'storage/attachment_store.dart';
+import 'storage/app_log.dart';
 import 'storage/backup_service.dart';
 import 'storage/json_file_store.dart';
 import 'sync/sync_clock.dart';
@@ -29,6 +31,13 @@ class CalendarLimitException implements Exception {
   String toString() =>
       '${category.label} already has ${CalendarEntry.maxActivePerCategory} '
       'active entries. Archive one first.';
+}
+
+class CalendarEntryExpiredException implements Exception {
+  const CalendarEntryExpiredException();
+
+  @override
+  String toString() => 'This calendar entry has permanently expired.';
 }
 
 /// Something shown on a calendar day: either a calendar entry or a task.
@@ -79,8 +88,9 @@ class TaskOnDay extends DayItem {
 /// behaves the same way.
 class Workspace {
   /// [clock] is replaceable in tests (e.g. a device whose clock is wrong).
-  Workspace(this.root, {SyncClock? clock})
+  Workspace(this.root, {SyncClock? clock, DateTime Function()? now})
     : clock = clock ?? SyncClock(),
+      _now = now ?? DateTime.now,
       store = JsonFileStore(root),
       attachments = AttachmentStore(root),
       backups = BackupService(root) {
@@ -88,6 +98,10 @@ class Workspace {
     notes = _c('notes', Note.fromJson);
     folders = _c('folders', Folder.fromJson);
     inbox = _c('inbox', InboxItem.fromJson);
+    calendarExpirations = _c(
+      'calendar_entry_expirations',
+      CalendarEntryExpiration.fromJson,
+    );
     entries = _c('calendar_entries', CalendarEntry.fromJson);
     days = _c('calendar_days', DayRecord.fromJson);
     tasks = _c('tasks', Task.fromJson);
@@ -112,6 +126,8 @@ class Workspace {
     // Version history stays on this device (not in [syncCollections]).
     noteVersions = _c('note_versions', NoteVersion.fromJson);
     notes.onReplace = _keepNoteVersion;
+    entries.addListener(_onEntriesChanged);
+    calendarExpirations.addListener(_onCalendarExpirationsChanged);
   }
 
   final Directory root;
@@ -124,6 +140,7 @@ class Workspace {
   late final RecordCollection<NoteVersion> noteVersions;
   late final RecordCollection<Folder> folders;
   late final RecordCollection<InboxItem> inbox;
+  late final RecordCollection<CalendarEntryExpiration> calendarExpirations;
   late final RecordCollection<CalendarEntry> entries;
   late final RecordCollection<DayRecord> days;
   late final RecordCollection<Task> tasks;
@@ -156,6 +173,9 @@ class Workspace {
 
   /// The record collections that sync, by their protocol name.
   Map<String, RecordCollection> get syncCollections => {
+    // Expiration locks must be pushed before calendar entries. The hub uses
+    // these to reject stale writes before applying the accompanying tombstone.
+    'calendar_entry_expirations': calendarExpirations,
     'assets': assets,
     'notes': notes,
     'folders': folders,
@@ -180,6 +200,12 @@ class Workspace {
 
   /// Revision stamps for every change made on this device (see [SyncClock]).
   final SyncClock clock;
+  final DateTime Function() _now;
+  static const archivedEntryRetention = Duration(days: 7);
+  Timer? _archivePurgeTimer;
+  bool _normalizingArchiveTimestamps = false;
+  final Set<String> _expiredArchivedEntryIds = {};
+  final Set<String> _pendingArchiveBackupPurges = {};
 
   /// This installation's identity; set by [load].
   DeviceIdentity? device;
@@ -226,6 +252,24 @@ class Workspace {
     for (final c in _all) {
       await c.load();
     }
+    await _loadExpiredArchiveLedger();
+    _expiredArchivedEntryIds.addAll(
+      calendarExpirations.all.map((expiration) => expiration.id),
+    );
+    _pendingArchiveBackupPurges.addAll(_expiredArchivedEntryIds);
+    for (final id in _expiredArchivedEntryIds) {
+      if (calendarExpirations[id] == null) {
+        final at = _now().toUtc();
+        calendarExpirations.put(
+          CalendarEntryExpiration(id: id, expiredAt: at, updatedAt: at),
+        );
+      }
+    }
+    _removeExpiredLedgerEntries();
+    _backfillArchiveTimestamps();
+    await purgeExpiredArchivedEntries();
+    await _purgeExpiredEntriesFromBackups();
+    _scheduleArchivePurge();
   }
 
   /// Remembers that a canvas was deleted on this device.
@@ -265,9 +309,14 @@ class Workspace {
     for (final c in _all) {
       await c.flush();
     }
+    await store.flush();
+    await _purgeExpiredEntriesFromBackups();
   }
 
   void dispose() {
+    _archivePurgeTimer?.cancel();
+    entries.removeListener(_onEntriesChanged);
+    calendarExpirations.removeListener(_onCalendarExpirationsChanged);
     for (final c in _all) {
       c.dispose();
     }
@@ -636,6 +685,9 @@ class Workspace {
   /// is always allowed, so a category that went over the limit through a
   /// sync merge (we warn rather than auto-archive) can still be edited.
   void saveEntry(CalendarEntry entry) {
+    if (_expiredArchivedEntryIds.contains(entry.id)) {
+      throw const CalendarEntryExpiredException();
+    }
     final existing = entries[entry.id];
     final becomesActive =
         !entry.archived &&
@@ -645,7 +697,179 @@ class Workspace {
     if (becomesActive && !hasRoomIn(entry.category, excludeId: entry.id)) {
       throw CalendarLimitException(entry.category);
     }
-    entries.put(entry);
+    final saved = !entry.archived
+        ? entry.copyWith(archivedAt: () => null)
+        : entry.copyWith(
+            archivedAt: () =>
+                entry.archivedAt ?? existing?.archivedAt ?? _now().toUtc(),
+          );
+    entries.put(saved);
+  }
+
+  /// Permanently removes archived calendar entries whose seven-day retention
+  /// has elapsed. [RecordCollection.remove] creates a sync tombstone, so an
+  /// offline or stale device cannot bring an expired entry back.
+  Future<List<String>> purgeExpiredArchivedEntries({DateTime? now}) async {
+    final cutoff = (now ?? _now()).toUtc();
+    final expired = [
+      for (final entry in entries.all)
+        if (entry.archived &&
+            entry.archivedAt != null &&
+            !entry.archivedAt!
+                .toUtc()
+                .add(archivedEntryRetention)
+                .isAfter(cutoff))
+          entry.id,
+    ];
+    if (expired.isNotEmpty) {
+      _expiredArchivedEntryIds.addAll(expired);
+      _pendingArchiveBackupPurges.addAll(expired);
+      await _saveExpiredArchiveLedger();
+      final instant = (now ?? _now()).toUtc();
+      for (final entry in entries.all.where(
+        (entry) => expired.contains(entry.id),
+      )) {
+        final expires = entry.archivedAt!.toUtc().add(archivedEntryRetention);
+        calendarExpirations.put(
+          CalendarEntryExpiration(
+            id: entry.id,
+            expiredAt: expires,
+            updatedAt: instant,
+          ),
+        );
+      }
+    }
+    final allDeleted = {..._expiredArchivedEntryIds, ...expired};
+    for (final id in allDeleted) {
+      entries.remove(id);
+    }
+    await _flushRetentionState();
+    await _purgeExpiredEntriesFromBackups();
+    _scheduleArchivePurge();
+    return expired;
+  }
+
+  Future<void> _flushRetentionState() async {
+    await calendarExpirations.flush();
+    await entries.flush();
+    await store.flush();
+  }
+
+  Future<void> _purgeExpiredEntriesFromBackups() async {
+    for (final id in _pendingArchiveBackupPurges.toList()) {
+      var rev = entries.tombstones[id];
+      if (rev == null) {
+        rev = clock.now();
+        entries.applyRemote(id, rev, null);
+      }
+      try {
+        await backups.purgeExpiredCalendarEntry(id: id, tombstoneRev: rev);
+        _pendingArchiveBackupPurges.remove(id);
+      } catch (error, stack) {
+        // The durable local ledger and sync expiration record still prevent
+        // restoration. Retry backup sanitation next time the workspace opens.
+        AppLog.error(
+          'Purging expired calendar entry from backups failed',
+          error,
+          stack,
+        );
+      }
+    }
+  }
+
+  void _onEntriesChanged() {
+    _pendingArchiveBackupPurges.addAll(_expiredArchivedEntryIds);
+    _removeExpiredLedgerEntries();
+    if (!_normalizingArchiveTimestamps) _backfillArchiveTimestamps();
+    _scheduleArchivePurge();
+  }
+
+  void _onCalendarExpirationsChanged() {
+    final before = _expiredArchivedEntryIds.length;
+    _expiredArchivedEntryIds.addAll(
+      calendarExpirations.all.map((expiration) => expiration.id),
+    );
+    if (_expiredArchivedEntryIds.length == before) return;
+    _pendingArchiveBackupPurges.addAll(_expiredArchivedEntryIds);
+    unawaited(
+      _saveExpiredArchiveLedger().catchError((error, stack) {
+        AppLog.error('Saving calendar expiration ledger failed', error, stack);
+      }),
+    );
+    _removeExpiredLedgerEntries();
+  }
+
+  Future<void> _loadExpiredArchiveLedger() async {
+    final ledger = await store.read('retention', 'expired_calendar_entries');
+    if (ledger == null) return;
+    if (ledger['schema'] != 1 || ledger['ids'] is! List) {
+      throw const FormatException('Invalid calendar archive retention ledger.');
+    }
+    _expiredArchivedEntryIds
+      ..clear()
+      ..addAll((ledger['ids'] as List).whereType<String>());
+  }
+
+  Future<void> _saveExpiredArchiveLedger() async {
+    final ids = _expiredArchivedEntryIds.toList()..sort();
+    await store.write('retention', 'expired_calendar_entries', {
+      'schema': 1,
+      'ids': ids,
+    });
+  }
+
+  void _removeExpiredLedgerEntries() {
+    for (final id in _expiredArchivedEntryIds) {
+      if (entries.contains(id)) entries.remove(id);
+    }
+  }
+
+  /// Old archived records have no reliable original archive time. Start
+  /// their seven-day clock when this version first encounters them, rather
+  /// than guessing from their last edit and unexpectedly deleting data.
+  void _backfillArchiveTimestamps() {
+    if (_normalizingArchiveTimestamps) return;
+    final legacy = entries.all
+        .where((entry) => entry.archived && entry.archivedAt == null)
+        .toList();
+    if (legacy.isEmpty) return;
+    _normalizingArchiveTimestamps = true;
+    try {
+      final at = _now().toUtc();
+      for (final entry in legacy) {
+        entries.put(entry.copyWith(archivedAt: () => at));
+      }
+    } finally {
+      _normalizingArchiveTimestamps = false;
+    }
+  }
+
+  void _scheduleArchivePurge() {
+    _archivePurgeTimer?.cancel();
+    DateTime? next;
+    for (final entry in entries.all) {
+      final archivedAt = entry.archivedAt;
+      if (!entry.archived || archivedAt == null) continue;
+      final expiration = archivedAt.toUtc().add(archivedEntryRetention);
+      if (next == null || expiration.isBefore(next)) next = expiration;
+    }
+    if (next == null) return;
+    final delay = next.difference(_now().toUtc());
+    _archivePurgeTimer = Timer(delay.isNegative ? Duration.zero : delay, () {
+      unawaited(
+        purgeExpiredArchivedEntries().catchError((
+          Object error,
+          StackTrace stack,
+        ) {
+          AppLog.error(
+            'Purging expired calendar archives failed',
+            error,
+            stack,
+          );
+          return <String>[];
+        }),
+      );
+    });
   }
 
   /// Categories with more active entries than allowed (only possible after

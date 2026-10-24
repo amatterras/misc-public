@@ -17,6 +17,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import '../platform/windows_native.dart' as win;
 import '../sync/hlc.dart';
 import '../sync/protocol.dart';
 
@@ -273,6 +274,26 @@ class HubStore {
     return e == null ? null : _changeFromLine(await _readLine(e));
   }
 
+  /// Raw journal line for one current version, used to preserve a permanent
+  /// tombstone when old backup snapshots are sanitized.
+  Future<Map<String, dynamic>?> currentJournalLine(
+    String collection,
+    String id,
+  ) => _locked(() async {
+    final entry = _latest['$collection/$id'];
+    return entry == null ? null : _readLine(entry);
+  });
+
+  /// IDs with an irreversible archive-expiration lock.
+  Future<List<String>> expiredCalendarEntryIds() => _locked(() async {
+    const prefix = 'calendar_entry_expirations/';
+    return [
+      for (final key in _latest.keys)
+        if (key.startsWith(prefix) && !_latest[key]!.deleted)
+          key.substring(prefix.length),
+    ];
+  });
+
   static String _opId(String device, SyncChange c) =>
       '$device|${c.collection}|${c.id}|${c.rev}';
 
@@ -434,7 +455,20 @@ class HubStore {
       final cur = latest(c.key);
       PushStatus status;
       String? conflictId;
-      if (cur == null || cur.rev == c.baseRev) {
+      final expirationKey = 'calendar_entry_expirations/${c.id}';
+      final expirationLock = c.collection == 'calendar_entries'
+          ? latest(expirationKey)
+          : null;
+      if (c.collection == 'calendar_entry_expirations' && c.deleted) {
+        // Expiration markers are permanent. No device can remove the lock.
+        status = PushStatus.keptServer;
+      } else if (expirationLock != null &&
+          !expirationLock.deleted &&
+          !c.deleted) {
+        // A stale or deliberately re-offered calendar row cannot override an
+        // expiration lock, even if its HLC revision is newer.
+        status = PushStatus.keptServer;
+      } else if (cur == null || cur.rev == c.baseRev) {
         stage(c, device);
         status = PushStatus.applied;
       } else if (cur.rev == c.rev) {
@@ -497,6 +531,23 @@ class HubStore {
             opId,
           );
           status = PushStatus.keptServer;
+        }
+      }
+
+      if (c.collection == 'calendar_entry_expirations' && !c.deleted) {
+        // Record a hub-side calendar tombstone in the same durable push batch
+        // as the lock. This covers a race where a stale client writes first.
+        final row = latest('calendar_entries/${c.id}');
+        if (row == null || !row.deleted) {
+          stage(
+            SyncChange(
+              collection: 'calendar_entries',
+              id: c.id,
+              rev: _clock.now(),
+              deleted: true,
+            ),
+            'hub',
+          );
         }
       }
       lines.add({
@@ -697,7 +748,17 @@ class HubStore {
       await out.close();
     }
     await _file!.close();
-    await tmp.rename(journal.path);
+    _file = null;
+    try {
+      if (Platform.isWindows) {
+        win.replaceFileAtomically(tmp.path, journal.path);
+      } else {
+        await tmp.rename(journal.path);
+      }
+    } catch (_) {
+      _file = await journal.open(mode: FileMode.append);
+      rethrow;
+    }
     await _load();
   });
 

@@ -6,6 +6,7 @@ import '../../app/app_state.dart';
 import '../../app/shell.dart';
 import '../../app/theme.dart';
 import '../../data/models/calendar_models.dart';
+import '../../data/models/canvas_models.dart' show newId;
 import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
 import '../../data/workspace.dart';
@@ -18,6 +19,8 @@ import '../transfer/transfer.dart';
 import 'calendar_ink.dart';
 import 'calendar_views.dart';
 import 'entry_editor.dart';
+import 'reading_goal.dart';
+import 'calendar_handwriting.dart';
 
 /// One Calendar page: the custom date grid plus Reading, Habits, Events and
 /// Other. Every view reads the same records from [Workspace], so an edit
@@ -207,6 +210,213 @@ class _CalendarPageState extends State<CalendarPage> {
     }
   }
 
+  Future<void> _recognizeHandwriting(DateTime day) async {
+    final ink = _ink;
+    if (ink == null) return;
+    if (s.settings.get<bool>('ocrEnabled') == false) {
+      s.showToast('On-device OCR is turned off in Settings.');
+      return;
+    }
+    try {
+      final recognized = await recognizeCalendarInk(
+        controller: ink,
+        day: day,
+        ios: s.ios,
+      );
+      if (!mounted) return;
+      if (recognized == null) {
+        s.showToast(
+          'Calendar handwriting OCR is available on Windows and iPad.',
+        );
+        return;
+      }
+      if (recognized.trim().isEmpty) {
+        s.showToast('No readable handwriting was found on this day.');
+        return;
+      }
+
+      final suggestion = suggestCalendarEvent(recognized, day);
+      final title = TextEditingController(text: suggestion.title);
+      final date = TextEditingController(text: dayKey(suggestion.day));
+      final time = TextEditingController(
+        text: suggestion.startMinutes == null
+            ? ''
+            : '${(suggestion.startMinutes! ~/ 60).toString().padLeft(2, '0')}:${(suggestion.startMinutes! % 60).toString().padLeft(2, '0')}',
+      );
+      final duration = TextEditingController(
+        text: suggestion.durationMinutes?.toString() ?? '',
+      );
+      final notes = TextEditingController(text: suggestion.notes);
+      try {
+        final approved = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Review handwriting'),
+            content: SizedBox(
+              width: 460,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      suggestion.dateWarning ??
+                          (suggestion.dateRecognized
+                              ? 'Check the detected title, date, and time before creating the event.'
+                              : 'No date was confidently detected. The selected calendar day is filled in; change it if needed.'),
+                      style: const TextStyle(color: AppColors.textMuted),
+                    ),
+                    const SizedBox(height: Space.md),
+                    TextField(
+                      key: const ValueKey('handwriting-event-title'),
+                      controller: title,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Event title',
+                      ),
+                    ),
+                    TextField(
+                      key: const ValueKey('handwriting-event-date'),
+                      controller: date,
+                      decoration: const InputDecoration(
+                        labelText: 'Date (YYYY-MM-DD)',
+                      ),
+                    ),
+                    TextField(
+                      key: const ValueKey('handwriting-event-time'),
+                      controller: time,
+                      decoration: const InputDecoration(
+                        labelText: 'Start time (HH:MM, optional)',
+                      ),
+                    ),
+                    TextField(
+                      key: const ValueKey('handwriting-event-duration'),
+                      controller: duration,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Duration in minutes (optional)',
+                      ),
+                    ),
+                    TextField(
+                      key: const ValueKey('handwriting-event-notes'),
+                      controller: notes,
+                      minLines: 2,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Notes (optional)',
+                      ),
+                    ),
+                    const SizedBox(height: Space.md),
+                    const Text('Recognized handwriting'),
+                    const SizedBox(height: Space.xs),
+                    SelectableText(
+                      recognized.trim(),
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                key: const ValueKey('confirm-handwriting-event'),
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.event_available, size: 16),
+                label: const Text('Create event'),
+              ),
+            ],
+          ),
+        );
+        if (approved != true || !mounted) return;
+        final eventTitle = title.text.trim();
+        final dateText = date.text.trim();
+        final parsedDay = DateTime.tryParse(dateText);
+        final parsedTime = time.text.trim().isEmpty
+            ? null
+            : parseCalendarHandwritingTime(time.text);
+        final durationText = duration.text.trim();
+        final parsedDuration = durationText.isEmpty
+            ? null
+            : int.tryParse(durationText);
+        if (eventTitle.isEmpty ||
+            parsedDay == null ||
+            (time.text.trim().isNotEmpty && parsedTime == null) ||
+            (durationText.isNotEmpty &&
+                (parsedDuration == null ||
+                    parsedDuration < 1 ||
+                    parsedDuration > 24 * 60)) ||
+            (parsedDuration != null && parsedTime == null)) {
+          s.showToast(
+            'Enter a title, valid date and time, and a duration from 1 to 1440 minutes.',
+          );
+          return;
+        }
+        final localDay = DateTime(
+          parsedDay.year,
+          parsedDay.month,
+          parsedDay.day,
+        );
+        if (dayKey(localDay) != dateText) {
+          s.showToast('Enter the date as YYYY-MM-DD.');
+          return;
+        }
+        final now = DateTime.now();
+        final entry = CalendarEntry(
+          id: newId(),
+          category: CalendarCategory.events,
+          name: eventTitle,
+          description: notes.text.trim(),
+          createdAt: now,
+          updatedAt: now,
+          startDate: localDay,
+          endDate: DateTime(
+            localDay.year,
+            localDay.month,
+            localDay.day + suggestion.endDayOffset,
+          ),
+          startMinutes: parsedTime,
+          durationMinutes: parsedTime == null ? null : parsedDuration,
+        );
+        try {
+          ws.saveEntry(entry);
+        } on CalendarLimitException catch (error) {
+          s.showToast(error.toString());
+          return;
+        }
+        final google = s.calendarAccounts['google']!;
+        if (parsedTime != null && parsedDuration == null) {
+          s.showToast(
+            'Event saved locally. Add a duration before exporting this timed event to Google Calendar.',
+          );
+        } else if (google.calendarId != null &&
+            google.exportEntries &&
+            await google.connected) {
+          final status = await google.syncOnce();
+          s.showToast('Event saved. Google Calendar: $status');
+        } else {
+          s.showToast(
+            'Event saved locally. Connect Google Calendar and enable event export to send it.',
+          );
+        }
+      } finally {
+        title.dispose();
+        date.dispose();
+        time.dispose();
+        duration.dispose();
+        notes.dispose();
+      }
+    } catch (error) {
+      if (mounted) s.showToast('Could not read calendar handwriting: $error');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final focus = s.focusDay;
@@ -299,6 +509,7 @@ class _CalendarPageState extends State<CalendarPage> {
                             day: _selectedDay!,
                             onClose: () => setState(() => _selectedDay = null),
                             onNewEntry: (c) => _newEntry(c, _selectedDay),
+                            onRecognizeHandwriting: _recognizeHandwriting,
                           ),
                         ),
                       ],
@@ -461,6 +672,7 @@ class _CalendarPageState extends State<CalendarPage> {
           day: _anchor,
           onClose: () => _setView(CalendarView.month),
           onNewEntry: (c) => _newEntry(c, _anchor),
+          onRecognizeHandwriting: _recognizeHandwriting,
         );
       case CalendarView.agenda:
         return CalendarAgendaView(
@@ -1185,12 +1397,14 @@ class DayPanel extends StatefulWidget {
     required this.day,
     required this.onClose,
     required this.onNewEntry,
+    required this.onRecognizeHandwriting,
   });
 
   final AppState state;
   final DateTime day;
   final VoidCallback onClose;
   final ValueChanged<CalendarCategory> onNewEntry;
+  final Future<void> Function(DateTime day) onRecognizeHandwriting;
 
   @override
   State<DayPanel> createState() => _DayPanelState();
@@ -1203,6 +1417,7 @@ class _DayPanelState extends State<DayPanel> {
 
   AppState get s => widget.state;
   Workspace get ws => s.workspace;
+  bool _recognizingHandwriting = false;
 
   @override
   void dispose() {
@@ -1287,6 +1502,34 @@ class _DayPanelState extends State<DayPanel> {
                 onTap: widget.onClose,
               ),
             ],
+          ),
+          const SizedBox(height: Space.sm),
+          OutlinedButton.icon(
+            key: const ValueKey('calendar-read-handwriting'),
+            onPressed: _recognizingHandwriting
+                ? null
+                : () async {
+                    setState(() => _recognizingHandwriting = true);
+                    try {
+                      await widget.onRecognizeHandwriting(day);
+                    } finally {
+                      if (mounted) {
+                        setState(() => _recognizingHandwriting = false);
+                      }
+                    }
+                  },
+            icon: _recognizingHandwriting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.text_snippet_outlined, size: 16),
+            label: Text(
+              _recognizingHandwriting
+                  ? 'Reading handwriting…'
+                  : 'Create event from handwriting',
+            ),
           ),
           const SizedBox(height: Space.md),
           if (items.isEmpty)
@@ -1647,6 +1890,38 @@ class EntryCard extends StatelessWidget {
             style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),
         ]);
+        final target = e.targetPagesPerDay;
+        final goalStart = e.goalStartDate;
+        if (target != null && goalStart != null && total != null) {
+          try {
+            final estimate = estimateReadingGoal(
+              totalPages: total,
+              currentPage: e.currentPage,
+              pagesPerDay: target,
+              startDate: goalStart,
+              today: DateTime.now(),
+            );
+            details.add(
+              Text(
+                estimate.isComplete
+                    ? 'Reading goal complete'
+                    : 'Goal: ${estimate.daysLabel} · '
+                          'finish ${formatShortDate(estimate.completionDate!)}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textFaint,
+                ),
+              ),
+            );
+          } on ArgumentError {
+            details.add(
+              const Text(
+                'Reading goal needs correction',
+                style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+              ),
+            );
+          }
+        }
       case CalendarCategory.habits:
         final start = state.calendarStart;
         final rangeDays = [
@@ -1842,7 +2117,12 @@ Future<void> showArchive(BuildContext context, AppState state) {
                           ),
                           title: Text(e.name),
                           subtitle: Text(
-                            e.category.label,
+                            e.archivedAt == null
+                                ? '${e.category.label} · Retention date pending'
+                                : '${e.category.label} · Archived '
+                                      '${formatLongDate(e.archivedAt!.toLocal())} · '
+                                      'permanently deleted '
+                                      '${formatLongDate(e.archivedAt!.add(Workspace.archivedEntryRetention).toLocal())}',
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textFaint,

@@ -9,10 +9,12 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
+import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/library_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/hub/hub_server.dart';
+import 'package:flutter_application_1/hub/hub_backup.dart';
 import 'package:flutter_application_1/sync/hlc.dart';
 import 'package:flutter_application_1/sync/protocol.dart';
 import 'package:flutter_application_1/sync/sync_client.dart';
@@ -137,10 +139,16 @@ void main() {
     return s;
   }
 
-  Future<Device> device(String name, {int? viaPort, SyncClock? clock}) async {
+  Future<Device> device(
+    String name, {
+    int? viaPort,
+    SyncClock? clock,
+    DateTime Function()? now,
+  }) async {
     final ws = Workspace(
       Directory('${root.path}${Platform.pathSeparator}$name'),
       clock: clock,
+      now: now,
     );
     await ws.load();
     final token = await hub.auth.register(
@@ -237,6 +245,83 @@ void main() {
     expect(a.ws.notes[n2.id]!.body, 'by B');
     expect(a.ws.conflicts.length, 0);
   });
+
+  test('reading goals sync with progress without duplicate entries', () async {
+    final pc = await device('pc'), tablet = await device('tablet');
+    final start = DateTime(2026, 10, 20);
+    final book = CalendarEntry(
+      id: 'book-goal-1',
+      category: CalendarCategory.reading,
+      name: 'Dune',
+      createdAt: start,
+      updatedAt: start,
+      totalPages: 500,
+      currentPage: 100,
+      targetPagesPerDay: 25,
+      goalStartDate: start,
+    );
+    pc.ws.saveEntry(book);
+    await converge([pc, tablet]);
+    expect(tablet.ws.entries.all, hasLength(1));
+    expect(tablet.ws.entries[book.id]!.targetPagesPerDay, 25);
+    expect(tablet.ws.entries[book.id]!.goalStartDate, start);
+
+    final updated = tablet.ws.entries[book.id]!.copyWith(currentPage: 150);
+    tablet.ws.saveEntry(updated);
+    await converge([pc, tablet]);
+    expect(pc.ws.entries.all, hasLength(1));
+    expect(pc.ws.entries[book.id]!.currentPage, 150);
+    expect(pc.ws.entries[book.id]!.targetPagesPerDay, 25);
+  });
+
+  test(
+    'expired calendar archives sync as tombstones to stale devices',
+    () async {
+      var now = DateTime.utc(2026, 10, 24, 12);
+      DateTime clock() => now;
+      final pc = await device('pc', now: clock);
+      final old = await device('old-client', now: clock);
+      final archivedAt = now;
+      pc.ws.saveEntry(
+        CalendarEntry(
+          id: 'expired-entry',
+          category: CalendarCategory.events,
+          name: 'Old event',
+          createdAt: now,
+          updatedAt: now,
+          archived: true,
+          archivedAt: archivedAt,
+        ),
+      );
+      await converge([pc, old]);
+      final staleCopy = old.ws.entries['expired-entry']!;
+      final oldHubBackup = await hub.backups.create();
+
+      now = now.add(const Duration(days: 7));
+      expect(await pc.ws.purgeExpiredArchivedEntries(now: now), [
+        'expired-entry',
+      ]);
+      await pc.sync();
+      expect(await HubBackups.verify(oldHubBackup), isTrue);
+      expect(
+        await File('${oldHubBackup.path}${Platform.pathSeparator}journal.jsonl')
+            .readAsString(),
+        isNot(contains('Old event')),
+        reason: 'managed hub backups must not retain an expired event',
+      );
+      // The disconnected device still has the old archived object when it
+      // returns, and attempts to restore it before pulling. The hub's
+      // expiration lock must defeat that stale write and apply the tombstone.
+      expect(old.ws.entries[staleCopy.id], isNotNull);
+      old.ws.saveEntry(
+        staleCopy.copyWith(archived: false, archivedAt: () => null),
+      );
+      await old.sync();
+      expect(old.ws.entries[staleCopy.id], isNull);
+      expect(old.ws.calendarExpirations[staleCopy.id], isNotNull);
+      expect(pc.ws.entries.tombstones, contains(staleCopy.id));
+    },
+  );
 
   test('add, update and delete while offline on both sides converge', () async {
     final a = await device('a'), b = await device('b');

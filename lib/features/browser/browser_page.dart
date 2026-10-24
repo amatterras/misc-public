@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
+import '../../app/page_windows.dart' show PageMode;
 import '../../app/theme.dart';
 import '../../data/models/browser_models.dart';
 import '../../platform/input_hints.dart';
@@ -21,12 +22,21 @@ import 'browser_engine.dart';
 import 'browser_workspace.dart';
 
 class BrowserPage extends StatefulWidget {
-  const BrowserPage({super.key, required this.state, this.browser});
+  const BrowserPage({
+    super.key,
+    required this.state,
+    this.browser,
+    this.instanceId,
+  });
 
   final AppState state;
 
   /// This window's tabs (default: the main Safari).
   final BrowserWorkspace? browser;
+
+  /// Page instance used by the floating window. The stand-alone Safari page
+  /// passes no id, so browser chrome can never be hidden there.
+  final String? instanceId;
 
   @override
   State<BrowserPage> createState() => _BrowserPageState();
@@ -36,13 +46,23 @@ class _BrowserPageState extends State<BrowserPage> {
   final _address = TextEditingController();
   final _addressFocus = FocusNode();
   double _zoom = 1;
+  bool _compactChrome = false;
 
   AppState get s => widget.state;
   BrowserWorkspace get b => widget.browser ?? s.browser;
+  bool get _isFloating =>
+      widget.instanceId != null &&
+      s.windows.byId(widget.instanceId)?.mode == PageMode.floating;
+
+  String? get _compactSetting =>
+      widget.instanceId == null ? null : 'browserCompact.${widget.instanceId}';
 
   @override
   void initState() {
     super.initState();
+    final savedCompact = _compactSetting;
+    _compactChrome =
+        savedCompact != null && (s.settings.get<bool>(savedCompact) ?? false);
     b.restoreSession();
     b.openExternal = native.openUrl;
     b.askPermission = _askPermission;
@@ -84,6 +104,15 @@ class _BrowserPageState extends State<BrowserPage> {
     if (!await b.go(text)) {
       s.showToast('That address cannot be opened here.');
     }
+  }
+
+  void _toggleCompactChrome() {
+    if (!_isFloating) return;
+    final setting = _compactSetting;
+    if (setting == null) return;
+    final compact = !_compactChrome;
+    setState(() => _compactChrome = compact);
+    unawaited(s.settings.set(setting, compact));
   }
 
   // ----------------------------------------------------- send to THEapp --
@@ -210,9 +239,10 @@ class _BrowserPageState extends State<BrowserPage> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: b,
+    listenable: Listenable.merge([b, s.windows]),
     builder: (context, _) {
       final t = b.active;
+      final compact = _isFloating && _compactChrome;
       final engine = t == null ? null : b.engineFor(t);
       if (!_addressFocus.hasFocus) _address.text = t?.url ?? '';
       return CallbackShortcuts(
@@ -246,9 +276,31 @@ class _BrowserPageState extends State<BrowserPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _tabStrip(t),
-              _toolbar(t, engine),
-              Expanded(child: _body(t, engine)),
+              if (!compact) _tabStrip(t),
+              if (!compact) _toolbar(t, engine),
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _body(t, engine),
+                    if (compact)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Material(
+                          color: AppColors.card.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(8),
+                          child: GhostIconButton(
+                            key: const ValueKey('browser-restore-chrome'),
+                            icon: Icons.expand_more,
+                            tooltip: 'Show browser controls',
+                            onTap: _toggleCompactChrome,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -492,6 +544,13 @@ class _BrowserPageState extends State<BrowserPage> {
               ),
             ],
           ),
+          if (_isFloating)
+            GhostIconButton(
+              key: const ValueKey('browser-compact-chrome'),
+              icon: Icons.open_in_full,
+              tooltip: 'Hide browser controls',
+              onTap: _toggleCompactChrome,
+            ),
         ],
       ),
     );

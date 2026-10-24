@@ -619,6 +619,22 @@ void main() {
         '/api/v1/chat/completions',
       );
     });
+
+    test(
+      'new Gemini settings use a current model and preserve saved choice',
+      () {
+        final defaults = AiSettings(_MemorySettings({'ai.provider': 'gemini'}));
+        expect(defaults.model, 'gemini-3.8-flash');
+
+        final saved = AiSettings(
+          _MemorySettings({
+            'ai.provider': 'gemini',
+            'ai.model.gemini': 'gemini-2.5-flash',
+          }),
+        );
+        expect(saved.model, 'gemini-2.5-flash');
+      },
+    );
   });
 }
 

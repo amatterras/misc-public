@@ -24,6 +24,7 @@ class ExternalEvent implements Record {
     this.allDay = false,
     this.location = '',
     this.link = '',
+    this.description = '',
   });
 
   static String idFor(String provider, String calendarId, String remoteId) =>
@@ -46,6 +47,7 @@ class ExternalEvent implements Record {
 
   /// The event's page in Google / Outlook (to edit it there).
   final String link;
+  final String description;
   @override
   final DateTime updatedAt;
 
@@ -82,6 +84,7 @@ class ExternalEvent implements Record {
     if (allDay) 'allDay': true,
     if (location.isNotEmpty) 'location': location,
     if (link.isNotEmpty) 'link': link,
+    if (description.isNotEmpty) 'description': description,
     'updatedAt': utcIso(updatedAt),
   };
 
@@ -96,6 +99,7 @@ class ExternalEvent implements Record {
     allDay: j['allDay'] == true,
     location: j['location'] as String? ?? '',
     link: j['link'] as String? ?? '',
+    description: j['description'] as String? ?? '',
     updatedAt: parseDate(j['updatedAt']) ?? DateTime.now(),
   );
 }
@@ -112,6 +116,10 @@ class CalendarLink implements Record {
     required this.remoteId,
     required this.hash,
     required this.updatedAt,
+    this.entryId,
+    this.remoteHash,
+    this.remoteUpdatedAt,
+    this.pendingCreate = false,
   });
 
   static String idFor(String provider, String entryId, String day) =>
@@ -122,6 +130,16 @@ class CalendarLink implements Record {
   final String provider;
   final String calendarId;
   final String remoteId;
+
+  /// Local CalendarEntry id. Missing only on links written by older builds.
+  final String? entryId;
+
+  /// Last normalized provider state, used for three-way conflict detection.
+  final String? remoteHash;
+  final DateTime? remoteUpdatedAt;
+
+  /// Durable retry marker written before the provider's create request.
+  final bool pendingCreate;
   final String hash;
   @override
   final DateTime updatedAt;
@@ -132,6 +150,10 @@ class CalendarLink implements Record {
     'provider': provider,
     'calendarId': calendarId,
     'remoteId': remoteId,
+    if (entryId != null) 'entryId': entryId,
+    if (remoteHash != null) 'remoteHash': remoteHash,
+    if (remoteUpdatedAt != null) 'remoteUpdatedAt': utcIso(remoteUpdatedAt!),
+    if (pendingCreate) 'pendingCreate': true,
     'hash': hash,
     'updatedAt': utcIso(updatedAt),
   };
@@ -141,6 +163,10 @@ class CalendarLink implements Record {
     provider: j['provider'] as String? ?? '',
     calendarId: j['calendarId'] as String? ?? '',
     remoteId: j['remoteId'] as String? ?? '',
+    entryId: j['entryId'] as String?,
+    remoteHash: j['remoteHash'] as String?,
+    remoteUpdatedAt: parseDate(j['remoteUpdatedAt']),
+    pendingCreate: j['pendingCreate'] == true,
     hash: j['hash'] as String? ?? '',
     updatedAt: parseDate(j['updatedAt']) ?? DateTime.now(),
   );

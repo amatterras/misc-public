@@ -380,11 +380,11 @@ void main() {
       final c = s.canvas!;
       final png = await exportCanvasPicture(s, c, to: out);
       expect(png, isNotNull);
-      expect((await png!.readAsBytes()).take(4), [0x89, 0x50, 0x4E, 0x47]);
+      expect((await png!.file.readAsBytes()).take(4), [0x89, 0x50, 0x4E, 0x47]);
       final html = await exportCanvasWebPage(s, c, to: out);
-      final page = await html!.readAsString();
+      final page = await html!.file.readAsString();
       expect(page, contains('data:image/png;base64,'));
-      expect(page, contains('read-only'));
+      expect(page, contains('view-only'));
 
       final note = s.workspace.createNote(
         title: 'Trip <plan>',
@@ -397,7 +397,7 @@ void main() {
         s,
         note,
         to: out,
-      )).readAsString();
+      )).file.readAsString();
       expect(web, contains('Pack &amp; go')); // escaped
       final second = await exportNoteMarkdown(s, note, to: out);
       expect(second.path, isNot(md.path)); // never overwrites

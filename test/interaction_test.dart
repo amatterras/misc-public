@@ -200,6 +200,36 @@ void main() {
     },
   );
 
+  testWidgets('welcome guide dismisses at a canvas edge and undo restores it', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    final h = Harness(tester, dir);
+    await h.boot();
+    await h.nav('Canvas');
+
+    final c = h.s.canvas!;
+    final guide = c.itemById(welcomeGuideItemId)!;
+    final canvas = find.byType(CanvasView);
+    final viewport = tester.getSize(canvas);
+    await h.drag(
+      h.screen(c.itemBounds(guide).center),
+      h.canvasOrigin + Offset(viewport.width / 2, 2),
+    );
+    await h.settle();
+    expect(c.itemById(welcomeGuideItemId), isNull);
+
+    c.undo();
+    expect(c.itemById(welcomeGuideItemId), isNotNull);
+    c.redo();
+    expect(c.itemById(welcomeGuideItemId), isNull);
+
+    await h.restart();
+    await h.nav('Canvas');
+    expect(h.s.canvas!.itemById(welcomeGuideItemId), isNull);
+    await h.shutDown();
+  });
+
   testWidgets('canvas: drawing, moving and erasing do not interfere', (
     tester,
   ) async {

@@ -198,7 +198,30 @@ iPad (see the manual checklist in `MANUAL_CHECKLIST.md`).
 | Branded read-only web sharing with access, expiry, revocation | BLOCKED | needs hosting; THEapp makes the read-only page as a file | hosting decision (free: Tailscale Funnel from the hub, or a static host) |
 | Universal clipboard between devices | IMPLEMENTED, logic VERIFIED | `AppState.checkClipboard`, collection `clipboard` | no second device; hub must run this version; iOS only sends with a button (paste permission) |
 | iOS share-sheet capture | UNCHANGED | Shortcut fallback (`ios/README_IOS.md`) | Share Extension needs paid Apple account |
-| External calendar sync | NOT STARTED (assessment only) | — | provider choice; the 5-active-entries rule conflicts with importing many events |
+| External calendar sync | IMPLEMENTED; local entries synchronize both ways (automated tests); imported provider events are read-only | `lib/features/calendar/external/external_calendar.dart`; `test/platform_features_test.dart` P3 calendar sync | real Google/Outlook credentials, permissions and live account behavior not verified |
+
+## Current major-update implementation (2026-10-24)
+
+The historical phase tables above are retained. This table supersedes statuses
+that were stale before the interrupted major update was resumed. Automated
+tests validate the stated code paths; fake providers and native-channel tests
+do not count as real service or hardware verification.
+
+| Requirement | Current status | Evidence | Still required |
+|---|---|---|---|
+| AI provider service: configuration, typed errors, timeout/cancel, bounded transient retry, streamed responses, secret storage | IMPLEMENTED; deterministic service tests pass | `lib/features/ai/ai_service.dart`, `test/ai_service_test.dart` | Real provider request with a user-owned key; no API key used in this validation |
+| Persistent AI chat, history, streaming, cancel/retry/copy/regenerate, bounded user-selected context and approval-gated proposals | IMPLEMENTED; widget/session tests pass | `lib/features/ai/ai_session.dart`, `ai_chat_test.dart`, `roadmap_phase4_test.dart` | Real model response/quality; not inferred from the fake service |
+| Hub synchronization, durable offline changes, long-poll wakeups, reconnect and conflict/tombstone rules | IMPLEMENTED; local real-hub two-client simulation and attack suite | `SYNC_ARCHITECTURE.md` §§17–18; `live_sync_test.dart`, `sync_attack_test.dart` | Physical second device / cross-network sync |
+| Calendar ink sizing, stroke eraser, Pencil double-tap undo | IMPLEMENTED; widget/controller tests | `calendar_pen_test.dart`, `interaction_test.dart`, `ios/Runner/AppDelegate.swift` | Physical Apple Pencil behavior |
+| Drag items between floating windows | IMPLEMENTED; gesture transfer tests | `lib/app/page_host.dart`, `window_drag_test.dart` | Manual desktop feel/accessibility check |
+| Canvas/note image output and read-only HTML output | IMPLEMENTED; temporary files inspected by tests; atomic output replacement preserves existing file on failure | `lib/features/export/exports.dart`, `lib/features/canvas/canvas_export.dart`, `export_output_test.dart` | Visual inspection in target image/browser apps |
+| Dismissible welcome guide with undo | IMPLEMENTED; interaction test | `interaction_test.dart` | Manual visual check |
+| Calendar reading-goal projection/editor | IMPLEMENTED; calculation and widget tests | `lib/features/calendar/reading_goal.dart`, `reading_goal_test.dart` | Manual usability check |
+| Seven-day Calendar archive expiration, tombstones, expiration ledger, managed-backup sanitation | IMPLEMENTED for Calendar records; synthetic backup/restore tests | `lib/data/workspace.dart`, `lib/data/storage/backup_service.dart`, `archive_retention_test.dart`, `lib/hub/hub_backup.dart` | Shared Archive asset bytes remain by design; no safe exclusive ownership marker exists to prove they can be deleted |
+| Calendar photo attachments and hub byte transfer | IMPLEMENTED; workspace/export and sync transfer tests | `entry_editor.dart`, `calendar_page.dart`, `workspace.dart`, `live_sync_test.dart` | Physical camera/file-picker flow on Windows/iOS |
+| Google and Outlook calendar import plus optional two-way sync of linked local entries | IMPLEMENTED; local HTTP server/fake provider tests | `lib/features/calendar/external/external_calendar.dart`, `platform_features_test.dart` (`P3 calendar sync`) | Real OAuth registration, permissions and account sync |
+| Note zoom and isolated floating-browser compact mode | IMPLEMENTED; persistence/widget tests | `note_zoom_test.dart`, `browser_compact_test.dart` | Manual visual check |
+| Handwriting-to-calendar suggestion and user-confirmed creation | IMPLEMENTED; parser/render plumbing tests | `calendar_handwriting_test.dart`, Windows Ink and iOS Vision bridges | Windows Ink returned HRESULT `0x80280008` on this host; iOS build/device unavailable here |
 
 ## Explicitly excluded (never implement)
 Separate Tracker page · Projects category in Calendar · time blocking ·

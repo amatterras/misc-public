@@ -4,6 +4,10 @@ import 'dart:ui';
 import 'record.dart' show utcIso;
 import 'unknown_fields.dart';
 
+/// Stable id for the first-canvas welcome guide, so it can be dismissed as a
+/// distinct canvas item without matching or changing user-authored text.
+const welcomeGuideItemId = 'theapp-welcome-guide';
+
 /// Generates a reasonably unique id without extra dependencies.
 String newId() {
   final rand = math.Random();

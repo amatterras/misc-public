@@ -33,6 +33,38 @@ FutureOr<List<String>> pickDocumentFiles() => Platform.isIOS
     ? win.pickDocumentFiles()
     : const <String>[];
 
+/// Asks where to save a file (Windows "Save as"); null if cancelled.
+/// Elsewhere there is no such dialog: callers save to the exports folder
+/// and offer the share sheet (iPhone/iPad).
+String? askSavePath({
+  required String suggestedName,
+  required String extension,
+  required String typeLabel,
+  String? initialDir,
+}) => Platform.isWindows
+    ? win.saveFileDialog(
+        suggestedName: suggestedName,
+        extension: extension,
+        filterSpec: '$typeLabel\u0000*.$extension\u0000\u0000',
+        dialogTitle: 'Save $typeLabel',
+        initialDir: initialDir,
+      )
+    : null;
+
+/// Whether [askSavePath] shows a dialog here.
+bool get hasSaveDialog => Platform.isWindows;
+
+/// Replaces [destination] with [source] after it has been fully written and
+/// checked. Windows uses MoveFileExW with REPLACE_EXISTING; the other
+/// dart:io targets use their same-volume rename operation.
+Future<File> replaceFile(File source, File destination) async {
+  if (Platform.isWindows) {
+    win.replaceFileAtomically(source.path, destination.path);
+    return destination;
+  }
+  return source.rename(destination.path);
+}
+
 /// Lets the user choose .ics calendar files (Windows only for now).
 List<String> pickCalendarFiles() =>
     Platform.isWindows ? win.pickCalendarFiles() : const <String>[];

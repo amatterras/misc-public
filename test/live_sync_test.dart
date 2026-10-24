@@ -10,6 +10,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/painting.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
+import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/hub/hub_server.dart';
 import 'package:flutter_application_1/sync/sync_client.dart';
@@ -166,10 +167,23 @@ void main() {
       final png = await makePng();
       final asset = await pc.ws.imageAssetFromBytes(png, 'png');
       final note = pc.ws.createNote(title: 'With photo', assetIds: [asset.id]);
+      final day = DateTime.now().add(const Duration(days: 3));
+      final event = CalendarEntry(
+        id: 'photo-event',
+        category: CalendarCategory.events,
+        name: 'Trip photos',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        startDate: DateTime(day.year, day.month, day.day),
+        endDate: DateTime(day.year, day.month, day.day),
+        assetIds: [asset.id],
+      );
+      pc.ws.entries.put(event);
       pc.edited();
       await until(
         () =>
             ipad.ws.assets[asset.id] != null &&
+            ipad.ws.entries[event.id]?.assetIds.contains(asset.id) == true &&
             ipad.ws.attachments
                 .fileFor(ipad.ws.assets[asset.id]!.file!)
                 .existsSync(),
@@ -181,6 +195,7 @@ void main() {
             .readAsBytesSync(),
         png,
       );
+      expect(ipad.ws.entries[event.id]!.assetIds, [asset.id]);
       ipad.ws.deleteNote(note.id);
       ipad.edited();
       await until(() => pc.ws.notes[note.id] == null, what: 'delete on the PC');

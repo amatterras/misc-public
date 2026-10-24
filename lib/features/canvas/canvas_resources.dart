@@ -14,6 +14,10 @@ abstract class CanvasResources implements Listenable {
 
   /// The decoded image for an attachment file, or null while it loads.
   ui.Image? image(String fileName);
+
+  /// Completes once each of [fileNames] is decoded or has failed, so a
+  /// picture drawn afterwards (an export) has every photo in it.
+  Future<void> preload(Iterable<String> fileNames);
 }
 
 class WorkspaceCanvasResources extends ChangeNotifier
@@ -25,7 +29,7 @@ class WorkspaceCanvasResources extends ChangeNotifier
 
   final Workspace workspace;
   final Map<String, ui.Image> _images = {};
-  final Set<String> _loading = {};
+  final Map<String, Future<void>> _loading = {};
   final Set<String> _failed = {};
   bool _disposed = false;
 
@@ -42,11 +46,23 @@ class WorkspaceCanvasResources extends ChangeNotifier
   ui.Image? image(String fileName) {
     final cached = _images[fileName];
     if (cached != null) return cached;
-    if (!_loading.contains(fileName) && !_failed.contains(fileName)) {
-      _loading.add(fileName);
-      _load(fileName);
-    }
+    _start(fileName);
     return null;
+  }
+
+  /// Whether [fileName] could not be decoded (an export says so).
+  bool failed(String fileName) => _failed.contains(fileName);
+
+  @override
+  Future<void> preload(Iterable<String> fileNames) async {
+    await Future.wait([for (final name in fileNames) ?_start(name)]);
+  }
+
+  Future<void>? _start(String fileName) {
+    if (_failed.contains(fileName) || _images.containsKey(fileName)) {
+      return null;
+    }
+    return _loading[fileName] ??= _load(fileName);
   }
 
   Future<void> _load(String fileName) async {

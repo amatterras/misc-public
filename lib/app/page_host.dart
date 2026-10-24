@@ -35,7 +35,11 @@ Widget buildPageInstance(BuildContext context, AppState s, PageInstance p) =>
         session: s.aiSessionFor(p),
         instanceId: p.id,
       ),
-      AppPage.browser => BrowserPage(state: s, browser: s.browserFor(p)),
+      AppPage.browser => BrowserPage(
+        state: s,
+        browser: s.browserFor(p),
+        instanceId: p.id,
+      ),
       AppPage.canvas => MindmapWindow(state: s, canvasId: s.canvas?.id ?? ''),
       AppPage.notes => NotesPage(state: s),
       // Its own view (view, filters, selected day) of the same records.

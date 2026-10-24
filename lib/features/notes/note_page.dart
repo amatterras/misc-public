@@ -75,9 +75,15 @@ class _NotePageState extends State<NotePage> {
 
   AppState get s => widget.state;
 
+  String get _zoomSetting => 'notebookZoom.${widget.noteId}';
+
   @override
   void initState() {
     super.initState();
+    final savedZoom = s.settings.get<num>(_zoomSetting)?.toDouble();
+    _zoom = savedZoom != null && savedZoom.isFinite
+        ? savedZoom.clamp(0.4, 3.0)
+        : 1;
     _fingerDraws = s.settings.get<bool>('notebookFingerDraws') ?? false;
     unawaited(_open());
     final ios = s.ios;
@@ -91,6 +97,13 @@ class _NotePageState extends State<NotePage> {
         unawaited(_c?.flush());
       },
     );
+  }
+
+  void _setZoom(double value) {
+    final zoom = value.clamp(0.4, 3.0);
+    if (_zoom == zoom) return;
+    setState(() => _zoom = zoom);
+    unawaited(s.settings.set(_zoomSetting, zoom));
   }
 
   Future<void> _open() async {
@@ -619,19 +632,32 @@ class _NotePageState extends State<NotePage> {
             GhostIconButton(
               icon: Icons.zoom_out,
               tooltip: 'Smaller pages',
-              onTap: () =>
-                  setState(() => _zoom = (_zoom / 1.25).clamp(0.4, 3.0)),
+              onTap: () => _setZoom(_zoom / 1.25),
             ),
             GhostIconButton(
               icon: Icons.fit_screen_outlined,
               tooltip: 'Fit page width',
-              onTap: () => setState(() => _zoom = 1),
+              onTap: () => _setZoom(1),
+            ),
+            Tooltip(
+              message: 'Page zoom ${(_zoom * 100).round()}% relative to fit',
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Space.sm),
+                child: Text(
+                  '${(_zoom * 100).round()}%',
+                  key: const ValueKey('note-zoom-value'),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                    fontFeatures: [ui.FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
             ),
             GhostIconButton(
               icon: Icons.zoom_in,
               tooltip: 'Larger pages',
-              onTap: () =>
-                  setState(() => _zoom = (_zoom * 1.25).clamp(0.4, 3.0)),
+              onTap: () => _setZoom(_zoom * 1.25),
             ),
             if (touchFirst)
               GhostIconButton(
@@ -656,24 +682,7 @@ class _NotePageState extends State<NotePage> {
                 final note = s.workspace.notes[widget.noteId];
                 if (note == null) return;
                 await c.flush();
-                File? shown;
-                switch (what) {
-                  case 'md':
-                    shown = await exportNoteMarkdown(s, note);
-                    s.showToast('Saved ${shown.path}');
-                  case 'png':
-                    final files = await exportNotePages(s, note);
-                    if (files.isEmpty) {
-                      s.showToast('No handwriting or text boxes to export.');
-                      return;
-                    }
-                    shown = files.first;
-                    s.showToast('Saved ${files.length} page picture(s).');
-                  case 'html':
-                    shown = await exportNoteWebPage(s, note);
-                    s.showToast('Saved ${shown.path}');
-                }
-                if (shown != null) await revealExport(s, shown);
+                await exportNoteFromMenu(s, note, what);
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(

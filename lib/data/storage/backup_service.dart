@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'dart:convert';
+
+import '../../platform/windows_native.dart' as win;
 
 /// Point-in-time copies of all records under
 /// `<data>\backups\<timestamp>-<reason>`.
@@ -19,6 +22,7 @@ class BackupService {
     'settings',
     'sync',
     'canvas_snapshots', // named mindmap versions
+    'retention', // permanent calendar-expiration ledger
   ];
   static const _attachments = 'attachments';
   static const keepAutomatic = 14;
@@ -163,6 +167,94 @@ class BackupService {
     if (!hasToday) await snapshot('auto', now: at);
   }
 
+  /// Removes an expired calendar entry from every backup folder THEapp
+  /// manages, including its exported app-container copies. The deletion
+  /// tombstone and expiration ledger are inserted into older backups too, so
+  /// restoring one on another device cannot resurrect the record.
+  ///
+  /// Calendar attachments are shared Archive assets, so this method removes
+  /// only the expired entry reference; it never deletes an asset that may be
+  /// independently saved or used elsewhere.
+  Future<void> purgeExpiredCalendarEntry({
+    required String id,
+    required String tombstoneRev,
+  }) async {
+    for (final backup in await list()) {
+      final collectionFile = File(
+        '${backup.path}$_sep$dataDir$_sep$calendarEntriesFile',
+      );
+      for (final suffix in ['', '.bak']) {
+        final file = File('${collectionFile.path}$suffix');
+        if (await file.exists()) {
+          final json = jsonDecode(await file.readAsString());
+          if (json is! Map<String, dynamic>) {
+            throw FormatException('Invalid calendar collection in $file');
+          }
+          final records = (json['records'] as List? ?? const [])
+              .where((raw) => raw is! Map || raw['id'] != id)
+              .toList();
+          final revs = Map<String, dynamic>.of(
+            (json['revs'] as Map?)?.cast<String, dynamic>() ?? const {},
+          )..remove(id);
+          final tombstones = Map<String, dynamic>.of(
+            (json['tombstones'] as Map?)?.cast<String, dynamic>() ?? const {},
+          )..[id] = tombstoneRev;
+          await _atomicWrite(
+            file,
+            const JsonEncoder.withIndent(' ').convert({
+              ...json,
+              'records': records,
+              'revs': revs,
+              'tombstones': tombstones,
+            }),
+          );
+        }
+      }
+
+      // A damaged sidecar is never used for restore; remove it because its
+      // bytes may still contain the expired record and the valid collection
+      // copies above remain available.
+      final backupDataDir = Directory('${backup.path}$_sep$dataDir');
+      if (await backupDataDir.exists()) {
+        await for (final file in backupDataDir.list()) {
+          if (file is File &&
+              file.uri.pathSegments.last.startsWith(
+                '$calendarEntriesFile.corrupt-',
+              )) {
+            await file.delete();
+          }
+        }
+      }
+
+      for (final rel in [
+        'data$_sep$calendarExpirationsFile',
+        'retention$_sep$expirationLedgerFile',
+      ]) {
+        final source = File('${root.path}$_sep$rel');
+        if (!await source.exists()) continue;
+        final target = File('${backup.path}$_sep$rel');
+        await target.parent.create(recursive: true);
+        final staging = File('${target.path}.purge.tmp');
+        await source.copy(staging.path);
+        await _replace(staging, target);
+      }
+    }
+  }
+
+  Future<void> _atomicWrite(File target, String content) async {
+    final staging = File('${target.path}.purge.tmp');
+    await staging.writeAsString(content, flush: true);
+    await _replace(staging, target);
+  }
+
+  Future<void> _replace(File source, File target) async {
+    if (Platform.isWindows) {
+      win.replaceFileAtomically(source.path, target.path);
+    } else {
+      await source.rename(target.path);
+    }
+  }
+
   /// Copies [backup] into [destination] (e.g. Documents/THEapp Backups on
   /// iPhone/iPad, visible in the Files app) and checks every file arrived
   /// unchanged. Returns the copy.
@@ -208,6 +300,11 @@ class BackupService {
   /// Backups that are never removed automatically, by reason (the end of the
   /// folder name): the state before the first sync with a hub.
   static const protectedReasons = {'before-first-sync'};
+
+  static const dataDir = 'data';
+  static const calendarEntriesFile = 'calendar_entries.json';
+  static const calendarExpirationsFile = 'calendar_entry_expirations.json';
+  static const expirationLedgerFile = 'expired_calendar_entries.json';
 
   /// Whether [d] was made for [reason] (a second backup in the same second
   /// gets "-1", "-2", … after it).

@@ -1,5 +1,8 @@
 import 'record.dart';
 
+DateTime? _dateOnlyOrNull(DateTime? date) =>
+    date == null ? null : dateOnly(date);
+
 enum CalendarCategory {
   reading('Reading'),
   habits('Habits'),
@@ -29,6 +32,7 @@ class CalendarEntry implements Record {
     this.description = '',
     int? colorIndex,
     this.archived = false,
+    this.archivedAt,
     this.notes = '',
     this.assetIds = const [],
     this.startDate,
@@ -39,6 +43,8 @@ class CalendarEntry implements Record {
     this.author = '',
     this.totalPages,
     this.currentPage = 0,
+    this.targetPagesPerDay,
+    this.goalStartDate,
     this.readingLog = const {},
     this.highlights = '',
     this.weekdays = const {},
@@ -57,6 +63,10 @@ class CalendarEntry implements Record {
   /// Rendering derives the color from [category], never from an ink palette.
   final int colorIndex;
   final bool archived;
+
+  /// UTC instant when this calendar entry entered the archive. Null for
+  /// active entries and for legacy archived records before migration.
+  final DateTime? archivedAt;
   final String notes;
   final List<String> assetIds;
   final DateTime createdAt;
@@ -75,6 +85,13 @@ class CalendarEntry implements Record {
   final String author;
   final int? totalPages;
   final int currentPage;
+
+  /// Optional daily target for a reading goal. Null means no goal is set.
+  final int? targetPagesPerDay;
+
+  /// First local calendar date in the goal schedule. Stored as a date-only
+  /// value so timezone changes do not shift the selected day.
+  final DateTime? goalStartDate;
   final Map<String, int> readingLog;
   final String highlights;
 
@@ -142,6 +159,7 @@ class CalendarEntry implements Record {
     String? description,
     int? colorIndex,
     bool? archived,
+    DateTime? Function()? archivedAt,
     String? notes,
     List<String>? assetIds,
     DateTime? Function()? startDate,
@@ -152,6 +170,8 @@ class CalendarEntry implements Record {
     String? author,
     int? Function()? totalPages,
     int? currentPage,
+    int? Function()? targetPagesPerDay,
+    DateTime? Function()? goalStartDate,
     Map<String, int>? readingLog,
     String? highlights,
     Set<int>? weekdays,
@@ -163,6 +183,7 @@ class CalendarEntry implements Record {
     description: description ?? this.description,
     colorIndex: colorIndex ?? this.colorIndex,
     archived: archived ?? this.archived,
+    archivedAt: archivedAt != null ? archivedAt() : this.archivedAt,
     notes: notes ?? this.notes,
     assetIds: assetIds ?? this.assetIds,
     createdAt: createdAt,
@@ -177,6 +198,12 @@ class CalendarEntry implements Record {
     author: author ?? this.author,
     totalPages: totalPages != null ? totalPages() : this.totalPages,
     currentPage: currentPage ?? this.currentPage,
+    targetPagesPerDay: targetPagesPerDay != null
+        ? targetPagesPerDay()
+        : this.targetPagesPerDay,
+    goalStartDate: goalStartDate != null
+        ? _dateOnlyOrNull(goalStartDate())
+        : this.goalStartDate,
     readingLog: readingLog ?? this.readingLog,
     highlights: highlights ?? this.highlights,
     weekdays: weekdays ?? this.weekdays,
@@ -191,6 +218,7 @@ class CalendarEntry implements Record {
     'description': description,
     'colorIndex': colorIndex,
     'archived': archived,
+    'archivedAt': archivedAt == null ? null : utcIso(archivedAt!),
     'notes': notes,
     'assetIds': assetIds,
     'createdAt': utcIso(createdAt),
@@ -203,6 +231,8 @@ class CalendarEntry implements Record {
     'author': author,
     'totalPages': totalPages,
     'currentPage': currentPage,
+    'targetPagesPerDay': targetPagesPerDay,
+    'goalStartDate': goalStartDate == null ? null : dayKey(goalStartDate!),
     'readingLog': readingLog,
     'highlights': highlights,
     'weekdays': weekdays.toList()..sort(),
@@ -219,6 +249,7 @@ class CalendarEntry implements Record {
       description: j['description'] as String? ?? '',
       colorIndex: j['colorIndex'] as int? ?? category.index,
       archived: j['archived'] as bool? ?? false,
+      archivedAt: parseDate(j['archivedAt']),
       notes: j['notes'] as String? ?? '',
       assetIds: [...?(j['assetIds'] as List?)?.cast<String>()],
       createdAt: parseDate(j['createdAt']) ?? DateTime.now(),
@@ -231,6 +262,8 @@ class CalendarEntry implements Record {
       author: j['author'] as String? ?? '',
       totalPages: j['totalPages'] as int?,
       currentPage: j['currentPage'] as int? ?? 0,
+      targetPagesPerDay: j['targetPagesPerDay'] as int?,
+      goalStartDate: day(j['goalStartDate']),
       readingLog: {
         ...?(j['readingLog'] as Map?)?.map(
           (k, v) => MapEntry(k as String, (v as num).toInt()),
@@ -283,4 +316,35 @@ class DayRecord implements Record {
     assetIds: [...?(j['assetIds'] as List?)?.cast<String>()],
     updatedAt: parseDate(j['updatedAt']) ?? DateTime.now(),
   );
+}
+
+/// Irreversible retention tombstone for a calendar entry that expired after
+/// seven days in the archive. It is synced so older devices cannot restore
+/// the record by re-offering a stale local copy.
+class CalendarEntryExpiration implements Record {
+  const CalendarEntryExpiration({
+    required this.id,
+    required this.expiredAt,
+    required this.updatedAt,
+  });
+
+  @override
+  final String id;
+  final DateTime expiredAt;
+  @override
+  final DateTime updatedAt;
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'expiredAt': utcIso(expiredAt),
+    'updatedAt': utcIso(updatedAt),
+  };
+
+  factory CalendarEntryExpiration.fromJson(Map<String, dynamic> json) =>
+      CalendarEntryExpiration(
+        id: json['id'] as String,
+        expiredAt: parseDate(json['expiredAt']) ?? DateTime.now().toUtc(),
+        updatedAt: parseDate(json['updatedAt']) ?? DateTime.now().toUtc(),
+      );
 }

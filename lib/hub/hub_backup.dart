@@ -28,6 +28,7 @@ class HubBackups {
 
   /// Complete backups, newest first.
   Future<List<Directory>> list() async {
+    await _recoverInterruptedPurges();
     if (!await dir.exists()) return [];
     final all = await dir
         .list()
@@ -76,6 +77,158 @@ class HubBackups {
     );
     await _prune();
     return target;
+  }
+
+  /// Scrubs the contents and preserves the permanent calendar-entry
+  /// tombstone in every hub backup, including backups created before expiry.
+  Future<void> purgeExpiredCalendarEntry(String id) async {
+    final current = await store.currentJournalLine('calendar_entries', id);
+    if (current == null || current['del'] != true) {
+      throw StateError('Expired calendar entry $id has no hub tombstone.');
+    }
+    for (final backup in await list()) {
+      await _rewriteWithoutExpiredEntry(backup, id, current);
+    }
+  }
+
+  Future<void> purgeAllExpiredCalendarEntries() async {
+    for (final id in await store.expiredCalendarEntryIds()) {
+      await purgeExpiredCalendarEntry(id);
+    }
+  }
+
+  Future<void> _rewriteWithoutExpiredEntry(
+    Directory backup,
+    String id,
+    Map<String, dynamic> tombstone,
+  ) async {
+    final manifest = jsonDecode(
+      await _manifest(backup).readAsString(),
+    ) as Map<String, dynamic>;
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final stage = Directory('${backup.path}.purge-stage-$stamp');
+    final old = Directory('${backup.path}.purge-old-$stamp');
+    await stage.create(recursive: true);
+    final sourceJournal = File('${backup.path}${_sep}journal.jsonl');
+    final outputJournal = File('${stage.path}${_sep}journal.jsonl');
+    final sink = outputJournal.openWrite();
+    var lineCount = 0;
+    var lastSeq = manifest['lastSeq'] as int? ?? 0;
+    final recordKeys = <String>{};
+    try {
+      await for (final raw
+          in sourceJournal
+              .openRead()
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
+        if (raw.isEmpty) continue;
+        final line = jsonDecode(raw) as Map<String, dynamic>;
+        if (line['t'] == 'c') continue;
+        if (line['t'] == 'v' &&
+            line['c'] == 'calendar_entries' &&
+            line['id'] == id) {
+          continue;
+        }
+        sink.writeln(raw);
+        lineCount++;
+        if (line['t'] == 'v') {
+          final seq = line['seq'];
+          if (seq is int && seq > lastSeq) lastSeq = seq;
+          recordKeys.add('${line['c']}/${line['id']}');
+        }
+      }
+      sink.writeln(jsonEncode(tombstone));
+      lineCount++;
+      final tombstoneSeq = tombstone['seq'];
+      if (tombstoneSeq is int && tombstoneSeq > lastSeq) {
+        lastSeq = tombstoneSeq;
+      }
+      recordKeys.add('calendar_entries/$id');
+      sink.writeln(jsonEncode({'t': 'c', 'n': lineCount}));
+      await sink.flush();
+    } finally {
+      await sink.close();
+    }
+
+    await for (final entity in backup.list(recursive: true)) {
+      if (entity is! File || entity.path == sourceJournal.path) continue;
+      final relative = entity.path.substring(backup.path.length + 1);
+      final destination = File('${stage.path}$_sep$relative');
+      await destination.parent.create(recursive: true);
+      await entity.copy(destination.path);
+    }
+    final stagedManifest = _manifest(stage);
+    await stagedManifest.writeAsString(
+      const JsonEncoder.withIndent(' ').convert({
+        ...manifest,
+        'lastSeq': lastSeq,
+        'records': recordKeys.length,
+        'journalBytes': await outputJournal.length(),
+        'journalSha256': await _fileSha(outputJournal),
+      }),
+      flush: true,
+    );
+    if (!await verify(stage)) {
+      await stage.delete(recursive: true);
+      throw StateError('Sanitized hub backup did not verify.');
+    }
+
+    await backup.rename(old.path);
+    try {
+      await stage.rename(backup.path);
+    } catch (_) {
+      await old.rename(backup.path);
+      rethrow;
+    }
+    await old.delete(recursive: true);
+  }
+
+  Future<void> _recoverInterruptedPurges() async {
+    if (!await dir.exists()) return;
+    final children = await dir
+        .list()
+        .where((entity) => entity is Directory)
+        .cast<Directory>()
+        .toList();
+    final grouped = <String, List<Directory>>{};
+    for (final child in children) {
+      final name = child.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      final stageAt = name.indexOf('.purge-stage-');
+      final oldAt = name.indexOf('.purge-old-');
+      final at = stageAt >= 0 ? stageAt : oldAt;
+      if (at >= 0) {
+        grouped.putIfAbsent(name.substring(0, at), () => []).add(child);
+      }
+    }
+    for (final entry in grouped.entries) {
+      final canonical = Directory('${dir.path}$_sep${entry.key}');
+      final candidates = entry.value;
+      if (await canonical.exists()) {
+        if (await verify(canonical)) {
+          for (final candidate in candidates) {
+            await candidate.delete(recursive: true);
+          }
+        }
+        continue;
+      }
+      Directory? replacement;
+      for (final candidate in candidates) {
+        final name = candidate.uri.pathSegments.last;
+        if (name.contains('.purge-stage-') && await verify(candidate)) {
+          replacement = candidate;
+          break;
+        }
+      }
+      if (replacement == null) {
+        for (final candidate in candidates) {
+          if (candidate.uri.pathSegments.last.contains('.purge-old-')) {
+            replacement = candidate;
+            break;
+          }
+        }
+      }
+      if (replacement != null) await replacement.rename(canonical.path);
+    }
   }
 
   Future<void> _prune() async {

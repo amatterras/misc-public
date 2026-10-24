@@ -661,3 +661,37 @@ port forwarded — a network-security change that needs explicit approval);
   Every case converges: all devices agree and nothing more is pushed. No defect was found in the record rules. Two scheduler defects were found and fixed:
   - a held wait did not end on resume (delivery hung);
   - delivery after resume took 3–4 s.
+
+## 19. External calendar synchronization (2026-10-24)
+
+This is provider synchronization from the app client, separate from the
+Windows-authoritative workspace hub in the preceding sections.
+
+- Google Calendar uses incremental `syncToken` pagination with the same query
+  parameters for initial and incremental requests; expired tokens trigger a full
+  fetch. Outlook uses Microsoft Graph calendar-view delta links and restarts a full
+  window fetch after an expired delta link.
+- Provider-created events are materialized as read-only `ExternalEvent` records.
+  THEapp Reminder/Event entries optionally export to a chosen provider calendar and
+  update/delete through persistent `CalendarLink` records. Provider changes to a
+  linked local entry are applied when the remote `updated` timestamp is at least as
+  new as the local record; older remote edits lose and are reported. Imported events
+  have no local editable copy, so editing them remains a provider-side action.
+- A timed entry with no positive duration is retained locally and skipped during
+  export; the prior remote link is protected from accidental deletion. A user must
+  supply its duration before a valid provider end time can be sent.
+- Create operations are retry-safe: Google uses a deterministic event id and
+  private THEapp key. Outlook uses Graph `transactionId`. For either provider with
+  a stable create identity, the local pending link is flushed before the POST and
+  completed after the provider returns its id. Google recovery validates the
+  private operation key after a 409 response.
+- Accounts refresh on app startup, resume, explicit Sync now, and every five
+  minutes while the app is active. Unexpected scheduled-run errors leave a user
+  status and a stack-only local diagnostic; provider response bodies and tokens are
+  not written to that diagnostic.
+- Automated tests use local HTTP servers and a deterministic in-memory provider.
+  They cover query construction, Google lost-response recovery, Outlook transaction
+  ids, local/remote edits, conflict ordering, deletion, multi-day events, restart
+  retry, and missing duration. These tests do not establish live provider
+  authorization or actual account behavior. The end-to-end tests run from
+  `test/platform_features_test.dart` (`P3 calendar sync`).

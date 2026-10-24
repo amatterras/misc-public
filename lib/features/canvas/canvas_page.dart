@@ -57,8 +57,9 @@ class CanvasView extends StatefulWidget {
   State<CanvasView> createState() => _CanvasViewState();
 }
 
-class _CanvasViewState extends State<CanvasView> {
+class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   final _focusNode = FocusNode(debugLabel: 'canvas');
+  late final AnimationController _welcomeFade;
   double _lastPanZoomScale = 1;
   Size _size = Size.zero;
   bool _viewChecked = false;
@@ -74,6 +75,10 @@ class _CanvasViewState extends State<CanvasView> {
 
   /// The pointer whose stroke or drag the controller is handling.
   int? _drawingPointer;
+  int? _welcomePointer;
+  Offset? _welcomeStartPosition;
+  bool _welcomeFading = false;
+  bool _welcomeRemovalDone = false;
 
   // Apple Pencil Pro squeeze (iPhone/iPad): eraser while squeezed.
   StreamSubscription<String>? _squeeze;
@@ -90,6 +95,11 @@ class _CanvasViewState extends State<CanvasView> {
   @override
   void initState() {
     super.initState();
+    _welcomeFade = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+      value: 1,
+    );
     _focusWhenShown();
     _registerTap();
     final ios = s.ios;
@@ -143,6 +153,9 @@ class _CanvasViewState extends State<CanvasView> {
 
   @override
   void dispose() {
+    if (_welcomeFading) _removeWelcomeGuide();
+    if (_welcomePointer != null) c.pointerCancel();
+    _welcomeFade.dispose();
     _squeeze?.cancel();
     _unregisterTap();
     _lifecycle?.dispose();
@@ -398,6 +411,7 @@ class _CanvasViewState extends State<CanvasView> {
       }
       _touchPointers[e.pointer] = e.localPosition;
       if (_touchPointers.length == 2) {
+        _cancelWelcomeDrag();
         // Multi-touch gesture started: cancel active single pointer drawing
         if (_drawingPointer != null) c.pointerCancel();
         _drawingPointer = null;
@@ -413,6 +427,18 @@ class _CanvasViewState extends State<CanvasView> {
 
     final keyboard = HardwareKeyboard.instance;
     _drawingPointer = e.pointer;
+    final welcome =
+        c.tool == CanvasTool.select &&
+            e.kind != PointerDeviceKind.stylus &&
+            e.kind != PointerDeviceKind.invertedStylus
+        ? c.hitTest(c.toWorld(e.localPosition))
+        : null;
+    if (welcome?.id == welcomeGuideItemId && !_welcomeFading) {
+      _welcomePointer = e.pointer;
+      _welcomeStartPosition = e.localPosition;
+      _welcomeRemovalDone = false;
+      c.select([welcomeGuideItemId]);
+    }
     c.pointerDown(
       e.localPosition,
       buttons: e.buttons,
@@ -465,21 +491,88 @@ class _CanvasViewState extends State<CanvasView> {
       : 0.5;
 
   void _onPointerUp(PointerUpEvent e) {
+    final isWelcome = e.pointer == _welcomePointer;
     _releasePointer(e.pointer);
     // Only the pointer that started the stroke may finish it (a lifted palm
     // must not end the pen stroke).
     if (e.pointer == _drawingPointer) {
       _drawingPointer = null;
       c.pointerUp();
+      if (isWelcome) _finishWelcomeDrag(e.localPosition);
     }
   }
 
   void _onPointerCancel(PointerCancelEvent e) {
+    final isWelcome = e.pointer == _welcomePointer;
     _releasePointer(e.pointer);
     if (e.pointer == _drawingPointer) {
       _drawingPointer = null;
       c.pointerCancel();
+      if (isWelcome) {
+        _welcomePointer = null;
+        _welcomeStartPosition = null;
+      }
     }
+  }
+
+  void _cancelWelcomeDrag() {
+    final pointer = _welcomePointer;
+    if (pointer == null) return;
+    _welcomePointer = null;
+    _welcomeStartPosition = null;
+    if (_drawingPointer == pointer) _drawingPointer = null;
+    c.pointerCancel();
+  }
+
+  void _finishWelcomeDrag(Offset localPosition) {
+    _welcomePointer = null;
+    final start = _welcomeStartPosition;
+    _welcomeStartPosition = null;
+    const edgeDistance = 28.0;
+    const minimumEdgeTravel = 8.0;
+    final atDismissEdge =
+        start != null &&
+        ((localPosition.dy <= edgeDistance &&
+                start.dy - localPosition.dy >= minimumEdgeTravel) ||
+            (localPosition.dx <= edgeDistance &&
+                start.dx - localPosition.dx >= minimumEdgeTravel) ||
+            (localPosition.dx >= _size.width - edgeDistance &&
+                localPosition.dx - start.dx >= minimumEdgeTravel));
+    if (!atDismissEdge || c.itemById(welcomeGuideItemId) == null) return;
+
+    _welcomeFading = true;
+    _welcomeRemovalDone = false;
+    _welcomeFade.value = 1;
+    if (mounted) setState(() {});
+    unawaited(_fadeAndRemoveWelcome());
+  }
+
+  Future<void> _fadeAndRemoveWelcome() async {
+    try {
+      await _welcomeFade.reverse().orCancel;
+    } on TickerCanceled {
+      // If the view closes while fading, dispose completes the requested
+      // dismissal synchronously below.
+    }
+    _removeWelcomeGuide();
+  }
+
+  void _removeWelcomeGuide() {
+    if (_welcomeRemovalDone) return;
+    _welcomeRemovalDone = true;
+    if (c.itemById(welcomeGuideItemId) != null) {
+      c.select([welcomeGuideItemId]);
+      c.deleteSelection();
+      unawaited(
+        c.flush().then((_) {
+          if (c.saveState == SaveState.failed && mounted) {
+            s.showToast('The welcome guide could not be saved as dismissed.');
+          }
+        }),
+      );
+    }
+    _welcomeFading = false;
+    if (mounted) setState(() {});
   }
 
   void _releasePointer(int pointer) {
@@ -596,7 +689,18 @@ class _CanvasViewState extends State<CanvasView> {
                             children: [
                               RepaintBoundary(
                                 child: CustomPaint(
-                                  painter: CanvasPainter(c),
+                                  painter: CanvasPainter(
+                                    c,
+                                    itemOpacityFor: (item) =>
+                                        item.id == welcomeGuideItemId &&
+                                            _welcomeFading
+                                        ? _welcomeFade.value
+                                        : 1,
+                                    repaint: Listenable.merge([
+                                      c,
+                                      _welcomeFade,
+                                    ]),
+                                  ),
                                   size: Size.infinite,
                                 ),
                               ),
