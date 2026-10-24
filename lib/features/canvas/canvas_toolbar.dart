@@ -170,7 +170,14 @@ class CanvasContextBar extends StatelessWidget {
     required this.onRefreshLink,
     this.onEraser,
     this.onPenWidth,
+    this.collapsed = false,
+    this.onToggleCollapsed,
   });
+
+  /// Folded away (see [CollapsibleBar]); [onToggleCollapsed] null: the
+  /// strip cannot be folded (e.g. inside a dialog).
+  final bool collapsed;
+  final VoidCallback? onToggleCollapsed;
 
   final CanvasController controller;
   final void Function(CanvasItem) onActivate;
@@ -188,8 +195,23 @@ class CanvasContextBar extends StatelessWidget {
   static const _highlighterWidths = [12.0, 18.0, 26.0, 36.0];
   static const _fontSizes = {'S': 13.0, 'M': 16.0, 'L': 22.0, 'XL': 32.0};
 
+  /// The strip, folded away with its own handle when it has anything.
   @override
   Widget build(BuildContext context) {
+    final panel = _panel(context);
+    final toggle = onToggleCollapsed;
+    if (toggle == null || panel is SizedBox) return panel;
+    return CollapsibleBar(
+      collapsed: collapsed,
+      onToggle: toggle,
+      vertical: false,
+      what: 'colours and options',
+      handleKey: const ValueKey('context-bar-collapse'),
+      child: panel,
+    );
+  }
+
+  Widget _panel(BuildContext context) {
     final c = controller;
     if (c.tool == CanvasTool.pen) {
       return ToolPanel(
@@ -878,3 +900,71 @@ Future<void> showDotOpacityDialog(
     ),
   ),
 );
+
+/// A tool strip that can be folded away with its own handle. Folding only
+/// hides it: the active tool, colour, thickness and eraser stay as they
+/// are. The handle takes its own taps, so they never reach the canvas.
+class CollapsibleBar extends StatelessWidget {
+  const CollapsibleBar({
+    super.key,
+    required this.collapsed,
+    required this.onToggle,
+    required this.vertical,
+    required this.what,
+    required this.child,
+    this.handleKey,
+  });
+
+  final bool collapsed;
+  final VoidCallback onToggle;
+
+  /// A vertical strip folds upward; a horizontal one folds to the left.
+  final bool vertical;
+
+  /// What the strip holds, for the tooltip ("tools", "colours").
+  final String what;
+  final Widget child;
+  final Key? handleKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final handle = Tooltip(
+      message: collapsed ? 'Show $what' : 'Hide $what',
+      child: Material(
+        color: AppColors.cardRaised,
+        shape: const CircleBorder(),
+        elevation: 2,
+        child: InkWell(
+          key: handleKey,
+          customBorder: const CircleBorder(),
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.all(5),
+            child: Icon(
+              vertical
+                  ? (collapsed ? Icons.expand_more : Icons.expand_less)
+                  : (collapsed ? Icons.chevron_right : Icons.chevron_left),
+              size: 16,
+              color: AppColors.textMuted,
+            ),
+          ),
+        ),
+      ),
+    );
+    final body = AnimatedSize(
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOut,
+      alignment: vertical ? Alignment.topCenter : Alignment.centerLeft,
+      child: collapsed ? const SizedBox.shrink() : child,
+    );
+    return vertical
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [handle, const SizedBox(height: 4), body],
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [body, const SizedBox(width: 4), handle],
+          );
+  }
+}

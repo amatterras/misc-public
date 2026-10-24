@@ -744,6 +744,11 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       onRefreshLink: (l) => s.capture.refreshPreview(l.assetId),
                       onEraser: s.setEraser,
                       onPenWidth: s.setCanvasPenWidth,
+                      collapsed: s.canvasOptionsCollapsed,
+                      onToggleCollapsed: () {
+                        unawaited(s.toggleCanvasOptions());
+                        setState(() {});
+                      },
                     ),
                   ),
                 ),
@@ -759,24 +764,34 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                   child: Center(
                     // Scrolls on short screens (e.g. iPhone landscape).
                     child: SingleChildScrollView(
-                      child: CanvasToolbar(
-                        controller: c,
-                        onAddImage: _addImages,
-                        onAddLink: _addLink,
-                        onAddDocument: _addDocuments,
-                        onMore: (at) {
-                          c.select(const []);
-                          unawaited(
-                            showCanvasMenu(
-                              context,
-                              s,
-                              c,
-                              at,
-                              c.toWorld(_size.center(Offset.zero)),
-                              canvasOnly: true,
-                            ),
-                          );
+                      child: CollapsibleBar(
+                        collapsed: s.canvasToolsCollapsed,
+                        onToggle: () {
+                          unawaited(s.toggleCanvasTools());
+                          setState(() {});
                         },
+                        vertical: true,
+                        what: 'tools',
+                        handleKey: const ValueKey('toolbar-collapse'),
+                        child: CanvasToolbar(
+                          controller: c,
+                          onAddImage: _addImages,
+                          onAddLink: _addLink,
+                          onAddDocument: _addDocuments,
+                          onMore: (at) {
+                            c.select(const []);
+                            unawaited(
+                              showCanvasMenu(
+                                context,
+                                s,
+                                c,
+                                at,
+                                c.toWorld(_size.center(Offset.zero)),
+                                canvasOnly: true,
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),

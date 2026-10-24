@@ -2336,6 +2336,29 @@ class AppState extends ChangeNotifier {
     return c;
   }
 
+  /// The canvas tool strip and the colour/options strip, folded away or
+  /// not (this device; the Mindmap and the Archive board share them, as
+  /// they share the strips). Folding hides them only.
+  bool get canvasToolsCollapsed =>
+      settings.get<bool>('canvasToolsCollapsed') ?? false;
+  bool get canvasOptionsCollapsed =>
+      settings.get<bool>('canvasOptionsCollapsed') ?? false;
+
+  Future<void> toggleCanvasTools() {
+    final saved = settings.set('canvasToolsCollapsed', !canvasToolsCollapsed);
+    notifyListeners(); // shown at once, saved meanwhile
+    return saved;
+  }
+
+  Future<void> toggleCanvasOptions() {
+    final saved = settings.set(
+      'canvasOptionsCollapsed',
+      !canvasOptionsCollapsed,
+    );
+    notifyListeners();
+    return saved;
+  }
+
   /// How visible the background dots are, per surface (this device): the
   /// Mindmap and the Archive board are set apart, since they are used
   /// differently (all mindmaps share one setting).
