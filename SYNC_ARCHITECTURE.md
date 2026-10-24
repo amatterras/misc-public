@@ -246,9 +246,29 @@ Next step agreed: stabilise the local app before implementing sync.
      500). Each page is applied and saved; only then is the cursor saved. An
      interrupted sync therefore resumes without skipping anything.
   7. Download missing photo files, checked against their SHA-256.
-- **When it runs (Windows app):** 3 seconds after start, every minute, and on
-  Settings → Sync hub → **Sync now**. Opening a canvas waits until a running
-  sync has finished writing.
+- **When it runs** (`lib/sync/sync_scheduler.dart`, since 2026-10-24):
+  - **About 0.3 s after a local edit.** Edits made close together travel together.
+  - **At once when the hub reports another device's change.** The app keeps one long-poll open: `GET /v1/wait?since=<cursor>`. The hub answers as soon as it has stored something newer, or after 25 s as a heartbeat, and the app then pulls.
+  - **A request made while a sync is running** is remembered and runs right after it; it is never dropped.
+  - **Every minute** as a safety net, and on **Sync now**.
+  - **When the hub is unreachable:** the long-poll retries after 1, 2, 4 … up to 30 s. A successful sync ends the wait early and catches up.
+  - **A hub without `/v1/wait`** (older version, 404) is simply polled.
+  - **iPhone/iPad:** the long-poll stops in the background and restarts on resume.
+  - Measured on this PC (`test/live_sync_test.dart`, real hub on 127.0.0.1): PC → iPad in 70–360 ms; catch-up after a hub restart in 0.5–2.1 s.
+  - Opening a canvas waits until a running sync has finished writing.
+- **Status shown** (Settings → Sync), always the current truth:
+  - "Changes waiting to sync…" while a local edit has not gone through a successful sync.
+  - "Hub not reachable — your changes are saved here…" while offline.
+  - "Synced · live" when connected live.
+  - The last result (conflicts, problems) otherwise.
+- **The change envelope** is the existing `SyncChange`:
+  - entity id = `collection/id`;
+  - operation id = `device|collection|id|rev`, idempotent on the hub;
+  - revision = hybrid logical clock, which also carries the origin device and time;
+  - operation = create/update (`data`) or delete (`deleted`). A move is an update of a parent/folder field.
+  - Hub order = `seq`.
+  - The acknowledgement is the per-change `PushResult`.
+  - Nothing was added to the envelope: no migration was needed.
 
 ## 10. Hub API (HTTP, protocol 1)
 
@@ -264,6 +284,7 @@ Bodies are JSON, at most 8 MB.
 | `POST /v1/register` | pairing code | `{pairingCode, deviceId, deviceName}` | `{token, protocol, lastSeq}` |
 | `POST /v1/push` | device | `{changes: [Change, …]}` (at most 200) | `{results: [Result, …], lastSeq, hubId}` |
 | `GET /v1/changes?since=N&limit=M` | device | — | `{changes: [Change with seq, …], next, hasMore, lastSeq, hubId}` |
+| `GET /v1/wait?since=N&timeout=S` | device | — | `{lastSeq, hubId}` as soon as `lastSeq > N`, or after S (1–25) seconds; no record data. Old hubs: 404 → clients poll |
 | `HEAD /v1/attachments/<sha256>` | device | — | `200` if stored, `404` if not |
 | `PUT /v1/attachments/<sha256>` | device | raw bytes; `Content-Length` required | `{ok: true}`; size and SHA-256 must match |
 | `GET /v1/attachments/<sha256>` | device | — | raw bytes |

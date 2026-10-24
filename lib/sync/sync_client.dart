@@ -85,7 +85,10 @@ class SyncClient {
   final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 8);
 
-  void close() => _http.close(force: true);
+  void close() {
+    _http.close(force: true);
+    cancelWait();
+  }
 
   Future<HttpClientRequest> _open(
     String method,
@@ -166,6 +169,73 @@ class SyncClient {
 
   Future<Map<String, dynamic>> status() async =>
       _json(await _open('GET', '/v1/status'));
+
+  /// Separate connection for the long-poll, so it never holds up a push.
+  HttpClient? _waitHttp;
+
+  /// Waits (up to [seconds]) until the hub has a change after [since];
+  /// returns the hub's newest change number and id. A hub from before this
+  /// endpoint answers `not_found` (the caller then keeps polling).
+  Future<({int lastSeq, String hubId})> waitForChange(
+    int since, {
+    int seconds = 25,
+  }) async {
+    final http = _waitHttp ??= HttpClient()
+      ..connectionTimeout = const Duration(seconds: 8);
+    final limit = Duration(seconds: seconds + 10);
+    try {
+      final req = await http
+          .getUrl(
+            base.replace(
+              path: '/v1/wait',
+              queryParameters: {'since': '$since', 'timeout': '$seconds'},
+            ),
+          )
+          .timeout(limit);
+      req.headers.set(protocolHeader, '$syncProtocolVersion');
+      if (token != null) {
+        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      }
+      final res = await req.close().timeout(limit);
+      final text = await utf8.decodeStream(res).timeout(limit);
+      Map<String, dynamic>? json;
+      try {
+        json = jsonDecode(text) as Map<String, dynamic>;
+      } catch (_) {}
+      if (res.statusCode != 200 || json == null) {
+        throw SyncFailure(
+          json?['error'] as String? ?? 'error',
+          json?['message'] as String? ?? 'Hub error ${res.statusCode}.',
+          retryable: res.statusCode >= 500 || res.statusCode == 429,
+        );
+      }
+      return (lastSeq: json['lastSeq'] as int, hubId: json['hubId'] as String);
+    } on SocketException {
+      throw const SyncFailure(
+        'offline',
+        'The hub is not reachable.',
+        retryable: true,
+      );
+    } on TimeoutException {
+      throw const SyncFailure(
+        'timeout',
+        'The hub did not answer in time.',
+        retryable: true,
+      );
+    } on HttpException {
+      throw const SyncFailure(
+        'offline',
+        'The connection to the hub was interrupted.',
+        retryable: true,
+      );
+    }
+  }
+
+  /// Ends a long-poll in progress (e.g. the app went to the background).
+  void cancelWait() {
+    _waitHttp?.close(force: true);
+    _waitHttp = null;
+  }
 
   /// Pairs this device; returns its token (keep it secret).
   Future<String> register(

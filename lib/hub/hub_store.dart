@@ -88,6 +88,27 @@ class HubStore {
   /// device would hold).
   int get lastSeq => _seq;
 
+  // Tells waiting devices (/v1/wait) that something new was stored.
+  final StreamController<int> _changed = StreamController<int>.broadcast();
+
+  /// Completes with the newest sequence number as soon as it is above
+  /// [since], or after [timeout] with the current one (a heartbeat).
+  Future<int> waitForChange(int since, Duration timeout) async {
+    if (_seq > since) return _seq;
+    return Future.any([
+      _changed.stream.firstWhere((s) => s > since),
+      _wake.future.then((_) => _seq),
+    ]).timeout(timeout, onTimeout: () => _seq);
+  }
+
+  Completer<void> _wake = Completer<void>();
+
+  /// Answers every waiting device now (the hub is stopping).
+  void wakeWaiters() {
+    _wake.complete();
+    _wake = Completer<void>();
+  }
+
   /// Permanent identity of this hub (lets devices notice a different or
   /// restored hub).
   late final String hubId;
@@ -477,6 +498,8 @@ class HubStore {
       );
     }
     await _append(lines);
+    // Only after it is on disk: devices told about it can always read it.
+    if (lines.isNotEmpty) _changed.add(_seq);
     return results;
   }
 

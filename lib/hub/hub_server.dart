@@ -174,6 +174,7 @@ class HubServer {
 
   Future<void> stop() async {
     _backupTimer?.cancel();
+    store.wakeWaiters(); // long-polls answer now instead of holding the stop
     for (final s in _servers) {
       await s.close();
     }
@@ -322,6 +323,23 @@ class HubServer {
             'lastSeq': store.lastSeq,
             'hubId': store.hubId,
           });
+        // Long-poll: answers as soon as the hub has anything newer than
+        // `since`, or after `timeout` seconds (≤25) as a heartbeat. Devices
+        // then pull as usual; this endpoint carries no record data.
+        case ('GET', '/v1/wait'):
+          _checkProtocol(r);
+          who = _device(r).id;
+          final since = int.tryParse(r.uri.queryParameters['since'] ?? '');
+          final seconds =
+              int.tryParse(r.uri.queryParameters['timeout'] ?? '') ?? 25;
+          if (since == null || since < 0) {
+            throw const ProtocolException('bad_request', 'Invalid since.');
+          }
+          final lastSeq = await store.waitForChange(
+            since,
+            Duration(seconds: seconds.clamp(1, 25)),
+          );
+          await _send(r, 200, {'lastSeq': lastSeq, 'hubId': store.hubId});
         case ('GET', '/v1/changes'):
           _checkProtocol(r);
           who = _device(r).id;
@@ -452,7 +470,10 @@ class HubServer {
     } finally {
       final ms = watch.elapsedMilliseconds;
       final shortWho = who.length > 4 ? '${who.substring(0, 4)}…' : who;
-      _log('${r.method} $route -> $status ${ms}ms by $shortWho');
+      // Successful long-polls are routine heartbeats: not logged.
+      if (!(route == '/v1/wait' && status == 200)) {
+        _log('${r.method} $route -> $status ${ms}ms by $shortWho');
+      }
     }
   }
 

@@ -37,6 +37,7 @@ import '../sync/record_merge.dart';
 import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
+import '../sync/sync_scheduler.dart';
 import '../features/calendar/external/external_calendar.dart';
 import '../features/calendar/external/oauth.dart';
 import '../features/graph/relationship_graph.dart';
@@ -355,8 +356,7 @@ class AppState extends ChangeNotifier {
 
   static const syncInterval = Duration(minutes: 1);
   SyncEngine? _sync;
-  Timer? _syncTimer;
-  Timer? _firstSync;
+  SyncScheduler? _scheduler;
   bool syncing = false;
   String? hubUrl;
   String syncStatus = 'Not set up';
@@ -373,7 +373,7 @@ class AppState extends ChangeNotifier {
   bool syncNeedsPairing = false;
 
   /// Whether automatic (timed) sync is currently scheduled.
-  bool get syncScheduled => _syncTimer?.isActive ?? false;
+  bool get syncScheduled => _scheduler?.scheduled ?? false;
 
   /// iPhone/iPad: Documents/THEapp Backups, shown in the Files app (On My
   /// iPad → THEapp), so a backup can be moved off the device. Null
@@ -522,7 +522,8 @@ class AppState extends ChangeNotifier {
   }
 
   void _startSync(Uri url, String token) {
-    _sync = SyncEngine(
+    _scheduler?.stop();
+    final engine = _sync = SyncEngine(
       workspace: workspace,
       canvases: canvases,
       client: SyncClient(url, token: token),
@@ -531,10 +532,35 @@ class AppState extends ChangeNotifier {
     hubUrl = url.toString();
     syncNeedsPairing = false;
     syncStatus = 'Waiting for first sync';
-    _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(syncInterval, (_) => syncNow());
-    _firstSync?.cancel();
-    _firstSync = Timer(const Duration(seconds: 3), syncNow);
+    // Syncs a moment after each local edit, at once when the hub reports
+    // another device's change (live), and on a slow timer as a safety net.
+    _scheduler = SyncScheduler(
+      run: _runSync,
+      cursor: () async => (await engine.loadState()).cursor,
+      client: engine.client,
+      fallback: syncInterval,
+      onChange: () {
+        _updateSyncStatus();
+        notifyListeners();
+      },
+      onError: (e, s) {
+        if (e is! SyncFailure) AppLog.error('Sync error', e, s);
+      },
+    )..start();
+    if (!_listeningForEdits) {
+      _listeningForEdits = true;
+      workspace.changes.addListener(_editedLocally);
+    }
+  }
+
+  bool _listeningForEdits = false;
+
+  /// Any record changed here: sync soon. (Changes written by a running sync
+  /// only ask for one more cycle, so they do not show as "waiting".)
+  void _editedLocally() {
+    final s = _scheduler;
+    if (s == null) return;
+    syncing ? s.request() : s.localChange();
   }
 
   /// Pairs this app with a hub using a code from `thehub pair`. Returns an
@@ -660,21 +686,29 @@ class AppState extends ChangeNotifier {
     if (immersive) applyImmersive(true);
     await importSharedItems();
     unawaited(syncCalendarAccounts());
+    // Timers and the live connection stop in the background (iOS): start
+    // again and catch up.
+    final s = _scheduler;
+    if (s == null || syncNeedsPairing) return;
+    s.start();
     final last = lastSynced;
-    if (_sync == null || syncNeedsPairing || syncing) return;
     if (last != null && DateTime.now().difference(last) < resumeSyncAfter) {
       return;
     }
-    await syncNow();
+    await s.syncNow(); // catch up now (and let callers wait for it)
   }
 
   static const resumeSyncAfter = Duration(seconds: 20);
 
+  /// The app went to the background (iPhone/iPad): stop the live
+  /// connection and timers; [appResumed] starts them again.
+  void syncPaused() => _scheduler?.stop();
+
   /// Stops syncing and forgets the hub (local data is untouched).
   Future<void> disconnectHub() async {
     syncNeedsPairing = false;
-    _syncTimer?.cancel();
-    _firstSync?.cancel();
+    _scheduler?.stop();
+    _scheduler = null;
     _sync?.client.close();
     _sync = null;
     hubUrl = null;
@@ -689,28 +723,61 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Syncs now (Settings → Sync now) and waits for it.
   Future<void> syncNow() async {
+    final s = _scheduler;
+    if (s == null || syncNeedsPairing) return;
+    await s.syncNow();
+  }
+
+  /// The text of the last finished cycle ("Synced", conflicts, problems).
+  String _lastResult = 'Waiting for first sync';
+
+  /// What the sync line says: the truth about this moment, not only the
+  /// last result (an offline hub or unsent edits are never shown as
+  /// "Synced").
+  void _updateSyncStatus() {
+    if (syncNeedsPairing) return; // its own message stays
+    final s = _scheduler;
+    if (s == null) return;
+    syncStatus = switch (s.connection) {
+      SyncConnection.offline =>
+        'Hub not reachable — your changes are saved here and will sync when '
+            'it is back. Will retry.',
+      _ when s.pendingLocal => 'Changes waiting to sync…',
+      SyncConnection.live => '$_lastResult · live',
+      _ => _lastResult,
+    };
+  }
+
+  /// Live (updates arrive within about a second), polling, offline or
+  /// stopped.
+  SyncConnection get syncConnection =>
+      _scheduler?.connection ?? SyncConnection.stopped;
+
+  /// One sync cycle (run by the scheduler). Failures are shown and logged,
+  /// then passed on so the scheduler knows the hub is unreachable.
+  Future<void> _runSync() async {
     final engine = _sync;
-    if (engine == null || syncing) return;
+    if (engine == null) return;
     syncing = true;
     notifyListeners();
     try {
       final report = await engine.syncOnce();
       lastSynced = DateTime.now();
-      syncStatus = report.conflicts > 0
+      _lastResult = report.conflicts > 0
           ? 'Synced — ${report.conflicts} conflict(s) kept for review'
           : 'Synced';
       if (report.problems.isNotEmpty) {
-        syncStatus += ' (${report.problems.first})';
+        _lastResult += ' (${report.problems.first})';
       }
       await _refreshList();
     } on SyncFailure catch (e) {
       if (e.code == 'unauthorized') {
         // Removed with `thehub revoke`, or the hub was replaced: retrying
-        // every minute cannot help. Nothing local is lost; unsent changes
-        // stay queued and go out after pairing again.
-        _syncTimer?.cancel();
-        _firstSync?.cancel();
+        // cannot help. Nothing local is lost; unsent changes stay queued
+        // and go out after pairing again.
+        _scheduler?.stop();
         syncNeedsPairing = true;
         syncStatus =
             'This hub no longer accepts this device (it was removed, or the '
@@ -718,14 +785,17 @@ class AppState extends ChangeNotifier {
             'again with a new code.';
         AppLog.warn('Sync stopped: device not accepted by the hub');
       } else {
-        syncStatus = e.retryable ? '${e.message} Will retry.' : e.message;
+        _lastResult = e.retryable ? '${e.message} Will retry.' : e.message;
         if (!e.retryable) AppLog.warn('Sync stopped: ${e.code}');
       }
+      rethrow;
     } catch (e, s) {
-      syncStatus = 'Sync hit an unexpected error (see log).';
+      _lastResult = 'Sync hit an unexpected error (see log).';
       AppLog.error('Sync error', e, s);
+      rethrow;
     } finally {
       syncing = false;
+      _updateSyncStatus();
       notifyListeners();
     }
   }
@@ -797,6 +867,9 @@ class AppState extends ChangeNotifier {
   /// current. (Canvases save through [_saveCanvas].)
   Future<void> saveDocument(CanvasDocument doc) async {
     await canvases.save(doc);
+    // A mindmap saved after an edit: sync it soon (canvas files are not
+    // workspace records, so they do not tell the scheduler themselves).
+    _editedLocally();
     final text = [
       for (final i in doc.items)
         if (i is TextItem) i.text,
@@ -2199,13 +2272,13 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
-    _syncTimer?.cancel();
+    _scheduler?.stop();
+    if (_listeningForEdits) workspace.changes.removeListener(_editedLocally);
     _widgetTimer?.cancel();
     _widgetMidnight?.cancel();
     for (final c in [workspace.tasks, workspace.entries, workspace.projects]) {
       c.removeListener(_scheduleWidgetUpdate);
     }
-    _firstSync?.cancel();
     _reminderTimer?.cancel();
     _clipTimer?.cancel();
     _transferTimer?.cancel();
