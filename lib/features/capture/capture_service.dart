@@ -191,6 +191,31 @@ class CaptureService {
     }
   }
 
+  /// Opens the photo picker and returns the chosen pictures' names and bytes
+  /// without importing them (e.g. to show the AI). Files that are not
+  /// pictures, or larger than [maxBytes], are skipped.
+  Future<List<({String name, Uint8List bytes})>> pickImageBytes({
+    int maxBytes = 8 * 1024 * 1024,
+  }) async {
+    final paths = await pickImageFiles();
+    try {
+      return [
+        for (final path in paths)
+          if (AttachmentStore.imageExtensions.contains(
+                AttachmentStore.extensionOf(path),
+              ) &&
+              File(path).existsSync() &&
+              File(path).lengthSync() <= maxBytes)
+            (
+              name: path.split(RegExp(r'[\\/]')).last,
+              bytes: await File(path).readAsBytes(),
+            ),
+      ];
+    } finally {
+      await _removePickerCopies(paths);
+    }
+  }
+
   /// PDF picker; replaceable in tests.
   FutureOr<List<String>> Function() pickDocumentFiles =
       native.pickDocumentFiles;

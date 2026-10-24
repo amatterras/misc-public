@@ -76,7 +76,7 @@ String? retiredModelWarning(String model, {DateTime? today}) {
 }
 
 /// Kinds of content the AI may be given (each can be switched off).
-enum AiSource { notes, canvases, tasks, archive, calendar }
+enum AiSource { notes, canvases, tasks, archive, calendar, photos }
 
 extension AiSourceInfo on AiSource {
   String get label => switch (this) {
@@ -85,6 +85,7 @@ extension AiSourceInfo on AiSource {
     AiSource.tasks => 'Tasks and projects',
     AiSource.archive => 'Archive resources',
     AiSource.calendar => 'Calendar entries',
+    AiSource.photos => 'Photos you add in the AI window',
   };
 }
 
@@ -464,6 +465,22 @@ String redactSecrets(String text) => text
 
 /// Largest reply accepted (characters); anything beyond is cut off.
 const maxReplyChars = 200000;
+
+/// The picture type of [bytes] from its first bytes (PNG when unknown):
+/// services reject a picture sent under the wrong type.
+String aiImageMime(Uint8List bytes) {
+  bool starts(List<int> sig, [int at = 0]) =>
+      bytes.length >= at + sig.length &&
+      [for (var i = 0; i < sig.length; i++) bytes[at + i] == sig[i]]
+          .every((ok) => ok);
+  if (starts(const [0xFF, 0xD8, 0xFF])) return 'image/jpeg';
+  if (starts(const [0x47, 0x49, 0x46, 0x38])) return 'image/gif';
+  if (starts(const [0x52, 0x49, 0x46, 0x46]) &&
+      starts(const [0x57, 0x45, 0x42, 0x50], 8)) {
+    return 'image/webp';
+  }
+  return 'image/png';
+}
 
 /// A plain explanation for an HTTP status from an AI service.
 AiFailure aiFailureFor(
@@ -867,7 +884,8 @@ class OpenAiCompatibleClient extends AiClient {
                     {
                       'type': 'image_url',
                       'image_url': {
-                        'url': 'data:image/png;base64,${base64Encode(i)}',
+                        'url':
+                            'data:${aiImageMime(i)};base64,${base64Encode(i)}',
                       },
                     },
                 ],
@@ -984,7 +1002,7 @@ class GeminiClient extends AiClient {
                 for (final i in m.images)
                   {
                     'inlineData': {
-                      'mimeType': 'image/png',
+                      'mimeType': aiImageMime(i),
                       'data': base64Encode(i),
                     },
                   },

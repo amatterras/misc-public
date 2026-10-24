@@ -292,7 +292,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
             value: ai.allowImages,
             onChanged: (v) => _change(() => ai.setAllowImages(v)),
             title: const Text(
-              'Mindmap selections may be sent as pictures',
+              'Pictures may be sent (mindmap selections, photos)',
               style: TextStyle(fontSize: 13),
             ),
           ),

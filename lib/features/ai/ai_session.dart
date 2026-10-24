@@ -52,6 +52,10 @@ class AiTurn {
   final AiMessageStatus status;
   final String? error;
 
+  /// What the user typed ('' when only a tool was chosen), for sending the
+  /// same request again.
+  String get typed => question == tool.label ? '' : question;
+
   /// Citation numbers in the answer that point to no material (checked in
   /// code: a model's promise to cite correctly is not relied on).
   List<int> get badCitations => invalidCitations(answer, sources.length);
@@ -122,14 +126,22 @@ class AiSession extends ChangeNotifier {
   bool busy = false;
   String? error;
 
+  /// What kind of problem [error] is (e.g. to offer Settings for a key).
+  AiErrorKind? errorKind;
+
+  /// Most characters of earlier questions and answers sent along as
+  /// conversation history (the oldest are left out first).
+  static const maxHistoryChars = 12000;
+
   /// The saved conversation shown, or null for a new one.
   String? conversationId;
 
   /// The question typed but not sent yet (kept with the session).
   String draft = '';
 
-  /// The reply being written right now (while streaming).
+  /// The reply being written right now (while streaming), and its question.
   String streaming = '';
+  String? asking;
   AiClient? _active;
 
   void attach(AiContext context) {
@@ -153,6 +165,7 @@ class AiSession extends ChangeNotifier {
     conversationId = null;
     proposals = const [];
     error = null;
+    errorKind = null;
     notifyListeners();
   }
 
@@ -166,6 +179,7 @@ class AiSession extends ChangeNotifier {
     conversationId = id;
     proposals = const [];
     error = null;
+    errorKind = null;
     notifyListeners();
   }
 
@@ -278,19 +292,15 @@ class AiSession extends ChangeNotifier {
     }
     if (busy) return;
     busy = true;
+    asking = question.trim().isEmpty ? tool.label : question.trim();
     error = null;
+    errorKind = null;
     streaming = '';
     notifyListeners();
     final images = allowedImages;
     final sources = [for (final c in allowedContext) c.title];
     final asked = question.trim().isEmpty ? tool.label : question.trim();
-    final history = [
-      for (final t in turns.reversed.take(3).toList().reversed)
-        if (t.status == AiMessageStatus.complete) ...[
-          AiMessage('user', t.question),
-          AiMessage('assistant', t.answer),
-        ],
-    ];
+    final history = historyFor(turns);
     final now = DateTime.now();
     _save(
       AiChatMessage(
@@ -339,15 +349,18 @@ class AiSession extends ChangeNotifier {
     } on AiFailure catch (e) {
       status = AiMessageStatus.failed;
       failure = error = e.message;
+      errorKind = e.kind;
     } catch (e, stack) {
       // Not an expected failure: kept in the log (keys redacted).
       AppLog.error('AI request failed', redactSecrets('$e'), stack);
       status = AiMessageStatus.failed;
       failure = error = 'The AI request failed.';
+      errorKind = null;
     } finally {
       _active = null;
       busy = false;
       streaming = '';
+      asking = null;
     }
     _updateReply(answer, status, error: failure);
     turns.add(
@@ -359,6 +372,50 @@ class AiSession extends ChangeNotifier {
       proposals = validProposals(tool, answer, noteTitles: noteTitles);
     }
     notifyListeners();
+  }
+
+  /// The last [maxTurns] completed questions and answers, as messages, at
+  /// most [maxChars] in all (the oldest are left out first).
+  static List<AiMessage> historyFor(
+    List<AiTurn> turns, {
+    int maxTurns = 3,
+    int maxChars = maxHistoryChars,
+  }) {
+    final out = <AiMessage>[];
+    var used = 0;
+    for (final t
+        in turns.reversed
+            .where((t) => t.status == AiMessageStatus.complete)
+            .take(maxTurns)) {
+      used += t.question.length + t.answer.length;
+      if (used > maxChars) break;
+      out.insertAll(0, [
+        AiMessage('user', t.question),
+        AiMessage('assistant', t.answer),
+      ]);
+    }
+    return out;
+  }
+
+  /// Whether the last answer can be written again ([regenerate]).
+  bool get canRegenerate => !busy && turns.isNotEmpty;
+
+  /// Asks the last question again (after a failure, a stop, or for another
+  /// answer): the last question and answer are replaced, with the material
+  /// attached now.
+  Future<void> regenerate({List<String> noteTitles = const []}) async {
+    if (!canRegenerate) return;
+    final last = turns.removeLast();
+    final store = this.store;
+    final c = store?[conversationId ?? ''];
+    if (store != null && c != null && c.messages.length >= 2) {
+      final n = c.messages.length;
+      if (c.messages[n - 1].role == 'assistant' &&
+          c.messages[n - 2].role == 'user') {
+        store.put(c.copyWith(messages: c.messages.sublist(0, n - 2)));
+      }
+    }
+    await send(last.tool, last.typed, noteTitles: noteTitles);
   }
 
   /// Adds a question and its (empty) reply to the saved conversation.
