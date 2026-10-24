@@ -12,6 +12,7 @@ import '../../data/models/library_models.dart';
 import '../../widgets/common.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_page.dart';
+import '../canvas/canvas_toolbar.dart' show showDotOpacityDialog;
 import 'archive_library_page.dart';
 import 'link_tags.dart';
 
@@ -183,6 +184,17 @@ class _LinksPageState extends State<LinksPage> {
                 ],
               ),
             ),
+          ),
+          IconButton(
+            key: const ValueKey('links-dots'),
+            tooltip: 'Background dots',
+            onPressed: () async {
+              final board = await s.openLinksBoard();
+              if (mounted) {
+                await showDotOpacityDialog(context, board, s.setDotOpacity);
+              }
+            },
+            icon: const Icon(Icons.grain, size: 18),
           ),
           IconButton(
             key: const ValueKey('links-library'),

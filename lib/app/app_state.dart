@@ -59,6 +59,9 @@ import 'test_environment.dart';
 
 enum AppPage { home, canvas, notes, links, calendar, tasks, browser, ai }
 
+/// Surfaces with background dots (each has its own dot opacity).
+enum DotSurface { mindmap, archive }
+
 /// A simple focus (Pomodoro-style) timer that keeps running while you
 /// switch pages.
 class FocusTimer extends ChangeNotifier {
@@ -2153,7 +2156,8 @@ class AppState extends ChangeNotifier {
               clock: workspace.clock,
             )
             ..setEraser(mode: eraserMode, size: eraserSize)
-            ..setPen(width: canvasPenWidth));
+            ..setPen(width: canvasPenWidth)
+            ..setDotOpacity(dotOpacityFor(DotSurface.mindmap)));
       await settings.set('lastCanvasId', id);
     }
     if (show) {
@@ -2225,7 +2229,8 @@ class AppState extends ChangeNotifier {
                 clock: workspace.clock,
               )
               ..setEraser(mode: eraserMode, size: eraserSize)
-              ..setPen(width: canvasPenWidth));
+              ..setPen(width: canvasPenWidth)
+              ..setDotOpacity(dotOpacityFor(DotSurface.mindmap)));
     }
     _canvasRefs[id] = (c!, 1);
     return c;
@@ -2277,7 +2282,7 @@ class AppState extends ChangeNotifier {
       resources: resources,
       onActivate: _activateCanvasItem,
       clock: workspace.clock,
-    );
+    )..setDotOpacity(dotOpacityFor(DotSurface.archive));
     _links = c;
     notifyListeners();
     return c;
@@ -2329,6 +2334,31 @@ class AppState extends ChangeNotifier {
     c.setPen(width: calendarPenWidth);
     c.setEraser(mode: eraserMode, size: eraserSize);
     return c;
+  }
+
+  /// How visible the background dots are, per surface (this device): the
+  /// Mindmap and the Archive board are set apart, since they are used
+  /// differently (all mindmaps share one setting).
+  double dotOpacityFor(DotSurface surface) {
+    final v = settings.get<num>('dotOpacity.${surface.name}')?.toDouble();
+    return v == null || !v.isFinite
+        ? CanvasController.defaultDotOpacity
+        : v
+              .clamp(
+                CanvasController.dotOpacityMin,
+                CanvasController.dotOpacityMax,
+              )
+              .toDouble();
+  }
+
+  /// The surface [c] belongs to.
+  DotSurface dotSurfaceOf(CanvasController c) =>
+      c.id == linksBoardId ? DotSurface.archive : DotSurface.mindmap;
+
+  /// Shows [value] on [c] at once and keeps it for its surface.
+  Future<void> setDotOpacity(CanvasController c, double value) {
+    c.setDotOpacity(value);
+    return settings.set('dotOpacity.${dotSurfaceOf(c).name}', c.dotOpacity);
   }
 
   /// The canvas pen thickness (this device; see pen_sizes.dart). Older

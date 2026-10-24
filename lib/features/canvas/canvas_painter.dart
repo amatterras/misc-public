@@ -174,7 +174,8 @@ class CanvasPainter extends CustomPainter {
       ui.PointMode.points,
       points,
       Paint()
-        ..color = const Color(0x14FFFFFF)
+        ..color = const Color(0xFFFFFFFF)
+            .withValues(alpha: controller.dotOpacity)
         ..strokeWidth = 1.6
         ..strokeCap = StrokeCap.round,
     );

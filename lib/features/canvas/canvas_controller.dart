@@ -281,6 +281,21 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// How visible the background dots are (their opacity only; items and
+  /// text are never faded). The default is the original look.
+  double dotOpacity = defaultDotOpacity;
+  static const defaultDotOpacity = 0x14 / 255;
+  static const dotOpacityMin = 0.02, dotOpacityMax = 0.40;
+
+  void setDotOpacity(double value) {
+    final v = value.isFinite
+        ? value.clamp(dotOpacityMin, dotOpacityMax).toDouble()
+        : defaultDotOpacity;
+    if (v == dotOpacity) return;
+    dotOpacity = v;
+    notifyListeners();
+  }
+
   /// What the eraser removes: whole strokes it touches, or only the part
   /// of a stroke under it ([EraserMode.partial]).
   EraserMode eraserMode = EraserMode.stroke;

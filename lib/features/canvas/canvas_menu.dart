@@ -13,6 +13,7 @@ import '../ai/ai_session.dart';
 import '../export/exports.dart';
 import 'branch_conversion.dart';
 import 'canvas_controller.dart';
+import 'canvas_toolbar.dart' show showDotOpacityDialog;
 import 'canvas_export.dart';
 
 Future<void> showCanvasMenu(
@@ -110,6 +111,7 @@ Future<void> showCanvasMenu(
                 Icons.layers_clear_outlined,
               ),
             item('selectAll', 'Select all', Icons.select_all),
+            item('dots', 'Background dots…', Icons.grain),
           ],
   );
   if (choice == null || !context.mounted) return;
@@ -239,6 +241,8 @@ Future<void> showCanvasMenu(
       c.releaseReferences();
     case 'selectAll':
       c.selectAll();
+    case 'dots':
+      await showDotOpacityDialog(context, c, s.setDotOpacity);
   }
 }
 

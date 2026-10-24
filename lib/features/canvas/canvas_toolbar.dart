@@ -823,3 +823,58 @@ class EraserPanel extends StatelessWidget {
     );
   }
 }
+
+/// Background dot visibility for the surface of [c] (Mindmap or Archive),
+/// changed live. Only the dots fade; items and text stay as they are.
+Future<void> showDotOpacityDialog(
+  BuildContext context,
+  CanvasController c,
+  Future<void> Function(CanvasController c, double value) save,
+) => showDialog<void>(
+  context: context,
+  builder: (context) => StatefulBuilder(
+    builder: (context, setState) => AlertDialog(
+      title: const Text('Background dots', style: TextStyle(fontSize: 16)),
+      content: SizedBox(
+        width: 300,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Slider(
+              key: const ValueKey('dot-opacity-slider'),
+              value: c.dotOpacity,
+              min: CanvasController.dotOpacityMin,
+              max: CanvasController.dotOpacityMax,
+              onChanged: (v) {
+                c.setDotOpacity(v); // the dots change right away
+                setState(() {});
+              },
+              onChangeEnd: (v) => save(c, v),
+            ),
+            Text(
+              '${(c.dotOpacity * 100).round()}% · '
+              '${c.dotOpacity <= 0.03 ? 'nearly invisible' : 'visible'}',
+              key: const ValueKey('dot-opacity-value'),
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const ValueKey('dot-opacity-reset'),
+          onPressed: () {
+            c.setDotOpacity(CanvasController.defaultDotOpacity);
+            save(c, CanvasController.defaultDotOpacity);
+            setState(() {});
+          },
+          child: const Text('Default'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Done'),
+        ),
+      ],
+    ),
+  ),
+);
