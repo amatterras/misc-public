@@ -37,8 +37,11 @@ import '../sync/record_merge.dart';
 import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
+import '../features/calendar/external/external_calendar.dart';
+import '../features/calendar/external/oauth.dart';
 import '../features/graph/relationship_graph.dart';
 import '../features/links/archive_library.dart';
+import '../features/search/pdf_ocr.dart';
 import '../features/search/text_index.dart';
 import '../features/think/experiment_page.dart';
 import '../features/vault/vault_page.dart';
@@ -585,6 +588,58 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Signs this device in to a hosted sync service (HTTPS), creating the
+  /// account first when [invite] is given. The same sync engine then runs
+  /// against it; local data stays usable when the service is unreachable.
+  /// Returns an error message, or null on success.
+  Future<String?> signInHosted(
+    String url,
+    String email,
+    String password, {
+    String? invite,
+  }) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || !isHostedHubUrl(uri)) {
+      return 'A hosted service address must start with https:// and use a '
+          'server name.';
+    }
+    if (TestEnvironment.active) {
+      return 'Test data mode never connects to a hosted service.';
+    }
+    final client = SyncClient(uri);
+    try {
+      if (invite != null && invite.trim().isNotEmpty) {
+        await client.createAccount(email.trim(), password, invite.trim());
+      }
+      final device = workspace.device!;
+      final token = await client.signIn(
+        email.trim(),
+        password,
+        device.id,
+        await _deviceLabel(device.name),
+      );
+      try {
+        await writeSecret(_hubTokenFile, token);
+      } catch (e, s) {
+        AppLog.error('Could not store the hosted sync key', e, s);
+        return 'Signed in, but this device could not store its key securely, '
+            'so sync was not started.';
+      }
+      await workspace.store.write('sync', 'hub', {
+        'url': uri.toString(),
+        'hosted': true,
+      });
+      AppLog.info('Signed in to a hosted sync service');
+      _startSync(uri, token);
+      notifyListeners();
+      return null;
+    } on SyncFailure catch (e) {
+      return e.message;
+    } finally {
+      client.close();
+    }
+  }
+
   /// Name shown in the hub's device list. iOS reports a generic host name
   /// ("localhost"), so the device model ("iPad") is used there instead.
   Future<String> _deviceLabel(String hostName) async =>
@@ -604,6 +659,7 @@ class AppState extends ChangeNotifier {
     // iOS shows its bars again after the app was in the background.
     if (immersive) applyImmersive(true);
     await importSharedItems();
+    unawaited(syncCalendarAccounts());
     final last = lastSynced;
     if (_sync == null || syncNeedsPairing || syncing) return;
     if (last != null && DateTime.now().difference(last) < resumeSyncAfter) {
@@ -937,6 +993,7 @@ class AppState extends ChangeNotifier {
     _sharedInbox = shared == null ? null : SendToBridge(Directory(shared));
     await importSharedItems();
     await ios.listenForLinks((uri) async {
+      if (completeOAuthRedirect(uri)) return; // a calendar sign-in
       if (openWidgetLink(uri)) return;
       if (await addSharedLinkToLinks(uri)) return;
       final items = await sendTo.handleUri(uri, capture);
@@ -1068,12 +1125,18 @@ class AppState extends ChangeNotifier {
   /// AI settings of this device (off by default).
   late final AiSettings ai = AiSettings(settings);
 
-  File get _aiKeyFile => File(
-    '${workspace.root.path}${Platform.pathSeparator}ai${Platform.pathSeparator}service.key',
+  /// Each service's key in its own protected file (the OpenAI-compatible
+  /// one keeps its earlier name), so switching services keeps both.
+  File _aiKeyFileFor(AiProvider p) => File(
+    '${workspace.root.path}${Platform.pathSeparator}ai${Platform.pathSeparator}'
+    '${p == AiProvider.gemini ? 'gemini' : 'service'}.key',
   );
 
-  /// Stores the key of the OpenAI-compatible service, protected like the
-  /// hub key (Windows DPAPI / iOS Keychain). Null removes it.
+  File get _aiKeyFile => _aiKeyFileFor(ai.provider);
+
+  /// Stores the current service's key, protected like the hub key
+  /// (Windows DPAPI / iOS Keychain); never in settings, exports, logs or
+  /// conversations. Null removes it.
   Future<void> setAiKey(String? key) async {
     if (key == null || key.trim().isEmpty) {
       await deleteSecret(_aiKeyFile);
@@ -1088,9 +1151,7 @@ class AppState extends ChangeNotifier {
   /// Makes the AI client; replaceable in tests.
   late Future<AiClient> Function() aiClient = () async => aiClientFor(
     ai,
-    apiKey: ai.provider == AiProvider.openAiCompatible
-        ? await readSecret(_aiKeyFile)
-        : null,
+    apiKey: ai.provider.needsKey ? await readSecret(_aiKeyFile) : null,
   );
 
   late final AiSession aiSession = AiSession(
@@ -1183,9 +1244,84 @@ class AppState extends ChangeNotifier {
         client: () => aiClient(),
         store: workspace.aiConversations,
       );
-      if (p.refId != 'new') session.openConversation(p.refId!);
+      final ref = p.refId!;
+      if (!ref.startsWith('new')) session.openConversation(ref);
+      // A new chat gets its conversation with the first message: the
+      // window then reopens that conversation after a restart.
+      session.addListener(() {
+        final id = session.conversationId;
+        if (id != null) windows.rebind(p.id, id);
+      });
       return session;
     });
+  }
+
+  /// A fresh page in its own instance: a genuinely new note or mindmap,
+  /// an independent Calendar or Archive view (same records, its own view
+  /// state), a new Safari window or a new AI chat.
+  Future<PageInstance> newPage(
+    AppPage kind, {
+    PageMode mode = PageMode.docked,
+  }) async {
+    switch (kind) {
+      case AppPage.notes:
+        final n = workspace.createNote();
+        return windows.open(kind, refId: n.id, title: 'New note', mode: mode);
+      case AppPage.canvas:
+        final doc = CanvasDocument(
+          id: newId(),
+          title: 'Untitled Mindmap',
+          items: const [],
+          updatedAt: DateTime.now(),
+        );
+        await canvases.save(doc);
+        await _refreshList();
+        return windows.open(kind, refId: doc.id, title: doc.title, mode: mode);
+      case AppPage.calendar || AppPage.tasks:
+        return windows.open(
+          AppPage.calendar,
+          refId: 'view-${newId()}',
+          title: 'Calendar',
+          mode: mode,
+        );
+      case AppPage.links:
+        return windows.open(
+          kind,
+          refId: 'view-${newId()}',
+          title: 'Archive',
+          mode: mode,
+        );
+      case AppPage.browser:
+        return windows.open(kind, refId: newId(), title: 'Safari', mode: mode);
+      case AppPage.ai:
+        return windows.open(
+          kind,
+          refId: 'new-${newId()}',
+          title: 'New chat',
+          mode: mode,
+        );
+      case AppPage.home:
+        return windows.open(kind, title: 'start', mode: mode);
+    }
+  }
+
+  /// Opens an Archive folder or resource in its own page.
+  PageInstance openArchiveItem({
+    String? folderId,
+    String? assetId,
+    PageMode mode = PageMode.docked,
+  }) {
+    final ref = assetId != null ? 'res:$assetId' : 'folder:$folderId';
+    final title = assetId != null
+        ? workspace.assets[assetId]?.label ?? 'Resource'
+        : workspace.archiveFolders[folderId]?.name ?? 'Folder';
+    return windows.open(AppPage.links, refId: ref, title: title, mode: mode);
+  }
+
+  /// Closes the page in the main area (its content stays).
+  Future<void> closeActivePage() async {
+    final id = windows.activeId;
+    if (id != null) await windows.close(id);
   }
 
   /// The tabs of one Safari window ([browser] for the main one).
@@ -1227,6 +1363,65 @@ class AppState extends ChangeNotifier {
   /// Opens thought experiment [id] in a floating window.
   void openExperiment(String id) => floating.show(experimentWindow(this, id));
 
+  // ------------------------------------------ Google / Outlook calendars --
+
+  /// The Google "Desktop app" client secret (Google documents it as not
+  /// confidential for installed apps); kept in the secret store anyway and
+  /// cached here once read.
+  String? _googleClientSecret;
+
+  File get _googleSecretFile => File(
+    '${workspace.root.path}${Platform.pathSeparator}calendar'
+    '${Platform.pathSeparator}google.client',
+  );
+
+  Future<void> loadCalendarSecrets() async =>
+      _googleClientSecret = await readSecret(_googleSecretFile);
+
+  Future<void> setGoogleClientSecret(String? secret) async {
+    if (secret == null || secret.trim().isEmpty) {
+      await deleteSecret(_googleSecretFile);
+      _googleClientSecret = null;
+    } else {
+      await _googleSecretFile.parent.create(recursive: true);
+      await writeSecret(_googleSecretFile, secret.trim());
+      _googleClientSecret = secret.trim();
+    }
+  }
+
+  /// The two calendar accounts (each connected and revoked on its own).
+  /// Client ids are the user's own app registrations (not secret, kept in
+  /// settings); see THEAPP_IMPLEMENTATION_HANDOFF.md for setup.
+  late final Map<String, ExternalCalendarSync> calendarAccounts = {
+    'google': ExternalCalendarSync(
+      ws: workspace,
+      settings: settings,
+      provider: 'google',
+      oauth: () => GoogleCalendarProvider.config(
+        clientId: settings.get<String>('calendar.google.clientId') ?? '',
+        clientSecret: _googleClientSecret,
+        iosRedirect: settings.get<String>('calendar.google.iosRedirect'),
+      ),
+    ),
+    'microsoft': ExternalCalendarSync(
+      ws: workspace,
+      settings: settings,
+      provider: 'microsoft',
+      oauth: () => MicrosoftCalendarProvider.config(
+        clientId: settings.get<String>('calendar.microsoft.clientId') ?? '',
+        iosRedirect: 'msauth.com.amaterasu.theapp://auth',
+      ),
+    ),
+  };
+
+  /// Syncs every connected calendar account that has a calendar chosen.
+  Future<void> syncCalendarAccounts() async {
+    for (final a in calendarAccounts.values) {
+      if (a.calendarId != null && await a.connected) await a.syncOnce();
+    }
+    notifyListeners();
+  }
+
   /// The private vault (locked until the user opens it).
   late final VaultService vault = VaultService(
     meta: workspace.vaultMeta,
@@ -1240,7 +1435,11 @@ class AppState extends ChangeNotifier {
   void openVault() => floating.show(vaultWindow(this));
 
   /// Text of PDF documents for search (read on this device, cached).
-  late final PdfTextCache pdfTexts = PdfTextCache(workspace);
+  late final PdfTextCache pdfTexts = PdfTextCache(
+    workspace,
+    ocr: (path) => ocrPdf(path, ios: ios),
+    ocrEnabled: () => settings.get<bool>('ocrEnabled') ?? true,
+  );
 
   // -------------------------------------------------------- archive --
 
@@ -1428,7 +1627,12 @@ class AppState extends ChangeNotifier {
 
   // ----------------------------------------------------- full screen --
 
-  bool get immersive => settings.get<bool>('immersive') ?? false;
+  /// Full screen. On iPhone/iPad it is on unless turned off: the status bar
+  /// stays hidden while THEapp is in front (the system may still show it,
+  /// e.g. in Split View, Slide Over or Stage Manager windows, and always
+  /// keeps the home indicator and edge gestures). On Windows it is off
+  /// unless turned on.
+  bool get immersive => settings.get<bool>('immersive') ?? Platform.isIOS;
 
   /// Applies full screen to the window/system bars; replaceable in tests.
   bool Function(bool on) applyImmersive = native.setImmersive;

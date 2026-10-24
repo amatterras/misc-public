@@ -37,16 +37,20 @@ workflows:
           # bundle ids must be what signing expects.
           for f in ios/Runner/Info.plist ios/TheAppWidget/Info.plist \
                    ios/Runner/Runner.entitlements \
-                   ios/TheAppWidget/TheAppWidget.entitlements; do
+                   ios/TheAppWidget/TheAppWidget.entitlements \
+                   ios/ShareExtension/Info.plist \
+                   ios/ShareExtension/ShareExtension.entitlements; do
             plutil -lint "$f"
           done
           xcodebuild -list -project ios/Runner.xcodeproj
           xcodebuild -showBuildSettings -project ios/Runner.xcodeproj \
             -target Runner -configuration Release \
             | grep -E " (PRODUCT_BUNDLE_IDENTIFIER|IPHONEOS_DEPLOYMENT_TARGET|CODE_SIGN_ENTITLEMENTS) ="
-          xcodebuild -showBuildSettings -project ios/Runner.xcodeproj \
-            -target TheAppWidget -configuration Release \
-            | grep -E " (PRODUCT_BUNDLE_IDENTIFIER|CODE_SIGN_ENTITLEMENTS) ="
+          for t in TheAppWidget ShareExtension; do
+            xcodebuild -showBuildSettings -project ios/Runner.xcodeproj \
+              -target "$t" -configuration Release \
+              | grep -E " (PRODUCT_BUNDLE_IDENTIFIER|CODE_SIGN_ENTITLEMENTS) ="
+          done
       - name: Static analysis
         script: flutter analyze
       - name: Build iOS app without code signing
@@ -88,6 +92,7 @@ workflows:
           APP=Signed/Payload/Runner.app
           for f in "$APP"/Frameworks/*; do codesign --force --sign - "$f"; done
           codesign --force --sign - --entitlements "$ROOT/ios/TheAppWidget/TheAppWidget.entitlements" "$APP/PlugIns/TheAppWidget.appex"
+          codesign --force --sign - --entitlements "$ROOT/ios/ShareExtension/ShareExtension.entitlements" "$APP/PlugIns/ShareExtension.appex"
           codesign --force --sign - --entitlements "$ROOT/ios/Runner/Runner.entitlements" "$APP"
           codesign -d --entitlements - "$APP"
           cd Signed
@@ -108,7 +113,7 @@ workflows:
   #   APP_STORE_CONNECT_PRIVATE_KEY     contents of the AuthKey_XXXX.p8 file
   #   CERTIFICATE_PRIVATE_KEY           an RSA private key (PEM) for the
   #                                     distribution certificate
-  # Both bundle ids (com.amaterasu.theapp and com.amaterasu.theapp.widget)
+  # All three bundle ids (com.amaterasu.theapp, .widget and .share)
   # must have the App Group group.com.theapp.shared enabled in the Apple
   # Developer portal; the profiles are then created/fetched automatically.
   ios-signed:
@@ -131,7 +136,7 @@ workflows:
         script: |
           set -e
           keychain initialize
-          for id in com.amaterasu.theapp com.amaterasu.theapp.widget; do
+          for id in com.amaterasu.theapp com.amaterasu.theapp.widget com.amaterasu.theapp.share; do
             app-store-connect fetch-signing-files "$id" \
               --type "$PROFILE_TYPE" --create
           done

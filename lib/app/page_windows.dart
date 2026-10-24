@@ -31,9 +31,19 @@ class PageInstance {
   final String id;
   final AppPage kind;
 
-  /// The note, mindmap or AI conversation shown (null: the destination).
-  final String? refId;
+  /// What the instance shows (null: the destination itself):
+  ///   canvas / notes: the mindmap or note id (a shared record: one
+  ///     instance per record, so there is never a second controller);
+  ///   ai: the conversation id, or `new-…` until its first message;
+  ///   browser: its own tab set;
+  ///   calendar / links: `view-…` (an independent view of the same
+  ///     records), `folder:<id>` or `res:<id>` (Archive).
+  /// Changes only when a new AI chat gets its conversation ([rebind]).
+  String? refId;
   String title;
+
+  /// The user renamed the tab (else it follows the content's own title).
+  bool named = false;
   PageMode mode;
   bool pinned;
 
@@ -55,6 +65,7 @@ class PageInstance {
     'mode': mode.name,
     'before': before.name,
     if (pinned) 'pinned': true,
+    if (named) 'named': true,
   };
 
   static PageInstance? fromJson(Object? raw) {
@@ -63,13 +74,15 @@ class PageInstance {
     final id = raw['id'];
     if (kind == null || id is! String) return null;
     return PageInstance(
-      id: id,
-      kind: kind,
-      refId: raw['refId'] is String ? raw['refId'] as String : null,
-      title: raw['title'] is String ? raw['title'] as String : '',
-      mode: PageMode.values.asNameMap()[raw['mode']] ?? PageMode.docked,
-      pinned: raw['pinned'] == true,
-    )..before = PageMode.values.asNameMap()[raw['before']] ?? PageMode.docked;
+        id: id,
+        kind: kind,
+        refId: raw['refId'] is String ? raw['refId'] as String : null,
+        title: raw['title'] is String ? raw['title'] as String : '',
+        mode: PageMode.values.asNameMap()[raw['mode']] ?? PageMode.docked,
+        pinned: raw['pinned'] == true,
+      )
+      ..before = PageMode.values.asNameMap()[raw['before']] ?? PageMode.docked
+      ..named = raw['named'] == true;
   }
 }
 
@@ -95,6 +108,9 @@ class PageWindows extends ChangeNotifier {
 
   PageBuilder? builder;
 
+  /// The tab name of an instance (set by the app: it knows the records).
+  String Function(PageInstance p)? titleOf;
+
   /// Told when an instance is closed (to let go of its session).
   void Function(String id)? onClosed;
 
@@ -104,6 +120,24 @@ class PageWindows extends ChangeNotifier {
   void _show(PageInstance p) {
     activeId = p.id;
     onShow?.call(p);
+    unawaited(_settings.set('pageActive', p.id));
+  }
+
+  /// Pages with work that would be lost on close (an unsent AI question,
+  /// an unsaved form) register a check here; [close] asks it first.
+  final Map<String, Future<bool> Function()> _guards = {};
+
+  void setCloseGuard(String id, Future<bool> Function()? guard) =>
+      guard == null ? _guards.remove(id) : _guards[id] = guard;
+
+  /// Points instance [id] at a new record (a new AI chat that now has its
+  /// conversation), so it reopens with it after a restart.
+  void rebind(String id, String refId) {
+    final p = byId(id);
+    if (p == null || p.refId == refId) return;
+    p.refId = refId;
+    _save();
+    notifyListeners();
   }
 
   bool get collapsed => _settings.get<bool>('topBarCollapsed') ?? false;
@@ -136,6 +170,9 @@ class PageWindows extends ChangeNotifier {
     for (final p in _all.where((p) => p.mode == PageMode.floating)) {
       _floatWindow(p);
     }
+    // The page that was in the main area comes back there.
+    final last = byId(_settings.get<String>('pageActive'));
+    if (last != null && last.mode == PageMode.docked) _show(last);
     notifyListeners();
   }
 
@@ -155,9 +192,15 @@ class PageWindows extends ChangeNotifier {
       return existing;
     }
     if (_all.length >= maxInstances) {
-      // Make room: the oldest unpinned, not-floating instance goes.
+      // Make room: the oldest unpinned, not-floating instance with nothing
+      // unsaved goes (its content stays; only the open page closes).
       final old = _all
-          .where((p) => !p.pinned && p.mode != PageMode.floating)
+          .where(
+            (p) =>
+                !p.pinned &&
+                p.mode != PageMode.floating &&
+                !_guards.containsKey(p.id),
+          )
           .firstOrNull;
       if (old != null) close(old.id);
     }
@@ -260,7 +303,9 @@ class PageWindows extends ChangeNotifier {
   Future<void> close(String id, {Future<bool> Function()? beforeClose}) async {
     final p = byId(id);
     if (p == null) return;
-    if (beforeClose != null && !await beforeClose()) return;
+    final check = beforeClose ?? _guards[id];
+    if (check != null && !await check()) return;
+    _guards.remove(id);
     _floating.close(id);
     _all.remove(p);
     if (activeId == id) activeId = null;
@@ -273,6 +318,8 @@ class PageWindows extends ChangeNotifier {
     final p = byId(id);
     if (p == null || p.title == title) return;
     p.title = title;
+    p.named = true;
+    if (p.mode == PageMode.floating) _floating.replace(_specFor(p));
     _save();
     notifyListeners();
   }
@@ -284,25 +331,24 @@ class PageWindows extends ChangeNotifier {
     focus(_all[(i + 1) % _all.length].id);
   }
 
-  void _floatWindow(PageInstance p) {
-    _floating.show(
-      FloatingWindowSpec(
-        id: p.id,
-        title: p.title.isEmpty ? p.kind.name : p.title,
-        initialRect: Rect.fromLTWH(
-          80.0 + 24 * (_all.indexOf(p) % 10),
-          70.0 + 24 * (_all.indexOf(p) % 10),
-          520,
-          460,
-        ),
-        minSize: const Size(280, 200),
-        builder: (context) => instanceHost(context, p),
-        onMinimize: () => minimize(p.id),
-        onDock: () => dock(p.id),
-        onClose: () => close(p.id),
-      ),
-    );
-  }
+  void _floatWindow(PageInstance p) => _floating.show(_specFor(p));
+
+  FloatingWindowSpec _specFor(PageInstance p) => FloatingWindowSpec(
+    id: p.id,
+    title: p.title.isEmpty ? p.kind.name : p.title,
+    liveTitle: () => titleOf?.call(p) ?? p.title,
+    initialRect: Rect.fromLTWH(
+      80.0 + 24 * (_all.indexOf(p) % 10),
+      70.0 + 24 * (_all.indexOf(p) % 10),
+      520,
+      460,
+    ),
+    minSize: const Size(280, 200),
+    builder: (context) => instanceHost(context, p),
+    onMinimize: () => minimize(p.id),
+    onDock: () => dock(p.id),
+    onClose: () => close(p.id),
+  );
 
   /// The live page of [p], keyed so it keeps its state wherever it moves.
   Widget instanceHost(BuildContext context, PageInstance p) {

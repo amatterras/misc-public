@@ -168,6 +168,23 @@ class _AppShellState extends State<AppShell> {
             state.windows.cycle(),
         const SingleActivator(LogicalKeyboardKey.f11): () =>
             state.toggleImmersive(),
+        // Page instances (the same actions as the page bar).
+        const SingleActivator(LogicalKeyboardKey.keyW, control: true): () =>
+            state.closeActivePage(),
+        const SingleActivator(
+          LogicalKeyboardKey.keyN,
+          control: true,
+          shift: true,
+        ): () =>
+            state.newPage(AppPage.notes),
+        const SingleActivator(
+          LogicalKeyboardKey.keyF,
+          control: true,
+          shift: true,
+        ): () {
+          final id = state.windows.activeId;
+          if (id != null) state.windows.float(id);
+        },
       },
       child: Focus(
         autofocus: true,
@@ -177,6 +194,7 @@ class _AppShellState extends State<AppShell> {
             final width = MediaQuery.sizeOf(context).width;
             final isCompact = width < 640;
             final windows = state.windows;
+            windows.titleOf ??= (p) => pageTitle(state, p);
             windows.builder ??= (context, p) =>
                 buildPageInstance(context, state, p);
             final active = windows.active;
@@ -291,7 +309,19 @@ class _AppShellState extends State<AppShell> {
                         Sidebar(state: state, motivation: _motivation),
                       ],
                     ),
-                  Positioned.fill(
+                  // Windows float below the page bar, so the bar (and its
+                  // handle when collapsed) is always reachable.
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    top:
+                        (isCompact
+                            ? MediaQuery.paddingOf(context).top + 48
+                            : 0) +
+                        (windows.collapsed
+                            ? TopBar.collapsedHeight
+                            : TopBar.height),
                     child: FloatingLayer(windows: state.floating),
                   ),
                   _Toast(state: state, bottomOffset: isCompact ? 72 : 28),

@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "webview_host.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -33,6 +34,9 @@ class FlutterWindow : public Win32Window {
 
   // "theapp/windows": tells Dart about files dropped on the window.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
+
+  // Safari's engine on Windows (WebView2 views over the Flutter page).
+  std::unique_ptr<WebViewHost> webviews_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

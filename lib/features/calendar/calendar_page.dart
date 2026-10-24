@@ -9,6 +9,7 @@ import '../../data/models/calendar_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
 import '../../data/workspace.dart';
+import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../tasks/tasks_page.dart';
 import '../canvas/canvas_controller.dart';
@@ -21,9 +22,17 @@ import 'entry_editor.dart';
 /// Other. Every view reads the same records from [Workspace], so an edit
 /// anywhere shows up everywhere.
 class CalendarPage extends StatefulWidget {
-  const CalendarPage({super.key, required this.state});
+  const CalendarPage({
+    super.key,
+    required this.state,
+    this.viewKey = 'calendarView',
+  });
 
   final AppState state;
+
+  /// Setting that remembers the chosen view: each Calendar window has its
+  /// own, over the same calendar records.
+  final String viewKey;
 
   static const double cellWidth = 196;
 
@@ -49,11 +58,11 @@ class _CalendarPageState extends State<CalendarPage> {
 
   /// Which view (remembered on this device; the 38-day range by default).
   CalendarView get _view =>
-      CalendarView.values.asNameMap()[s.settings.get<String>('calendarView')] ??
+      CalendarView.values.asNameMap()[s.settings.get<String>(widget.viewKey)] ??
       CalendarView.range;
 
   void _setView(CalendarView v) {
-    s.settings.set('calendarView', v.name);
+    s.settings.set(widget.viewKey, v.name);
     setState(() {});
   }
 
@@ -883,6 +892,9 @@ class _CalendarPageState extends State<CalendarPage> {
         await showEntryEditor(context, s, entry: entry);
       case TaskOnDay(:final task):
         s.openTask(task.id);
+      case ExternalOnDay(:final event):
+        // Changed in Google / Outlook; open it there.
+        if (event.link.isNotEmpty) native.openUrl(event.link);
     }
   }
 }
@@ -1064,6 +1076,10 @@ class DayLabel extends StatelessWidget {
         task.dueMinutes == null
             ? null
             : '${(task.dueMinutes! ~/ 60).toString().padLeft(2, '0')}:${(task.dueMinutes! % 60).toString().padLeft(2, '0')}',
+      ExternalOnDay(:final event) =>
+        event.startMinutes == null
+            ? null
+            : '${(event.startMinutes! ~/ 60).toString().padLeft(2, '0')}:${(event.startMinutes! % 60).toString().padLeft(2, '0')}',
     };
     final label = Container(
       height: 18,
@@ -1444,6 +1460,34 @@ class _DayPanelState extends State<DayPanel> {
             size: 16,
             onTap: () => s.openTask(task.id),
           ),
+        );
+      case ExternalOnDay(:final event):
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: const Padding(
+            padding: EdgeInsets.all(8),
+            child: Icon(Icons.cloud_outlined, size: 14),
+          ),
+          title: Text(item.label),
+          subtitle: Text(
+            [
+              event.provider == 'google' ? 'Google Calendar' : 'Outlook',
+              if (event.startMinutes != null)
+                '${(event.startMinutes! ~/ 60).toString().padLeft(2, '0')}:'
+                    '${(event.startMinutes! % 60).toString().padLeft(2, '0')}',
+              if (event.location.isNotEmpty) event.location,
+            ].join(' · '),
+            style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
+          ),
+          trailing: event.link.isEmpty
+              ? null
+              : GhostIconButton(
+                  icon: Icons.open_in_new,
+                  tooltip: 'Edit it there',
+                  size: 16,
+                  onTap: () => native.openUrl(event.link),
+                ),
         );
     }
   }

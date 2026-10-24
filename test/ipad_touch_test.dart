@@ -437,8 +437,13 @@ void main() {
   });
 
   test('web view channel contract: Dart calls and Swift cases match', () {
-    final dart = File('lib/features/browser/browser_engine.dart')
+    final all = File('lib/features/browser/browser_engine.dart')
         .readAsStringSync();
+    // Only the iOS engine's part (the Windows engine has its own contract).
+    final dart = all.substring(
+      all.indexOf('class WebKitEngine'),
+      all.indexOf('class WindowsWebViewEngine'),
+    );
     final swift = File('ios/Runner/AppDelegate.swift').readAsStringSync();
     final web = swift.substring(
       swift.indexOf('final class TheAppWebViewFactory'),
@@ -459,4 +464,29 @@ void main() {
       expect(dart, contains("case '${m.group(1)}'"), reason: m.group(1));
     }
   });
+
+  test(
+    'Windows browser channel contract: Dart calls and C++ handlers match',
+    () {
+      final all = File('lib/features/browser/browser_engine.dart')
+          .readAsStringSync();
+      final dart = all.substring(all.indexOf('class WindowsWebViewEngine'));
+      final cpp = File('windows/runner/webview_host.cpp').readAsStringSync();
+      final dartCalls = {
+        for (final m in RegExp(r"_call<[^>]*>\(\s*'(\w+)'").allMatches(dart))
+          m.group(1)!,
+      };
+      final cppHandlers = {
+        for (final m in RegExp(r'm == "(\w+)"').allMatches(cpp)) m.group(1)!,
+      };
+      expect(dartCalls, isNotEmpty);
+      expect(cppHandlers, dartCalls);
+      // C++ → Dart events all have a Dart case.
+      for (final m in RegExp(r'Send\("(\w+)"').allMatches(cpp)) {
+        expect(dart, contains("case '${m.group(1)}'"), reason: m.group(1));
+      }
+      expect(cpp, contains('"permission"'));
+      expect(dart, contains("case 'permission'"));
+    },
+  );
 }

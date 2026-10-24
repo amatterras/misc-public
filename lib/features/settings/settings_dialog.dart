@@ -15,6 +15,7 @@ import 'sync_section.dart';
 import '../tasks/completion_messages.dart';
 import '../ai/ai_settings_section.dart';
 import '../sharing/share_dialog.dart';
+import '../calendar/external/calendar_accounts_section.dart';
 
 Future<void> showSettingsDialog(BuildContext context, AppState state) {
   return showDialog<void>(
@@ -201,6 +202,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 ),
               const _Heading('AI'),
               AiSettingsSection(state: s),
+              const _Heading('Calendar accounts'),
+              CalendarAccountsSection(state: s),
               const _Heading('Sharing'),
               ListTile(
                 key: const ValueKey('shared-links'),
@@ -238,6 +241,24 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   Navigator.pop(context);
                   s.openVault();
                 },
+              ),
+              SwitchListTile(
+                key: const ValueKey('ocr-enabled'),
+                contentPadding: EdgeInsets.zero,
+                value: s.settings.get<bool>('ocrEnabled') ?? true,
+                onChanged: (v) async {
+                  await s.settings.set('ocrEnabled', v);
+                  if (mounted) setState(() {});
+                },
+                title: const Text(
+                  'Read scanned PDFs for search',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'On-device text recognition (Windows OCR, Apple Vision on '
+                  'iPhone/iPad). Nothing is sent to AI or online services.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                ),
               ),
               const _Heading('Window'),
               SwitchListTile(

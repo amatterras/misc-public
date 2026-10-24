@@ -29,6 +29,14 @@ class _AiPanelState extends State<AiPanel> {
   AiSession get session => widget.session ?? s.aiSession;
 
   @override
+  void initState() {
+    super.initState();
+    _question.text = session.draft;
+    // The session knows the unsent text, so closing the window can ask.
+    _question.addListener(() => session.draft = _question.text);
+  }
+
+  @override
   void dispose() {
     _question.dispose();
     super.dispose();

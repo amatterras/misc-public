@@ -15,6 +15,7 @@ import 'data/repositories/canvas_repository.dart';
 import 'data/storage/app_log.dart';
 import 'data/storage/json_file_store.dart';
 import 'data/workspace.dart';
+import 'features/browser/webview_selftest.dart';
 import 'features/capture/send_to.dart';
 import 'platform/ios_bridge.dart';
 import 'sync/secret_store.dart';
@@ -140,6 +141,12 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
   );
   await state.init(onStep: progress.to);
   runApp(TheApp(state: state));
+  // Unattended check of the Windows browser engine (test data mode only).
+  const selfTest = '--webview-selftest=';
+  final check = args.where((a) => a.startsWith(selfTest)).firstOrNull;
+  if (check != null && TestEnvironment.active && Platform.isWindows) {
+    unawaited(runWebViewSelfTest(check.substring(selfTest.length)));
+  }
 }
 
 class TheApp extends StatefulWidget {

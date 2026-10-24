@@ -25,6 +25,7 @@ import '../../data/models/task_models.dart';
 import '../../data/workspace.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_export.dart';
+import '../links/archive_library.dart';
 
 /// Something being dragged.
 sealed class Transfer {
@@ -96,9 +97,46 @@ class AssetsTransfer extends Transfer {
       assetIds.length == 1 ? '1 attachment' : '${assetIds.length} attachments';
 }
 
+/// A project (with its tasks).
+class ProjectTransfer extends Transfer {
+  const ProjectTransfer(this.projectId, this.name);
+  final String projectId;
+  final String name;
+  @override
+  String get label => 'project “$name”';
+}
+
+/// A web address (a Safari tab or page), dragged by the user: nothing is
+/// captured from a page unless it is dragged or sent explicitly.
+class UrlTransfer extends Transfer {
+  const UrlTransfer(this.url, {this.title = ''});
+  final String url;
+  final String title;
+  @override
+  String get label => title.isEmpty ? 'the page' : '“$title”';
+}
+
 /// Where something is dropped.
 sealed class DropPlace {
   const DropPlace();
+}
+
+/// An Archive folder ([folderId] null = the top level).
+class ArchivePlace extends DropPlace {
+  const ArchivePlace(this.folderId);
+  final String? folderId;
+}
+
+/// A notes folder ([folderId] null = no folder).
+class NoteFolderPlace extends DropPlace {
+  const NoteFolderPlace(this.folderId);
+  final String? folderId;
+}
+
+/// One task: dropping a task makes it a step (subtask) or a dependency.
+class TaskPlace extends DropPlace {
+  const TaskPlace(this.taskId);
+  final String taskId;
 }
 
 /// A mindmap (or the Archive board), at [at] in its coordinates.
@@ -210,7 +248,10 @@ extension Transfers on AppState {
         if (t.from != null && daysBetween(t.from!, p.day) == 0) return const [];
         return const [TransferChoice(TransferOp.move, 'Schedule on this day')];
       case (CalendarItemTransfer t, DayPlace p):
-        if (daysBetween(t.from, p.day) == 0) return const [];
+        // Google / Outlook events are changed there, not moved here.
+        if (t.item is ExternalOnDay || daysBetween(t.from, p.day) == 0) {
+          return const [];
+        }
         return const [TransferChoice(TransferOp.move, 'Move to this day')];
       case (TaskTransfer(), NotePlace()):
         return const [TransferChoice(TransferOp.link, 'Link the task')];
@@ -238,9 +279,130 @@ extension Transfers on AppState {
         return const [TransferChoice(TransferOp.link, 'Attach to this day')];
       case (AssetsTransfer(), NewNotePlace()):
         return const [TransferChoice(TransferOp.convert, 'New note with them')];
+      // ---- web addresses (Safari) ----
+      case (UrlTransfer(), CanvasPlace()):
+        return const [TransferChoice(TransferOp.link, 'Place a link card')];
+      case (UrlTransfer(), NotePlace()):
+        return const [TransferChoice(TransferOp.link, 'Attach the link')];
+      case (UrlTransfer(), DayPlace()):
+        return const [TransferChoice(TransferOp.link, 'Attach to this day')];
+      case (UrlTransfer(), NewNotePlace()):
+        return const [TransferChoice(TransferOp.convert, 'New note with it')];
+      case (UrlTransfer(), TasksPlace()):
+        return const [TransferChoice(TransferOp.convert, 'Task to read it')];
+      case (UrlTransfer(), ArchivePlace()):
+        return const [TransferChoice(TransferOp.copy, 'Save to the Archive')];
+      // ---- Archive folders ----
+      case (AssetsTransfer t, ArchivePlace p):
+        if (t.assetIds.every(
+          (id) => workspace.assets[id]?.folderId == p.folderId,
+        )) {
+          return const [];
+        }
+        return const [TransferChoice(TransferOp.move, 'Move into this folder')];
+      case (CanvasItemsTransfer t, ArchivePlace()):
+        return [
+          if (_assetsIn(t).isNotEmpty)
+            const TransferChoice(
+              TransferOp.link,
+              'File the links / files here',
+            ),
+        ];
+      // ---- notes ----
+      case (NoteTransfer n, NoteFolderPlace p):
+        if (workspace.notes[n.noteId]?.folderId == p.folderId) return const [];
+        return const [TransferChoice(TransferOp.move, 'Move to this folder')];
+      case (NoteTransfer(), NewNotePlace()):
+        return const [TransferChoice(TransferOp.copy, 'Duplicate the note')];
+      // ---- tasks and projects ----
+      case (TaskTransfer t, TaskPlace p):
+        if (t.taskId == p.taskId || _isStepOf(p.taskId, t.taskId)) {
+          return const [];
+        }
+        return const [
+          TransferChoice(TransferOp.move, 'Make it a step of this task'),
+          TransferChoice(TransferOp.link, 'Wait for this task first'),
+        ];
+      case (TaskTransfer t, TasksPlace p):
+        final task = workspace.tasks[t.taskId];
+        if (task == null || task.projectId == p.projectId) return const [];
+        return [
+          TransferChoice(
+            TransferOp.move,
+            p.projectId == null ? 'Take out of its project' : 'Move here',
+          ),
+        ];
+      case (TaskTransfer(), NewNotePlace()):
+        return const [TransferChoice(TransferOp.convert, 'New note about it')];
+      case (ProjectTransfer(), CanvasPlace()):
+        return const [
+          TransferChoice(TransferOp.copy, 'Write its outline here'),
+        ];
+      case (ProjectTransfer(), NotePlace()):
+        return const [
+          TransferChoice(TransferOp.link, 'Link the note to the project'),
+          TransferChoice(TransferOp.copy, 'Add its task list'),
+        ];
+      case (ProjectTransfer(), NewNotePlace()):
+        return const [
+          TransferChoice(TransferOp.convert, 'New note with its task list'),
+        ];
+      case (ProjectTransfer p, DayPlace()):
+        if (!workspace.tasks.all.any(
+          (t) => t.projectId == p.projectId && !t.done && t.dueDate != null,
+        )) {
+          return const [];
+        }
+        return const [
+          TransferChoice(TransferOp.move, 'Shift its dates to start this day'),
+        ];
+      // ---- calendar entries elsewhere ----
+      case (CalendarItemTransfer(), NotePlace()):
+        return const [TransferChoice(TransferOp.copy, 'Add to the note')];
+      case (CalendarItemTransfer(), CanvasPlace()):
+        return const [TransferChoice(TransferOp.copy, 'Write it here')];
+      case (CalendarItemTransfer(), NewNotePlace()):
+        return const [TransferChoice(TransferOp.convert, 'New note about it')];
+      case (CalendarItemTransfer t, TasksPlace()):
+        return [
+          if (t.item is EntryOnDay)
+            const TransferChoice(TransferOp.convert, 'Make a task'),
+        ];
       default:
         return const [];
     }
+  }
+
+  /// Whether [taskId] is (somewhere) a step of [ancestorId], so making the
+  /// ancestor its step would loop.
+  bool _isStepOf(String taskId, String ancestorId) {
+    final seen = <String>{};
+    var t = workspace.tasks[taskId];
+    while (t != null && t.parentId != null && seen.add(t.id)) {
+      if (t.parentId == ancestorId) return true;
+      t = workspace.tasks[t.parentId];
+    }
+    return false;
+  }
+
+  /// The project's open tasks as a checklist.
+  String _projectList(String projectId) {
+    final p = workspace.projects[projectId];
+    final tasks = workspace.tasks.all
+        .where((t) => t.projectId == projectId)
+        .toList();
+    String line(Task t, int depth) =>
+        '${'  ' * depth}- [${t.done ? 'x' : ' '}] ${t.title}';
+    final out = <String>['# ${p?.name ?? 'Project'}'];
+    void level(String? parent, int depth) {
+      for (final t in tasks.where((t) => t.parentId == parent)) {
+        out.add(line(t, depth));
+        if (depth < 10) level(t.id, depth + 1);
+      }
+    }
+
+    level(null, 0);
+    return out.join('\n');
   }
 
   static List<Asset> _assetsFrom(Workspace ws, Iterable<CanvasItem> items) => [
@@ -470,6 +632,7 @@ extension Transfers on AppState {
         final (CalendarEntry? entry, Task? task) = switch (item) {
           EntryOnDay(:final entry) => (ws.entries[entry.id], null),
           TaskOnDay(:final task) => (null, ws.tasks[task.id]),
+          ExternalOnDay() => (null, null),
         };
         ws.moveDayItem(item, t.from, p.day);
         return TransferResult(
@@ -596,6 +759,214 @@ extension Transfers on AppState {
           assetIds: t.assetIds,
         );
         return TransferResult('New note.', undo: () => deleteNote(note.id));
+      // ---- web addresses: become a managed link asset, then as assets ----
+      case (UrlTransfer u, ArchivePlace p):
+        final count = ws.assets.all.length;
+        final asset = ws.linkAsset(
+          u.url,
+          title: u.title.isEmpty ? null : u.title,
+        );
+        final existed = ws.assets.all.length == count; // the same link was kept
+        if (p.folderId != null) ws.moveAssetToFolder(asset.id, p.folderId);
+        return TransferResult(
+          existed
+              ? 'Already in the Archive (filed here).'
+              : 'Saved to the Archive.',
+          undo: existed ? null : () => ws.assets.remove(asset.id),
+        );
+      case (UrlTransfer u, TasksPlace p):
+        final asset = ws.linkAsset(
+          u.url,
+          title: u.title.isEmpty ? null : u.title,
+        );
+        final task = ws.createTask(
+          'Read ${u.title.isEmpty ? asset.label : u.title}',
+          projectId: p.projectId,
+        );
+        ws.tasks.put(task.copyWith(assetIds: [asset.id]));
+        return TransferResult(
+          'Made a task.',
+          undo: () => ws.deleteTask(task.id),
+        );
+      case (UrlTransfer u, _):
+        final asset = ws.linkAsset(
+          u.url,
+          title: u.title.isEmpty ? null : u.title,
+        );
+        return _perform(AssetsTransfer([asset.id]), place, switch (place) {
+          NewNotePlace() => TransferOp.convert,
+          _ => TransferOp.link,
+        });
+      // ---- Archive folders ----
+      case (AssetsTransfer t, ArchivePlace p):
+        final before = {
+          for (final id in t.assetIds) id: ws.assets[id]?.folderId,
+        };
+        for (final id in t.assetIds) {
+          ws.moveAssetToFolder(id, p.folderId);
+        }
+        return TransferResult(
+          'Moved ${t.assetIds.length} into ${ws.archiveFolderLabel(p.folderId).isEmpty ? 'the top level' : ws.archiveFolderLabel(p.folderId)}.',
+          undo: () => before.forEach(ws.moveAssetToFolder),
+        );
+      case (CanvasItemsTransfer t, ArchivePlace p):
+        final ids = [for (final a in _assetsIn(t)) a.id];
+        return _perform(AssetsTransfer(ids), p, TransferOp.move);
+      // ---- notes ----
+      case (NoteTransfer n, NoteFolderPlace p):
+        final note = ws.notes[n.noteId];
+        if (note == null) return const TransferResult('The note is gone.');
+        ws.notes.put(note.copyWith(folderId: () => p.folderId));
+        return TransferResult(
+          'Moved to ${ws.folderLabel(p.folderId)}.',
+          undo: () => _setNoteFolder(n.noteId, note.folderId),
+        );
+      case (NoteTransfer n, NewNotePlace()):
+        final note = ws.notes[n.noteId];
+        if (note == null) return const TransferResult('The note is gone.');
+        final copy = ws.createNote(
+          title: '${note.title} (copy)',
+          body: note.body,
+          folderId: note.folderId,
+          assetIds: note.assetIds,
+        );
+        return TransferResult(
+          'Duplicated the note (its pages stay with the original).',
+          undo: () => deleteNote(copy.id),
+        );
+      // ---- tasks and projects ----
+      case (TaskTransfer t, TaskPlace p):
+        final task = ws.tasks[t.taskId], parent = ws.tasks[p.taskId];
+        if (task == null || parent == null) {
+          return const TransferResult('The task is gone.');
+        }
+        if (op == TransferOp.link) {
+          if (task.dependsOn.contains(parent.id)) {
+            return const TransferResult('Already waits for it.');
+          }
+          ws.tasks.put(
+            task.copyWith(dependsOn: [...task.dependsOn, parent.id]),
+          );
+          return TransferResult(
+            '“${task.title}” now waits for “${parent.title}”.',
+            undo: () => ws.tasks.put(task),
+          );
+        }
+        ws.tasks.put(
+          task.copyWith(
+            parentId: () => parent.id,
+            projectId: () => parent.projectId,
+          ),
+        );
+        return TransferResult(
+          '“${task.title}” is now a step of “${parent.title}”.',
+          undo: () => ws.tasks.put(task),
+        );
+      case (TaskTransfer t, TasksPlace p):
+        final task = ws.tasks[t.taskId];
+        if (task == null) return const TransferResult('The task is gone.');
+        // Its steps go with it.
+        final moved = [
+          task,
+          ...ws.tasks.all.where((s) => _isStepOf(s.id, task.id)),
+        ];
+        for (final m in moved) {
+          ws.tasks.put(
+            m.copyWith(
+              projectId: () => p.projectId,
+              parentId: m.id == task.id ? () => null : null,
+            ),
+          );
+        }
+        return TransferResult(
+          p.projectId == null
+              ? 'Taken out of its project.'
+              : 'Moved to “${ws.projects[p.projectId]?.name}”.',
+          undo: () => ws.tasks.putAll(moved),
+        );
+      case (TaskTransfer t, NewNotePlace()):
+        final task = ws.tasks[t.taskId];
+        if (task == null) return const TransferResult('The task is gone.');
+        final note = ws.createNote(title: task.title, body: task.notes);
+        ws.tasks.put(task.copyWith(noteIds: [...task.noteIds, note.id]));
+        return TransferResult(
+          'New note, linked to the task.',
+          undo: () {
+            ws.tasks.put(task);
+            return deleteNote(note.id);
+          },
+        );
+      case (ProjectTransfer p, CanvasPlace c):
+        final target = await _canvasFor(c.canvasId);
+        target.addItems([
+          TextItem(
+            id: newId(),
+            position: c.at ?? canvasDropPoint(target),
+            width: TextItem.defaultWidth,
+            minHeight: 0,
+            text: _projectList(p.projectId),
+          ),
+        ]);
+        return const TransferResult('Wrote the outline on the mindmap.');
+      case (ProjectTransfer p, NotePlace n):
+        final note = ws.notes[n.noteId];
+        if (note == null) return const TransferResult('The note is gone.');
+        if (op == TransferOp.link) {
+          if (note.projectIds.contains(p.projectId)) {
+            return const TransferResult('Already linked.');
+          }
+          ws.notes.put(
+            note.copyWith(projectIds: [...note.projectIds, p.projectId]),
+          );
+        } else {
+          ws.notes.put(
+            note.copyWith(
+              body: '${note.body.trimRight()}\n\n${_projectList(p.projectId)}',
+            ),
+          );
+        }
+        return TransferResult(
+          op == TransferOp.link
+              ? 'Linked to the project.'
+              : 'Added the task list.',
+          undo: () => ws.notes.put(note),
+        );
+      case (ProjectTransfer p, NewNotePlace()):
+        final note = ws.createNote(
+          title: p.name,
+          body: _projectList(p.projectId).split('\n').skip(1).join('\n'),
+        );
+        ws.notes.put(note.copyWith(projectIds: [p.projectId]));
+        return TransferResult('New note.', undo: () => deleteNote(note.id));
+      case (ProjectTransfer p, DayPlace d):
+        final tasks = [
+          for (final t in ws.tasks.all)
+            if (t.projectId == p.projectId && !t.done && t.dueDate != null) t,
+        ];
+        final first = tasks
+            .map((t) => t.dueDate!)
+            .reduce((a, b) => a.isBefore(b) ? a : b);
+        final days = daysBetween(first, d.day);
+        final n = ws.shiftProject(p.projectId, days);
+        return TransferResult(
+          'Moved $n date(s) by $days day(s).',
+          undo: () => ws.tasks.putAll(tasks),
+        );
+      // ---- calendar entries elsewhere ----
+      case (CalendarItemTransfer t, _):
+        final text = switch (t.item) {
+          EntryOnDay(:final entry) => [
+            entry.name,
+            if (entry.description.isNotEmpty) entry.description,
+          ].join('\n'),
+          TaskOnDay(:final task) => task.title,
+          ExternalOnDay(:final event) => event.title,
+        };
+        return switch (place) {
+          TasksPlace() => _perform(TextTransfer(text), place, op),
+          NewNotePlace() => _perform(TextTransfer(text), place, op),
+          _ => _perform(TextTransfer(text), place, TransferOp.copy),
+        };
       default:
         return const TransferResult('That cannot be dropped here.');
     }
@@ -649,6 +1020,11 @@ extension Transfers on AppState {
   void _setNoteAssets(String noteId, List<String> ids) {
     final n = workspace.notes[noteId];
     if (n != null) workspace.notes.put(n.copyWith(assetIds: ids));
+  }
+
+  void _setNoteFolder(String noteId, String? folderId) {
+    final n = workspace.notes[noteId];
+    if (n != null) workspace.notes.put(n.copyWith(folderId: () => folderId));
   }
 
   void _setNoteBody(String noteId, String body) {
@@ -759,12 +1135,16 @@ class TransferTarget extends StatelessWidget {
         d.offset,
       ),
     ),
-    builder: (context, candidates, _) => DecoratedBox(
+    // Accepting: accent outline. Hovered by something it cannot take: a
+    // red outline, so a drop there is visibly refused (nothing changes).
+    builder: (context, candidates, rejected) => DecoratedBox(
       position: DecorationPosition.foreground,
       decoration: BoxDecoration(
-        border: candidates.isEmpty
-            ? null
-            : Border.all(color: AppColors.accent, width: 2),
+        border: candidates.isNotEmpty
+            ? Border.all(color: AppColors.accent, width: 2)
+            : rejected.isNotEmpty
+            ? Border.all(color: AppColors.danger, width: 1.5)
+            : null,
         borderRadius: BorderRadius.circular(6),
       ),
       child: child,

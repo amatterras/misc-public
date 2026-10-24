@@ -19,7 +19,11 @@ class FloatingWindowSpec {
     this.onMinimize,
     this.onDock,
     this.onClose,
+    this.liveTitle,
   });
+
+  /// The current title (a page window follows its note or chat title).
+  final String Function()? liveTitle;
 
   /// Window buttons for pages (minimize, put back in the main area,
   /// close). Without [onClose] the close button just hides the window.
@@ -73,6 +77,40 @@ class FloatingWindows extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Updates an open window's spec (e.g. a new title) without moving it
+  /// in front of the others.
+  void replace(FloatingWindowSpec spec) {
+    final i = _open.indexWhere((w) => w.id == spec.id);
+    if (i < 0) return;
+    _open[i] = spec;
+    notifyListeners();
+  }
+
+  /// Compact picture-in-picture size: on, the window shrinks to a small
+  /// corner window; off, it goes back to where it was.
+  bool isCompact(String id) => _saved['$id.compact'] is List;
+
+  void toggleCompact(String id, Rect current, Size area) {
+    final saved = _saved;
+    final before = saved['$id.compact'];
+    if (before is List && before.length == 4) {
+      final v = [for (final n in before) (n as num).toDouble()];
+      saved[id] = v;
+      saved.remove('$id.compact');
+    } else {
+      saved['$id.compact'] = [
+        current.left,
+        current.top,
+        current.width,
+        current.height,
+      ];
+      const w = 300.0, h = 220.0;
+      saved[id] = [area.width - w - 16, area.height - h - 16, w, h];
+    }
+    unawaited(_settings.set(_key, saved));
+    notifyListeners();
+  }
+
   void close(String id) {
     final before = _open.length;
     _open.removeWhere((w) => w.id == id);
@@ -114,3 +152,7 @@ class FloatingWindows extends ChangeNotifier {
     return Rect.fromLTWH(left, top, w, h);
   }
 }
+
+/// Global rectangles of the open floating windows (kept by FloatingLayer),
+/// so a native view (Safari on Windows) can step aside when one covers it.
+final ValueNotifier<Map<String, Rect>> floatingWindowRects = ValueNotifier({});

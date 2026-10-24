@@ -285,7 +285,11 @@ void main() {
       final card = s.linkToCanvas(c, physics, const Offset(100, 100))!;
       expect(canvasLinkTarget(s.workspace.assets[card.assetId]!.url), physics);
       s.activateCanvasItem(card);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      // Opening is asynchronous: wait for it (not a fixed delay, which is
+      // too short when the whole suite runs in parallel).
+      for (var i = 0; i < 100 && s.canvas!.id != physics; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
       expect(s.canvas!.id, physics);
       expect(s.page, AppPage.canvas);
       await s.flush();

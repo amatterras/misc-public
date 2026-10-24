@@ -1,0 +1,19 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+	# Request size cap above the hub's own limits (100 MB attachments).
+	request_body {
+		max_size 110MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+	reverse_proxy hub:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}

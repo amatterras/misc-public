@@ -33,6 +33,9 @@ bool FlutterWindow::OnCreate() {
       flutter_controller_->engine()->messenger(), "theapp/windows",
       &flutter::StandardMethodCodec::GetInstance());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  webviews_ = std::make_unique<WebViewHost>(
+      flutter_controller_->engine()->messenger(),
+      flutter_controller_->view()->GetNativeWindow());
   // Files dragged from File Explorer arrive as WM_DROPFILES.
   DragAcceptFiles(GetHandle(), TRUE);
 
@@ -49,6 +52,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  webviews_ = nullptr;  // before the engine it talks through
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

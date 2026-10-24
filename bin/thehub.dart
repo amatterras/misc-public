@@ -15,6 +15,7 @@ import 'package:flutter_application_1/hub/hub_auth.dart';
 import 'package:flutter_application_1/hub/hub_backup.dart';
 import 'package:flutter_application_1/hub/hub_mirror.dart';
 import 'package:flutter_application_1/hub/hub_server.dart';
+import 'package:flutter_application_1/hub/hosted_hub.dart';
 import 'package:flutter_application_1/sync/secret_store.dart';
 
 String get _sep => Platform.pathSeparator;
@@ -108,6 +109,30 @@ Future<void> main(List<String> args) async {
         await _mirrorVerify(options);
       case 'restore-from-mirror':
         await _restoreFromMirror(options.positional);
+      // Hosted sync service (many accounts; see deploy/hosted/README.md).
+      case 'hosted-serve':
+        final data = options.value('--data');
+        if (data == null) {
+          throw const _UsageError('hosted-serve needs --data <folder>');
+        }
+        final hub = await HostedHub.start(
+          dir: Directory(data),
+          host: options.value('--listen') ?? '127.0.0.1',
+          port: int.tryParse(options.value('--port') ?? '') ?? 8080,
+          behindProxy: options.value('--behind-proxy') == 'yes',
+          log: (line) =>
+              stdout.writeln('${DateTime.now().toIso8601String()} $line'),
+        );
+        ProcessSignal.sigint.watch().first.then((_) => hub.stop());
+        await Completer<void>().future;
+      case 'hosted-invite':
+        final data = options.value('--data');
+        if (data == null) {
+          throw const _UsageError('hosted-invite needs --data <folder>');
+        }
+        stdout.writeln(
+          'Invite code (single use): ${await HostedHub.createInvite(Directory(data))}',
+        );
       default:
         throw _UsageError('unknown command "${args.first}"');
     }

@@ -34,7 +34,7 @@ class WidgetSnapshot {
   static String linkFor(DayItem item, DateTime day) => switch (item) {
     TaskOnDay(:final task) =>
       'theapp://open?task=${Uri.encodeComponent(task.id)}',
-    EntryOnDay() => 'theapp://open?day=${dateKey(day)}',
+    EntryOnDay() || ExternalOnDay() => 'theapp://open?day=${dateKey(day)}',
   };
 
   /// The snapshot for [now]'s day and the next one.
@@ -65,11 +65,13 @@ class WidgetSnapshot {
             'time': switch (item) {
               TaskOnDay(:final task) => _time(task.dueMinutes),
               EntryOnDay(:final entry) => _time(entry.startMinutes),
+              ExternalOnDay(:final event) => _time(event.startMinutes),
             },
             'done': item is TaskOnDay && item.task.done,
             'color': switch (item) {
               EntryOnDay(:final entry) => calendarCategoryColor(entry.category),
-              TaskOnDay() => CalendarCategoryColors.reminderEvent,
+              TaskOnDay() ||
+              ExternalOnDay() => CalendarCategoryColors.reminderEvent,
             }.toARGB32(),
             'link': linkFor(item, day),
           },

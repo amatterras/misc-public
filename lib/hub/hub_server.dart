@@ -38,7 +38,41 @@ bool isAllowedBindAddress(InternetAddress a) {
 }
 
 class HubServer {
-  HubServer._(this.store, this.auth, this.backups, this._servers, this._log);
+  HubServer._(
+    this.store,
+    this.auth,
+    this.backups,
+    this._servers,
+    this._log, {
+    this.tenantId,
+  });
+
+  /// One account's hub inside the hosted service (hosted_hub.dart): it
+  /// listens on nothing itself; the hosted front passes it the requests
+  /// whose token belongs to that account. Admin, pairing and share
+  /// endpoints are off; device tokens are `<tenantId>.<token>`.
+  static Future<HubServer> tenant(
+    Directory dir,
+    String tenantId, {
+    void Function(String line)? log,
+  }) async {
+    final store = await HubStore.open(dir);
+    final auth = await HubAuth.open(dir);
+    return HubServer._(
+      store,
+      auth,
+      HubBackups(store),
+      const [],
+      log ?? (_) {},
+      tenantId: tenantId,
+    );
+  }
+
+  /// Set for an account inside the hosted service.
+  final String? tenantId;
+
+  /// Handles one request (used by the hosted front).
+  Future<void> handle(HttpRequest r) => _handle(r);
 
   final HubStore store;
   final HubAuth auth;
@@ -150,10 +184,14 @@ class HubServer {
 
   // ------------------------------------------------------------ helpers --
 
-  static String? _bearer(HttpRequest r) {
+  String? _bearer(HttpRequest r) {
     final h = r.headers.value(HttpHeaders.authorizationHeader);
     if (h == null || !h.startsWith('Bearer ')) return null;
-    return h.substring(7).trim();
+    final token = h.substring(7).trim();
+    final t = tenantId;
+    if (t == null) return token;
+    // Hosted: the account part must be this account's.
+    return token.startsWith('$t.') ? token.substring(t.length + 1) : null;
   }
 
   Future<Map<String, dynamic>> _json(HttpRequest r) async {
@@ -216,6 +254,13 @@ class HubServer {
   }
 
   void _admin(HttpRequest r) {
+    if (tenantId != null) {
+      throw const ProtocolException(
+        'not_found',
+        'Unknown endpoint.',
+        status: 404,
+      );
+    }
     final remote = r.connectionInfo?.remoteAddress;
     final token = _bearer(r);
     if (remote == null ||
@@ -247,7 +292,7 @@ class HubServer {
         route = '/s/:token'; // never logged with the token
       }
       switch ((r.method, route)) {
-        case ('GET', '/s/:token'):
+        case ('GET', '/s/:token') when tenantId == null:
           who = 'share';
           status = await _serveShare(r, segments[1]);
         case ('GET', '/v1/status'):
@@ -256,7 +301,7 @@ class HubServer {
             'hubId': store.hubId,
             'protocol': syncProtocolVersion,
           });
-        case ('POST', '/v1/register'):
+        case ('POST', '/v1/register') when tenantId == null:
           _checkProtocol(r);
           await _register(r);
         case ('POST', '/v1/push'):

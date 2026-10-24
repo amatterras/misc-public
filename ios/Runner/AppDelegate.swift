@@ -6,6 +6,7 @@ import Security
 import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
+import Vision
 import WebKit
 
 @main
@@ -65,7 +66,13 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
   /// Called by SceneDelegate. Links are held until Dart is listening, so
   /// one that launched the app is not lost.
   func received(url: URL) {
-    guard url.scheme?.lowercased() == "theapp" else { return }
+    // theapp:// links, and calendar sign-in redirects (Microsoft's
+    // msauth.<bundle id> scheme, Google's reversed client id scheme).
+    let scheme = url.scheme?.lowercased() ?? ""
+    guard
+      scheme == "theapp" || scheme.hasPrefix("msauth.")
+        || scheme.hasPrefix("com.googleusercontent.apps.")
+    else { return }
     if dartReady, let channel = channel {
       channel.invokeMethod("openedUrl", arguments: url.absoluteString)
     } else {
@@ -95,6 +102,8 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       pdfInfo(call.arguments as? String, result)
     case "pdfRenderPage":
       pdfRenderPage(call.arguments as? [String: Any] ?? [:], result)
+    case "ocrPdf":
+      ocrPdf(call.arguments as? [String: Any] ?? [:], result)
     case "pdfExport":
       pdfExport(call.arguments as? [String: Any] ?? [:], result)
     case "shareFile":
@@ -189,6 +198,47 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
           ? [Double(box.height), Double(box.width)] : [Double(box.width), Double(box.height)])
     }
     result(sizes)
+  }
+
+  /// On-device text recognition (Vision) for scanned PDFs, page by page,
+  /// off the main thread. Pages are rendered at most 2000 px on their long
+  /// side; nothing leaves the device.
+  private func ocrPdf(_ args: [String: Any], _ result: @escaping FlutterResult) {
+    guard let path = args["path"] as? String else {
+      result(nil)
+      return
+    }
+    let maxPages = min(args["maxPages"] as? Int ?? 50, 200)
+    DispatchQueue.global(qos: .utility).async {
+      var pages: [String] = []
+      if let doc = PDFDocument(url: URL(fileURLWithPath: path)) {
+        for i in 0..<min(doc.pageCount, maxPages) {
+          autoreleasepool {
+            guard let page = doc.page(at: i) else {
+              pages.append("")
+              return
+            }
+            let box = page.bounds(for: .mediaBox)
+            let longest = max(box.width, box.height)
+            let scale = longest > 0 ? min(3.0, 2000.0 / longest) : 1.0
+            let image = page.thumbnail(
+              of: CGSize(width: box.width * scale, height: box.height * scale), for: .mediaBox)
+            guard let cg = image.cgImage else {
+              pages.append("")
+              return
+            }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = true
+            let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+            try? handler.perform([request])
+            let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            pages.append(lines.joined(separator: "\n"))
+          }
+        }
+      }
+      DispatchQueue.main.async { result(pages) }
+    }
   }
 
   /// One page as PNG, [width] pixels wide, rendered off the main thread so

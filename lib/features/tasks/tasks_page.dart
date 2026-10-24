@@ -330,20 +330,34 @@ class _TasksPageState extends State<TasksPage> {
       ),
     );
 
-    Widget projectItem(Project p) => GestureDetector(
-      onSecondaryTapUp: (d) => _projectMenu(p, d.globalPosition),
-      // Touch: press and hold (there is no other way to these options).
-      onLongPressStart: (d) => _projectMenu(p, d.globalPosition),
-      child: item(
-        p.name,
-        p.kind == ProjectKind.subject
-            ? Icons.school_outlined
-            : Icons.folder_special_outlined,
-        ProjectTaskList(p.id),
-        color: AppColors.accent,
-        count: countOf((t) => !t.done && t.projectId == p.id),
-      ),
-    );
+    Widget projectItem(Project p) {
+      final tile = GestureDetector(
+        onSecondaryTapUp: (d) => _projectMenu(p, d.globalPosition),
+        // Touch: press and hold (there is no other way to these options).
+        onLongPressStart: (d) => _projectMenu(p, d.globalPosition),
+        // Drop a task here to move it (with its steps) into the project.
+        child: TransferTarget(
+          state: s,
+          place: TasksPlace(projectId: p.id),
+          child: item(
+            p.name,
+            p.kind == ProjectKind.subject
+                ? Icons.school_outlined
+                : Icons.folder_special_outlined,
+            ProjectTaskList(p.id),
+            color: AppColors.accent,
+            count: countOf((t) => !t.done && t.projectId == p.id),
+          ),
+        ),
+      );
+      // With a mouse or pen the project itself can be dragged (onto a note,
+      // a mindmap, a day…); on touch, press-and-hold stays its menu.
+      if (touchFirst) return tile;
+      return TransferSource(
+        transfer: () => ProjectTransfer(p.id, p.name),
+        child: tile,
+      );
+    }
 
     return ListView(
       padding: const EdgeInsets.all(Space.md),
@@ -957,10 +971,15 @@ class TaskRow extends StatelessWidget {
     );
     if (compact) return row;
     // Drag onto a Calendar day to schedule it there (the same record).
-    return TransferSource(
-      transfer: () => TaskTransfer(t.id, t.title, from: t.dueDate),
-      touch: touchFirst,
-      child: row,
+    // Drop another task on it: make that one a step, or wait for this one.
+    return TransferTarget(
+      state: state,
+      place: TaskPlace(t.id),
+      child: TransferSource(
+        transfer: () => TaskTransfer(t.id, t.title, from: t.dueDate),
+        touch: touchFirst,
+        child: row,
+      ),
     );
   }
 }

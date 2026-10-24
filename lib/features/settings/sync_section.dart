@@ -108,6 +108,7 @@ class _SyncSectionState extends State<SyncSection> {
                   ),
                 ),
               _ConnectGuide(mobile: mobile),
+              _HostedForm(state: s),
               if (!mobile && Platform.isWindows)
                 Align(
                   alignment: Alignment.centerLeft,
@@ -435,4 +436,112 @@ class _ConnectGuide extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Sign-in to a hosted sync service (instead of your own hub). Optional;
+/// it uses the same sync as the hub and needs an account on the service.
+class _HostedForm extends StatefulWidget {
+  const _HostedForm({required this.state});
+  final AppState state;
+
+  @override
+  State<_HostedForm> createState() => _HostedFormState();
+}
+
+class _HostedFormState extends State<_HostedForm> {
+  final _url = TextEditingController(text: 'https://');
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _invite = TextEditingController();
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    for (final c in [_url, _email, _password, _invite]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ExpansionTile(
+    key: const ValueKey('hosted-sync'),
+    tilePadding: EdgeInsets.zero,
+    title: const Text(
+      'Or use a hosted sync service',
+      style: TextStyle(fontSize: 13),
+    ),
+    subtitle: const Text(
+      'A server run for you (e.g. one you deployed from deploy/hosted). '
+      'Your data is stored there; THEapp keeps working offline.',
+      style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+    ),
+    children: [
+      TextField(
+        controller: _url,
+        decoration: const InputDecoration(labelText: 'Service address'),
+      ),
+      TextField(
+        controller: _email,
+        keyboardType: TextInputType.emailAddress,
+        decoration: const InputDecoration(labelText: 'Email'),
+      ),
+      TextField(
+        controller: _password,
+        obscureText: true,
+        decoration: const InputDecoration(
+          labelText: 'Password (12 characters or more)',
+        ),
+      ),
+      TextField(
+        controller: _invite,
+        decoration: const InputDecoration(
+          labelText: 'Invite code (only to create a new account)',
+        ),
+      ),
+      if (_error != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            _error!,
+            style: const TextStyle(fontSize: 12, color: AppColors.danger),
+          ),
+        ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton(
+          key: const ValueKey('hosted-sign-in'),
+          onPressed: _busy
+              ? null
+              : () async {
+                  setState(() {
+                    _busy = true;
+                    _error = null;
+                  });
+                  final error = await widget.state.signInHosted(
+                    _url.text,
+                    _email.text,
+                    _password.text,
+                    invite: _invite.text,
+                  );
+                  _password.clear();
+                  if (mounted) {
+                    setState(() {
+                      _busy = false;
+                      _error = error;
+                    });
+                  }
+                },
+          child: Text(
+            _busy
+                ? 'Signing in…'
+                : _invite.text.trim().isEmpty
+                ? 'Sign in'
+                : 'Create account and sign in',
+          ),
+        ),
+      ),
+    ],
+  );
 }

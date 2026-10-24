@@ -27,6 +27,8 @@ class SyncFailure implements Exception {
 /// public internet.
 bool isAllowedHubUrl(Uri url) {
   if (url.scheme != 'http' && url.scheme != 'https') return false;
+  // A hosted sync service: any named server, but only over HTTPS.
+  if (isHostedHubUrl(url)) return true;
   if (url.host == 'localhost' || url.host.endsWith('.ts.net')) return true;
   final ip = InternetAddress.tryParse(url.host);
   return ip != null && isAllowedBindAddress(ip);
@@ -45,6 +47,7 @@ bool isLoopbackHubUrl(Uri url) {
 /// plain HTTP that others on that network could read.
 bool isEncryptedHubRoute(Uri url) {
   final host = url.host.toLowerCase();
+  if (url.scheme == 'https') return true;
   if (host == 'localhost' || host.endsWith('.ts.net')) return true;
   final ip = InternetAddress.tryParse(host);
   if (ip == null) return false;
@@ -172,6 +175,36 @@ class SyncClient {
   ) async {
     final json = await _json(await _open('POST', '/v1/register'), {
       'pairingCode': code,
+      'deviceId': deviceId,
+      'deviceName': deviceName,
+    });
+    return token = json['token'] as String;
+  }
+
+  /// Hosted service: makes an account (needs an invite code from the
+  /// service's operator).
+  Future<void> createAccount(
+    String email,
+    String password,
+    String invite,
+  ) async {
+    await _json(await _open('POST', '/v1/account/register'), {
+      'email': email,
+      'password': password,
+      'invite': invite,
+    });
+  }
+
+  /// Hosted service: signs this device in; returns (and keeps) its token.
+  Future<String> signIn(
+    String email,
+    String password,
+    String deviceId,
+    String deviceName,
+  ) async {
+    final json = await _json(await _open('POST', '/v1/account/login'), {
+      'email': email,
+      'password': password,
       'deviceId': deviceId,
       'deviceName': deviceName,
     });
@@ -333,3 +366,11 @@ class _Digest implements Sink<Digest> {
 /// SHA-256 of a file, streamed (never loads it all into memory).
 Future<String> fileSha256(File f) async =>
     (await sha256.bind(f.openRead()).first).toString();
+
+/// A hosted sync service address: HTTPS to a named server (not an IP, no
+/// user name or password in the address).
+bool isHostedHubUrl(Uri url) =>
+    url.scheme == 'https' &&
+    url.host.contains('.') &&
+    url.userInfo.isEmpty &&
+    InternetAddress.tryParse(url.host) == null;

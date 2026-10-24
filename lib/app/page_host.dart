@@ -11,6 +11,7 @@ import '../features/calendar/calendar_page.dart';
 import '../features/canvas/canvas_controller.dart';
 import '../features/canvas/canvas_page.dart';
 import '../features/home/home_page.dart';
+import '../features/links/archive_library_page.dart';
 import '../features/links/links_page.dart';
 import '../features/notes/note_page.dart';
 import '../features/notes/notes_page.dart';
@@ -29,11 +30,33 @@ Widget buildPageInstance(BuildContext context, AppState s, PageInstance p) =>
         state: s,
         noteId: p.refId!,
       ),
-      AppPage.ai => AiChatPage(state: s, session: s.aiSessionFor(p)),
+      AppPage.ai => AiChatPage(
+        state: s,
+        session: s.aiSessionFor(p),
+        instanceId: p.id,
+      ),
       AppPage.browser => BrowserPage(state: s, browser: s.browserFor(p)),
       AppPage.canvas => MindmapWindow(state: s, canvasId: s.canvas?.id ?? ''),
       AppPage.notes => NotesPage(state: s),
+      // Its own view (view, filters, selected day) of the same records.
+      AppPage.calendar || AppPage.tasks when p.refId != null => CalendarPage(
+        state: s,
+        viewKey: 'calendarView.${p.id}',
+      ),
       AppPage.calendar || AppPage.tasks => CalendarPage(state: s),
+      AppPage.links when p.refId != null => Material(
+        color: AppColors.background,
+        child: ArchiveLibrary(
+          state: s,
+          embedded: true,
+          initialFolder: p.refId!.startsWith('folder:')
+              ? p.refId!.substring(7)
+              : null,
+          initialSelected: p.refId!.startsWith('res:')
+              ? p.refId!.substring(4)
+              : null,
+        ),
+      ),
       AppPage.links => LinksPage(state: s),
       AppPage.home => HomePage(state: s),
     };

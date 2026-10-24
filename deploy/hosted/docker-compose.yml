@@ -1,0 +1,31 @@
+# Hosted sync behind Caddy (automatic HTTPS from Let's Encrypt).
+# Needs: a server with Docker, a domain name pointing at it (DNS A/AAAA
+# record), ports 80 and 443 open. Set DOMAIN and ACME_EMAIL in .env.
+services:
+  hub:
+    build:
+      context: ../..
+      dockerfile: deploy/hosted/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - hub-data:/data
+    # Not published: only Caddy can reach it.
+    expose:
+      - "8080"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - hub
+volumes:
+  hub-data:
+  caddy-data:

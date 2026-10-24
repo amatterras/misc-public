@@ -11,9 +11,17 @@ import 'ai_session.dart';
 import 'ai_window.dart';
 
 class AiChatPage extends StatefulWidget {
-  const AiChatPage({super.key, required this.state, this.session});
+  const AiChatPage({
+    super.key,
+    required this.state,
+    this.session,
+    this.instanceId,
+  });
 
   final AppState state;
+
+  /// The page instance showing it (to ask before closing with unsent work).
+  final String? instanceId;
 
   /// This window's conversation (default: the main AI session).
   final AiSession? session;
@@ -27,6 +35,35 @@ class _AiChatPageState extends State<AiChatPage> {
 
   AppState get s => widget.state;
   AiSession get session => widget.session ?? s.aiSession;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.instanceId;
+    if (id != null) s.windows.setCloseGuard(id, _mayClose);
+  }
+
+  @override
+  void dispose() {
+    final id = widget.instanceId;
+    if (id != null) s.windows.setCloseGuard(id, null);
+    super.dispose();
+  }
+
+  /// Closing keeps the conversation; only an unsent question or a reply
+  /// still being written would be lost.
+  Future<bool> _mayClose() async {
+    if (!session.busy && session.draft.trim().isEmpty) return true;
+    if (!mounted) return true;
+    return confirm(
+      context,
+      title: 'Close this AI window?',
+      message: session.busy
+          ? 'A reply is still being written; it stops here.'
+          : 'Your unsent question will be lost. The conversation stays.',
+      action: 'Close',
+    );
+  }
 
   List<AiConversation> get _conversations {
     final q = _filter.trim().toLowerCase();

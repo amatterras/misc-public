@@ -162,9 +162,10 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
             onChanged: (p) => _change(() async {
               if (p == null) return;
               await ai.setProvider(p);
-              await ai.setEndpoint(p.defaultEndpoint);
+              // Each service keeps its own address, model and key.
               _endpoint.text = ai.endpoint;
               _model.text = ai.model;
+              _hasKey = await widget.state.hasAiKey;
             }),
           ),
           TextField(
@@ -201,7 +202,17 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
             ),
             onChanged: (v) => ai.setWorkingRules(v),
           ),
-          if (ai.provider == AiProvider.openAiCompatible)
+          if (ai.provider == AiProvider.gemini)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'Get a key at aistudio.google.com (Google may charge for use '
+                'beyond its free tier). The key is stored protected on this '
+                'device only.',
+                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+              ),
+            ),
+          if (ai.provider.needsKey)
             Row(
               children: [
                 Expanded(

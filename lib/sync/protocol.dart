@@ -42,6 +42,8 @@ const syncedCollections = {
   'vault_meta', // private vault key record (wrapped key only)
   'vault_items', // private vault items (ciphertext only)
   'templates', // the user's own note and project templates
+  'external_events', // Google / Outlook events (read-only mirrors)
+  'calendar_links', // THEapp entries exported to Google / Outlook
 };
 
 /// Kinds an older hub may not know yet; they are pushed last, on their own.
@@ -53,6 +55,8 @@ const newerCollections = {
   'vault_meta',
   'vault_items',
   'templates',
+  'external_events',
+  'calendar_links',
 };
 
 /// `0001792610475963-0000-a1b2c3d4`: see SyncClock.

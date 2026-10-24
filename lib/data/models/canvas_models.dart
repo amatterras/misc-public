@@ -371,10 +371,21 @@ class ConnectorItem extends CanvasItem {
     required super.id,
     required this.fromId,
     required this.toId,
+    this.fromT,
+    this.toT,
   });
 
   final String fromId;
   final String toId;
+
+  /// Where on a drawn line (stroke) an end is attached: 0 = its first
+  /// point, 1 = its last, in between = that share of its points. Stored
+  /// against the stroke's own points, so the end stays on the same ink when
+  /// the stroke is moved, resized, scaled or rotated. Null for objects
+  /// (boxes): the end sits on their edge. Optional and written only when
+  /// set, so older files and app versions are unaffected.
+  final double? fromT;
+  final double? toT;
 
   /// The line's real extent depends on the two items; the controller
   /// computes it (see `CanvasController.itemBounds`).
@@ -387,7 +398,11 @@ class ConnectorItem extends CanvasItem {
 
   @override
   ConnectorItem withId(String id) =>
-      ConnectorItem(id: id, fromId: fromId, toId: toId);
+      ConnectorItem(id: id, fromId: fromId, toId: toId, fromT: fromT, toT: toT);
+
+  /// The same connection between other items (copies keep their anchors).
+  ConnectorItem rejoined(String id, String from, String to) =>
+      ConnectorItem(id: id, fromId: from, toId: to, fromT: fromT, toT: toT);
 
   bool touches(String itemId) => fromId == itemId || toId == itemId;
 
@@ -400,12 +415,19 @@ class ConnectorItem extends CanvasItem {
     'id': id,
     'from': fromId,
     'to': toId,
+    'fromT': ?fromT,
+    'toT': ?toT,
   };
+
+  static double? _t(Object? v) =>
+      v is num && v.isFinite ? v.toDouble().clamp(0.0, 1.0) : null;
 
   factory ConnectorItem.fromJson(Map<String, dynamic> j) => ConnectorItem(
     id: j['id'] as String,
     fromId: j['from'] as String,
     toId: j['to'] as String,
+    fromT: _t(j['fromT']),
+    toT: _t(j['toT']),
   );
 }
 

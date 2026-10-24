@@ -59,6 +59,26 @@ class _FloatingWindowState extends State<_FloatingWindow> {
     widget.spec.minSize,
   );
 
+  /// Tells native views (Safari on Windows) where this window is.
+  void _publish() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (!mounted || box == null || !box.hasSize) return;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    final all = floatingWindowRects.value;
+    if (all[widget.spec.id] == rect) return;
+    floatingWindowRects.value = {...all, widget.spec.id: rect};
+  }
+
+  @override
+  void dispose() {
+    final id = widget.spec.id;
+    // After this frame: the map must not change while widgets build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      floatingWindowRects.value = {...floatingWindowRects.value}..remove(id);
+    });
+    super.dispose();
+  }
+
   void _end() {
     final r = _dragging;
     if (r == null) return;
@@ -74,6 +94,7 @@ class _FloatingWindowState extends State<_FloatingWindow> {
     final rect = _rect;
     final spec = widget.spec;
     final handle = touchFirst ? 44.0 : 20.0;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _publish());
     return Positioned.fromRect(
       rect: rect,
       child: Listener(
@@ -102,6 +123,12 @@ class _FloatingWindowState extends State<_FloatingWindow> {
                       ),
                       onPanEnd: (_) => _end(),
                       onPanCancel: _end,
+                      // Double-click / double-tap: small corner window and back.
+                      onDoubleTap: () => widget.windows.toggleCompact(
+                        spec.id,
+                        rect,
+                        widget.area,
+                      ),
                       child: Container(
                         height: 36,
                         padding: const EdgeInsets.only(left: Space.md),
@@ -114,13 +141,28 @@ class _FloatingWindowState extends State<_FloatingWindow> {
                           children: [
                             Expanded(
                               child: Text(
-                                spec.title,
+                                spec.liveTitle?.call() ?? spec.title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                 ),
+                              ),
+                            ),
+                            GhostIconButton(
+                              key: ValueKey('floating-${spec.id}-compact'),
+                              icon: widget.windows.isCompact(spec.id)
+                                  ? Icons.open_in_full
+                                  : Icons.picture_in_picture_alt_outlined,
+                              tooltip: widget.windows.isCompact(spec.id)
+                                  ? 'Back to full size'
+                                  : 'Small corner window',
+                              size: 16,
+                              onTap: () => widget.windows.toggleCompact(
+                                spec.id,
+                                rect,
+                                widget.area,
                               ),
                             ),
                             if (spec.onMinimize != null)

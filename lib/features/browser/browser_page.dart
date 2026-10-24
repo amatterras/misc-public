@@ -11,10 +11,12 @@ import 'package:flutter/services.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/browser_models.dart';
+import '../../platform/input_hints.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../ai/ai_service.dart';
 import '../ai/ai_session.dart';
+import '../transfer/transfer.dart';
 import 'browser_engine.dart';
 import 'browser_workspace.dart';
 
@@ -354,6 +356,26 @@ class _BrowserPageState extends State<BrowserPage> {
                 ? null
                 : (st?.loading ?? false ? engine.stop : engine.reload),
           ),
+          // Drag the page (its address) to a note, a mindmap, a day, the
+          // Archive or the task list. Only what is dragged is captured.
+          if (t != null && t.url.isNotEmpty)
+            TransferSource(
+              transfer: () => UrlTransfer(t.url, title: t.title),
+              touch: touchFirst,
+              feedback: Text(t.title.isEmpty ? t.url : t.title),
+              child: const Tooltip(
+                message: 'Drag this page somewhere in THEapp',
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6),
+                  child: Icon(
+                    Icons.drag_indicator,
+                    key: ValueKey('browser-drag-page'),
+                    size: 18,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ),
           Expanded(
             child: TextField(
               key: const ValueKey('browser-address'),

@@ -290,7 +290,8 @@ class _ItemLabel extends StatelessWidget {
 /// Reminder/Event color).
 Color dayItemColor(DayItem item) => switch (item) {
   EntryOnDay(:final entry) => calendarCategoryColor(entry.category),
-  TaskOnDay() => calendarCategoryColor(CalendarCategory.events),
+  TaskOnDay() ||
+  ExternalOnDay() => calendarCategoryColor(CalendarCategory.events),
 };
 
 /// Days with something on them, in order, each with its items.
@@ -368,6 +369,10 @@ class CalendarAgendaView extends StatelessWidget {
                 TaskOnDay() => const Text(
                   'Task',
                   style: TextStyle(fontSize: 11),
+                ),
+                ExternalOnDay(:final event) => Text(
+                  event.provider == 'google' ? 'Google Calendar' : 'Outlook',
+                  style: const TextStyle(fontSize: 11),
                 ),
               },
               onTap: () => onItem(item, d),

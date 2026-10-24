@@ -134,7 +134,11 @@ List<SearchResult> searchEverything(AppState s, String query) {
           icon: Icons.picture_as_pdf_outlined,
           kind: 'Document',
           title: a.label,
-          subtitle: has(body) ? snippet(body) : 'PDF',
+          // Text recognised on a scanned page names the page.
+          subtitle: switch (s.pdfTexts.pageMatch(a.id, [q])) {
+            (final page, final text) => 'Page $page: ${snippet(text)}',
+            null => has(body) ? snippet(body) : 'PDF',
+          },
           open: () {
             final file = ws.documentFile(a);
             if (file != null) s.openDocument(file.path);
@@ -265,8 +269,9 @@ class _SearchDialog extends StatefulWidget {
 String _pdfLine(AppState s) {
   final p = s.pdfTexts;
   if (p.running) return 'Reading PDF text… ${p.done} of ${p.total}';
-  return 'Text inside PDFs is searched on this device. Scanned PDFs '
-      '(pictures of text) are not: there is no text recognition yet.';
+  return 'Text inside PDFs is searched on this device. Scanned PDFs are '
+      'read with on-device text recognition (Windows OCR / Apple Vision) '
+      'where available; nothing is sent anywhere.';
 }
 
 class _SearchDialogState extends State<_SearchDialog> {

@@ -8,6 +8,8 @@ import '../../app/theme.dart';
 import '../../data/models/library_models.dart';
 import '../../widgets/common.dart';
 import '../sharing/share_dialog.dart';
+import '../../platform/input_hints.dart';
+import '../transfer/transfer.dart';
 import 'archive_library.dart';
 
 Future<void> showArchiveLibrary(BuildContext context, AppState s) =>
@@ -23,8 +25,19 @@ Future<void> showArchiveLibrary(BuildContext context, AppState s) =>
     );
 
 class ArchiveLibrary extends StatefulWidget {
-  const ArchiveLibrary({super.key, required this.state});
+  const ArchiveLibrary({
+    super.key,
+    required this.state,
+    this.embedded = false,
+    this.initialFolder,
+    this.initialSelected,
+  });
   final AppState state;
+
+  /// Shown as a page (in the main area or a window), not a dialog.
+  final bool embedded;
+  final String? initialFolder;
+  final String? initialSelected;
 
   @override
   State<ArchiveLibrary> createState() => _ArchiveLibraryState();
@@ -41,7 +54,19 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
   @override
   void initState() {
     super.initState();
+    final asset = s.workspace.assets[widget.initialSelected];
+    if (asset != null) {
+      _selected = asset.id;
+      _folder = asset.folderId ?? '';
+    } else if (widget.initialFolder != null) {
+      _folder = widget.initialFolder;
+    }
     _loadRefs();
+  }
+
+  /// Leaves the dialog; a page stays where it is.
+  void _leave(BuildContext context) {
+    if (!widget.embedded) Navigator.pop(context);
   }
 
   Future<void> _loadRefs() async {
@@ -89,6 +114,7 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
             ('rename', 'Rename'),
             ('move', 'Move'),
             ('delete', 'Delete (contents move up)'),
+            ('page', 'Open in its own page'),
           ])
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, v),
@@ -99,6 +125,9 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
     );
     if (!mounted) return;
     switch (choice) {
+      case 'page':
+        _leave(context);
+        s.openArchiveItem(folderId: id);
       case 'new':
         final name = await promptText(context, title: 'Folder name');
         if (name != null) ws.createArchiveFolder(name, parentId: id);
@@ -126,6 +155,20 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
     }
   }
 
+  /// "Everything" (only a view) and "Top level" (a drop there takes things
+  /// out of their folder).
+  Widget _viewTile(String? id, String label) {
+    final tile = ListTile(
+      dense: true,
+      selected: _folder == id,
+      title: Text(label),
+      onTap: () => setState(() => _folder = id),
+    );
+    return id == ''
+        ? TransferTarget(state: s, place: const ArchivePlace(null), child: tile)
+        : tile;
+  }
+
   Widget _tree(String? parent, int depth) {
     final ws = s.workspace;
     final children =
@@ -136,34 +179,39 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final f in children) ...[
-          InkWell(
-            key: ValueKey('archive-folder-${f.id}'),
-            onTap: () => setState(() => _folder = f.id),
-            onLongPress: () => _folderMenu(f.id),
-            onSecondaryTap: () => _folderMenu(f.id),
-            child: Container(
-              color: _folder == f.id ? AppColors.card : null,
-              padding: EdgeInsets.fromLTRB(8.0 + depth * 14, 6, 4, 6),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.folder_outlined,
-                    size: 16,
-                    color: AppColors.textMuted,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(f.name, overflow: TextOverflow.ellipsis),
-                  ),
-                  InkWell(
-                    onTap: () => _folderMenu(f.id),
-                    child: const Icon(
-                      Icons.more_horiz,
-                      size: 14,
-                      color: AppColors.textFaint,
+          // Drop resources (or link cards from a mindmap) to file them here.
+          TransferTarget(
+            state: s,
+            place: ArchivePlace(f.id),
+            child: InkWell(
+              key: ValueKey('archive-folder-${f.id}'),
+              onTap: () => setState(() => _folder = f.id),
+              onLongPress: () => _folderMenu(f.id),
+              onSecondaryTap: () => _folderMenu(f.id),
+              child: Container(
+                color: _folder == f.id ? AppColors.card : null,
+                padding: EdgeInsets.fromLTRB(8.0 + depth * 14, 6, 4, 6),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.folder_outlined,
+                      size: 16,
+                      color: AppColors.textMuted,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(f.name, overflow: TextOverflow.ellipsis),
+                    ),
+                    InkWell(
+                      onTap: () => _folderMenu(f.id),
+                      child: const Icon(
+                        Icons.more_horiz,
+                        size: 14,
+                        color: AppColors.textFaint,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -216,10 +264,11 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
                     icon: const Icon(Icons.rule, size: 16),
                     label: const Text('Check links'),
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, size: 18),
-                  ),
+                  if (!widget.embedded)
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, size: 18),
+                    ),
                 ],
               ),
             ),
@@ -236,12 +285,7 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
                           (null, 'Everything'),
                           ('', 'Top level'),
                         ])
-                          ListTile(
-                            dense: true,
-                            selected: _folder == id,
-                            title: Text(label),
-                            onTap: () => setState(() => _folder = id),
-                          ),
+                          _viewTile(id, label),
                         _tree(null, 0),
                         TextButton.icon(
                           key: const ValueKey('archive-new-folder'),
@@ -278,26 +322,33 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
                         : ListView(
                             children: [
                               for (final a in items)
-                                ListTile(
-                                  key: ValueKey('archive-item-${a.id}'),
-                                  dense: true,
-                                  selected: a.id == _selected,
-                                  leading: Icon(switch (a.kind) {
-                                    AssetKind.link => Icons.link,
-                                    AssetKind.image => Icons.image_outlined,
-                                    AssetKind.document =>
-                                      Icons.picture_as_pdf_outlined,
-                                  }, size: 18),
-                                  title: Text(
-                                    a.label,
-                                    overflow: TextOverflow.ellipsis,
+                                // Drag to a folder, a note, a day, a mindmap…
+                                TransferSource(
+                                  transfer: () => AssetsTransfer([a.id]),
+                                  touch: touchFirst,
+                                  feedback: Text(a.label),
+                                  child: ListTile(
+                                    key: ValueKey('archive-item-${a.id}'),
+                                    dense: true,
+                                    selected: a.id == _selected,
+                                    leading: Icon(switch (a.kind) {
+                                      AssetKind.link => Icons.link,
+                                      AssetKind.image => Icons.image_outlined,
+                                      AssetKind.document =>
+                                        Icons.picture_as_pdf_outlined,
+                                    }, size: 18),
+                                    title: Text(
+                                      a.label,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      '${_refs?[a.id]?.length ?? 0} uses'
+                                      '${a.folderId == null ? '' : ' · ${ws.archiveFolderLabel(a.folderId)}'}',
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                    onTap: () =>
+                                        setState(() => _selected = a.id),
                                   ),
-                                  subtitle: Text(
-                                    '${_refs?[a.id]?.length ?? 0} uses'
-                                    '${a.folderId == null ? '' : ' · ${ws.archiveFolderLabel(a.folderId)}'}',
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                  onTap: () => setState(() => _selected = a.id),
                                 ),
                             ],
                           ),
@@ -393,6 +444,15 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
               ),
               child: const Text('Share'),
             ),
+            if (!widget.embedded || widget.initialSelected != a.id)
+              TextButton(
+                key: const ValueKey('archive-open-page'),
+                onPressed: () {
+                  _leave(context);
+                  s.openArchiveItem(assetId: a.id);
+                },
+                child: const Text('Own page'),
+              ),
           ],
         ),
         const Divider(),
@@ -412,7 +472,7 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
             }, size: 16),
             title: Text(r.title, overflow: TextOverflow.ellipsis),
             onTap: () {
-              Navigator.pop(context);
+              _leave(context);
               switch (r.kind) {
                 case 'note':
                   s.openNote(r.id);

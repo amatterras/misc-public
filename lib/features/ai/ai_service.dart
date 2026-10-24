@@ -1,9 +1,10 @@
 // Optional AI help. Off unless the user turns it on, and even then nothing
 // leaves THEapp until the user presses Send in the AI window, which shows
-// exactly what will be sent. Two kinds of service:
+// exactly what will be sent. Three kinds of service:
 //   - a model running on this PC with Ollama (free, nothing leaves the PC);
 //   - an OpenAI-compatible service with the user's own key (may cost money;
 //     a ChatGPT subscription does not include this).
+//   - Google Gemini with the user's own API key (Google AI Studio).
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -11,18 +12,29 @@ import 'dart:typed_data';
 
 import '../../data/repositories/canvas_repository.dart' show SettingsRepository;
 
-enum AiProvider { ollama, openAiCompatible }
+enum AiProvider { ollama, openAiCompatible, gemini }
 
 extension AiProviderInfo on AiProvider {
   String get label => switch (this) {
     AiProvider.ollama => 'Local model on this PC (Ollama, free)',
     AiProvider.openAiCompatible => 'OpenAI-compatible service (your own key)',
+    AiProvider.gemini => 'Google Gemini (your own API key)',
   };
 
   String get defaultEndpoint => switch (this) {
     AiProvider.ollama => 'http://127.0.0.1:11434',
     AiProvider.openAiCompatible => 'https://api.openai.com',
+    AiProvider.gemini => 'https://generativelanguage.googleapis.com',
   };
+
+  String get defaultModel => switch (this) {
+    AiProvider.ollama => 'llama3.2',
+    AiProvider.openAiCompatible => 'gpt-4o-mini',
+    AiProvider.gemini => 'gemini-2.5-flash',
+  };
+
+  /// Needs an API key (stored protected, per service).
+  bool get needsKey => this != AiProvider.ollama;
 }
 
 /// Kinds of content the AI may be given (each can be switched off).
@@ -57,12 +69,27 @@ class AiSettings {
       AiProvider.ollama;
   Future<void> setProvider(AiProvider p) => _set('provider', p.name);
 
-  String get endpoint => _get('endpoint', provider.defaultEndpoint);
-  Future<void> setEndpoint(String url) => _set('endpoint', url.trim());
+  // Address and model are kept per service, so switching between them never
+  // sends one service's model name or address to another. (Settings from
+  // before Gemini existed were shared; they still apply to Ollama and the
+  // OpenAI-compatible service.)
+  String get endpoint => _get(
+    'endpoint.${provider.name}',
+    provider == AiProvider.gemini
+        ? provider.defaultEndpoint
+        : _get('endpoint', provider.defaultEndpoint),
+  );
+  Future<void> setEndpoint(String url) =>
+      _set('endpoint.${provider.name}', url.trim());
 
-  String get model =>
-      _get('model', provider == AiProvider.ollama ? 'llama3.2' : 'gpt-4o-mini');
-  Future<void> setModel(String name) => _set('model', name.trim());
+  String get model => _get(
+    'model.${provider.name}',
+    provider == AiProvider.gemini
+        ? provider.defaultModel
+        : _get('model', provider.defaultModel),
+  );
+  Future<void> setModel(String name) =>
+      _set('model.${provider.name}', name.trim());
 
   /// Most characters of text sent with one request.
   int get maxContextChars => _get('maxContext', 4000).clamp(500, 50000);
@@ -194,13 +221,31 @@ AiClient aiClientFor(AiSettings settings, {String? apiKey}) =>
         settings.model,
         apiKey ?? '',
       ),
+      AiProvider.gemini => GeminiClient(
+        Uri.parse(settings.endpoint),
+        settings.model,
+        apiKey ?? '',
+      ),
     };
 
 /// Largest reply accepted (characters); anything beyond is cut off.
 const maxReplyChars = 200000;
 
 /// A plain explanation for an HTTP status from an AI service.
-AiFailure aiFailureFor(int status) => switch (status) {
+AiFailure aiFailureFor(int status, {String body = ''}) => switch (status) {
+  _
+      when body.contains('API_KEY_INVALID') ||
+          body.contains('API key not valid') =>
+    const AiFailure(
+      'The AI service refused the key. Check it in Settings → AI.',
+    ),
+  _ when body.contains('User location is not supported') => const AiFailure(
+    'This AI service is not available in your region.',
+  ),
+  400 => const AiFailure(
+    'The AI service could not accept this request (check the model name, '
+    'or remove pictures if the model cannot read them).',
+  ),
   401 || 403 => const AiFailure(
     'The AI service refused the key (not signed in or not allowed).',
   ),
@@ -245,8 +290,15 @@ class _Request {
       request.add(utf8.encode(jsonEncode(body)));
       final response = await request.close().timeout(timeout);
       if (response.statusCode >= 400) {
-        await response.drain<void>().catchError((_) {});
-        throw aiFailureFor(response.statusCode);
+        // A little of the error body, only to recognise known causes; it is
+        // never shown or logged as is.
+        final body = await response
+            .transform(utf8.decoder)
+            .take(4)
+            .join()
+            .timeout(const Duration(seconds: 5))
+            .catchError((_) => '');
+        throw aiFailureFor(response.statusCode, body: body);
       }
       yield* response
           .transform(utf8.decoder)
@@ -448,6 +500,142 @@ class OpenAiCompatibleClient extends AiClient {
           ? (choices.first as Map?)?['delta']?['content']
           : null;
       return delta is String ? delta : null;
+    });
+  }
+
+  @override
+  void cancel() => _active?.cancel();
+}
+
+/// Google Gemini through its public REST API (generativelanguage, v1beta:
+/// `models/{model}:generateContent` and `:streamGenerateContent?alt=sse`).
+/// The key goes in the `x-goog-api-key` header, never in the address.
+class GeminiClient extends AiClient {
+  GeminiClient(this.endpoint, this.model, this.apiKey);
+  final Uri endpoint;
+  final String model;
+  final String apiKey;
+  _Request? _active;
+
+  /// Model names are plain ids such as `gemini-2.5-flash`.
+  static final _modelPattern = RegExp(r'^[A-Za-z0-9._-]{1,80}$');
+
+  /// Gemini's request: the system text apart, then user/model turns, with
+  /// pictures as inline PNG data.
+  static Map<String, dynamic> body(List<AiMessage> messages) {
+    final system = [
+      for (final m in messages)
+        if (m.role == 'system') m.content,
+    ].join('\n\n');
+    return {
+      if (system.isNotEmpty)
+        'systemInstruction': {
+          'parts': [
+            {'text': system},
+          ],
+        },
+      'contents': [
+        for (final m in messages)
+          if (m.role != 'system')
+            {
+              'role': m.role == 'assistant' ? 'model' : 'user',
+              'parts': [
+                if (m.content.isNotEmpty) {'text': m.content},
+                for (final i in m.images)
+                  {
+                    'inlineData': {
+                      'mimeType': 'image/png',
+                      'data': base64Encode(i),
+                    },
+                  },
+              ],
+            },
+      ],
+    };
+  }
+
+  /// The text of one response object; throws for blocked or failed ones.
+  static String? textOf(Object? json) {
+    if (json is! Map) return null;
+    final error = json['error'];
+    if (error is Map) {
+      throw aiFailureFor(
+        (error['code'] as num?)?.toInt() ?? 500,
+        body: '${error['status']} ${error['message']}',
+      );
+    }
+    final blocked = (json['promptFeedback'] as Map?)?['blockReason'];
+    if (blocked is String) {
+      throw const AiFailure(
+        'Gemini declined to answer this request (its safety rules).',
+      );
+    }
+    final candidates = json['candidates'];
+    if (candidates is! List || candidates.isEmpty) return null;
+    final first = candidates.first;
+    if (first is! Map) return null;
+    final parts = (first['content'] as Map?)?['parts'];
+    final text = parts is List
+        ? [
+            for (final p in parts)
+              if (p is Map && p['text'] is String) p['text'] as String,
+          ].join()
+        : '';
+    if (text.isEmpty && first['finishReason'] == 'SAFETY') {
+      throw const AiFailure('Gemini stopped the answer (its safety rules).');
+    }
+    return text;
+  }
+
+  Uri _url(String method) => endpoint.replace(
+    path: '/v1beta/models/$model:$method',
+    queryParameters: method.startsWith('stream') ? {'alt': 'sse'} : null,
+  );
+
+  Map<String, String> get _headers => {'x-goog-api-key': apiKey};
+
+  AiFailure? get _invalid {
+    if (apiKey.isEmpty) {
+      return const AiFailure('No Gemini API key is set (Settings → AI).');
+    }
+    if (!_modelPattern.hasMatch(model)) {
+      return const AiFailure('The Gemini model name is not valid.');
+    }
+    return null;
+  }
+
+  @override
+  Future<String> complete(List<AiMessage> messages) async {
+    final bad = _invalid;
+    if (bad != null) throw bad;
+    final json = await _postJson(
+      _url('generateContent'),
+      body(messages),
+      headers: _headers,
+    );
+    final text = textOf(json);
+    if (text == null || text.isEmpty) {
+      throw const AiFailure('Gemini sent no answer.');
+    }
+    return text.trim();
+  }
+
+  @override
+  Stream<String> stream(List<AiMessage> messages) {
+    final bad = _invalid;
+    if (bad != null) return Stream.error(bad);
+    final r = _active = _Request(
+      _url('streamGenerateContent'),
+      body(messages),
+      _headers,
+      const Duration(seconds: 120),
+    );
+    // Server-sent events: one "data: {...}" line per piece.
+    return _pieces(r, (line) {
+      if (!line.startsWith('data:')) return null;
+      final data = line.substring(5).trim();
+      if (data.isEmpty) return null;
+      return textOf(jsonDecode(data));
     });
   }
 

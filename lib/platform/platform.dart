@@ -61,9 +61,13 @@ bool setImmersive(bool on) {
   if (Platform.environment.containsKey('FLUTTER_TEST')) return false;
   if (Platform.isWindows) return win.setMainWindowFullScreen(on);
   if (Platform.isIOS) {
+    // Only the status bar is hidden (through the Flutter view controller's
+    // prefersStatusBarHidden); the home indicator and the system edge
+    // gestures stay. The OS decides in Split View / Stage Manager.
     unawaited(
       SystemChrome.setEnabledSystemUIMode(
-        on ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+        SystemUiMode.manual,
+        overlays: on ? const [SystemUiOverlay.bottom] : SystemUiOverlay.values,
       ),
     );
     return true;

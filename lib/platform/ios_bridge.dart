@@ -111,6 +111,17 @@ class IosBridge implements KeychainBackend {
         'width': width,
       }, true);
 
+  /// Text recognised on each page of the PDF at [path] by Apple's on-device
+  /// Vision framework (nothing leaves the device); at most [maxPages]
+  /// pages. Null when it cannot run here.
+  Future<List<String>?> ocrPdf(String path, {int maxPages = 50}) async {
+    final r = await _invoke<List<Object?>>('ocrPdf', {
+      'path': path,
+      'maxPages': maxPages,
+    }, true);
+    return r == null ? null : [for (final p in r) p is String ? p : ''];
+  }
+
   /// Writes a copy of the PDF at [source] to [target] with [pages] drawn
   /// on top (the original file is not changed). Each page entry:
   /// {page, strokes: [{color, width, points: [[x, y, w], …]}]} in PDF

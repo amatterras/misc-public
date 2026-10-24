@@ -434,6 +434,31 @@ class CanvasPainter extends CustomPainter {
           ..strokeWidth = 2.5 / scale,
       );
     }
+    // What the connection would attach to, and the exact point (a ring
+    // where it snaps: a line's end or nearest point, or an edge).
+    final targetId = controller.connectTarget;
+    final target = targetId == null ? null : controller.itemById(targetId);
+    final live = controller.liveConnection;
+    if (target != null && live != null) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          controller.itemBounds(target).inflate(4 / scale),
+          Radius.circular(8 / scale),
+        ),
+        Paint()
+          ..color = AppColors.accent.withValues(alpha: 0.6)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5 / scale,
+      );
+      canvas.drawCircle(
+        live.$2,
+        7 / scale,
+        Paint()
+          ..color = AppColors.accent
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2 / scale,
+      );
+    }
     // One boundary around the whole selection (a group or many strokes
     // are one object), with exactly two dots: top-left and top-right
     // (the top-right one resizes / scales).

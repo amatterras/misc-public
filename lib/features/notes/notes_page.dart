@@ -177,11 +177,16 @@ class _NotesPageState extends State<NotesPage> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
           ),
         ),
-        item(
-          'All notes',
-          Icons.notes,
-          const AllNotes(),
-          trailing: _count(ws.notes.length),
+        // Dropping a note on "All notes" takes it out of its folder.
+        TransferTarget(
+          state: s,
+          place: const NoteFolderPlace(null),
+          child: item(
+            'All notes',
+            Icons.notes,
+            const AllNotes(),
+            trailing: _count(ws.notes.length),
+          ),
         ),
         item('Favorites', Icons.star_outline, const FavoriteNotes()),
         item(
@@ -219,23 +224,28 @@ class _NotesPageState extends State<NotesPage> {
           GestureDetector(
             onSecondaryTapUp: (d) => _folderMenu(folder, d.globalPosition),
             onLongPressStart: (d) => _folderMenu(folder, d.globalPosition),
-            child: item(
-              folder.name,
-              Icons.folder_outlined,
-              FolderNotes(folder.id),
-              depth: depth,
-              trailing: Builder(
-                builder: (buttonContext) => GhostIconButton(
-                  icon: Icons.more_horiz,
-                  tooltip: 'Folder options',
-                  size: 14,
-                  onTap: () {
-                    final box = buttonContext.findRenderObject() as RenderBox;
-                    _folderMenu(
-                      folder,
-                      box.localToGlobal(box.size.bottomLeft(Offset.zero)),
-                    );
-                  },
+            // Drop a note here to move it into this folder.
+            child: TransferTarget(
+              state: s,
+              place: NoteFolderPlace(folder.id),
+              child: item(
+                folder.name,
+                Icons.folder_outlined,
+                FolderNotes(folder.id),
+                depth: depth,
+                trailing: Builder(
+                  builder: (buttonContext) => GhostIconButton(
+                    icon: Icons.more_horiz,
+                    tooltip: 'Folder options',
+                    size: 14,
+                    onTap: () {
+                      final box = buttonContext.findRenderObject() as RenderBox;
+                      _folderMenu(
+                        folder,
+                        box.localToGlobal(box.size.bottomLeft(Offset.zero)),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),

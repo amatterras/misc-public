@@ -10,6 +10,7 @@ add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
   "utils.cpp"
+  "webview_host.cpp"
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
@@ -34,6 +35,31 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
+
+# Microsoft Edge WebView2 SDK (headers + static loader) for Safari's
+# Windows engine, fetched once from Microsoft's official NuGet package at
+# configure time (no Flutter plugin, so no symlinks / Developer Mode).
+# The WebView2 Runtime itself ships with Windows 10/11 and Edge.
+set(WEBVIEW2_VERSION "1.0.2849.39")
+set(WEBVIEW2_DIR "${CMAKE_BINARY_DIR}/webview2-${WEBVIEW2_VERSION}")
+if(NOT EXISTS "${WEBVIEW2_DIR}/build/native/include/WebView2.h")
+  file(DOWNLOAD
+    "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/${WEBVIEW2_VERSION}"
+    "${CMAKE_BINARY_DIR}/webview2-${WEBVIEW2_VERSION}.nupkg"
+    TLS_VERIFY ON
+    STATUS WEBVIEW2_STATUS)
+  list(GET WEBVIEW2_STATUS 0 WEBVIEW2_CODE)
+  if(NOT WEBVIEW2_CODE EQUAL 0)
+    message(FATAL_ERROR "Could not download the WebView2 SDK: ${WEBVIEW2_STATUS}")
+  endif()
+  file(ARCHIVE_EXTRACT
+    INPUT "${CMAKE_BINARY_DIR}/webview2-${WEBVIEW2_VERSION}.nupkg"
+    DESTINATION "${WEBVIEW2_DIR}")
+endif()
+target_include_directories(${BINARY_NAME} PRIVATE "${WEBVIEW2_DIR}/build/native/include")
+target_link_libraries(${BINARY_NAME} PRIVATE
+  "${WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib"
+  "version.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.

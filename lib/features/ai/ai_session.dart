@@ -124,6 +124,9 @@ class AiSession extends ChangeNotifier {
   /// The saved conversation shown, or null for a new one.
   String? conversationId;
 
+  /// The question typed but not sent yet (kept with the session).
+  String draft = '';
+
   /// The reply being written right now (while streaming).
   String streaming = '';
   AiClient? _active;

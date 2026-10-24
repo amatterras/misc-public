@@ -10,7 +10,6 @@ import 'package:flutter/services.dart';
 import '../../app/app_state.dart';
 import '../../app/page_windows.dart';
 import '../../app/top_bar.dart';
-import '../../data/models/canvas_models.dart' show newId;
 import '../../app/theme.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
@@ -106,21 +105,24 @@ List<PaletteCommand> paletteCommands(
       final p = addCurrentPage(s);
       s.windows.float(p.id);
     }),
-    PaletteCommand('New Safari window', Icons.explore_outlined, (_) {
-      s.windows.open(
-        AppPage.browser,
-        refId: newId(),
-        title: 'Safari',
-        mode: PageMode.floating,
-      );
-    }),
-    PaletteCommand('New AI chat window', Icons.auto_awesome_outlined, (_) {
-      s.windows.open(
-        AppPage.ai,
-        refId: 'new-${newId()}',
-        title: 'New chat',
-        mode: PageMode.floating,
-      );
+    // New pages: each a fresh instance (the same as the page bar's menu),
+    // in the main area or as a floating window.
+    for (final (kind, label) in newPageChoices) ...[
+      PaletteCommand(label, pageIcon(kind), (_) => s.newPage(kind)),
+      PaletteCommand(
+        '$label in a window',
+        pageIcon(kind),
+        (_) => s.newPage(kind, mode: PageMode.floating),
+      ),
+    ],
+    PaletteCommand(
+      'Close this page (keeps its content)',
+      Icons.close,
+      (_) => s.closeActivePage(),
+    ),
+    PaletteCommand('Minimize this page', Icons.minimize, (_) {
+      final id = s.windows.activeId;
+      if (id != null) s.windows.minimize(id);
     }),
     PaletteCommand(
       'Go to safari',

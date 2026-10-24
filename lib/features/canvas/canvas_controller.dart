@@ -928,10 +928,54 @@ class CanvasController extends ChangeNotifier {
   /// missing (deleted, or not synced yet), so the line is not drawn.
   (Offset, Offset)? connectorEnds(ConnectorItem c) {
     final a = itemById(c.fromId), b = itemById(c.toId);
-    if (a is! BoxItem || b is! BoxItem) return null;
-    final ra = itemBounds(a), rb = itemBounds(b);
-    return (_edgePoint(ra, rb.center), _edgePoint(rb, ra.center));
+    if (!isConnectable(a) || !isConnectable(b)) return null;
+    // A stroke end is a fixed point on its ink; a box end sits on its edge
+    // facing the other end.
+    final pa = a is StrokeItem ? strokeAnchor(a, c.fromT ?? 0) : null;
+    final pb = b is StrokeItem ? strokeAnchor(b, c.toT ?? 1) : null;
+    final ra = itemBounds(a!), rb = itemBounds(b!);
+    return (
+      pa ?? _edgePoint(ra, pb ?? rb.center),
+      pb ?? _edgePoint(rb, pa ?? ra.center),
+    );
   }
+
+  /// Objects and drawn lines can be connected (not connections themselves).
+  static bool isConnectable(CanvasItem? i) => i is BoxItem || i is StrokeItem;
+
+  /// The point of stroke [s] at share [t] of its points (see
+  /// [ConnectorItem.fromT]).
+  static Offset strokeAnchor(StrokeItem s, double t) {
+    if (s.points.isEmpty) return s.bounds.center;
+    final i = (t.clamp(0.0, 1.0) * (s.points.length - 1)).round();
+    return s.points[i].offset;
+  }
+
+  /// Where on stroke [s] a connection made at [world] attaches: its first
+  /// or last point when near one (snapping to the line's ends), else its
+  /// nearest point.
+  double strokeAnchorAt(StrokeItem s, Offset world) {
+    final n = s.points.length;
+    if (n < 2) return 0;
+    final snap = 14 / _scale;
+    if ((s.points.first.offset - world).distance <= snap) return 0;
+    if ((s.points.last.offset - world).distance <= snap) return 1;
+    var best = 0, bestD = double.infinity;
+    for (var i = 0; i < n; i++) {
+      final d = (s.points[i].offset - world).distanceSquared;
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best / (n - 1);
+  }
+
+  /// Where a connection made at [world] onto [target] would attach.
+  Offset _attachPoint(CanvasItem target, Offset world, Offset from) =>
+      target is StrokeItem
+      ? strokeAnchor(target, strokeAnchorAt(target, world))
+      : _edgePoint(itemBounds(target), from);
 
   /// Point where the line from [r]'s centre towards [target] leaves [r].
   static Offset _edgePoint(Rect r, Offset target) {
@@ -950,11 +994,7 @@ class CanvasController extends ChangeNotifier {
   ) => [
     for (final c in items.whereType<ConnectorItem>())
       if (newIds.containsKey(c.fromId) && newIds.containsKey(c.toId))
-        ConnectorItem(
-          id: newId(),
-          fromId: newIds[c.fromId]!,
-          toId: newIds[c.toId]!,
-        ),
+        c.rejoined(newId(), newIds[c.fromId]!, newIds[c.toId]!),
   ];
 
   // --------------------------------------------------------- hit testing --
@@ -1262,11 +1302,7 @@ class CanvasController extends ChangeNotifier {
           _tapMoved = false;
         } else {
           final hit = hitTest(world);
-          if (hit is BoxItem) {
-            _drag = _Drag.connect;
-            _connectFrom = hit.id;
-            _connectEnd = world;
-          }
+          if (isConnectable(hit)) _startConnect(hit!, world);
         }
     }
     notifyListeners();
@@ -1275,6 +1311,9 @@ class CanvasController extends ChangeNotifier {
   String? _connectFrom;
   Offset? _connectEnd;
 
+  /// Where on a drawn line the connection starts (see ConnectorItem.fromT).
+  double? _fromT;
+
   /// Source item chosen with a tap (touch): the next tap on another item
   /// connects the two. Tapping it again or empty space cancels.
   String? _pendingFrom;
@@ -1282,27 +1321,55 @@ class CanvasController extends ChangeNotifier {
   Offset? _tapScreen;
   bool _tapMoved = false;
 
+  /// Starts a connection from [hit] (an object or a drawn line) at [world].
+  void _startConnect(CanvasItem hit, Offset world) {
+    _drag = _Drag.connect;
+    _connectFrom = hit.id;
+    _connectEnd = world;
+    _fromT = hit is StrokeItem ? strokeAnchorAt(hit, world) : null;
+  }
+
   /// The item a connection is being made from (highlighted on screen).
   String? get connectSource => _connectFrom ?? _pendingFrom;
+
+  /// The item the live connection would attach to now (highlighted), or
+  /// null over empty canvas or the source itself.
+  String? get connectTarget {
+    final end =
+        _connectEnd ??
+        (_pendingFrom != null && _hover != null ? toWorld(_hover!) : null);
+    if (end == null) return null;
+    final hit = hitTest(end);
+    return isConnectable(hit) && hit!.id != connectSource ? hit.id : null;
+  }
 
   /// Cancels a connection waiting for its second tap.
   void cancelConnect() {
     if (_pendingFrom == null) return;
     _pendingFrom = null;
+    _fromT = null;
     notifyListeners();
   }
 
-  /// Line being drawn with the connect tool (start item edge → pointer).
+  /// Line being drawn with the connect tool (start → pointer). Over a valid
+  /// target its end snaps to where it would attach (a stroke's end or
+  /// nearest point, or an object's edge).
   (Offset, Offset)? get liveConnection {
     final fromId = _connectFrom ?? _pendingFrom;
     final from = fromId == null ? null : itemById(fromId);
     // While waiting for the second tap, a mouse shows the line to the
     // pointer; on touch there is no hover, so the source is highlighted.
-    final end =
+    var end =
         _connectEnd ??
         (_pendingFrom != null && _hover != null ? toWorld(_hover!) : null);
     if (from == null || end == null) return null;
-    return (_edgePoint(itemBounds(from), end), end);
+    final start = from is StrokeItem
+        ? strokeAnchor(from, _fromT ?? 0)
+        : _edgePoint(itemBounds(from), end);
+    final targetId = connectTarget;
+    final target = targetId == null ? null : itemById(targetId);
+    if (target != null) end = _attachPoint(target, end, start);
+    return (start, end);
   }
 
   /// Finishes a connect drag: joins the two items. Released on the same
@@ -1313,11 +1380,12 @@ class CanvasController extends ChangeNotifier {
     _connectEnd = null;
     if (fromId == null || end == null) return;
     final target = hitTest(end);
-    if (target is BoxItem && target.id == fromId) {
+    if (isConnectable(target) && target!.id == fromId) {
       _pendingFrom = fromId;
       return;
     }
-    if (target is BoxItem) _connect(fromId, target.id);
+    if (isConnectable(target)) _connect(fromId, target!, end);
+    _fromT = null;
   }
 
   /// Second tap of a tap-tap connection.
@@ -1327,19 +1395,35 @@ class CanvasController extends ChangeNotifier {
     if (fromId == null || at == null || _tapMoved) return;
     _pendingFrom = null;
     final target = hitTest(at);
-    if (target is BoxItem && target.id != fromId) _connect(fromId, target.id);
+    if (isConnectable(target) && target!.id != fromId) {
+      _connect(fromId, target, at);
+    }
+    _fromT = null;
   }
 
-  /// Joins two items unless one is gone or they are already joined.
-  void _connect(String fromId, String toId) {
-    if (itemById(fromId) == null || itemById(toId) == null) return;
+  /// Joins two items unless one is gone or they are already joined at the
+  /// same places. A drawn line keeps where on it the connection attaches.
+  void _connect(String fromId, CanvasItem target, Offset at) {
+    if (itemById(fromId) == null || itemById(target.id) == null) return;
+    final toT = target is StrokeItem ? strokeAnchorAt(target, at) : null;
+    final fromT = _fromT;
     final exists = _items.any(
-      (i) => i is ConnectorItem && i.joins(fromId, toId),
+      (i) =>
+          i is ConnectorItem &&
+          i.joins(fromId, target.id) &&
+          i.fromT == fromT &&
+          i.toT == toT,
     );
     if (exists) return;
     _commit([
       ..._items,
-      ConnectorItem(id: newId(), fromId: fromId, toId: toId),
+      ConnectorItem(
+        id: newId(),
+        fromId: fromId,
+        toId: target.id,
+        fromT: fromT,
+        toT: toT,
+      ),
     ]);
   }
 
@@ -1506,11 +1590,10 @@ class CanvasController extends ChangeNotifier {
         final start = _tapScreen, at = _tapAt;
         if (start != null && (screen - start).distance > doubleTapSlop(_kind)) {
           final hit = at == null ? null : hitTest(at);
-          if (hit is BoxItem) {
+          if (isConnectable(hit)) {
             _pendingFrom = null;
             _tapAt = _tapScreen = null;
-            _drag = _Drag.connect;
-            _connectFrom = hit.id;
+            _startConnect(hit!, at!);
             _connectEnd = world;
           } else {
             _tapMoved = true;
@@ -1715,14 +1798,22 @@ class CanvasController extends ChangeNotifier {
     final samples = [
       for (var i = 0; i <= steps; i++) Offset.lerp(from, to, i / steps)!,
     ];
-    final remaining = [
+    final erased = {
       for (final item in _items)
-        if (item is! StrokeItem ||
-            isLocked(item.id) ||
-            !samples.any((p) => item.hitTest(p, tolerance)))
+        if (item is StrokeItem &&
+            !isLocked(item.id) &&
+            samples.any((p) => item.hitTest(p, tolerance)))
+          item.id,
+    };
+    if (erased.isEmpty) return;
+    // Connections to an erased line go with it (same undo step), so none
+    // is left pointing at nothing.
+    _setItems([
+      for (final item in _items)
+        if (!erased.contains(item.id) &&
+            !(item is ConnectorItem && erased.any(item.touches)))
           item,
-    ];
-    if (remaining.length != _items.length) _setItems(remaining);
+    ]);
   }
 
   /// Whether [poly] contains or intersects [bounds].

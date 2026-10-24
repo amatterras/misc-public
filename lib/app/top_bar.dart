@@ -10,6 +10,7 @@ import 'app_state.dart';
 import 'page_windows.dart';
 import 'sidebar.dart' show appDestinations;
 import 'theme.dart';
+import '../widgets/common.dart' show promptText;
 
 IconData pageIcon(AppPage kind) => switch (kind) {
   AppPage.home => Icons.wb_sunny_outlined,
@@ -34,6 +35,13 @@ PageInstance addCurrentPage(AppState s) {
       refId: s.canvas!.id,
       title: s.canvas!.title,
     ),
+    // The note being read, not just the Notes list.
+    AppPage.notes when s.workspace.notes[s.selectedNoteId] != null =>
+      s.windows.open(
+        AppPage.notes,
+        refId: s.selectedNoteId,
+        title: s.workspace.notes[s.selectedNoteId]!.displayTitle,
+      ),
     AppPage.browser => s.windows.open(
       AppPage.browser,
       refId: newId(),
@@ -53,8 +61,40 @@ PageInstance addCurrentPage(AppState s) {
   };
 }
 
+/// What "New page" can make (each a real, fresh instance).
+const newPageChoices = [
+  (AppPage.notes, 'New note'),
+  (AppPage.canvas, 'New mindmap'),
+  (AppPage.calendar, 'New calendar view'),
+  (AppPage.links, 'New Archive view'),
+  (AppPage.browser, 'New Safari window'),
+  (AppPage.ai, 'New AI chat'),
+];
+
+/// The tab's name: the user's own, else the content's current title.
+String pageTitle(AppState s, PageInstance p) {
+  if (p.named && p.title.isNotEmpty) return p.title;
+  final ref = p.refId;
+  final live = switch (p.kind) {
+    AppPage.notes when ref != null => s.workspace.notes[ref]?.displayTitle,
+    AppPage.canvas when ref != null =>
+      s.canvasList.where((c) => c.id == ref).firstOrNull?.title,
+    AppPage.ai when ref != null => s.workspace.aiConversations[ref]?.title,
+    AppPage.links when ref != null && ref.startsWith('res:') =>
+      s.workspace.assets[ref.substring(4)]?.label,
+    AppPage.links when ref != null && ref.startsWith('folder:') =>
+      s.workspace.archiveFolders[ref.substring(7)]?.name,
+    _ => null,
+  };
+  if (live != null && live.trim().isNotEmpty) return live;
+  return p.title.isEmpty ? pageLabel(p.kind) : p.title;
+}
+
 class TopBar extends StatelessWidget {
   const TopBar({super.key, required this.state});
+
+  static const height = 34.0;
+  static const collapsedHeight = 14.0;
 
   final AppState state;
 
@@ -77,10 +117,21 @@ class TopBar extends StatelessWidget {
         else
           const PopupMenuItem(value: 'restore', child: Text('Restore')),
         PopupMenuItem(value: 'pin', child: Text(p.pinned ? 'Unpin' : 'Pin')),
-        const PopupMenuItem(value: 'close', child: Text('Close')),
+        const PopupMenuItem(value: 'rename', child: Text('Rename tab')),
+        // Closing never deletes the note, mindmap or chat itself; that is
+        // done only with the content's own Delete.
+        const PopupMenuItem(value: 'close', child: Text('Close (keeps it)')),
       ],
     );
+    if (!context.mounted) return;
     switch (choice) {
+      case 'rename':
+        final name = await promptText(
+          context,
+          title: 'Tab name',
+          initial: pageTitle(state, p),
+        );
+        if (name != null && name.trim().isNotEmpty) w.rename(p.id, name.trim());
       case 'float':
         w.float(p.id);
       case 'dock':
@@ -98,12 +149,18 @@ class TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: w,
+    // Tab names follow the notes, mindmaps and chats they show.
+    listenable: Listenable.merge([
+      w,
+      state,
+      state.workspace.notes,
+      state.workspace.aiConversations,
+    ]),
     builder: (context, _) {
       if (w.collapsed) {
         return SizedBox(
           key: const ValueKey('top-bar-collapsed'),
-          height: 14,
+          height: collapsedHeight,
           child: Center(
             child: Tooltip(
               message: 'Show the page bar (${w.all.length} pages)',
@@ -127,7 +184,7 @@ class TopBar extends StatelessWidget {
       }
       return Container(
         key: const ValueKey('top-bar'),
-        height: 34,
+        height: height,
         decoration: const BoxDecoration(
           color: AppColors.sidebar,
           border: Border(bottom: BorderSide(color: AppColors.border)),
@@ -141,6 +198,26 @@ class TopBar extends StatelessWidget {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
               onPressed: () => addCurrentPage(state),
+            ),
+            PopupMenuButton<AppPage>(
+              key: const ValueKey('top-bar-new'),
+              tooltip: 'New page',
+              icon: const Icon(Icons.note_add_outlined, size: 16),
+              padding: EdgeInsets.zero,
+              onSelected: (kind) => state.newPage(kind),
+              itemBuilder: (_) => [
+                for (final (kind, label) in newPageChoices)
+                  PopupMenuItem(
+                    value: kind,
+                    child: Row(
+                      children: [
+                        Icon(pageIcon(kind), size: 16),
+                        const SizedBox(width: 10),
+                        Text(label),
+                      ],
+                    ),
+                  ),
+              ],
             ),
             Expanded(
               child: ListView(
@@ -171,7 +248,7 @@ class TopBar extends StatelessWidget {
       onLongPressStart: (d) => _menu(context, p, d.globalPosition),
       child: Tooltip(
         message:
-            '${p.title.isEmpty ? pageLabel(p.kind) : p.title} — ${switch (p.mode) {
+            '${pageTitle(state, p)} — ${switch (p.mode) {
               PageMode.docked => active ? 'shown' : 'in the main area',
               PageMode.floating => 'floating',
               PageMode.minimized => 'minimized',
@@ -209,7 +286,7 @@ class TopBar extends StatelessWidget {
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(
-                      p.title.isEmpty ? pageLabel(p.kind) : p.title,
+                      pageTitle(state, p),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

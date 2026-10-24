@@ -19,6 +19,7 @@ import 'models/browser_models.dart';
 import 'models/knowledge_models.dart';
 import 'models/vault_models.dart';
 import 'models/template_models.dart';
+import 'models/calendar_sync_models.dart';
 
 class CalendarLimitException implements Exception {
   const CalendarLimitException(this.category);
@@ -48,6 +49,18 @@ class EntryOnDay extends DayItem {
   String get label => entry.name;
   @override
   int get colorIndex => entry.colorIndex;
+}
+
+/// An event from a connected Google / Outlook calendar (read-only here).
+class ExternalOnDay extends DayItem {
+  const ExternalOnDay(this.event);
+  final ExternalEvent event;
+  @override
+  String get id => event.id;
+  @override
+  String get label => event.title.isEmpty ? '(no title)' : event.title;
+  @override
+  int get colorIndex => CalendarCategory.events.index;
 }
 
 class TaskOnDay extends DayItem {
@@ -86,6 +99,8 @@ class Workspace {
     vaultMeta = _c('vault_meta', VaultMeta.fromJson);
     vaultItems = _c('vault_items', VaultItem.fromJson);
     templates = _c('templates', ContentTemplate.fromJson);
+    externalEvents = _c('external_events', ExternalEvent.fromJson);
+    calendarLinks = _c('calendar_links', CalendarLink.fromJson);
     // AI conversations stay on this device (not in [syncCollections]).
     aiConversations = _c('ai_conversations', AiConversation.fromJson);
     // Browser records stay on this device too.
@@ -130,6 +145,11 @@ class Workspace {
   late final RecordCollection<VaultMeta> vaultMeta;
   late final RecordCollection<VaultItem> vaultItems;
   late final RecordCollection<ContentTemplate> templates;
+
+  /// Google / Outlook events shown on the calendar, and THEapp entries
+  /// exported there (see features/calendar/external).
+  late final RecordCollection<ExternalEvent> externalEvents;
+  late final RecordCollection<CalendarLink> calendarLinks;
   bool shareClipboard = false;
 
   /// The record collections that sync, by their protocol name.
@@ -149,6 +169,8 @@ class Workspace {
     'vault_meta': vaultMeta,
     'vault_items': vaultItems,
     'templates': templates,
+    'external_events': externalEvents,
+    'calendar_links': calendarLinks,
     if (shareClipboard) 'clipboard': clipboard,
   };
 
@@ -689,9 +711,19 @@ class Workspace {
         result.add(TaskOnDay(t, color));
       }
     }
+    for (final x in externalEvents.all) {
+      if (colors != null && !colors.contains(CalendarCategory.events.index)) {
+        break;
+      }
+      if (categories != null && !categories.contains(CalendarCategory.events)) {
+        break;
+      }
+      if (x.occursOn(day)) result.add(ExternalOnDay(x));
+    }
     int minutes(DayItem i) => switch (i) {
       EntryOnDay(:final entry) => entry.startMinutes ?? -1,
       TaskOnDay(:final task) => task.dueMinutes ?? 24 * 60,
+      ExternalOnDay(:final event) => event.startMinutes ?? -1,
     };
     bool done(DayItem i) => i is TaskOnDay && i.task.done;
     // Open items first (by time), finished tasks after them.
@@ -712,6 +744,8 @@ class Workspace {
       case TaskOnDay(:final task):
         // A recurring task: only this occurrence moves.
         tasks.put(task.movedOccurrence(to));
+      case ExternalOnDay():
+        return; // changed in Google / Outlook, not here
     }
   }
 
