@@ -627,6 +627,30 @@ class _NoteEditorState extends State<NoteEditor> {
   void initState() {
     super.initState();
     _body.addListener(_onSelection);
+    s.workspace.notes.addListener(_onNoteChanged);
+  }
+
+  /// Shows changes made elsewhere (a move of selected text, Undo of a drop,
+  /// sync) in the open editor; otherwise the next keystroke would write the
+  /// old text back. Changes typed here are already equal and untouched.
+  void _onNoteChanged() {
+    final n = note;
+    if (n == null || !mounted) return;
+    if (n.body != _body.text) {
+      final sel = _body.selection;
+      _body.value = TextEditingValue(
+        text: n.body,
+        selection: sel.isValid && sel.end <= n.body.length
+            ? TextSelection.collapsed(offset: sel.start)
+            : TextSelection.collapsed(offset: n.body.length),
+      );
+    }
+    if (n.title != _title.text) {
+      _title.value = TextEditingValue(
+        text: n.title,
+        selection: TextSelection.collapsed(offset: n.title.length),
+      );
+    }
   }
 
   void _onSelection() {
@@ -642,6 +666,7 @@ class _NoteEditorState extends State<NoteEditor> {
   @override
   void dispose() {
     _body.removeListener(_onSelection);
+    s.workspace.notes.removeListener(_onNoteChanged);
     _title.dispose();
     _body.dispose();
     _tag.dispose();
@@ -901,8 +926,12 @@ class _NoteEditorState extends State<NoteEditor> {
           children: [
             TransferSource(
               key: const ValueKey('text-transfer-grip'),
-              transfer: () =>
-                  TextTransfer(_selected, sourceNoteId: widget.noteId),
+              transfer: () => TextTransfer(
+                _selected,
+                sourceNoteId: widget.noteId,
+                start: _body.selection.start,
+                end: _body.selection.end,
+              ),
               child: const Tooltip(
                 message:
                     'Drag the selected text to a mindmap, day, task '
@@ -980,11 +1009,20 @@ class _NoteEditorState extends State<NoteEditor> {
         runSpacing: 8,
         children: [
           for (final a in assets)
-            AssetChip(
-              workspace: ws,
-              asset: a,
-              onRemove: () => _update(
-                (x) => x.copyWith(assetIds: [...x.assetIds]..remove(a.id)),
+            // Drag to another note, a day or a mindmap: attach there too,
+            // or move it off this note.
+            TransferSource(
+              key: ValueKey('note-asset-drag-${a.id}'),
+              transfer: () =>
+                  AssetsTransfer([a.id], sourceNoteId: widget.noteId),
+              touch: touchFirst,
+              feedback: Text(a.label),
+              child: AssetChip(
+                workspace: ws,
+                asset: a,
+                onRemove: () => _update(
+                  (x) => x.copyWith(assetIds: [...x.assetIds]..remove(a.id)),
+                ),
               ),
             ),
         ],

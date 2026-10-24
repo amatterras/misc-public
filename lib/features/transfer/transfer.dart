@@ -22,6 +22,7 @@ import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
 import '../../data/models/task_models.dart';
+import '../../data/storage/app_log.dart';
 import '../../data/workspace.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_export.dart';
@@ -79,19 +80,30 @@ class CalendarItemTransfer extends Transfer {
   String get label => '“${item.label}”';
 }
 
-/// Text selected in a note.
+/// Text selected in a note. [start]..[end] is where it was selected in the
+/// note's text, so a move removes exactly that text (and nothing, if the
+/// note has changed there since).
 class TextTransfer extends Transfer {
-  const TextTransfer(this.text, {this.sourceNoteId});
+  const TextTransfer(this.text, {this.sourceNoteId, this.start, this.end});
   final String text;
   final String? sourceNoteId;
+  final int? start;
+  final int? end;
+
+  /// Whether a move can take the text out of its note.
+  bool get movable => sourceNoteId != null && start != null && end != null;
+
   @override
   String get label => 'the selected text';
 }
 
-/// Links, photos or PDFs (managed assets).
+/// Links, photos or PDFs (managed assets, always by id: no file is
+/// copied). [sourceNoteId]: the note they were dragged from, if any (then
+/// they can be moved off it).
 class AssetsTransfer extends Transfer {
-  const AssetsTransfer(this.assetIds);
+  const AssetsTransfer(this.assetIds, {this.sourceNoteId});
   final List<String> assetIds;
+  final String? sourceNoteId;
   @override
   String get label =>
       assetIds.length == 1 ? '1 attachment' : '${assetIds.length} attachments';
@@ -257,26 +269,49 @@ extension Transfers on AppState {
         return const [TransferChoice(TransferOp.link, 'Link the task')];
       case (TaskTransfer(), CanvasPlace()):
         return const [TransferChoice(TransferOp.copy, 'Write the task here')];
-      case (TextTransfer(), CanvasPlace()):
-        return const [TransferChoice(TransferOp.copy, 'Copy as a text box')];
+      case (TextTransfer t, CanvasPlace()):
+        return [
+          const TransferChoice(TransferOp.copy, 'Copy as a text box'),
+          if (t.movable)
+            const TransferChoice(TransferOp.move, 'Move as a text box'),
+        ];
       case (TextTransfer(), TasksPlace()):
         return const [TransferChoice(TransferOp.convert, 'Make a task')];
-      case (TextTransfer(), DayPlace()):
-        return const [
-          TransferChoice(TransferOp.convert, 'Make a task on this day'),
-          TransferChoice(TransferOp.copy, 'Add to the day’s notes'),
+      case (TextTransfer t, DayPlace()):
+        return [
+          const TransferChoice(TransferOp.convert, 'Make a task on this day'),
+          const TransferChoice(TransferOp.copy, 'Add to the day’s notes'),
+          if (t.movable)
+            const TransferChoice(TransferOp.move, 'Move to the day’s notes'),
         ];
       case (TextTransfer t, NotePlace p):
         if (t.sourceNoteId == p.noteId) return const [];
-        return const [TransferChoice(TransferOp.copy, 'Add to the note')];
+        return [
+          const TransferChoice(TransferOp.copy, 'Add to the note'),
+          if (t.movable)
+            const TransferChoice(TransferOp.move, 'Move to the note'),
+        ];
       case (TextTransfer(), NewNotePlace()):
         return const [TransferChoice(TransferOp.convert, 'New note')];
-      case (AssetsTransfer(), CanvasPlace()):
-        return const [TransferChoice(TransferOp.link, 'Place here')];
-      case (AssetsTransfer(), NotePlace()):
-        return const [TransferChoice(TransferOp.link, 'Attach to the note')];
-      case (AssetsTransfer(), DayPlace()):
-        return const [TransferChoice(TransferOp.link, 'Attach to this day')];
+      case (AssetsTransfer t, CanvasPlace()):
+        return [
+          const TransferChoice(TransferOp.link, 'Place here'),
+          if (t.sourceNoteId != null)
+            const TransferChoice(TransferOp.move, 'Move here (off the note)'),
+        ];
+      case (AssetsTransfer t, NotePlace p):
+        if (t.sourceNoteId == p.noteId) return const [];
+        return [
+          const TransferChoice(TransferOp.link, 'Attach to the note'),
+          if (t.sourceNoteId != null)
+            const TransferChoice(TransferOp.move, 'Move to this note'),
+        ];
+      case (AssetsTransfer t, DayPlace()):
+        return [
+          const TransferChoice(TransferOp.link, 'Attach to this day'),
+          if (t.sourceNoteId != null)
+            const TransferChoice(TransferOp.move, 'Move to this day'),
+        ];
       case (AssetsTransfer(), NewNotePlace()):
         return const [TransferChoice(TransferOp.convert, 'New note with them')];
       // ---- web addresses (Safari) ----
@@ -464,6 +499,15 @@ extension Transfers on AppState {
     DropPlace place,
     TransferOp op,
   ) async {
+    if (op == TransferOp.move && t is TextTransfer) {
+      return _moveText(t, place);
+    }
+    if (op == TransferOp.move &&
+        t is AssetsTransfer &&
+        t.sourceNoteId != null &&
+        place is! ArchivePlace) {
+      return _moveAssets(t, place);
+    }
     final ws = workspace;
     switch ((t, place)) {
       case (CanvasItemsTransfer t, CanvasPlace p):
@@ -667,16 +711,18 @@ extension Transfers on AppState {
         return const TransferResult('Wrote the task on the mindmap.');
       case (TextTransfer t, CanvasPlace p):
         final target = await _canvasFor(p.canvasId);
-        target.addItems([
-          TextItem(
-            id: newId(),
-            position: p.at ?? canvasDropPoint(target),
-            width: TextItem.defaultWidth,
-            minHeight: 0,
-            text: t.text,
-          ),
-        ]);
-        return const TransferResult('Copied as a text box.');
+        final box = TextItem(
+          id: newId(),
+          position: p.at ?? canvasDropPoint(target),
+          width: TextItem.defaultWidth,
+          minHeight: 0,
+          text: t.text,
+        );
+        target.addItems([box]);
+        return TransferResult(
+          'Copied as a text box.',
+          undo: () => _removeFromCanvas(p.canvasId, {box.id}),
+        );
       case (TextTransfer t, TasksPlace p):
         final task = ws.createTask(_firstLine(t.text), projectId: p.projectId);
         if (t.sourceNoteId != null) {
@@ -726,31 +772,44 @@ extension Transfers on AppState {
       case (AssetsTransfer t, CanvasPlace p):
         final target = await _canvasFor(p.canvasId);
         var at = p.at ?? canvasDropPoint(target);
+        final placed = <String>{};
         for (final id in t.assetIds) {
           final a = ws.assets[id];
           if (a == null) continue;
-          a.kind == AssetKind.image
-              ? target.insertImage(a, at)
-              : target.insertLink(a, at);
+          placed.add(
+            (a.kind == AssetKind.image
+                    ? target.insertImage(a, at)
+                    : target.insertLink(a, at))
+                .id,
+          );
           at += const Offset(40, 40);
         }
-        return const TransferResult('Placed here.');
+        return TransferResult(
+          'Placed here.',
+          undo: () => _removeFromCanvas(p.canvasId, placed),
+        );
       case (AssetsTransfer t, NotePlace p):
         final before = ws.notes[p.noteId]?.assetIds ?? const [];
+        final added = t.assetIds.where((id) => !before.contains(id)).length;
         for (final id in t.assetIds) {
-          ws.attachToNote(p.noteId, id);
+          ws.attachToNote(p.noteId, id); // never twice
         }
         return TransferResult(
-          'Attached to the note.',
+          added == 0
+              ? 'Already attached to the note.'
+              : 'Attached to the note.',
           undo: () => _setNoteAssets(p.noteId, before),
         );
       case (AssetsTransfer t, DayPlace p):
         final before = ws.dayRecord(p.day).assetIds;
+        final added = t.assetIds.where((id) => !before.contains(id)).length;
         for (final id in t.assetIds) {
-          ws.attachToDay(p.day, id);
+          ws.attachToDay(p.day, id); // never twice
         }
         return TransferResult(
-          'Attached to ${_day(p.day)}.',
+          added == 0
+              ? 'Already attached to ${_day(p.day)}.'
+              : 'Attached to ${_day(p.day)}.',
           undo: () => _setDayAssets(p.day, before),
         );
       case (AssetsTransfer t, NewNotePlace()):
@@ -1017,6 +1076,86 @@ extension Transfers on AppState {
     return copies.length;
   }
 
+  /// Moves selected text: places a copy, then removes the text from its
+  /// note only if exactly that text is still where it was selected (else
+  /// the note keeps it and the result says so). Undo does both back.
+  Future<TransferResult> _moveText(TextTransfer t, DropPlace place) async {
+    final placed = await _perform(
+      t,
+      place,
+      place is NewNotePlace || place is TasksPlace
+          ? TransferOp.convert
+          : TransferOp.copy,
+    );
+    final source = workspace.notes[t.sourceNoteId ?? ''];
+    final start = t.start, end = t.end;
+    if (source == null ||
+        start == null ||
+        end == null ||
+        start < 0 ||
+        end > source.body.length ||
+        start >= end ||
+        source.body.substring(start, end) != t.text) {
+      return TransferResult(
+        '${placed.message} The note had changed where the text was, so it '
+        'was copied and left in the note too.',
+        undo: placed.undo,
+      );
+    }
+    final before = source.body;
+    _setNoteBody(source.id, before.replaceRange(start, end, ''));
+    return TransferResult(
+      'Moved: ${placed.message[0].toLowerCase()}${placed.message.substring(1)}',
+      undo: () async {
+        await placed.undo?.call();
+        _setNoteBody(source.id, before);
+      },
+    );
+  }
+
+  /// Moves attachments off their note: attaches/places them first, then
+  /// takes them off the source note (the same assets, by id).
+  Future<TransferResult> _moveAssets(AssetsTransfer t, DropPlace place) async {
+    final placed = await _perform(
+      AssetsTransfer(t.assetIds),
+      place,
+      TransferOp.link,
+    );
+    final source = workspace.notes[t.sourceNoteId!];
+    if (source == null) return placed;
+    final before = source.assetIds;
+    _setNoteAssets(source.id, [
+      for (final id in before)
+        if (!t.assetIds.contains(id)) id,
+    ]);
+    return TransferResult(
+      'Moved off the note: ${placed.message[0].toLowerCase()}'
+      '${placed.message.substring(1)}',
+      undo: () async {
+        await placed.undo?.call();
+        _setNoteAssets(source.id, before);
+      },
+    );
+  }
+
+  /// Removes [ids] from canvas [canvasId] (to take a drop back), whether
+  /// it is open or not.
+  Future<void> _removeFromCanvas(String canvasId, Set<String> ids) async {
+    if (ids.isEmpty) return;
+    final open = canvas?.id == canvasId ? canvas : null;
+    final c = open ?? await _canvasFor(canvasId);
+    try {
+      c.select(ids);
+      c.deleteSelection();
+    } finally {
+      if (open == null) {
+        await c.flush();
+        c.dispose();
+        _temporary[this]?.remove(c);
+      }
+    }
+  }
+
   void _setNoteAssets(String noteId, List<String> ids) {
     final n = workspace.notes[noteId];
     if (n != null) workspace.notes.put(n.copyWith(assetIds: ids));
@@ -1163,6 +1302,27 @@ Future<void> dropTransfer(
 ) async {
   final choices = state.transferChoices(t, place);
   if (choices.isEmpty) return;
+  // One drag is carried out once, even if its drop arrives twice.
+  if (_dropping[t] == true) return;
+  _dropping[t] = true;
+  try {
+    await _drop(context, state, t, place, at, choices);
+  } finally {
+    _dropping[t] = null;
+  }
+}
+
+/// Drags whose drop is being carried out (see [dropTransfer]).
+final _dropping = Expando<bool>();
+
+Future<void> _drop(
+  BuildContext context,
+  AppState state,
+  Transfer t,
+  DropPlace place,
+  Offset at,
+  List<TransferChoice> choices,
+) async {
   var choice = choices.first;
   if (choices.length > 1) {
     final picked = await showMenu<TransferChoice>(
@@ -1184,7 +1344,8 @@ Future<void> dropTransfer(
   try {
     final result = await state.performTransfer(t, place, choice.op);
     state.showTransferResult((message: result.message, undo: result.undo));
-  } catch (e) {
+  } catch (e, stack) {
+    AppLog.error('A drop of ${t.label} did not complete', e, stack);
     state.showToast('The drop did not complete; nothing was removed.');
   }
 }
