@@ -259,3 +259,18 @@ Verified by two-device tests through a real local hub: new task fields (labels, 
 Known limits (not fixed): older THEapp builds on other devices list "Calendar drawings" and "Components" as mindmaps — update every device; clipboard text is kept in backups; real-app click-through and iPad still not tested (see MANUAL_CHECKLIST.md).
 
 Result after the audit: `flutter analyze` clean; 422 passed, 3 skipped, 0 failed; Windows Release build OK.
+
+## 20. Second batch (2026-10-24)
+| Requirement | Pri | Plat | Status | Evidence / references | Blocker |
+|---|---|---|---|---|---|
+| Hub run by THEapp; no duplicate hub; listener recovery; restart in place | P1 | W | VERIFIED (automated) | `hub_host_test` (7), `app_hub_sync_test`; stability 601 s + 124 s, 0 failures | real iPad over Tailscale after the update |
+| 10-second sync + checked live backups, no overlap, bounded | P1 | W | VERIFIED (automated) | `maintenance_test` (9), `app_hub_sync_test` | — |
+| Pen ends round outward | P1 | W,i | VERIFIED (automated) | `pen_ends_test` (fails on the old renderer) | look on device |
+| Squeeze does not move the Calendar | P1 | i | VERIFIED (simulated) | `calendar_pencil_gestures_test` | real Pencil Pro |
+| Calendar pinch/pan in Draw mode; palm rejection | P1 | i | VERIFIED (simulated) | `calendar_pencil_gestures_test` | real iPad |
+| Notes text zoom | P1 | W,i | VERIFIED (automated) | `notes_zoom_test` (4), `note_zoom_test` | — |
+| Four more pen sizes | P1 | W,i | VERIFIED (automated) | `pen_sizes_test` (6) | — |
+| Dot opacity (Mindmap, Archive) | P2 | W,i | IMPLEMENTED, UNTESTED | `canvas_painter.dart`, `app_state.dart` dotOpacityFor | Codex tests this batch |
+| Collapsible tool and options strips | P2 | W,i | IMPLEMENTED, UNTESTED | `CollapsibleBar` in `canvas_toolbar.dart` | Codex tests this batch |
+| Custom tags (Archive + Mindmap, synced) | P1 | W,i | IMPLEMENTED, UNTESTED | `tag_models.dart`, `tag_ui.dart`, `workspace.dart` | Codex tests this batch |
+| Light theme | P2 | W,i | NOT STARTED (postponed by the user) | — | — |
