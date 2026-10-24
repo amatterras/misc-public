@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
 import '../../app/shell.dart';
@@ -623,6 +624,59 @@ class _NoteEditorState extends State<NoteEditor> {
   /// Text selected in the body (for the conversion bar).
   String _selected = '';
 
+  // Text zoom of this note (its title and body only; the app, the toolbar
+  // and the sidebar keep their size). Remembered per note, like the zoom
+  // of its handwritten pages. Done with a text scaler, not a transform:
+  // the text is laid out at the new size, so the caret, selection and
+  // scrolling stay exactly on the visible text.
+  static const minTextZoom = 0.6, maxTextZoom = 2.5;
+  String get _zoomKey => 'noteTextZoom.${widget.noteId}';
+  late double _textZoom = (s.settings.get<num>(_zoomKey)?.toDouble() ?? 1.0)
+      .clamp(minTextZoom, maxTextZoom);
+
+  @visibleForTesting
+  void setTextZoomForTest(double z) => _setTextZoom(z);
+
+  void _setTextZoom(double z) {
+    final v = (z.clamp(minTextZoom, maxTextZoom) * 100).round() / 100;
+    if (v == _textZoom) return;
+    setState(() => _textZoom = v);
+    unawaited(s.settings.set(_zoomKey, v));
+  }
+
+  /// [child] with this note's text zoom on top of the system text size.
+  Widget _zoomed(Widget child) => Builder(
+    builder: (context) {
+      final base = MediaQuery.textScalerOf(context);
+      return MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: TextScaler.linear(base.scale(1) * _textZoom)),
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(
+              LogicalKeyboardKey.equal,
+              control: true,
+            ): () =>
+                _setTextZoom(_textZoom * 1.15),
+            const SingleActivator(LogicalKeyboardKey.add, control: true): () =>
+                _setTextZoom(_textZoom * 1.15),
+            const SingleActivator(
+              LogicalKeyboardKey.minus,
+              control: true,
+            ): () =>
+                _setTextZoom(_textZoom / 1.15),
+            const SingleActivator(
+              LogicalKeyboardKey.digit0,
+              control: true,
+            ): () =>
+                _setTextZoom(1),
+          },
+          child: child,
+        ),
+      );
+    },
+  );
+
   @override
   void initState() {
     super.initState();
@@ -834,6 +888,36 @@ class _NoteEditorState extends State<NoteEditor> {
               ),
             ),
           GhostIconButton(
+            key: const ValueKey('note-text-zoom-out'),
+            icon: Icons.text_decrease,
+            tooltip: 'Smaller text (Ctrl −)',
+            onTap: _textZoom > minTextZoom
+                ? () => _setTextZoom(_textZoom / 1.15)
+                : null,
+          ),
+          Tooltip(
+            message: 'Text size of this note; tap for 100% (Ctrl 0)',
+            child: InkWell(
+              onTap: () => _setTextZoom(1),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  '${(_textZoom * 100).round()}%',
+                  key: const ValueKey('note-text-zoom-value'),
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+          ),
+          GhostIconButton(
+            key: const ValueKey('note-text-zoom-in'),
+            icon: Icons.text_increase,
+            tooltip: 'Larger text (Ctrl +)',
+            onTap: _textZoom < maxTextZoom
+                ? () => _setTextZoom(_textZoom * 1.15)
+                : null,
+          ),
+          GhostIconButton(
             icon: Icons.history,
             tooltip: 'Version history',
             onTap: () => showNoteHistory(context, ws, n.id),
@@ -860,17 +944,20 @@ class _NoteEditorState extends State<NoteEditor> {
           ),
         ],
       ),
-      TextField(
-        controller: _title,
-        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w600),
-        decoration: const InputDecoration(
-          hintText: 'Untitled note',
-          filled: false,
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
+      _zoomed(
+        TextField(
+          key: const ValueKey('note-title'),
+          controller: _title,
+          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w600),
+          decoration: const InputDecoration(
+            hintText: 'Untitled note',
+            filled: false,
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+          ),
+          onChanged: (v) => _update((x) => x.copyWith(title: v)),
         ),
-        onChanged: (v) => _update((x) => x.copyWith(title: v)),
       ),
       Wrap(
         spacing: 6,
@@ -907,19 +994,22 @@ class _NoteEditorState extends State<NoteEditor> {
         ],
       ),
       const SizedBox(height: Space.md),
-      TextField(
-        controller: _body,
-        maxLines: null,
-        minLines: 12,
-        style: const TextStyle(fontSize: 15, height: 1.6),
-        decoration: const InputDecoration(
-          hintText: 'Write here…  Link another note with [[Its title]].',
-          filled: false,
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
+      _zoomed(
+        TextField(
+          key: const ValueKey('note-body'),
+          controller: _body,
+          maxLines: null,
+          minLines: 12,
+          style: const TextStyle(fontSize: 15, height: 1.6),
+          decoration: const InputDecoration(
+            hintText: 'Write here…  Link another note with [[Its title]].',
+            filled: false,
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+          ),
+          onChanged: (v) => _update((x) => x.copyWith(body: v)),
         ),
-        onChanged: (v) => _update((x) => x.copyWith(body: v)),
       ),
       if (_selected.trim().isNotEmpty)
         Row(
