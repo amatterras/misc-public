@@ -17,6 +17,7 @@ import '../data/storage/app_log.dart';
 import '../data/storage/json_file_store.dart' show iosDocuments, iosFolder;
 import '../data/workspace.dart';
 import '../features/canvas/canvas_controller.dart';
+import '../features/ink/pencil_double_tap.dart';
 import '../features/ai/ai_service.dart';
 import '../features/browser/browser_engine.dart';
 import '../features/browser/browser_workspace.dart';
@@ -1112,7 +1113,31 @@ class AppState extends ChangeNotifier {
   /// `theapp://capture?url=...`) and requests left by the Share Extension
   /// go to the Inbox, through the same code as Windows "Send to". Only ever
   /// adds Inbox items. Not yet verified on a device.
+  /// Apple Pencil double-tap = Undo on the drawing in use (see
+  /// pencil_double_tap.dart). Drawing pages register themselves.
+  late final PencilDoubleTap pencilDoubleTap = PencilDoubleTap()
+    ..enabled = pencilDoubleTapUndo;
+  StreamSubscription<String>? _pencilTaps;
+
+  bool get pencilDoubleTapUndo =>
+      settings.get<bool>('pencilDoubleTapUndo') ?? true;
+
+  Future<void> setPencilDoubleTapUndo(bool on) async {
+    pencilDoubleTap.enabled = on;
+    await settings.set('pencilDoubleTapUndo', on);
+    notifyListeners();
+  }
+
+  /// Handles one double-tap (from iOS, or a test). Says so when there was
+  /// nothing to undo, so a tap never seems to do nothing for no reason.
+  PencilTapResult onPencilDoubleTap(String preferredAction) {
+    final result = pencilDoubleTap.handle(preferredAction);
+    if (result == PencilTapResult.nothingToUndo) showToast('Nothing to undo.');
+    return result;
+  }
+
   Future<void> _startIosCapture(IosBridge ios) async {
+    _pencilTaps ??= ios.pencilDoubleTap.listen(onPencilDoubleTap);
     final shared = await ios.sharedContainerPath();
     _sharedInbox = shared == null ? null : SendToBridge(Directory(shared));
     await importSharedItems();
@@ -2374,6 +2399,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _scheduler?.stop();
+    _pencilTaps?.cancel();
     if (_listeningForEdits) workspace.changes.removeListener(_editedLocally);
     _widgetTimer?.cancel();
     _widgetMidnight?.cancel();

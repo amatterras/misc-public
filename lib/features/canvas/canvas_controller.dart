@@ -1215,6 +1215,10 @@ class CanvasController extends ChangeNotifier {
   bool get isPanning => _drag == _Drag.pan;
   bool get isDragging => _drag != _Drag.none;
 
+  /// When this drawing last got pointer input (to send an Apple Pencil
+  /// double-tap to the drawing in use).
+  DateTime? lastInputAt;
+
   void pointerDown(
     Offset screen, {
     int buttons = kPrimaryButton,
@@ -1225,6 +1229,7 @@ class CanvasController extends ChangeNotifier {
     Duration timeStamp = Duration.zero,
   }) {
     _lastScreen = screen;
+    lastInputAt = DateTime.now();
     lastPointer = screen;
     _kind = kind;
     final world = toWorld(screen);

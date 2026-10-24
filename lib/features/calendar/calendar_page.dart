@@ -80,6 +80,7 @@ class _CalendarPageState extends State<CalendarPage> {
   /// Draw mode: pointer input on days draws instead of selecting.
   bool _drawing = false;
   CanvasController? _ink;
+  void Function()? _unregisterTap;
 
   @override
   void initState() {
@@ -87,6 +88,12 @@ class _CalendarPageState extends State<CalendarPage> {
     s.openCalendarInk().then((c) {
       if (!mounted) return;
       setState(() => _ink = c);
+      // Apple Pencil double-tap: Undo, as the Undo button, in Draw mode.
+      _unregisterTap = s.pencilDoubleTap.register(
+        c,
+        active: () =>
+            mounted && _drawing && _tab == null && s.page == AppPage.calendar,
+      );
       _startSqueeze(c);
     });
   }
@@ -136,6 +143,7 @@ class _CalendarPageState extends State<CalendarPage> {
   void dispose() {
     _squeezer?.end();
     _squeeze?.cancel();
+    _unregisterTap?.call();
     _lifecycle?.dispose();
     s.removeListener(_endSqueezeOffPage);
     _viewer.dispose();

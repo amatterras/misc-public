@@ -260,6 +260,26 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
               ),
+              if (s.ios != null)
+                SwitchListTile(
+                  key: const ValueKey('pencil-double-tap'),
+                  contentPadding: EdgeInsets.zero,
+                  value: s.pencilDoubleTapUndo,
+                  onChanged: (v) async {
+                    await s.setPencilDoubleTapUndo(v);
+                    if (mounted) setState(() {});
+                  },
+                  title: const Text(
+                    'Apple Pencil double-tap undoes',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  subtitle: const Text(
+                    'On the drawing you are using (canvas, note handwriting, '
+                    'Calendar in Draw mode). Apple Pencil 2 and Pro. Turning '
+                    'double-tap off in iPadOS Settings is respected too.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                  ),
+                ),
               const _Heading('Window'),
               SwitchListTile(
                 key: const ValueKey('immersive'),

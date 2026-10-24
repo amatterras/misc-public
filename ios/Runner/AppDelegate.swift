@@ -390,6 +390,45 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     channel?.invokeMethod("pencilSqueeze", arguments: phase)
   }
 
+  // MARK: Apple Pencil double-tap (2nd generation and Pro): THEapp's Undo
+
+  private var lastPencilTap: TimeInterval = 0
+
+  /// The double-tap action chosen in iPadOS Settings → Apple Pencil, as
+  /// Dart sees it: "ignore" means the user turned double-tap off, and
+  /// THEapp then does nothing.
+  private func preferredPencilTapAction() -> String {
+    switch UIPencilInteraction.preferredTapAction {
+    case .ignore: return "ignore"
+    case .switchEraser: return "switchEraser"
+    case .switchPrevious: return "switchPrevious"
+    case .showColorPalette: return "showColorPalette"
+    default: return "other"
+    }
+  }
+
+  /// One tap reaches Dart once, whichever API delivered it (both exist so
+  /// the tap works before and after iPadOS 17.5).
+  private func sendPencilTap() {
+    let now = ProcessInfo.processInfo.systemUptime
+    if now - lastPencilTap < 0.25 { return }
+    lastPencilTap = now
+    channel?.invokeMethod("pencilDoubleTap", arguments: preferredPencilTapAction())
+  }
+
+  /// Before iPadOS 17.5.
+  func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+    sendPencilTap()
+  }
+
+  /// iPadOS 17.5 and later (only the end of a tap is used).
+  @available(iOS 17.5, *)
+  func pencilInteraction(
+    _ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap
+  ) {
+    sendPencilTap()
+  }
+
   // MARK: Task reminders (local notifications; no server, free account is fine)
 
   private static let reminderPrefix = "theapp.reminder."

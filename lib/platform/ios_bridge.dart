@@ -60,6 +60,10 @@ class IosBridge implements KeychainBackend {
           if (uri != null) await _onLink?.call(uri);
         case 'pencilSqueeze' when call.arguments is String:
           _squeeze.add(call.arguments as String);
+        case 'pencilDoubleTap':
+          _doubleTap.add(
+            call.arguments is String ? call.arguments as String : 'other',
+          );
       }
       return null;
     });
@@ -68,6 +72,12 @@ class IosBridge implements KeychainBackend {
   /// Apple Pencil Pro squeeze phases: "began", then "ended" or "cancelled".
   /// Nothing arrives on other Pencils or before iPadOS 17.5.
   Stream<String> get pencilSqueeze => _squeeze.stream;
+
+  /// Apple Pencil double-taps (2nd generation and Pro), each with the
+  /// action the user chose in iPadOS Settings ("ignore" = turned off).
+  /// Reported once [enablePencilSqueeze] installed the Pencil interaction.
+  Stream<String> get pencilDoubleTap => _doubleTap.stream;
+  final _doubleTap = StreamController<String>.broadcast();
 
   /// Asks iOS to report Pencil squeezes. False if not possible yet.
   Future<bool> enablePencilSqueeze() async {

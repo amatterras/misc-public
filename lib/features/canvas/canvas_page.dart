@@ -79,10 +79,19 @@ class _CanvasViewState extends State<CanvasView> {
   StreamSubscription<String>? _squeeze;
   AppLifecycleListener? _lifecycle;
 
+  // Apple Pencil double-tap: Undo here while this canvas is shown.
+  void Function() _unregisterTap = _noop;
+  static void _noop() {}
+  void _registerTap() => _unregisterTap = s.pencilDoubleTap.register(
+    c,
+    active: () => mounted && s.page == widget.page,
+  );
+
   @override
   void initState() {
     super.initState();
     _focusWhenShown();
+    _registerTap();
     final ios = s.ios;
     if (ios != null) {
       _squeeze = ios.pencilSqueeze.listen(_onSqueeze);
@@ -107,6 +116,8 @@ class _CanvasViewState extends State<CanvasView> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.squeezeEnded();
+      _unregisterTap();
+      _registerTap();
     }
     if (s.page != widget.page) c.squeezeEnded();
     _focusWhenShown();
@@ -133,6 +144,7 @@ class _CanvasViewState extends State<CanvasView> {
   @override
   void dispose() {
     _squeeze?.cancel();
+    _unregisterTap();
     _lifecycle?.dispose();
     c.squeezeEnded();
     _focusNode.dispose();

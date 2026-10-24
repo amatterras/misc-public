@@ -123,8 +123,15 @@ class _NotePageState extends State<NotePage> {
         : CanvasTool.text;
     if (doc.pageBackgrounds.isNotEmpty) c.setPen(color: notebookInk[1]);
     s.openNotebooks.add(c); // sync merges remote changes into this document
+    // Apple Pencil double-tap: Undo in this handwriting while it is shown.
+    _unregisterTap = s.pencilDoubleTap.register(
+      c,
+      active: () => mounted && (ModalRoute.of(context)?.isCurrent ?? true),
+    );
     setState(() => _c = c);
   }
+
+  void Function()? _unregisterTap;
 
   void _onSqueeze(String phase) {
     final c = _c;
@@ -154,6 +161,7 @@ class _NotePageState extends State<NotePage> {
   @override
   void dispose() {
     _squeeze?.cancel();
+    _unregisterTap?.call();
     _lifecycle?.dispose();
     _scroll.dispose();
     final c = _c;
