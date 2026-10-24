@@ -626,6 +626,7 @@ class _CanvasViewState extends State<CanvasView> {
                       controller: c,
                       onActivate: s.activateCanvasItem,
                       onRefreshLink: (l) => s.capture.refreshPreview(l.assetId),
+                      onEraser: s.setEraser,
                     ),
                   ),
                 ),

@@ -13,6 +13,7 @@ import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../tasks/tasks_page.dart';
 import '../canvas/canvas_controller.dart';
+import '../canvas/canvas_toolbar.dart' show EraserPanel;
 import '../transfer/transfer.dart';
 import 'calendar_ink.dart';
 import 'calendar_views.dart';
@@ -359,6 +360,8 @@ class _CalendarPageState extends State<CalendarPage> {
                       active: ink.tool == CanvasTool.eraser,
                       onTap: () => setState(() => ink.tool = CanvasTool.eraser),
                     ),
+                    if (ink.tool == CanvasTool.eraser)
+                      EraserPanel(controller: ink, onChange: s.setEraser),
                     PopupMenuButton<Color>(
                       tooltip: 'Pen colour',
                       onSelected: (c) => setState(() => ink.setPen(color: c)),

@@ -167,11 +167,16 @@ class CanvasContextBar extends StatelessWidget {
     required this.controller,
     required this.onActivate,
     required this.onRefreshLink,
+    this.onEraser,
   });
 
   final CanvasController controller;
   final void Function(CanvasItem) onActivate;
   final void Function(LinkItem) onRefreshLink;
+
+  /// Keeps eraser changes (mode, size) for next time; without it they
+  /// apply to this canvas only.
+  final EraserChange? onEraser;
 
   static const _penColors = InkColors.all;
   static const _penWidths = [1.5, 2.5, 5.0, 9.0];
@@ -250,6 +255,9 @@ class CanvasContextBar extends StatelessWidget {
             ),
         ],
       );
+    }
+    if (c.tool == CanvasTool.eraser) {
+      return EraserPanel(controller: c, onChange: onEraser);
     }
     final selected = c.selectedItems;
     final selecting = c.tool == CanvasTool.select || c.tool == CanvasTool.lasso;
@@ -739,4 +747,72 @@ class _EraserPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_EraserPainter old) => old.color != color;
+}
+
+/// Saves an eraser change (see [EraserPanel]).
+typedef EraserChange = Future<void> Function(
+  CanvasController c, {
+  EraserMode? mode,
+  double? size,
+});
+
+/// The eraser's options: whole strokes or only the part under the eraser,
+/// and its size (shown as a circle of that size).
+class EraserPanel extends StatelessWidget {
+  const EraserPanel({super.key, required this.controller, this.onChange});
+
+  final CanvasController controller;
+  final EraserChange? onChange;
+
+  static const sizes = [8.0, 16.0, 32.0, 56.0];
+
+  void _set({EraserMode? mode, double? size}) {
+    final save = onChange;
+    if (save != null) {
+      save(controller, mode: mode, size: size);
+    } else {
+      controller.setEraser(mode: mode, size: size);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    return ToolPanel(
+      key: const ValueKey('eraser-panel'),
+      horizontal: true,
+      children: [
+        ToolButton(
+          key: const ValueKey('eraser-mode-stroke'),
+          tooltip: 'Erase whole strokes',
+          active: c.eraserMode == EraserMode.stroke,
+          onPressed: () => _set(mode: EraserMode.stroke),
+          icon: const Icon(Icons.gesture, size: 18),
+        ),
+        ToolButton(
+          key: const ValueKey('eraser-mode-partial'),
+          tooltip: 'Erase only the part under the eraser',
+          active: c.eraserMode == EraserMode.partial,
+          onPressed: () => _set(mode: EraserMode.partial),
+          icon: const Icon(Icons.content_cut, size: 18),
+        ),
+        const _PanelDivider(vertical: true),
+        for (final size in sizes)
+          ToolButton(
+            key: ValueKey('eraser-size-${size.round()}'),
+            tooltip: 'Eraser size',
+            active: c.eraserSize == size,
+            onPressed: () => _set(size: size),
+            icon: Container(
+              width: (size / 3).clamp(4.0, 20.0),
+              height: (size / 3).clamp(4.0, 20.0),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.text, width: 1.5),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }

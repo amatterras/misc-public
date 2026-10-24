@@ -1932,13 +1932,13 @@ class AppState extends ChangeNotifier {
       await _closeCanvas();
       _canvas =
           shared ??
-          CanvasController(
+          (CanvasController(
             document: doc!,
             onSave: _saveCanvas,
             resources: resources,
             onActivate: _activateCanvasItem,
             clock: workspace.clock,
-          );
+          )..setEraser(mode: eraserMode, size: eraserSize));
       await settings.set('lastCanvasId', id);
     }
     if (show) {
@@ -2002,13 +2002,13 @@ class AppState extends ChangeNotifier {
       }
       c = _canvas?.id == id
           ? _canvas
-          : CanvasController(
+          : (CanvasController(
               document: doc,
               onSave: _saveCanvas,
               resources: resources,
               onActivate: _activateCanvasItem,
               clock: workspace.clock,
-            );
+            )..setEraser(mode: eraserMode, size: eraserSize));
     }
     _canvasRefs[id] = (c!, 1);
     return c;
@@ -2110,7 +2110,37 @@ class AppState extends ChangeNotifier {
       c.tool = CanvasTool.pen;
     }
     c.setPen(width: calendarPenWidth);
+    c.setEraser(mode: eraserMode, size: eraserSize);
     return c;
+  }
+
+  /// The eraser's mode and size (this device), the same for the canvas
+  /// and the Calendar.
+  EraserMode get eraserMode =>
+      EraserMode.values.asNameMap()[settings.get<String>('eraserMode')] ??
+      EraserMode.stroke;
+
+  double get eraserSize =>
+      (settings.get<num>('eraserSize')?.toDouble() ?? 16).clamp(
+        CanvasController.eraserSizes.min,
+        CanvasController.eraserSizes.max,
+      );
+
+  /// Changes the eraser on [c] and on the other open drawings, and keeps
+  /// it for next time.
+  Future<void> setEraser(
+    CanvasController c, {
+    EraserMode? mode,
+    double? size,
+  }) async {
+    c.setEraser(mode: mode, size: size);
+    for (final other in {_canvas, calendarInk}) {
+      if (other != null && other != c) {
+        other.setEraser(mode: c.eraserMode, size: c.eraserSize);
+      }
+    }
+    await settings.set('eraserMode', c.eraserMode.name);
+    await settings.set('eraserSize', c.eraserSize);
   }
 
   /// Thinnest and thickest Calendar pen (world units: 1 = one point at

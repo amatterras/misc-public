@@ -15,11 +15,15 @@ import '../../sync/protocol.dart';
 import 'canvas_resources.dart';
 import 'canvas_text.dart';
 import '../ink/stroke_geometry.dart';
+import '../ink/partial_erase.dart';
 import '../ink/shape_recognition.dart';
 
 export 'canvas_text.dart' show kTextPadding, canvasTextStyle;
 
 enum CanvasTool { select, lasso, pan, pen, highlighter, eraser, text, connect }
+
+/// What the eraser removes (see [CanvasController.eraserMode]).
+enum EraserMode { stroke, partial }
 
 enum SaveState { saved, pending, saving, failed }
 
@@ -274,6 +278,20 @@ class CanvasController extends ChangeNotifier {
   void setPen({Color? color, double? width}) {
     penColor = color ?? penColor;
     penWidth = width ?? penWidth;
+    notifyListeners();
+  }
+
+  /// What the eraser removes: whole strokes it touches, or only the part
+  /// of a stroke under it ([EraserMode.partial]).
+  EraserMode eraserMode = EraserMode.stroke;
+
+  /// The eraser's diameter on screen (pixels), the same at any zoom.
+  double eraserSize = 16;
+  static const eraserSizes = (min: 4.0, max: 80.0);
+
+  void setEraser({EraserMode? mode, double? size}) {
+    eraserMode = mode ?? eraserMode;
+    eraserSize = (size ?? eraserSize).clamp(eraserSizes.min, eraserSizes.max);
     notifyListeners();
   }
 
@@ -1790,10 +1808,14 @@ class CanvasController extends ChangeNotifier {
     );
   }
 
-  /// Removes whole strokes touched along the segment [from]→[to].
-  /// (A partial "pixel" eraser can be added later for stylus use.)
+  /// Erases along the segment [from]→[to]: whole strokes it touches, or
+  /// (partial mode) only the parts under the eraser.
   void _eraseAt(Offset from, Offset to) {
-    final tolerance = 8 / _scale;
+    final tolerance = eraserSize / 2 / _scale;
+    if (eraserMode == EraserMode.partial) {
+      _erasePartAt(from, to, tolerance);
+      return;
+    }
     final steps = math.max(1, ((to - from).distance / tolerance).ceil());
     final samples = [
       for (var i = 0; i <= steps; i++) Offset.lerp(from, to, i / steps)!,
@@ -1813,6 +1835,51 @@ class CanvasController extends ChangeNotifier {
         if (!erased.contains(item.id) &&
             !(item is ConnectorItem && erased.any(item.touches)))
           item,
+    ]);
+  }
+
+  /// Cuts the parts of strokes within [radius] of [from]→[to] out; what is
+  /// left of a stroke stays (the first piece keeps the stroke's id, others
+  /// get new ones), with its colour, width and pressure. One undo step per
+  /// eraser drag, like the whole-stroke eraser.
+  void _erasePartAt(Offset from, Offset to, double radius) {
+    final swept = Rect.fromPoints(from, to).inflate(radius);
+    final removed = <String>{};
+    var changed = false;
+    final next = <CanvasItem>[];
+    for (final item in _items) {
+      if (item is! StrokeItem ||
+          isLocked(item.id) ||
+          !item.bounds.overlaps(swept)) {
+        next.add(item);
+        continue;
+      }
+      // Touching the visible ink erases it: the centre line is cut within
+      // the eraser plus half the line's width (more for pressure lines).
+      final half = item.strokeWidth * (item.pressureWidth ? 0.8 : 0.5);
+      final pieces = erasePolyline(item.points, from, to, radius + half);
+      if (pieces == null) {
+        next.add(item);
+        continue;
+      }
+      changed = true;
+      if (pieces.isEmpty) removed.add(item.id);
+      for (var i = 0; i < pieces.length; i++) {
+        next.add(
+          StrokeItem(
+            id: i == 0 ? item.id : newId(),
+            points: pieces[i],
+            color: item.color,
+            strokeWidth: item.strokeWidth,
+            pressureWidth: item.pressureWidth,
+          ),
+        );
+      }
+    }
+    if (!changed) return;
+    _setItems([
+      for (final item in next)
+        if (!(item is ConnectorItem && removed.any(item.touches))) item,
     ]);
   }
 
