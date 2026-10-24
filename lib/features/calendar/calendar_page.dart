@@ -82,7 +82,20 @@ class _CalendarPageState extends State<CalendarPage> {
 
   /// Draw mode: pointer input on days draws instead of selecting.
   bool _drawing = false;
+
+  /// Ink input on only for a held Pencil squeeze (the eraser): unlike
+  /// [_drawing], it changes nothing in the toolbar. Showing the Draw tools
+  /// for a squeeze made the toolbar wrap onto a second line, which moved
+  /// the whole Calendar down and back up again.
+  bool _squeezeInk = false;
+
+  /// Ink input of either kind.
+  bool get _inkInput => _drawing || _squeezeInk;
+
   CanvasController? _ink;
+
+  /// Draw or navigate, per pointer (see CalendarInkArbiter).
+  CalendarInkArbiter? _arbiter;
   void Function()? _unregisterTap;
 
   @override
@@ -90,7 +103,10 @@ class _CalendarPageState extends State<CalendarPage> {
     super.initState();
     s.openCalendarInk().then((c) {
       if (!mounted) return;
-      setState(() => _ink = c);
+      setState(() {
+        _ink = c;
+        _arbiter = CalendarInkArbiter(c)..addListener(_navigationChanged);
+      });
       // Apple Pencil double-tap: Undo, as the Undo button, in Draw mode.
       _unregisterTap = s.pencilDoubleTap.register(
         c,
@@ -116,15 +132,20 @@ class _CalendarPageState extends State<CalendarPage> {
           s.page == AppPage.calendar &&
           _tab == null &&
           (ModalRoute.of(context)?.isCurrent ?? true),
-      drawing: () => _drawing,
+      drawing: () => _squeezeInk,
       setDrawing: (on) {
-        if (mounted && _drawing != on) setState(() => _drawing = on);
+        if (mounted && _squeezeInk != on) setState(() => _squeezeInk = on);
       },
     );
     _squeeze = ios.pencilSqueeze.listen(_squeezer!.phase);
     unawaited(ios.enablePencilSqueeze());
     _lifecycle = AppLifecycleListener(onInactive: () => _squeezer?.end());
     s.addListener(_endSqueezeOffPage);
+  }
+
+  /// Two fingers down or up: pinch and pan switch on or off.
+  void _navigationChanged() {
+    if (mounted) setState(() {});
   }
 
   void _endSqueezeOffPage() {
@@ -138,7 +159,8 @@ class _CalendarPageState extends State<CalendarPage> {
       key: ValueKey('ink-${dayKey(day)}'),
       controller: ink,
       day: day,
-      drawing: _drawing,
+      drawing: _inkInput,
+      arbiter: _arbiter,
     );
   }
 
@@ -146,6 +168,7 @@ class _CalendarPageState extends State<CalendarPage> {
   void dispose() {
     _squeezer?.end();
     _squeeze?.cancel();
+    _arbiter?.removeListener(_navigationChanged);
     _unregisterTap?.call();
     _lifecycle?.dispose();
     s.removeListener(_endSqueezeOffPage);
@@ -579,7 +602,8 @@ class _CalendarPageState extends State<CalendarPage> {
                       active: ink.tool == CanvasTool.eraser,
                       onTap: () => setState(() => ink.tool = CanvasTool.eraser),
                     ),
-                    if (ink.tool == CanvasTool.eraser)
+                    if (ink.tool == CanvasTool.eraser &&
+                        !(_squeezer?.active ?? false))
                       EraserPanel(controller: ink, onChange: s.setEraser),
                     PopupMenuButton<Color>(
                       tooltip: 'Pen colour',
@@ -1055,59 +1079,73 @@ class _CalendarPageState extends State<CalendarPage> {
     final rows = (days / 7).ceil();
     const w = CalendarPage.cellWidth, h = CalendarPage.cellHeight;
     final today = dateOnly(DateTime.now());
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: ColoredBox(
-        color: AppColors.canvas,
-        child: InteractiveViewer(
-          transformationController: _viewer,
-          panEnabled: !_drawing,
-          scaleEnabled: !_drawing,
-          constrained: false,
-          minScale: 0.35,
-          maxScale: 2.5,
-          boundaryMargin: const EdgeInsets.all(600),
-          child: Padding(
-            padding: const EdgeInsets.all(Space.lg),
-            child: SizedBox(
-              width: w * 7,
-              height: h * rows,
-              child: Stack(
-                children: [
-                  for (var i = 0; i < days; i++)
-                    Positioned(
-                      left: (i % 7) * w,
-                      top: (i ~/ 7) * h,
-                      width: w,
-                      height: h,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          DayCell(
-                            state: s,
-                            day: addDays(start, i),
-                            isToday: daysBetween(today, addDays(start, i)) == 0,
-                            selected:
-                                _selectedDay != null &&
-                                daysBetween(_selectedDay!, addDays(start, i)) ==
-                                    0,
-                            items: ws.itemsOn(
-                              addDays(start, i),
-                              categories: _shown,
-                              colors: _colors,
-                              includeTasks: _showTasks,
+    // Fingers landing between the day cells count for the arbiter too.
+    return Listener(
+      onPointerDown: (e) {
+        if (_inkInput) _arbiter?.down(e);
+      },
+      onPointerUp: (e) => _arbiter?.release(e.pointer),
+      onPointerCancel: (e) => _arbiter?.release(e.pointer),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: ColoredBox(
+          color: AppColors.canvas,
+          child: InteractiveViewer(
+            transformationController: _viewer,
+            // In Draw mode one pointer draws; two fingers pinch and pan (the
+            // arbiter decides), and nothing moves while the Pencil is down.
+            panEnabled: !_inkInput || (_arbiter?.navigating ?? false),
+            scaleEnabled: !(_inkInput && (_arbiter?.stylusDown ?? false)),
+            constrained: false,
+            minScale: 0.35,
+            maxScale: 2.5,
+            boundaryMargin: const EdgeInsets.all(600),
+            child: Padding(
+              padding: const EdgeInsets.all(Space.lg),
+              child: SizedBox(
+                width: w * 7,
+                height: h * rows,
+                child: Stack(
+                  children: [
+                    for (var i = 0; i < days; i++)
+                      Positioned(
+                        left: (i % 7) * w,
+                        top: (i ~/ 7) * h,
+                        width: w,
+                        height: h,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            DayCell(
+                              state: s,
+                              day: addDays(start, i),
+                              isToday:
+                                  daysBetween(today, addDays(start, i)) == 0,
+                              selected:
+                                  _selectedDay != null &&
+                                  daysBetween(
+                                        _selectedDay!,
+                                        addDays(start, i),
+                                      ) ==
+                                      0,
+                              items: ws.itemsOn(
+                                addDays(start, i),
+                                categories: _shown,
+                                colors: _colors,
+                                includeTasks: _showTasks,
+                              ),
+                              onTap: () => setState(
+                                () => _selectedDay = addDays(start, i),
+                              ),
+                              onEditItem: (item) =>
+                                  _editItem(item, addDays(start, i)),
                             ),
-                            onTap: () => setState(
-                              () => _selectedDay = addDays(start, i),
-                            ),
-                            onEditItem: (item) =>
-                                _editItem(item, addDays(start, i)),
-                          ),
-                          _inkOn(addDays(start, i)),
-                        ],
+                            _inkOn(addDays(start, i)),
+                          ],
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

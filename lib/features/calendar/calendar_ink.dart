@@ -31,6 +31,88 @@ Rect inkDayRect(DateTime day) => Rect.fromLTWH(
 DateTime inkDayAt(Offset world) =>
     addDays(_epoch, (world.dx / inkDaySize.width).floor());
 
+/// Decides, for every pointer on the Calendar, whether it draws or
+/// navigates while Draw mode is on. One for the whole grid, shared by every
+/// day cell (a stroke and a pinch can start in different cells):
+/// - the Pencil and the mouse always draw (one stroke at a time);
+/// - one finger draws;
+/// - a second finger makes it a pinch / two-finger pan: the finger stroke
+///   in progress is cancelled (nothing half-drawn is kept);
+/// - fingers that touch while the Pencil draws are a resting palm: they
+///   neither draw nor move the Calendar.
+/// Nothing stays locked: every up or cancel is forgotten at once.
+class CalendarInkArbiter extends ChangeNotifier {
+  CalendarInkArbiter(this.controller);
+
+  final CanvasController controller;
+  final _touches = <int>{};
+  int? _stylus;
+
+  /// The pointer drawing the current stroke, and its kind.
+  int? drawingPointer;
+  PointerDeviceKind? _drawingKind;
+
+  /// Two or more fingers and no Pencil: the Calendar may pinch and pan.
+  bool get navigating => _touches.length >= 2 && _stylus == null;
+
+  /// The Pencil is on the screen (palm rejection).
+  bool get stylusDown => _stylus != null;
+
+  bool _isStylus(PointerEvent e) =>
+      e.kind == PointerDeviceKind.stylus ||
+      e.kind == PointerDeviceKind.invertedStylus;
+
+  /// Every pointer that goes down on the grid (repeats are harmless).
+  void down(PointerDownEvent e) {
+    final wasNavigating = navigating, wasStylus = stylusDown;
+    if (e.kind == PointerDeviceKind.touch && _touches.add(e.pointer)) {
+      if (_touches.length >= 2 && _drawingKind == PointerDeviceKind.touch) {
+        // The first finger was the start of a pinch, not a line.
+        controller.pointerCancel();
+        drawingPointer = null;
+        _drawingKind = null;
+      }
+    } else if (_isStylus(e)) {
+      _stylus = e.pointer;
+    }
+    if (navigating != wasNavigating || stylusDown != wasStylus) {
+      notifyListeners();
+    }
+  }
+
+  /// Whether [e] (going down) starts a stroke; if so it owns the stroke.
+  bool claim(PointerDownEvent e) {
+    if (drawingPointer != null) return false;
+    final ok = switch (e.kind) {
+      PointerDeviceKind.stylus || PointerDeviceKind.invertedStylus => true,
+      PointerDeviceKind.mouse => e.buttons & kPrimaryButton != 0,
+      PointerDeviceKind.touch => _touches.length <= 1 && _stylus == null,
+      _ => false,
+    };
+    if (ok) {
+      drawingPointer = e.pointer;
+      _drawingKind = e.kind;
+    }
+    return ok;
+  }
+
+  bool owns(int pointer) => drawingPointer == pointer;
+
+  /// A pointer went up or was cancelled.
+  void release(int pointer) {
+    final wasNavigating = navigating, wasStylus = stylusDown;
+    _touches.remove(pointer);
+    if (_stylus == pointer) _stylus = null;
+    if (drawingPointer == pointer) {
+      drawingPointer = null;
+      _drawingKind = null;
+    }
+    if (navigating != wasNavigating || stylusDown != wasStylus) {
+      notifyListeners();
+    }
+  }
+}
+
 /// Draws (and, in Draw mode, records) the ink of one day cell.
 class DayInkLayer extends StatefulWidget {
   const DayInkLayer({
@@ -38,18 +120,32 @@ class DayInkLayer extends StatefulWidget {
     required this.controller,
     required this.day,
     required this.drawing,
+    this.arbiter,
   });
 
   final CanvasController controller;
   final DateTime day;
   final bool drawing;
 
+  /// Shared by every cell of a grid (see [CalendarInkArbiter]); without
+  /// one, this cell decides alone.
+  final CalendarInkArbiter? arbiter;
+
   @override
   State<DayInkLayer> createState() => _DayInkLayerState();
 }
 
 class _DayInkLayerState extends State<DayInkLayer> {
-  int? _pointer;
+  late CalendarInkArbiter _own = CalendarInkArbiter(widget.controller);
+  CalendarInkArbiter get _arbiter => widget.arbiter ?? _own;
+
+  @override
+  void didUpdateWidget(DayInkLayer old) {
+    super.didUpdateWidget(old);
+    if (old.controller != widget.controller) {
+      _own = CalendarInkArbiter(widget.controller);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -78,12 +174,8 @@ class _DayInkLayerState extends State<DayInkLayer> {
         key: ValueKey('calendar-ink-${dayKey(widget.day)}'),
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
-          if (_pointer != null) return;
-          if (e.kind == PointerDeviceKind.mouse &&
-              e.buttons & kPrimaryButton == 0) {
-            return;
-          }
-          _pointer = e.pointer;
+          final arbiter = _arbiter..down(e);
+          if (!arbiter.claim(e)) return;
           c.setView(Offset.zero, scale);
           c.pointerDown(
             screen(e.localPosition),
@@ -95,7 +187,7 @@ class _DayInkLayerState extends State<DayInkLayer> {
           );
         },
         onPointerMove: (e) {
-          if (e.pointer != _pointer) return;
+          if (!_arbiter.owns(e.pointer)) return;
           c.pointerMove(
             screen(e.localPosition),
             pressure: e.kind == PointerDeviceKind.stylus
@@ -105,14 +197,14 @@ class _DayInkLayerState extends State<DayInkLayer> {
           );
         },
         onPointerUp: (e) {
-          if (e.pointer != _pointer) return;
-          _pointer = null;
-          c.pointerUp();
+          final owned = _arbiter.owns(e.pointer);
+          _arbiter.release(e.pointer);
+          if (owned) c.pointerUp();
         },
         onPointerCancel: (e) {
-          if (e.pointer != _pointer) return;
-          _pointer = null;
-          c.pointerCancel();
+          final owned = _arbiter.owns(e.pointer);
+          _arbiter.release(e.pointer);
+          if (owned) c.pointerCancel();
         },
         child: paint,
       );

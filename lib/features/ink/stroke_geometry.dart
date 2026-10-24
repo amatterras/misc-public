@@ -19,14 +19,21 @@ double pressureFactor(double pressure) => 0.45 + 1.1 * pressure;
 /// Smooth centre line through [points] (quadratic curves through segment
 /// midpoints; ends exactly on the first and last point, so the ink stays
 /// under the pen tip).
-Path centreLine(List<StrokePoint> points, [Offset? predicted]) {
-  final path = Path()..moveTo(points.first.x, points.first.y);
-  for (var i = 1; i < points.length - 1; i++) {
-    final p = points[i].offset;
-    final mid = Offset.lerp(p, points[i + 1].offset, 0.5)!;
+Path centreLine(
+  List<StrokePoint> points, [
+  Offset? predicted,
+  double width = 0,
+]) {
+  final pts = [for (final p in points) p.offset];
+  // Set-down/lift-off wobble would show as a hook under the round cap.
+  if (width > 0) trimLiftJitter(pts, width, width);
+  final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+  for (var i = 1; i < pts.length - 1; i++) {
+    final p = pts[i];
+    final mid = Offset.lerp(p, pts[i + 1], 0.5)!;
     path.quadraticBezierTo(p.dx, p.dy, mid.dx, mid.dy);
   }
-  if (points.length > 1) path.lineTo(points.last.x, points.last.y);
+  if (pts.length > 1) path.lineTo(pts.last.dx, pts.last.dy);
   if (predicted != null) path.lineTo(predicted.dx, predicted.dy);
   return path;
 }
@@ -64,10 +71,20 @@ Path pressureOutline(
   for (var i = 1; i < w.length - 1; i++) {
     w[i] = (w[i - 1] + 2 * w[i] + w[i + 1]) / 4;
   }
+  trimLiftJitter(p, w.first, w.last, widths: w);
+  if (p.length == 1) {
+    return Path()
+      ..addOval(Rect.fromCircle(center: p.first, radius: w.first / 2));
+  }
   final left = <Offset>[], right = <Offset>[];
   for (var i = 0; i < p.length; i++) {
-    final a = p[math.max(0, i - 1)], b = p[math.min(p.length - 1, i + 1)];
-    var d = b - a;
+    // At the two ends the direction is taken over about half a line width
+    // (endTangent), so one shaky last sample cannot twist the cap.
+    var d = i == 0
+        ? endTangent(p, w.first, atStart: true)
+        : i == p.length - 1
+        ? endTangent(p, w.last, atStart: false)
+        : p[i + 1] - p[i - 1];
     if (d.distance == 0) d = const Offset(1, 0);
     final n = Offset(-d.dy, d.dx) / d.distance * (w[i] / 2);
     left.add(p[i] + n);
@@ -82,12 +99,73 @@ Path pressureOutline(
     path.lineTo(e.last.dx, e.last.dy);
   }
 
+  // Round ends bulge OUTWARD, ahead of the tip and behind the start. With
+  // "left" = the normal turned from the direction as above, that is the
+  // counter-clockwise half circle on screen (y points down). The default
+  // (clockwise) arc bulged back into the stroke: both ends looked cut off
+  // with a notch.
   edge(left);
-  path.arcToPoint(right.last, radius: Radius.circular(w.last / 2));
+  path.arcToPoint(
+    right.last,
+    radius: Radius.circular(w.last / 2),
+    clockwise: false,
+  );
   edge(right.reversed.toList());
-  path.arcToPoint(left.first, radius: Radius.circular(w.first / 2));
+  path.arcToPoint(
+    left.first,
+    radius: Radius.circular(w.first / 2),
+    clockwise: false,
+  );
   path.close();
   return path;
+}
+
+/// The stroke's direction at one end, measured from the end point to the
+/// first point at least [width] / 2 away (or the far end of a short
+/// stroke): the local direction of the drawn line, not of the last tiny
+/// pen movement.
+Offset endTangent(List<Offset> p, double width, {required bool atStart}) {
+  final reach = math.max(width / 2, 0.5);
+  if (atStart) {
+    for (var i = 1; i < p.length; i++) {
+      if ((p[i] - p.first).distance >= reach) return p[i] - p.first;
+    }
+    return p.last - p.first;
+  }
+  for (var i = p.length - 2; i >= 0; i--) {
+    if ((p.last - p[i]).distance >= reach) return p.last - p[i];
+  }
+  return p.last - p.first;
+}
+
+/// Removes the pen's set-down and lift-off wobble from the copy that is
+/// drawn (never from the saved stroke): an end sample closer than a third
+/// of the line width that turns back by more than 90° would show as a
+/// hook or a spike under the round end. Everything else is kept, so the
+/// drawn line follows the saved centre line.
+void trimLiftJitter(
+  List<Offset> p,
+  double startWidth,
+  double endWidth, {
+  List<double>? widths,
+}) {
+  bool turnsBack(Offset a, Offset b, Offset c) {
+    final d1 = b - a, d2 = c - b;
+    return d1.dx * d2.dx + d1.dy * d2.dy < 0;
+  }
+
+  while (p.length > 2 &&
+      (p.last - p[p.length - 2]).distance < endWidth / 3 &&
+      turnsBack(p[p.length - 3], p[p.length - 2], p.last)) {
+    p.removeLast();
+    widths?.removeLast();
+  }
+  while (p.length > 2 &&
+      (p[1] - p.first).distance < startWidth / 3 &&
+      turnsBack(p[2], p[1], p.first)) {
+    p.removeAt(0);
+    widths?.removeAt(0);
+  }
 }
 
 /// Draws one stroke the same way on every surface. [predicted]: where the
@@ -116,7 +194,7 @@ void paintStroke(
     return;
   }
   canvas.drawPath(
-    cachedPath ?? centreLine(points, predicted),
+    cachedPath ?? centreLine(points, predicted, stroke.strokeWidth),
     Paint()
       ..color = stroke.color
       ..strokeWidth = stroke.strokeWidth
@@ -131,7 +209,7 @@ void paintStroke(
 Path strokePath(StrokeItem stroke) =>
     stroke.pressureWidth && stroke.color.a >= 0.99
     ? pressureOutline(stroke.points, stroke.strokeWidth)
-    : centreLine(stroke.points);
+    : centreLine(stroke.points, null, stroke.strokeWidth);
 
 // ------------------------------------------------- straight-line hold --
 
