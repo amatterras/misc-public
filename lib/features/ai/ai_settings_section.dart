@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
+import '../../data/storage/app_log.dart';
 import 'ai_service.dart';
 
 class AiSettingsSection extends StatefulWidget {
@@ -22,6 +23,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
   late final _workingRules = TextEditingController(text: ai.workingRules);
   final _key = TextEditingController();
   String? _test;
+  bool _testing = false;
   bool _hasKey = false;
 
   AiSettings get ai => widget.state.ai;
@@ -110,18 +112,27 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
   }
 
   Future<void> _testConnection() async {
-    setState(() => _test = 'Testing…');
+    setState(() {
+      _testing = true;
+      _test = 'Testing…';
+    });
     try {
-      final client = await widget.state.aiClient();
-      final reply = await client.complete(const [
-        AiMessage('user', 'Reply with the single word OK.'),
-      ]);
-      _test = 'Connected. The model answered: “$reply”';
-    } on AiFailure catch (e) {
-      _test = e.message;
-    } catch (_) {
-      _test = 'The test failed.';
+      final report = await testAiConnection(
+        await widget.state.aiClient(),
+        ai.model,
+      );
+      _test = [
+        report.ok ? 'Connected.' : 'Not working yet.',
+        ...report.steps,
+      ].join('\n');
+    } catch (e, stack) {
+      // Reading the protected key can fail (e.g. moved to another user).
+      AppLog.error('AI test could not start', redactSecrets('$e'), stack);
+      _test =
+          'The test could not start: the saved key could not be read. '
+          'Save the key again.';
     }
+    _testing = false;
     if (mounted) setState(() {});
   }
 
@@ -186,8 +197,17 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
           TextField(
             controller: _model,
             decoration: const InputDecoration(labelText: 'Model'),
-            onChanged: (v) => ai.setModel(v),
+            onChanged: (v) => _change(() => ai.setModel(v)),
           ),
+          if (retiredModelWarning(ai.model) case final warning?)
+            Padding(
+              key: const ValueKey('ai-model-retired'),
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                warning,
+                style: const TextStyle(fontSize: 12, color: AppColors.warm),
+              ),
+            ),
           const SizedBox(height: Space.sm),
           TextField(
             controller: _workingRules,
@@ -295,7 +315,8 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
           Row(
             children: [
               OutlinedButton(
-                onPressed: _testConnection,
+                key: const ValueKey('ai-test'),
+                onPressed: _testing ? null : _testConnection,
                 child: const Text('Test connection'),
               ),
               const SizedBox(width: Space.md),

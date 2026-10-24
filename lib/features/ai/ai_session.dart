@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../../data/models/ai_models.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/repositories/record_collection.dart';
+import '../../data/storage/app_log.dart';
 import '../canvas/canvas_controller.dart';
 import '../../data/workspace.dart';
 import 'ai_service.dart';
@@ -338,7 +339,9 @@ class AiSession extends ChangeNotifier {
     } on AiFailure catch (e) {
       status = AiMessageStatus.failed;
       failure = error = e.message;
-    } catch (_) {
+    } catch (e, stack) {
+      // Not an expected failure: kept in the log (keys redacted).
+      AppLog.error('AI request failed', redactSecrets('$e'), stack);
       status = AiMessageStatus.failed;
       failure = error = 'The AI request failed.';
     } finally {
