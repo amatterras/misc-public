@@ -95,11 +95,33 @@ class HubStore {
   /// [since], or after [timeout] with the current one (a heartbeat).
   Future<int> waitForChange(int since, Duration timeout) async {
     if (_seq > since) return _seq;
-    return Future.any([
-      _changed.stream.firstWhere((s) => s > since),
-      _wake.future.then((_) => _seq),
-    ]).timeout(timeout, onTimeout: () => _seq);
+    final done = Completer<int>();
+    void finish(int seq) {
+      if (!done.isCompleted) done.complete(seq);
+    }
+
+    // Listening ends with the wait, however it ends (a change, a wake-up
+    // or the timeout), so held waits never pile up listeners.
+    final sub = _changed.stream.listen((s) {
+      if (s > since) finish(s);
+    });
+    unawaited(_wake.future.then((_) => finish(_seq)));
+    final timer = Timer(timeout, () => finish(_seq));
+    waiting++;
+    try {
+      return await done.future;
+    } finally {
+      waiting--;
+      timer.cancel();
+      await sub.cancel();
+    }
   }
+
+  /// Waits in progress (for tests and the status page).
+  int waiting = 0;
+
+  /// Whether anything still listens for changes (false once no wait runs).
+  bool get hasChangeListeners => _changed.hasListener;
 
   Completer<void> _wake = Completer<void>();
 

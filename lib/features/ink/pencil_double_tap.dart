@@ -44,10 +44,7 @@ class PencilDoubleTap {
     CanvasController? best;
     for (final t in _targets.reversed) {
       if (!t.active()) continue;
-      final at = t.controller.lastInputAt;
-      final bestAt = best?.lastInputAt;
-      if (best == null ||
-          (at != null && (bestAt == null || at.isAfter(bestAt)))) {
+      if (best == null || t.controller.lastInput > best.lastInput) {
         best = t.controller;
       }
     }
