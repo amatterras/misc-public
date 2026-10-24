@@ -168,7 +168,8 @@ class _TheAppState extends State<TheApp> {
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {
         try {
-          await widget.state.flush();
+          // Lets a running backup or sync finish, saves, stops the hub.
+          await widget.state.shutdown();
           AppLog.info('Window closed; all changes saved');
         } catch (e, s) {
           AppLog.error('Saving on exit failed', e, s);

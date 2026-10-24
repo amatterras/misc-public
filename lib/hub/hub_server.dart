@@ -105,25 +105,9 @@ class HubServer {
     void Function(String line)? log,
     bool dailyBackups = true,
   }) async {
-    InternetAddress? extra;
-    if (privateHost != null) {
-      extra = InternetAddress.tryParse(privateHost);
-      if (extra == null || extra.isLoopback || !isAllowedBindAddress(extra)) {
-        throw ArgumentError(
-          'Refusing to listen on "$privateHost": only a private or Tailscale '
-          'address of this computer is allowed (never 0.0.0.0 or a public IP).',
-        );
-      }
-      final mine = [
-        for (final i in await NetworkInterface.list(includeLoopback: false))
-          for (final a in i.addresses) a.address,
-      ];
-      if (!mine.contains(extra.address)) {
-        throw ArgumentError(
-          '"$privateHost" is not an address of this computer.',
-        );
-      }
-    }
+    final extra = privateHost == null
+        ? null
+        : await _checkPrivateHost(privateHost);
     final store = await HubStore.open(dir);
     final auth = await HubAuth.open(dir);
     final servers = <HttpServer>[];
@@ -153,8 +137,7 @@ class HubServer {
       server._log('Calendar retention cleanup FAILED: ${error.runtimeType}');
     }
     for (final http in servers) {
-      http.idleTimeout = const Duration(seconds: 30);
-      http.listen(server._handle);
+      server._serve(http);
     }
     if (dailyBackups) {
       unawaited(server._backup());
@@ -189,7 +172,93 @@ class HubServer {
     }
   }
 
+  /// The private/Tailscale address [privateHost] as an address this hub
+  /// may listen on; throws [ArgumentError] otherwise.
+  static Future<InternetAddress> _checkPrivateHost(String privateHost) async {
+    final extra = InternetAddress.tryParse(privateHost);
+    if (extra == null || extra.isLoopback || !isAllowedBindAddress(extra)) {
+      throw ArgumentError(
+        'Refusing to listen on "$privateHost": only a private or Tailscale '
+        'address of this computer is allowed (never 0.0.0.0 or a public IP).',
+      );
+    }
+    final mine = [
+      for (final i in await NetworkInterface.list(includeLoopback: false))
+        for (final a in i.addresses) a.address,
+    ];
+    if (!mine.contains(extra.address)) {
+      throw ArgumentError('"$privateHost" is not an address of this computer.');
+    }
+    return extra;
+  }
+
+  /// Serves requests from [http]. A failing listener (e.g. its network
+  /// address went away when Wi-Fi dropped or Tailscale restarted) is
+  /// logged and dropped; it never takes the hub down. Before, a listener
+  /// error had no handler and ended the whole hub process.
+  void _serve(HttpServer http) {
+    http.idleTimeout = const Duration(seconds: 30);
+    final address = '${http.address.address}:${http.port}';
+    http.listen(
+      _handle,
+      onError: (Object error, StackTrace _) {
+        _log('Listener $address error (${error.runtimeType}); recovering');
+      },
+      onDone: () {
+        if (_stopping) return;
+        _servers.remove(http);
+        listenerLost = true;
+        _log('Listener $address closed unexpectedly');
+      },
+      cancelOnError: false,
+    );
+  }
+
+  bool _stopping = false;
+
+  /// A listener closed by itself (see [_serve]); the host checks this and
+  /// listens again. Cleared by [setPrivateHost].
+  bool listenerLost = false;
+
+  /// Whether the hub still listens on this PC (127.0.0.1).
+  bool get servesLoopback => _servers.any((s) => s.address.isLoopback);
+
+  /// The private/Tailscale address the hub listens on, if any.
+  String? get privateHost => _servers
+      .where((s) => !s.address.isLoopback)
+      .map((s) => s.address.address)
+      .firstOrNull;
+
+  /// Listens on [host] (a private/Tailscale address of this PC) instead of
+  /// the current private address, or on none (null). The 127.0.0.1
+  /// listener and every device's connection there are not touched; the
+  /// same port is kept, so paired devices need nothing new.
+  Future<void> setPrivateHost(String? host) async {
+    final address = host == null ? null : await _checkPrivateHost(host);
+    for (final s in [..._servers]) {
+      if (s.address.isLoopback) continue;
+      _servers.remove(s);
+      await s.close(force: true);
+    }
+    if (address != null) {
+      final http = await HttpServer.bind(address, port);
+      _servers.add(http);
+      _serve(http);
+    }
+    listenerLost = false;
+    _log('Hub listening on ${listening.join(', ')}');
+  }
+
+  /// Tests: every listener closes as if by itself (the hub then answers
+  /// nothing until it is restarted).
+  Future<void> closeListenersForTest() async {
+    for (final s in [..._servers]) {
+      await s.close(force: true);
+    }
+  }
+
   Future<void> stop() async {
+    _stopping = true;
     _backupTimer?.cancel();
     store.wakeWaiters(); // long-polls answer now instead of holding the stop
     for (final s in _servers) {

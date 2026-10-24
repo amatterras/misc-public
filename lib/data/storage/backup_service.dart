@@ -34,6 +34,64 @@ class BackupService {
   static const keepFull = 4;
   static const fullEvery = Duration(days: 7);
 
+  /// Frequent backups while THEapp runs (records only, made only after a
+  /// change): a rolling set of their own, so they never push out daily,
+  /// weekly, manual or pre-upgrade backups. Photos and PDFs are in the
+  /// weekly full backup and the hub's content-addressed store.
+  static const keepLive = 12;
+
+  /// Folders being written start with this; they are not backups until
+  /// checked and renamed, and are removed if left behind.
+  static const partialPrefix = '.partial-';
+
+  /// A frequent backup of the records: copied into a hidden folder,
+  /// compared file by file with the live files (so an edit during the
+  /// copy cannot leave a mixed set), and only then given its real name.
+  /// If anything fails, the hidden folder is removed, earlier backups are
+  /// untouched, and an error is thrown (the caller tries again later).
+  Future<Directory> liveSnapshot({DateTime? now}) async {
+    final name = '${_stamp(now ?? DateTime.now())}-live';
+    final partial = Directory('${backupsDir.path}$_sep$partialPrefix$name');
+    try {
+      if (await partial.exists()) await partial.delete(recursive: true);
+      await partial.create(recursive: true);
+      await for (final (rel, file) in _files(root, attachments: false)) {
+        final dest = File('${partial.path}$_sep$rel');
+        await dest.parent.create(recursive: true);
+        await file.copy(dest.path);
+      }
+      if (!await verify(partial)) {
+        throw const FileSystemException(
+          'Data changed while it was copied; the backup is made again shortly',
+        );
+      }
+      var target = Directory('${backupsDir.path}$_sep$name');
+      for (var n = 1; await target.exists(); n++) {
+        target = Directory('${backupsDir.path}$_sep$name-$n');
+      }
+      final done = await partial.rename(target.path);
+      await _prune();
+      return done;
+    } catch (_) {
+      if (await partial.exists()) await partial.delete(recursive: true);
+      rethrow;
+    }
+  }
+
+  /// Removes folders left by a backup that was interrupted (app closed or
+  /// crashed while copying). They were never counted as backups.
+  Future<int> removeInterrupted() async {
+    if (!await backupsDir.exists()) return 0;
+    var n = 0;
+    await for (final e in backupsDir.list()) {
+      if (e is Directory && _name(e).startsWith(partialPrefix)) {
+        await e.delete(recursive: true);
+        n++;
+      }
+    }
+    return n;
+  }
+
   /// Copies saved outside the data folder (iPhone/iPad: Documents/THEapp
   /// Backups, visible in the Files app). Listed with the others so they can
   /// be restored; never pruned or changed by THEapp.
@@ -54,9 +112,10 @@ class BackupService {
 
   Future<List<Directory>> _listIn(Directory parent) async {
     if (!await parent.exists()) return [];
+    // Hidden folders (a backup still being written) are not backups.
     return parent
         .list()
-        .where((e) => e is Directory)
+        .where((e) => e is Directory && !_name(e).startsWith('.'))
         .cast<Directory>()
         .toList();
   }
@@ -330,8 +389,17 @@ class BackupService {
     for (final old in fulls.skip(keepFull)) {
       await old.delete(recursive: true);
     }
+    final live = all.where((d) => _isReason(d, 'live')).toList();
+    for (final old in live.skip(keepLive)) {
+      await old.delete(recursive: true);
+    }
     final others = all
-        .where((d) => !_isReason(d, 'auto') && !_isReason(d, 'auto-full'))
+        .where(
+          (d) =>
+              !_isReason(d, 'auto') &&
+              !_isReason(d, 'auto-full') &&
+              !_isReason(d, 'live'),
+        )
         .toList();
     // Pre-upgrade backups: "pre-v<schema>" and "pre-level<n>".
     final newestPre = others

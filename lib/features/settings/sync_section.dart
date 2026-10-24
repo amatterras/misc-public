@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/maintenance.dart';
 import '../../app/test_environment.dart';
 import '../../app/theme.dart';
+import '../../hub/hub_host.dart';
 import '../../sync/local_hub.dart';
 import '../../sync/sync_client.dart';
 import '../../widgets/common.dart';
@@ -226,6 +228,8 @@ class _SyncSectionState extends State<SyncSection> {
               'Hub: ${s.hubUrl}',
               style: const TextStyle(fontSize: 12, color: AppColors.textFaint),
             ),
+            if (s.maintenance case final m?)
+              MaintenanceStatusView(state: s, m: m),
             // The master switch lives on the Windows PC (it also pauses the
             // hub there); devices just show "paused".
             if (Platform.isWindows)
@@ -572,5 +576,77 @@ class _HostedFormState extends State<_HostedForm> {
         ),
       ),
     ],
+  );
+}
+
+/// What the 10-second work did, each part on its own (Windows): the hub on
+/// this PC, the last sync and backups that really completed, what runs
+/// now, and the last problem with whether it is being retried.
+class MaintenanceStatusView extends StatelessWidget {
+  const MaintenanceStatusView({
+    super.key,
+    required this.state,
+    required this.m,
+  });
+
+  final AppState state;
+  final MaintenanceScheduler m;
+
+  static String _time(DateTime? t) {
+    if (t == null) return 'not yet';
+    String two(int v) => v.toString().padLeft(2, '0');
+    final now = DateTime.now();
+    final today =
+        t.year == now.year && t.month == now.month && t.day == now.day;
+    return '${today ? '' : '${t.year}-${two(t.month)}-${two(t.day)} '}'
+        '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: m,
+    builder: (context, _) {
+      const small = TextStyle(fontSize: 12, color: AppColors.textMuted);
+      final host = state.hubHost;
+      final failing = [
+        for (final j in m.jobs)
+          if (j.lastError != null) j,
+      ];
+      return Padding(
+        key: const ValueKey('maintenance-status'),
+        padding: const EdgeInsets.only(top: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (host != null)
+              Text(switch (host.state) {
+                HubHostState.running =>
+                  'Hub on this PC: running in THEapp (${host.listening.join(', ')})',
+                HubHostState.external =>
+                  'Hub on this PC: running separately (${host.listening.join(', ')})',
+                HubHostState.recovering =>
+                  'Hub on this PC: restarting — ${host.problem ?? ''}',
+                HubHostState.failed =>
+                  'Hub on this PC: ${host.problem ?? 'stopped'}',
+                _ => 'Hub on this PC: starting…',
+              }, style: small),
+            Text(
+              'Every 10 s — last sync ${_time(m.job('sync').lastSuccess)}, '
+              'last backup ${_time(m.job('backup').lastSuccess)}'
+              '${host == null ? '' : ', hub backup ${_time(m.job('hubBackup').lastSuccess)}'}',
+              style: small,
+            ),
+            if (m.current case final j?)
+              Text('Now: ${j.label ?? j.name}…', style: small),
+            for (final j in failing)
+              Text(
+                '${j.label ?? j.name} failed at ${_time(j.lastErrorAt)}: '
+                '${j.lastError} — retrying every 10 s',
+                style: const TextStyle(fontSize: 12, color: AppColors.warm),
+              ),
+          ],
+        ),
+      );
+    },
   );
 }

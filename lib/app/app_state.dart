@@ -39,6 +39,8 @@ import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
 import '../sync/sync_scheduler.dart';
+import '../hub/hub_host.dart';
+import 'maintenance.dart';
 import '../sync/local_hub.dart';
 import '../features/calendar/external/external_calendar.dart';
 import '../features/calendar/external/oauth.dart';
@@ -335,6 +337,7 @@ class AppState extends ChangeNotifier {
       // Shown once the window is up; details are in the log.
       Timer(const Duration(seconds: 1), () => showToast(recoveries.join('  ')));
     }
+    await _startHubHost(step);
     step('Starting sync');
     await _startSyncIfPaired();
     // Replies that were being written when the app closed are marked
@@ -349,7 +352,140 @@ class AppState extends ChangeNotifier {
     _applyClipboardSetting();
     _startCalendarSyncSchedule();
     unawaited(syncCalendarAccounts());
+    _startMaintenance();
     step('Ready');
+  }
+
+  // ------------------------------------------------ hub and every 10 s --
+  //
+  // On Windows, THEapp runs the hub itself while it is open (unless a hub
+  // already runs on this PC: then it uses that one), and every 10 seconds
+  // checks the hub, syncs, and backs up what changed (maintenance.dart).
+
+  static bool get _isRealWindowsApp =>
+      Platform.isWindows && !Platform.environment.containsKey('FLUTTER_TEST');
+
+  /// Whether the 10-second work runs (tests switch it on themselves).
+  late bool runMaintenance = _isRealWindowsApp;
+  Duration maintenanceInterval = const Duration(seconds: 10);
+
+  /// Makes the hub this app runs, or null (no hub on this device). By
+  /// default: the real Windows app, not in test-data mode, and only when
+  /// this PC already has a hub folder (it was set up as the hub).
+  late HubHost? Function() makeHubHost = () {
+    if (!_isRealWindowsApp || TestEnvironment.active) return null;
+    final dir = defaultLocalHubDir();
+    if (!dir.existsSync()) return null;
+    return HubHost(dir: dir, log: AppLog.info);
+  };
+
+  HubHost? hubHost;
+  MaintenanceScheduler? maintenance;
+
+  /// Record and drawing changes not in a frequent backup yet.
+  int _changesSinceBackup = 0;
+
+  /// Sync and the frequent backup never touch the data at the same time.
+  final _dataLock = SerialLock();
+
+  Future<void> _startHubHost(void Function(String) step) async {
+    if (hubHost != null) return;
+    final host = hubHost = makeHubHost();
+    if (host == null) return;
+    step('Starting the hub');
+    try {
+      // The window opens even if the hub needs longer (it keeps starting).
+      await host.start().timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      AppLog.warn('Hub: still starting after 15 s; continuing');
+    } catch (e, s) {
+      AppLog.error('Hub could not start', e, s);
+    }
+  }
+
+  void _startMaintenance() {
+    if (!runMaintenance || maintenance != null) return;
+    // Edits count for the backup even when this device is not paired.
+    if (!_listeningForEdits) {
+      _listeningForEdits = true;
+      workspace.changes.addListener(_editedLocally);
+    }
+    // A backup interrupted last time (app closed while copying) left a
+    // hidden folder; it was never a backup.
+    unawaited(
+      workspace.backups.removeInterrupted().then((n) {
+        if (n > 0) AppLog.info('Removed $n interrupted backup folder(s)');
+      }),
+    );
+    final m = maintenance = MaintenanceScheduler(
+      [
+        MaintenanceJob('hub', _checkHub, label: 'Checking the hub'),
+        MaintenanceJob('sync', _syncTick, label: 'Syncing'),
+        MaintenanceJob('backup', _backupTick, label: 'Backing up'),
+        MaintenanceJob(
+          'hubBackup',
+          _hubBackupTick,
+          label: 'Backing up the hub',
+        ),
+      ],
+      interval: maintenanceInterval,
+      onError: (job, e, s) {
+        // Logged once per streak, not every 10 seconds.
+        if (job.failures == 1) {
+          AppLog.warn('${job.name} failed: ${job.lastError}');
+        }
+      },
+    );
+    m.start();
+  }
+
+  Future<bool> _checkHub() async {
+    final host = hubHost;
+    if (host == null) return false;
+    final h = await host.check();
+    if (h.recovered != null) AppLog.info('Hub: recovered (${h.recovered})');
+    if (!h.ok) throw JobProblem(h.problem ?? 'The hub is not running.');
+    return true;
+  }
+
+  /// A sync every 10 seconds (on top of the live updates). Counts as done
+  /// only if a sync cycle really completed now.
+  Future<bool> _syncTick() async {
+    final s = _scheduler;
+    if (s == null || !syncEnabled || syncNeedsPairing) return false;
+    final before = s.lastSuccess;
+    await s.syncNow();
+    if (s.lastSuccess == before) {
+      throw JobProblem(_lastResult);
+    }
+    return true;
+  }
+
+  /// A frequent backup of the records, only if something changed (the
+  /// first one after start always runs). Checked before it counts.
+  Future<bool> _backupTick() async {
+    final pending = _changesSinceBackup;
+    final job = maintenance?.job('backup');
+    if (pending == 0 && job?.lastSuccess != null) return false;
+    await flush(); // the latest edits on disk first
+    await _dataLock.run(() => workspace.backups.liveSnapshot());
+    _changesSinceBackup -= pending;
+    return true;
+  }
+
+  /// Closing the app: lets a backup or sync that is running finish (up to
+  /// 20 s), saves everything, then stops the hub this app runs.
+  Future<void> shutdown() async {
+    await maintenance?.stop();
+    _scheduler?.stop();
+    await flush();
+    await hubHost?.stop();
+  }
+
+  Future<bool> _hubBackupTick() async {
+    final host = hubHost;
+    if (host == null || host.state != HubHostState.running) return false;
+    return await host.backupLive() != null;
   }
 
   // ---------------------------------------------------------------- sync --
@@ -544,6 +680,7 @@ class AppState extends ChangeNotifier {
       client: engine.client,
       fallback: syncInterval,
       onChange: () {
+        _logConnection();
         _updateSyncStatus();
         notifyListeners();
       },
@@ -562,9 +699,33 @@ class AppState extends ChangeNotifier {
 
   bool _listeningForEdits = false;
 
+  /// Each change of the sync connection is logged once (with the time):
+  /// failures used to leave no trace, so a hub that went away looked like
+  /// a log that simply stopped.
+  SyncConnection? _loggedConnection;
+  void _logConnection() {
+    final c = _scheduler?.connection;
+    if (c == null || c == _loggedConnection) return;
+    final before = _loggedConnection;
+    _loggedConnection = c;
+    switch (c) {
+      case SyncConnection.offline:
+        AppLog.warn('Sync: hub not reachable ($hubUrl); retrying');
+      case SyncConnection.live || SyncConnection.polling
+          when before == SyncConnection.offline ||
+              before == SyncConnection.paused:
+        AppLog.info('Sync: connected again (${c.name})');
+      case SyncConnection.paused:
+        AppLog.info('Sync: paused on the hub');
+      default:
+        break;
+    }
+  }
+
   /// Any record changed here: sync soon. (Changes written by a running sync
   /// only ask for one more cycle, so they do not show as "waiting".)
   void _editedLocally() {
+    _changesSinceBackup++;
     final s = _scheduler;
     if (s == null) return;
     syncing ? s.request() : s.localChange();
@@ -828,7 +989,7 @@ class AppState extends ChangeNotifier {
     syncing = true;
     notifyListeners();
     try {
-      final report = await engine.syncOnce();
+      final report = await _dataLock.run(engine.syncOnce);
       lastSynced = DateTime.now();
       _lastResult = report.conflicts > 0
           ? 'Synced — ${report.conflicts} conflict(s) kept for review'
@@ -2427,6 +2588,8 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _scheduler?.stop();
+    unawaited(maintenance?.stop(wait: Duration.zero));
+    unawaited(hubHost?.stop());
     _calendarSyncTimer?.cancel();
     _pencilTaps?.cancel();
     if (_listeningForEdits) workspace.changes.removeListener(_editedLocally);

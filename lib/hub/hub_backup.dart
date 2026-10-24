@@ -26,11 +26,27 @@ class HubBackups {
 
   static File _manifest(Directory b) => File('${b.path}${_sep}manifest.json');
 
+  /// Frequent backups while THEapp runs on this PC (every 10 seconds when
+  /// something changed): a rolling set of their own in `backups/live`, so
+  /// they never push out the daily ones.
+  Directory get liveDir => Directory('${dir.path}${_sep}live');
+  static const keepLive = 12;
+
   /// Complete backups, newest first.
   Future<List<Directory>> list() async {
     await _recoverInterruptedPurges();
-    if (!await dir.exists()) return [];
-    final all = await dir
+    return _completeIn(dir);
+  }
+
+  /// Complete frequent ("live") backups, newest first.
+  Future<List<Directory>> listLive() async {
+    await _recoverInterruptedPurges(liveDir);
+    return _completeIn(liveDir);
+  }
+
+  static Future<List<Directory>> _completeIn(Directory parent) async {
+    if (!await parent.exists()) return [];
+    final all = await parent
         .list()
         .where((e) => e is Directory)
         .cast<Directory>()
@@ -46,15 +62,43 @@ class HubBackups {
   static Future<String> _fileSha(File f) async =>
       (await sha256.bind(f.openRead()).first).toString();
 
+  /// A daily backup (kept: [keep]).
   Future<Directory> create() async {
+    final target = await _createIn(dir);
+    await _prune();
+    return target;
+  }
+
+  /// A frequent backup (kept: [keepLive]), checked before it counts: one
+  /// that fails the check is removed and an error thrown; earlier ones
+  /// are never touched by a failure.
+  Future<Directory> createLive() async {
+    final target = await _createIn(liveDir);
+    if (!await verify(target)) {
+      await target.delete(recursive: true);
+      throw const FileSystemException('The new hub backup failed its check');
+    }
+    for (final old in (await listLive()).skip(keepLive)) {
+      await old.delete(recursive: true);
+    }
+    await _removeHalfMade(liveDir, const Duration(minutes: 5));
+    return target;
+  }
+
+  /// Writes a backup into [parent]: the journal and devices first, the
+  /// manifest last (a folder without a manifest is not a backup, so an
+  /// interrupted run can never be mistaken for a complete one).
+  Future<Directory> _createIn(Directory parent) async {
     final t = DateTime.now().toUtc();
     String two(int v) => v.toString().padLeft(2, '0');
+    String three(int v) => v.toString().padLeft(3, '0');
     final name =
-        '${t.year}${two(t.month)}${two(t.day)}-${two(t.hour)}${two(t.minute)}${two(t.second)}';
-    var target = Directory('${dir.path}$_sep$name');
+        '${t.year}${two(t.month)}${two(t.day)}-${two(t.hour)}${two(t.minute)}${two(t.second)}'
+        '${parent.path == dir.path ? '' : '-${three(t.millisecond)}'}';
+    var target = Directory('${parent.path}$_sep$name');
     var n = 1;
     while (await target.exists()) {
-      target = Directory('${dir.path}$_sep$name-${n++}');
+      target = Directory('${parent.path}$_sep$name-${n++}');
     }
     await target.create(recursive: true);
     final journal = File('${target.path}${_sep}journal.jsonl');
@@ -75,7 +119,6 @@ class HubBackups {
       }),
       flush: true,
     );
-    await _prune();
     return target;
   }
 
@@ -86,7 +129,7 @@ class HubBackups {
     if (current == null || current['del'] != true) {
       throw StateError('Expired calendar entry $id has no hub tombstone.');
     }
-    for (final backup in await list()) {
+    for (final backup in [...await list(), ...await listLive()]) {
       await _rewriteWithoutExpiredEntry(backup, id, current);
     }
   }
@@ -183,9 +226,10 @@ class HubBackups {
     await old.delete(recursive: true);
   }
 
-  Future<void> _recoverInterruptedPurges() async {
-    if (!await dir.exists()) return;
-    final children = await dir
+  Future<void> _recoverInterruptedPurges([Directory? parent]) async {
+    final base = parent ?? dir;
+    if (!await base.exists()) return;
+    final children = await base
         .list()
         .where((entity) => entity is Directory)
         .cast<Directory>()
@@ -201,7 +245,7 @@ class HubBackups {
       }
     }
     for (final entry in grouped.entries) {
-      final canonical = Directory('${dir.path}$_sep${entry.key}');
+      final canonical = Directory('${base.path}$_sep${entry.key}');
       final candidates = entry.value;
       if (await canonical.exists()) {
         if (await verify(canonical)) {
@@ -235,14 +279,18 @@ class HubBackups {
     for (final old in (await list()).skip(keep)) {
       await old.delete(recursive: true);
     }
-    // Remove half-made backups (no manifest) left by an interrupted run.
-    if (await dir.exists()) {
-      await for (final e in dir.list()) {
-        if (e is Directory && !await _manifest(e).exists()) {
-          final age = DateTime.now().difference((await e.stat()).modified);
-          if (age > const Duration(hours: 1)) await e.delete(recursive: true);
-        }
-      }
+    await _removeHalfMade(dir, const Duration(hours: 1));
+  }
+
+  /// Removes half-made backups (no manifest) older than [age] left in
+  /// [parent] by an interrupted run; never the live folder itself.
+  Future<void> _removeHalfMade(Directory parent, Duration age) async {
+    if (!await parent.exists()) return;
+    await for (final e in parent.list()) {
+      if (e is! Directory || e.path == liveDir.path) continue;
+      if (await _manifest(e).exists()) continue;
+      final old = DateTime.now().difference((await e.stat()).modified);
+      if (old > age) await e.delete(recursive: true);
     }
   }
 

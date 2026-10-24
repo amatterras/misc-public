@@ -695,3 +695,51 @@ Windows-authoritative workspace hub in the preceding sections.
   retry, and missing duration. These tests do not establish live provider
   authorization or actual account behavior. The end-to-end tests run from
   `test/platform_features_test.dart` (`P3 calendar sync`).
+
+## 20. Hub run by THEapp, 10-second backup and sync, disconnect fixes (2026-10-24)
+
+**Why the hub "disconnected" (root causes found on the PC)**
+1. The hub only ran when started by hand (`thehub serve` in a console). Nothing started it again after the window closed. The leftover `hub.json` pointed at a dead process (pid 12664, last request 2026-10-22 04:54). No sign-in shortcut existed.
+2. Without `--private-host`, the hub listens on 127.0.0.1 only, so the iPad can never reach it. The address also had to exist at start.
+3. The hub's listeners had no error handler. In a standalone Dart process, an unhandled listener error ends the whole process. The PC's Wi-Fi adapter was dropping and reconnecting repeatedly around that time (Intel `Netwtw10` events). Whether that killed the hub could not be proven from the logs, but the gap is closed either way.
+4. The PC app did not log sync failures (`SyncFailure` was skipped), so the outage left no trace.
+
+**What changed**
+- **Hub inside THEapp on Windows** (`lib/hub/hub_host.dart`).
+  - The hub runs in its own isolate while THEapp is open. This happens only if `%APPDATA%\THEapp-hub` exists and the app is not in test-data mode.
+  - If a hub already answers on the port (e.g. `thehub serve`), THEapp uses it and starts none. Binding the port is the cross-process lock.
+  - It listens on 127.0.0.1 and on this PC's Tailscale address (100.64.0.0/10), detected automatically.
+- **Health check every 10 s.**
+  - Follows a new or changed Tailscale address, and reopens a listener lost to a network change (127.0.0.1 untouched).
+  - Makes a real HTTP request on each address.
+  - After 3 failed checks on 127.0.0.1, the isolate closes its listeners and starts the server again in place (same data, same port).
+  - A new isolate is started only if the old one ended after closing its sockets.
+  - Limitation: in this Dart VM, a *killed* isolate keeps its listening port until the process ends. So the hub isolate runs in a guarded zone that never lets errors end it. If it ever freezes completely, the status says to reopen THEapp.
+- **Listeners** (`HubServer._serve`) log errors and closures instead of ending the process. `setPrivateHost` re-binds at runtime.
+- **`thehub serve --private-host auto`**: same Tailscale detection, plus a 10-second listener check. The sign-in shortcut uses it.
+- **10-second work** (`lib/app/maintenance.dart`), Windows only. One scheduler is started once at the end of start-up; it keeps running while the window is minimised and stops on close. Each tick runs four jobs; each job runs at most once at a time, and a tick missed during a run is run once afterwards.
+  1. Hub check.
+  2. Sync (`syncNow`): counts as done only if a cycle really completed.
+  3. App backup (`BackupService.liveSnapshot`), only after a change:
+     - records are copied into a hidden `.partial-…` folder and compared with the live files, then renamed;
+     - a failure leaves earlier backups untouched;
+     - leftovers are removed at start;
+     - its own rolling set of 12, never pushing out daily, weekly, manual or pre-upgrade backups;
+     - sync and this backup share a lock, so they never touch the data at once.
+  4. Hub backup (`HubBackups.createLive`), only after `lastSeq` changed:
+     - journal and devices first, manifest last;
+     - checked;
+     - kept in `backups/live`, 12 at a time;
+     - included in the 7-day calendar purge.
+- **Status** in Settings → Sync shows:
+  - hub state and addresses;
+  - last real sync and backups;
+  - what runs now;
+  - each job's last error, retried every 10 s.
+- **Log**: each sync connection change is logged once (unreachable / connected again).
+
+**Tests**
+- `hub_host_test` (7): one hub only; uncaught errors; in-place restart; isolate end; port held; live hub backups; listener re-bind.
+- `maintenance_test` (9): starts once; 10-second cadence on a fake clock; no overlap; truthful outcomes; clean stop; lock; checked, interrupted and bounded backups.
+- `app_hub_sync_test` (1, end to end): outage reported as failed, never "synced"; recovery and catch-up without duplicates; navigation adds no scheduler; clean shutdown.
+- `hub_stability_test`: opt-in long run.

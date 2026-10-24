@@ -14,6 +14,8 @@ import 'dart:io';
 import 'package:flutter_application_1/hub/hub_auth.dart';
 import 'package:flutter_application_1/hub/hub_backup.dart';
 import 'package:flutter_application_1/hub/hub_mirror.dart';
+import 'package:flutter_application_1/hub/hub_host.dart'
+    show detectTailscaleAddress;
 import 'package:flutter_application_1/hub/hub_server.dart';
 import 'package:flutter_application_1/hub/hosted_hub.dart';
 import 'package:flutter_application_1/sync/secret_store.dart';
@@ -157,7 +159,7 @@ Future<void> main(List<String> args) async {
 void _usage() => stdout.writeln('''
 THEapp sync hub
 
-  serve [--port N] [--private-host ADDRESS] [--data DIR]
+  serve [--port N] [--private-host ADDRESS|auto] [--data DIR]
         Run the hub. Listens on 127.0.0.1 (this PC only). --private-host also
         listens on that private/Tailscale address of this PC. Ctrl+C stops it.
   status                 Is it running? Records, devices, memory use.
@@ -215,12 +217,28 @@ Future<void> _serve(Directory dir, _Options options) async {
   }
   final log = _HubLog(dir);
   final port = int.tryParse(options.value('--port') ?? '') ?? defaultHubPort;
+  // "auto": this PC's Tailscale address, followed when it appears (e.g.
+  // Tailscale starting after sign-in) or changes.
+  final auto = options.value('--private-host') == 'auto';
+  final requested = auto
+      ? await detectTailscaleAddress()
+      : options.value('--private-host');
   final server = await HubServer.start(
     dir: dir,
     port: port,
-    privateHost: options.value('--private-host'),
+    privateHost: requested,
     log: log.write,
   );
+  // Every 10 s: a listener lost to a network change is opened again.
+  final watch = Timer.periodic(const Duration(seconds: 10), (_) async {
+    final want = auto ? await detectTailscaleAddress() : requested;
+    if (want == server.privateHost && !server.listenerLost) return;
+    try {
+      await server.setPrivateHost(want);
+    } catch (e) {
+      log.write('Could not listen on $want yet (${e.runtimeType})');
+    }
+  });
   await _runFile(dir).writeAsString(
     jsonEncode({
       'pid': pid,
@@ -234,6 +252,7 @@ Future<void> _serve(Directory dir, _Options options) async {
   );
   final sub = ProcessSignal.sigint.watch().listen((_) => server.stop());
   await server.done;
+  watch.cancel();
   await sub.cancel();
   if (await _runFile(dir).exists()) await _runFile(dir).delete();
 }
@@ -344,7 +363,7 @@ Future<void> _startup(String action) async {
       String q(String s) => s.replaceAll("'", "''");
       final script =
           "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('${q(lnk.path)}'); "
-          "\$s.TargetPath = '${q(exe.path)}'; \$s.Arguments = 'serve'; "
+          "\$s.TargetPath = '${q(exe.path)}'; \$s.Arguments = 'serve --private-host auto'; "
           "\$s.WindowStyle = 7; \$s.Description = 'THEapp sync hub'; \$s.Save()";
       final r = await Process.run('powershell', [
         '-NoProfile',
