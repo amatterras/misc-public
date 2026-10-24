@@ -87,5 +87,9 @@
 	<string>THEapp syncs with the THEapp hub on your own PC.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>THEapp accesses photos you choose to import into your notes and canvases.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A web page open in THEapp Safari asked to use the camera. THEapp asks you first, for each site.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A web page open in THEapp Safari asked to use the microphone. THEapp asks you first, for each site.</string>
 </dict>
 </plist>

@@ -601,8 +601,8 @@ final class TheAppWebView: NSObject, FlutterPlatformView, WKNavigationDelegate, 
     case "reload": lastError = nil; webView.reload(); result(nil)
     case "stop": webView.stopLoading(); result(nil)
     case "zoom":
-      if #available(iOS 14.0, *), let factor = call.arguments as? Double {
-        webView.pageZoom = CGFloat(factor)
+      if let factor = call.arguments as? Double {
+        webView.pageZoom = CGFloat(factor)  // iOS 14+; the app needs iOS 15
       }
       result(nil)
     case "find":
@@ -745,7 +745,9 @@ final class TheAppWebView: NSObject, FlutterPlatformView, WKNavigationDelegate, 
       n += 1
     }
     let id = UUID().uuidString
-    downloads[ObjectIdentifier(download)] = (id, response.url?.absoluteString ?? "", target.lastPathComponent, target)
+    downloads[ObjectIdentifier(download)] = (
+      id: id, url: response.url?.absoluteString ?? "", name: target.lastPathComponent,
+      path: Optional(target))
     observations.append(
       download.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
         DispatchQueue.main.async { self?.sendDownload(download, progress: progress.fractionCompleted) }
