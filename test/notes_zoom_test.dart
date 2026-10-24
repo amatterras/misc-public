@@ -99,7 +99,7 @@ void main() {
     await boot(tester);
     final n = s.workspace.createNote(title: 'Cells', body: long);
     await open(tester, n.id);
-    expect(zoomLabel(tester), '100%');
+    expect(zoomLabel(tester), 'Text 100%');
     final buttonSize = tester.getSize(
       find.byKey(const ValueKey('note-text-zoom-in')),
     );
@@ -107,7 +107,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('note-text-zoom-in')));
     await tester.pump();
-    expect(zoomLabel(tester), '115%');
+    expect(zoomLabel(tester), 'Text 115%');
     expect(body(tester).preferredLineHeight, closeTo(lineHeight * 1.15, 0.5));
     // The app around the note keeps its size.
     expect(
@@ -119,16 +119,16 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('note-text-zoom-in')));
       await tester.pump();
     }
-    expect(zoomLabel(tester), '250%');
+    expect(zoomLabel(tester), 'Text 250%');
     for (var i = 0; i < 30; i++) {
       final out = find.byKey(const ValueKey('note-text-zoom-out'));
       await tester.tap(out, warnIfMissed: false);
       await tester.pump();
     }
-    expect(zoomLabel(tester), '60%');
+    expect(zoomLabel(tester), 'Text 60%');
     await tester.tap(find.byKey(const ValueKey('note-text-zoom-value')));
     await tester.pump();
-    expect(zoomLabel(tester), '100%');
+    expect(zoomLabel(tester), 'Text 100%');
     expect(body(tester).preferredLineHeight, closeTo(lineHeight, 0.01));
     await done(tester);
   });
@@ -200,12 +200,12 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.equal);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
-    expect(zoomLabel(tester), '115%');
+    expect(zoomLabel(tester), 'Text 115%');
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.digit0);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
-    expect(zoomLabel(tester), '100%');
+    expect(zoomLabel(tester), 'Text 100%');
 
     final state = tester.state<State>(find.byType(NoteEditor)) as dynamic;
     // ignore: avoid_dynamic_calls
@@ -234,11 +234,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('note-text-zoom-in')));
     await tester.tap(find.byKey(const ValueKey('note-text-zoom-in')));
     await tester.pump();
-    expect(zoomLabel(tester), '132%');
+    expect(zoomLabel(tester), 'Text 132%');
     await open(tester, b.id);
-    expect(zoomLabel(tester), '100%');
+    expect(zoomLabel(tester), 'Text 100%');
     await open(tester, a.id);
-    expect(zoomLabel(tester), '132%');
+    expect(zoomLabel(tester), 'Text 132%');
     await waitForBothClocks(tester, s.flush, what: 'Saving');
 
     // A restart: a new app on the same data.
@@ -246,7 +246,7 @@ void main() {
     s.dispose();
     await boot(tester);
     await open(tester, a.id);
-    expect(zoomLabel(tester), '132%');
+    expect(zoomLabel(tester), 'Text 132%');
     expect(s.settings.get<num>('noteTextZoom.${a.id}'), 1.32);
     await done(tester);
   });

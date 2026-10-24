@@ -902,7 +902,7 @@ class _NoteEditorState extends State<NoteEditor> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
-                  '${(_textZoom * 100).round()}%',
+                  'Text ${(_textZoom * 100).round()}%',
                   key: const ValueKey('note-text-zoom-value'),
                   style: const TextStyle(fontSize: 12),
                 ),
