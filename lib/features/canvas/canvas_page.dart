@@ -743,6 +743,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       onActivate: s.activateCanvasItem,
                       onRefreshLink: (l) => s.capture.refreshPreview(l.assetId),
                       onEraser: s.setEraser,
+                      onPenWidth: s.setCanvasPenWidth,
                     ),
                   ),
                 ),

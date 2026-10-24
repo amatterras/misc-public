@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../platform/input_hints.dart';
+import '../ink/pen_sizes.dart';
 import 'canvas_controller.dart';
 
 const _canvasFormatColors = [
@@ -168,6 +169,7 @@ class CanvasContextBar extends StatelessWidget {
     required this.onActivate,
     required this.onRefreshLink,
     this.onEraser,
+    this.onPenWidth,
   });
 
   final CanvasController controller;
@@ -178,8 +180,10 @@ class CanvasContextBar extends StatelessWidget {
   /// apply to this canvas only.
   final EraserChange? onEraser;
 
+  /// Keeps the chosen pen thickness for next time (else this canvas only).
+  final void Function(CanvasController c, double width)? onPenWidth;
+
   static const _penColors = InkColors.all;
-  static const _penWidths = [1.5, 2.5, 5.0, 9.0];
   static const _highlighterColors = InkColors.all;
   static const _highlighterWidths = [12.0, 18.0, 26.0, 36.0];
   static const _fontSizes = {'S': 13.0, 'M': 16.0, 'L': 22.0, 'XL': 32.0};
@@ -198,14 +202,17 @@ class CanvasContextBar extends StatelessWidget {
               onTap: () => c.setPen(color: color),
             ),
           const _PanelDivider(vertical: true),
-          for (final width in _penWidths)
+          for (final width in penSizes)
             ToolButton(
-              tooltip: 'Line width',
+              key: ValueKey('pen-size-$width'),
+              tooltip: 'Line width $width',
               active: c.penWidth == width,
-              onPressed: () => c.setPen(width: width),
+              onPressed: () => onPenWidth != null
+                  ? onPenWidth!(c, width)
+                  : c.setPen(width: width),
               icon: Container(
-                width: width + 2,
-                height: width + 2,
+                width: (width + 2).clamp(2.5, 20.0),
+                height: (width + 2).clamp(2.5, 20.0),
                 decoration: const BoxDecoration(
                   color: AppColors.text,
                   shape: BoxShape.circle,

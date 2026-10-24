@@ -17,6 +17,7 @@ import '../data/storage/app_log.dart';
 import '../data/storage/json_file_store.dart' show iosDocuments, iosFolder;
 import '../data/workspace.dart';
 import '../features/canvas/canvas_controller.dart';
+import '../features/ink/pen_sizes.dart';
 import '../features/ink/pencil_double_tap.dart';
 import '../features/ai/ai_service.dart';
 import '../features/browser/browser_engine.dart';
@@ -2145,12 +2146,14 @@ class AppState extends ChangeNotifier {
       _canvas =
           shared ??
           (CanvasController(
-            document: doc!,
-            onSave: _saveCanvas,
-            resources: resources,
-            onActivate: _activateCanvasItem,
-            clock: workspace.clock,
-          )..setEraser(mode: eraserMode, size: eraserSize));
+              document: doc!,
+              onSave: _saveCanvas,
+              resources: resources,
+              onActivate: _activateCanvasItem,
+              clock: workspace.clock,
+            )
+            ..setEraser(mode: eraserMode, size: eraserSize)
+            ..setPen(width: canvasPenWidth));
       await settings.set('lastCanvasId', id);
     }
     if (show) {
@@ -2215,12 +2218,14 @@ class AppState extends ChangeNotifier {
       c = _canvas?.id == id
           ? _canvas
           : (CanvasController(
-              document: doc,
-              onSave: _saveCanvas,
-              resources: resources,
-              onActivate: _activateCanvasItem,
-              clock: workspace.clock,
-            )..setEraser(mode: eraserMode, size: eraserSize));
+                document: doc,
+                onSave: _saveCanvas,
+                resources: resources,
+                onActivate: _activateCanvasItem,
+                clock: workspace.clock,
+              )
+              ..setEraser(mode: eraserMode, size: eraserSize)
+              ..setPen(width: canvasPenWidth));
     }
     _canvasRefs[id] = (c!, 1);
     return c;
@@ -2324,6 +2329,17 @@ class AppState extends ChangeNotifier {
     c.setPen(width: calendarPenWidth);
     c.setEraser(mode: eraserMode, size: eraserSize);
     return c;
+  }
+
+  /// The canvas pen thickness (this device; see pen_sizes.dart). Older
+  /// saved values in range load as they were; anything else is made safe.
+  double get canvasPenWidth => savedPenWidth(settings.get<num>('penWidth'));
+
+  /// Uses [width] for new strokes on [c] and keeps it for next time.
+  Future<void> setCanvasPenWidth(CanvasController c, double width) {
+    final w = savedPenWidth(width);
+    c.setPen(width: w);
+    return settings.set('penWidth', w);
   }
 
   /// The eraser's mode and size (this device), the same for the canvas

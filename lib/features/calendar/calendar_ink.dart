@@ -11,6 +11,7 @@ import '../../app/app_state.dart';
 import '../../data/models/record.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
+import '../ink/pen_sizes.dart';
 import '../ink/stroke_geometry.dart';
 
 /// Size of one day in the ink document (world units, the 38-day grid's
@@ -298,6 +299,28 @@ Future<void> showPenWidthDialog(
                   setState(() {});
                 },
                 onChangeEnd: state.setCalendarPenWidth,
+              ),
+              // The same choices as the canvas pen, one tap each.
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  for (final size in penSizes)
+                    ChoiceChip(
+                      key: ValueKey('calendar-pen-size-$size'),
+                      visualDensity: VisualDensity.compact,
+                      label: Text(
+                        '$size',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      selected: width == size,
+                      onSelected: (_) {
+                        ink.setPen(width: size);
+                        setState(() {});
+                        state.setCalendarPenWidth(size);
+                      },
+                    ),
+                ],
               ),
               Text(
                 '${width.toStringAsFixed(1)} · new strokes only',
