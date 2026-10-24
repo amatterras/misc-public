@@ -78,8 +78,10 @@ class TaskOnDay extends DayItem {
 /// screen. Business rules (limits, de-duplication) live here so each view
 /// behaves the same way.
 class Workspace {
-  Workspace(this.root)
-    : store = JsonFileStore(root),
+  /// [clock] is replaceable in tests (e.g. a device whose clock is wrong).
+  Workspace(this.root, {SyncClock? clock})
+    : clock = clock ?? SyncClock(),
+      store = JsonFileStore(root),
       attachments = AttachmentStore(root),
       backups = BackupService(root) {
     assets = _c('assets', Asset.fromJson);
@@ -177,7 +179,7 @@ class Workspace {
   final List<RecordCollection> _all = [];
 
   /// Revision stamps for every change made on this device (see [SyncClock]).
-  final SyncClock clock = SyncClock();
+  final SyncClock clock;
 
   /// This installation's identity; set by [load].
   DeviceIdentity? device;

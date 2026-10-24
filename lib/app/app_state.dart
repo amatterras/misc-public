@@ -38,6 +38,7 @@ import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
 import '../sync/sync_scheduler.dart';
+import '../sync/local_hub.dart';
 import '../features/calendar/external/external_calendar.dart';
 import '../features/calendar/external/oauth.dart';
 import '../features/graph/relationship_graph.dart';
@@ -546,7 +547,10 @@ class AppState extends ChangeNotifier {
       onError: (e, s) {
         if (e is! SyncFailure) AppLog.error('Sync error', e, s);
       },
-    )..start();
+    );
+    // The Windows switch (Settings → Sync) may have paused sync.
+    if (syncEnabled) _scheduler!.start();
+    _updateSyncStatus();
     if (!_listeningForEdits) {
       _listeningForEdits = true;
       workspace.changes.addListener(_editedLocally);
@@ -689,7 +693,7 @@ class AppState extends ChangeNotifier {
     // Timers and the live connection stop in the background (iOS): start
     // again and catch up.
     final s = _scheduler;
-    if (s == null || syncNeedsPairing) return;
+    if (s == null || syncNeedsPairing || !syncEnabled) return;
     s.start();
     final last = lastSynced;
     if (last != null && DateTime.now().difference(last) < resumeSyncAfter) {
@@ -723,10 +727,48 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ------------------------------------------------ sync on/off (Windows) --
+  //
+  // The switch controls synchronisation, never local saving: while off,
+  // edits are saved here as always and stay queued (revisions, bookkeeping
+  // and pairing are untouched); the hub on this PC also pauses, so other
+  // devices keep their changes queued too and show "paused". Turning it on
+  // restarts the connection and reconciles everything that waited.
+
+  bool get syncEnabled => settings.get<bool>('syncEnabled') ?? true;
+
+  /// Pauses/resumes the hub on this PC (replaceable in tests). Returns
+  /// false when no hub runs here.
+  late Future<bool> Function(bool paused) pauseLocalHub = (paused) =>
+      Platform.isWindows ? setLocalHubPaused(paused) : Future.value(false);
+
+  /// Turns cross-device sync off or on. Returns a message when the hub on
+  /// this PC could not be switched (this app's own sync is switched anyway).
+  Future<String?> setSyncEnabled(bool on) async {
+    await settings.set('syncEnabled', on);
+    String? problem;
+    try {
+      await pauseLocalHub(!on);
+    } on LocalHubException catch (e) {
+      problem = e.message;
+    }
+    final s = _scheduler;
+    if (on) {
+      s?.start();
+      await s?.syncNow(); // reconcile what waited, now
+    } else {
+      s?.stop();
+    }
+    AppLog.info(on ? 'Sync turned on' : 'Sync turned off (paused)');
+    _updateSyncStatus();
+    notifyListeners();
+    return problem;
+  }
+
   /// Syncs now (Settings → Sync now) and waits for it.
   Future<void> syncNow() async {
     final s = _scheduler;
-    if (s == null || syncNeedsPairing) return;
+    if (s == null || syncNeedsPairing || !syncEnabled) return;
     await s.syncNow();
   }
 
@@ -740,7 +782,16 @@ class AppState extends ChangeNotifier {
     if (syncNeedsPairing) return; // its own message stays
     final s = _scheduler;
     if (s == null) return;
+    if (!syncEnabled) {
+      syncStatus =
+          'Sync is paused — changes are saved here and sync when you turn it '
+          'back on.';
+      return;
+    }
     syncStatus = switch (s.connection) {
+      SyncConnection.paused =>
+        'Sync is paused on the PC — your changes are saved here and sync '
+            'when it is turned back on.',
       SyncConnection.offline =>
         'Hub not reachable — your changes are saved here and will sync when '
             'it is back. Will retry.',

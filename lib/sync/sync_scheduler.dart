@@ -30,6 +30,10 @@ enum SyncConnection {
 
   /// The hub could not be reached; retrying. Local edits are kept.
   offline,
+
+  /// Sync is paused on the PC (its switch is off). Local edits are kept
+  /// and go out once it is turned on again.
+  paused,
 }
 
 class SyncScheduler {
@@ -181,7 +185,8 @@ class SyncScheduler {
     try {
       await run();
       lastSuccess = DateTime.now();
-      if (connection == SyncConnection.offline) {
+      if (connection == SyncConnection.offline ||
+          connection == SyncConnection.paused) {
         // The hub answered: say so, and end the live loop's back-off.
         _set(_liveSupported ? SyncConnection.live : SyncConnection.polling);
         _wakeLive();
@@ -193,7 +198,13 @@ class SyncScheduler {
       }
     } on SyncFailure catch (e, s) {
       // Nothing pending is lost: unsent changes go out on the next cycle.
-      if (e.retryable && !_stopped) _set(SyncConnection.offline);
+      if (!_stopped) {
+        if (e.code == 'sync_paused') {
+          _set(SyncConnection.paused);
+        } else if (e.retryable) {
+          _set(SyncConnection.offline);
+        }
+      }
       onError?.call(e, s);
     } catch (e, s) {
       onError?.call(e, s);
@@ -237,7 +248,11 @@ class SyncScheduler {
         // there and supports live updates; then the long wait.
         final r = await client.waitForChange(
           since,
-          seconds: connection == SyncConnection.live ? waitSeconds : 1,
+          seconds:
+              connection == SyncConnection.live ||
+                  connection == SyncConnection.paused
+              ? waitSeconds
+              : 1,
         );
         if (_stopped || generation != _generation) return;
         final reconnected = connection != SyncConnection.live;
@@ -257,6 +272,14 @@ class SyncScheduler {
         if (e.code == 'unauthorized') {
           stop();
           return;
+        }
+        if (e.code == 'sync_paused') {
+          // The hub holds the next wait until sync resumes (or 25 s), so
+          // resuming is noticed at once; a short pause only guards against
+          // a hub that answers immediately.
+          _set(SyncConnection.paused);
+          await _pause(const Duration(milliseconds: 250));
+          continue;
         }
         _failures++;
         _set(SyncConnection.offline);

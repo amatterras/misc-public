@@ -241,12 +241,14 @@ class SyncClient {
   Future<String> register(
     String code,
     String deviceId,
-    String deviceName,
-  ) async {
+    String deviceName, {
+    bool readOnly = false,
+  }) async {
     final json = await _json(await _open('POST', '/v1/register'), {
       'pairingCode': code,
       'deviceId': deviceId,
       'deviceName': deviceName,
+      if (readOnly) 'readOnly': true,
     });
     return token = json['token'] as String;
   }

@@ -146,6 +146,7 @@ class HubServer {
       servers,
       log ?? (_) {},
     );
+    server._paused = await server._pausedFile.exists();
     for (final http in servers) {
       http.idleTimeout = const Duration(seconds: 30);
       http.listen(server._handle);
@@ -241,6 +242,51 @@ class HubServer {
     }
   }
 
+  // ------------------------------------------------------- pause switch --
+  //
+  // Sync can be paused from the Windows app (Settings → Sync). While paused,
+  // devices get `sync_paused` (503, retryable) for every sync request and
+  // keep their changes queued; nothing is lost or marked as synced. Read-only
+  // mirrors keep reading (backups continue). The state survives a restart.
+
+  bool _paused = false;
+  bool get paused => _paused;
+  File get _pausedFile =>
+      File('${store.dir.path}${Platform.pathSeparator}paused');
+
+  Future<void> setPaused(bool on) async {
+    if (on) {
+      await _pausedFile.writeAsString('paused');
+    } else if (await _pausedFile.exists()) {
+      await _pausedFile.delete();
+    }
+    _paused = on;
+    store.wakeWaiters(); // waiting devices hear about it now
+    _log(on ? 'Sync paused' : 'Sync resumed');
+  }
+
+  /// The device of a sync request: refused while paused (except read-only
+  /// mirrors reading), and refused for writes from read-only devices.
+  HubDevice _syncDevice(HttpRequest r, {bool write = false}) {
+    final d = _device(r);
+    if (write && d.readOnly) {
+      throw const ProtocolException(
+        'read_only',
+        'This device may only read from the hub.',
+        status: 403,
+      );
+    }
+    if (_paused && (write || !d.readOnly)) {
+      throw const ProtocolException(
+        'sync_paused',
+        'Sync is paused on the PC. Your changes are kept and sync when it is '
+            'turned on again.',
+        status: 503,
+      );
+    }
+    return d;
+  }
+
   HubDevice _device(HttpRequest r) {
     final token = _bearer(r);
     final device = token == null ? null : auth.authenticate(token);
@@ -301,13 +347,14 @@ class HubServer {
             'service': 'THEapp hub',
             'hubId': store.hubId,
             'protocol': syncProtocolVersion,
+            'paused': _paused,
           });
         case ('POST', '/v1/register') when tenantId == null:
           _checkProtocol(r);
           await _register(r);
         case ('POST', '/v1/push'):
           _checkProtocol(r);
-          final d = _device(r);
+          final d = _syncDevice(r, write: true);
           who = d.id;
           final body = await _json(r);
           final raw = body['changes'];
@@ -328,21 +375,30 @@ class HubServer {
         // then pull as usual; this endpoint carries no record data.
         case ('GET', '/v1/wait'):
           _checkProtocol(r);
-          who = _device(r).id;
+          final device = _device(r);
+          who = device.id;
           final since = int.tryParse(r.uri.queryParameters['since'] ?? '');
           final seconds =
               int.tryParse(r.uri.queryParameters['timeout'] ?? '') ?? 25;
           if (since == null || since < 0) {
             throw const ProtocolException('bad_request', 'Invalid since.');
           }
-          final lastSeq = await store.waitForChange(
-            since,
-            Duration(seconds: seconds.clamp(1, 25)),
-          );
+          final limit = Duration(seconds: seconds.clamp(1, 25));
+          final int lastSeq;
+          if (_paused && !device.readOnly) {
+            // While paused the request is held, so the device hears the
+            // moment sync resumes (setPaused wakes it) and pulls at once;
+            // still paused at the end: "paused".
+            await store.waitForChange(1 << 52, limit);
+            if (_paused) _syncDevice(r); // throws sync_paused
+            lastSeq = store.lastSeq;
+          } else {
+            lastSeq = await store.waitForChange(since, limit);
+          }
           await _send(r, 200, {'lastSeq': lastSeq, 'hubId': store.hubId});
         case ('GET', '/v1/changes'):
           _checkProtocol(r);
-          who = _device(r).id;
+          who = _syncDevice(r).id;
           final since = int.tryParse(r.uri.queryParameters['since'] ?? '0');
           final limit = int.tryParse(
             r.uri.queryParameters['limit'] ?? '$defaultPullLimit',
@@ -363,13 +419,13 @@ class HubServer {
           });
         case ('HEAD', '/v1/attachments/:sha'):
           _checkProtocol(r);
-          who = _device(r).id;
+          who = _syncDevice(r).id;
           final exists = await store.hasAttachment(segments[2]);
           r.response.statusCode = exists ? 200 : 404;
           await r.response.close();
         case ('PUT', '/v1/attachments/:sha'):
           _checkProtocol(r);
-          who = _device(r).id;
+          who = _syncDevice(r, write: true).id;
           final size = r.contentLength;
           if (size < 0) {
             throw const ProtocolException(
@@ -382,7 +438,7 @@ class HubServer {
           await _send(r, 200, {'ok': true});
         case ('GET', '/v1/attachments/:sha'):
           _checkProtocol(r);
-          who = _device(r).id;
+          who = _syncDevice(r).id;
           final file = store.attachmentFile(segments[2]);
           if (!await file.exists()) {
             throw const ProtocolException(
@@ -424,6 +480,18 @@ class HubServer {
           await _send(r, 200, {
             'revoked': id is String && await auth.revoke(id),
           });
+        case ('POST', '/v1/admin/pause'):
+          _admin(r);
+          who = 'admin';
+          final on = (await _json(r))['paused'];
+          if (on is! bool) {
+            throw const ProtocolException(
+              'bad_request',
+              'paused: true or false.',
+            );
+          }
+          await setPaused(on);
+          await _send(r, 200, {'paused': _paused});
         case ('POST', '/v1/admin/backup'):
           _admin(r);
           who = 'admin';
@@ -563,7 +631,12 @@ class HubServer {
       );
     }
     try {
-      final token = await auth.register(code, id, name);
+      final token = await auth.register(
+        code,
+        id,
+        name,
+        readOnly: body['readOnly'] == true,
+      );
       _failedPairing.remove(remote);
       await _send(r, 200, {
         'token': token,

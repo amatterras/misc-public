@@ -226,6 +226,35 @@ class _SyncSectionState extends State<SyncSection> {
               'Hub: ${s.hubUrl}',
               style: const TextStyle(fontSize: 12, color: AppColors.textFaint),
             ),
+            // The master switch lives on the Windows PC (it also pauses the
+            // hub there); devices just show "paused".
+            if (Platform.isWindows)
+              SwitchListTile(
+                key: const ValueKey('sync-enabled'),
+                contentPadding: EdgeInsets.zero,
+                value: s.syncEnabled,
+                onChanged: _busy
+                    ? null
+                    : (on) async {
+                        setState(() => _busy = true);
+                        final problem = await s.setSyncEnabled(on);
+                        if (mounted) {
+                          setState(() {
+                            _busy = false;
+                            _error = problem;
+                          });
+                        }
+                      },
+                title: const Text(
+                  'Sync between devices',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Off pauses syncing on every device. Nothing is deleted: '
+                  'changes are kept and sync when it is turned back on.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                ),
+              ),
             const SizedBox(height: Space.sm),
             Wrap(
               spacing: Space.sm,

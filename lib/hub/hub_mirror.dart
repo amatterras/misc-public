@@ -235,7 +235,7 @@ class MirrorEngine {
         'mirror${List.generate(8, (_) => rand.nextInt(36).toRadixString(36)).join()}';
     final client = SyncClient(hub);
     try {
-      final token = await client.register(code, deviceId, name);
+      final token = await client.register(code, deviceId, name, readOnly: true);
       await writeSecret(tokenFile, token);
       await _saveState(
         MirrorState(primaryUrl: hub.toString(), deviceId: deviceId),

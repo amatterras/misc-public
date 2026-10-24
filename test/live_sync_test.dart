@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
+import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/hub/hub_server.dart';
@@ -215,8 +216,11 @@ void main() {
       );
       // ignore: avoid_print
       print('Catch-up after hub restart: ${took.inMilliseconds} ms');
-      expect(pc.scheduler.connection, SyncConnection.live);
-      expect(pc.scheduler.pendingLocal, isFalse);
+      await until(
+        () => pc.scheduler.connection == SyncConnection.live,
+        what: 'PC live again',
+      );
+      await until(() => !pc.scheduler.pendingLocal, what: 'PC synced');
     },
   );
 
@@ -312,4 +316,71 @@ void main() {
     s.localChange();
     await until(() => runs >= 2, what: 'sync after a local edit');
   });
+
+  test(
+    'pause on the hub: devices show paused, keep edits, catch up on resume',
+    () async {
+      final (pc, ipad) = await pair();
+      await hub.setPaused(true);
+      final note = ipad.ws.createNote(title: 'Written while paused');
+      ipad.edited();
+      await until(
+        () => ipad.scheduler.connection == SyncConnection.paused,
+        what: 'iPad shows paused',
+      );
+      expect(ipad.scheduler.pendingLocal, isTrue);
+      expect(pc.ws.notes[note.id], isNull);
+      await hub.setPaused(false);
+      final took = await until(
+        () => pc.ws.notes[note.id] != null,
+        what: 'delivered after resume',
+      );
+      // ignore: avoid_print
+      print('Delivered after resume: ${took.inMilliseconds} ms');
+      await until(() => !ipad.scheduler.pendingLocal, what: 'iPad synced');
+    },
+  );
+
+  test(
+    'the app switch pauses this app and the hub, and resumes both',
+    () async {
+      final dir = Directory('${root.path}${Platform.pathSeparator}app');
+      final ws = Workspace(dir);
+      final app = AppState(
+        canvases: FileCanvasRepository(ws.store),
+        settings: SettingsRepository(ws.store),
+        workspace: ws,
+        enableSendTo: false,
+      );
+      app.capture.fetchPreviews = false;
+      app.pauseLocalHub = (paused) async {
+        await hub.setPaused(paused);
+        return true;
+      };
+      await app.init();
+      expect(
+        await app.pairWithHub(
+          'http://127.0.0.1:$port',
+          hub.auth.createPairingCode(),
+        ),
+        isNull,
+      );
+      await app.syncNow();
+      expect(await app.setSyncEnabled(false), isNull);
+      expect(hub.paused, isTrue);
+      expect(app.syncStatus, startsWith('Sync is paused'));
+      final n = app.workspace.createNote(title: 'Offline by choice');
+      await app.syncNow(); // does nothing while off
+      expect(await hub.store.current('notes', n.id), isNull);
+      expect(await app.setSyncEnabled(true), isNull);
+      expect(hub.paused, isFalse);
+      expect(
+        (await hub.store.current('notes', n.id))?.data?['title'],
+        'Offline by choice',
+      );
+      expect(app.syncStatus, startsWith('Synced'));
+      await app.flush();
+      app.dispose();
+    },
+  );
 }

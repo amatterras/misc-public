@@ -83,3 +83,40 @@ Future<({String code, int minutes, int port})> localPairingCode({
     client.close(force: true);
   }
 }
+
+/// Pauses or resumes sync on the hub running on this PC (Settings → Sync
+/// switch). Returns false when no hub runs here (the app then only pauses
+/// its own sync).
+Future<bool> setLocalHubPaused(bool paused, {Directory? hubDir}) async {
+  if (hubDir == null &&
+      (TestEnvironment.active ||
+          Platform.environment.containsKey('FLUTTER_TEST'))) {
+    throw const LocalHubException('Not available in test mode.');
+  }
+  final dir = hubDir ?? defaultLocalHubDir();
+  final port = await localHubPort(dir);
+  if (port == null) return false;
+  final token = await readSecret(HubAuth.adminTokenFile(dir));
+  if (token == null) return false;
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+  try {
+    final req = await client.postUrl(
+      Uri.parse('http://127.0.0.1:$port/v1/admin/pause'),
+    );
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+    req.headers.contentType = ContentType.json;
+    req.write(jsonEncode({'paused': paused}));
+    final res = await req.close();
+    final body = jsonDecode(await utf8.decodeStream(res));
+    if (res.statusCode != 200 || body is! Map || body['paused'] != paused) {
+      throw LocalHubException(
+        'The hub refused: ${body is Map ? body['message'] : res.statusCode}',
+      );
+    }
+    return true;
+  } on SocketException {
+    return false; // stale hub.json: no hub is actually running
+  } finally {
+    client.close(force: true);
+  }
+}

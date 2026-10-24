@@ -23,6 +23,7 @@ class HubDevice {
     required this.tokenHash,
     required this.createdAt,
     this.revoked = false,
+    this.readOnly = false,
   });
 
   final String id;
@@ -31,12 +32,16 @@ class HubDevice {
   final DateTime createdAt;
   final bool revoked;
 
+  /// May only read (a mirror): pushes and uploads are refused by the hub.
+  final bool readOnly;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
     'tokenHash': tokenHash,
     'createdAt': createdAt.toUtc().toIso8601String(),
     'revoked': revoked,
+    if (readOnly) 'readOnly': true,
   };
 
   factory HubDevice.fromJson(Map<String, dynamic> j) => HubDevice(
@@ -45,6 +50,8 @@ class HubDevice {
     tokenHash: j['tokenHash'] as String,
     createdAt: DateTime.parse(j['createdAt'] as String),
     revoked: j['revoked'] as bool? ?? false,
+    // Mirrors paired before this flag existed have ids starting "mirror".
+    readOnly: j['readOnly'] == true || (j['id'] as String).startsWith('mirror'),
   );
 }
 
@@ -160,7 +167,12 @@ class HubAuth {
 
   /// Exchanges a pairing code for a device token (returned once, never
   /// stored). Re-pairing an existing device id replaces its old token.
-  Future<String> register(String code, String deviceId, String name) async {
+  Future<String> register(
+    String code,
+    String deviceId,
+    String name, {
+    bool readOnly = false,
+  }) async {
     if (!deviceIdPattern.hasMatch(deviceId) || deviceId == 'hub') {
       throw const ProtocolException('bad_request', 'Invalid device id.');
     }
@@ -190,6 +202,7 @@ class HubAuth {
           : (cleanName.length > 60 ? cleanName.substring(0, 60) : cleanName),
       tokenHash: hash(token),
       createdAt: DateTime.now(),
+      readOnly: readOnly || deviceId.startsWith('mirror'),
     );
     await _save();
     return token;
@@ -204,6 +217,7 @@ class HubAuth {
       tokenHash: d.tokenHash,
       createdAt: d.createdAt,
       revoked: true,
+      readOnly: d.readOnly,
     );
     await _save();
     return true;

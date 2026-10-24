@@ -631,3 +631,33 @@ port forwarded — a network-security change that needs explicit approval);
 5. Run `dart run bin/thehub.dart pair` and pair the device with
    `http://100.x.y.z:47710` (no warning should appear for this address).
 6. First check: make a note on one device, wait a minute, see it on the other.
+
+## 18. Sync switch, read-only mirrors and the attack tests (2026-10-24)
+
+- **Sync on/off (Windows app, Settings → Sync → "Sync between devices"):**
+  - Off saves the setting and stops this app's sync.
+  - It also pauses the hub on this PC (`POST /v1/admin/pause {paused}`, this PC only, admin token). The pause is kept in the hub folder (`paused` file) and survives restarts.
+  - While paused, every device's sync request gets `503 sync_paused`. Devices keep their changes queued; nothing is reset or marked as synced. Their `/v1/wait` is held, so they show "paused" and notice the resume immediately.
+  - On restarts the connections, reconciles at once, and both sides catch up. Measured: 44–187 ms from resume to delivery.
+  - Read-only mirrors keep reading while paused, so backups continue.
+- **Read-only devices:**
+  - Mirrors register with `readOnly: true`.
+  - Devices whose id starts with `mirror` are treated as read-only, including ones paired before this flag existed.
+  - The hub refuses pushes and attachment uploads from them with `403 read_only`.
+- **Attack tests** (`test/sync_attack_test.dart`, `test/live_sync_test.dart`): real hub, real engines, separate data folders, plus a fault-injecting proxy. This is a simulation on one PC, not physical devices. They cover:
+  - simultaneous edits;
+  - different items;
+  - offline add/update/delete on both sides;
+  - a push stored by the hub whose reply is lost, followed by a hub restart;
+  - an upload cut half way (never stored; the retry arrives intact);
+  - out-of-order and repeated delivery;
+  - an old client coming back after deletions;
+  - a device clock 2 h behind;
+  - 12 reconnect cycles;
+  - a mirror trying to write;
+  - pause and resume;
+  - a third device receiving photo bytes.
+
+  Every case converges: all devices agree and nothing more is pushed. No defect was found in the record rules. Two scheduler defects were found and fixed:
+  - a held wait did not end on resume (delivery hung);
+  - delivery after resume took 3–4 s.
