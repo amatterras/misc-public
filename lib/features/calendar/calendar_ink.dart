@@ -7,6 +7,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/app_state.dart';
 import '../../data/models/record.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
@@ -164,4 +165,95 @@ class CalendarSqueeze {
     ink.squeezeEnded();
     setDrawing(before);
   }
+}
+
+/// Pen thickness for Calendar drawings, with a live preview in the pen's
+/// colour. The change applies to the next strokes (drawn ones keep theirs)
+/// and is remembered on this device.
+Future<void> showPenWidthDialog(
+  BuildContext context,
+  AppState state,
+  CanvasController ink,
+) => showDialog<void>(
+  context: context,
+  builder: (context) => StatefulBuilder(
+    builder: (context, setState) {
+      final width = ink.penWidth;
+      return AlertDialog(
+        title: const Text('Pen thickness', style: TextStyle(fontSize: 16)),
+        content: SizedBox(
+          width: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                key: const ValueKey('pen-width-preview'),
+                height: 60,
+                width: double.infinity,
+                child: CustomPaint(
+                  painter: PenPreviewPainter(width, ink.penColor),
+                ),
+              ),
+              Slider(
+                key: const ValueKey('pen-width-slider'),
+                value: width,
+                min: AppState.calendarPenMin,
+                max: AppState.calendarPenMax,
+                divisions: 39,
+                label: width.toStringAsFixed(1),
+                onChanged: (v) {
+                  ink.setPen(width: v);
+                  setState(() {});
+                },
+                onChangeEnd: state.setCalendarPenWidth,
+              ),
+              Text(
+                '${width.toStringAsFixed(1)} · new strokes only',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
+          ),
+        ],
+      );
+    },
+  ),
+);
+
+/// A sample stroke at [width] (as drawn on the 38-day grid).
+class PenPreviewPainter extends CustomPainter {
+  const PenPreviewPainter(this.width, this.color);
+  final double width;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final h = size.height;
+    final path = Path()..moveTo(12, h * 0.65);
+    path.cubicTo(
+      size.width * 0.3,
+      h * 0.1,
+      size.width * 0.55,
+      h * 0.95,
+      size.width - 12,
+      h * 0.35,
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = width,
+    );
+  }
+
+  @override
+  bool shouldRepaint(PenPreviewPainter old) =>
+      old.width != width || old.color != color;
 }

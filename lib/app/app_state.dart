@@ -2109,7 +2109,27 @@ class AppState extends ChangeNotifier {
     if (c.tool != CanvasTool.pen && c.tool != CanvasTool.eraser) {
       c.tool = CanvasTool.pen;
     }
+    c.setPen(width: calendarPenWidth);
     return c;
+  }
+
+  /// Thinnest and thickest Calendar pen (world units: 1 = one point at
+  /// the 38-day grid's size).
+  static const calendarPenMin = 0.5;
+  static const calendarPenMax = 20.0;
+
+  /// The Calendar pen's thickness (this device's setting). Each stroke
+  /// keeps the thickness it was drawn with, also through undo and sync.
+  double get calendarPenWidth =>
+      (settings.get<num>('calendarPenWidth')?.toDouble() ?? 2.5).clamp(
+        calendarPenMin,
+        calendarPenMax,
+      );
+
+  Future<void> setCalendarPenWidth(double width) {
+    final w = width.clamp(calendarPenMin, calendarPenMax).toDouble();
+    calendarInk?.setPen(width: w);
+    return settings.set('calendarPenWidth', w);
   }
 
   /// Opens the document of saved reusable canvas components.

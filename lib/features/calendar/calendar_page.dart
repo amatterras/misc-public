@@ -382,6 +382,13 @@ class _CalendarPageState extends State<CalendarPage> {
                       ),
                     ),
                     GhostIconButton(
+                      key: const ValueKey('calendar-pen-width'),
+                      icon: Icons.line_weight,
+                      tooltip:
+                          'Pen thickness (${ink.penWidth.toStringAsFixed(1)})',
+                      onTap: () => showPenWidthDialog(context, s, ink),
+                    ),
+                    GhostIconButton(
                       icon: Icons.undo,
                       tooltip: 'Undo',
                       onTap: ink.canUndo ? ink.undo : null,
