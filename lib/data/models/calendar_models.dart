@@ -49,6 +49,7 @@ class CalendarEntry implements Record {
     this.highlights = '',
     this.weekdays = const {},
     this.checkoffs = const {},
+    this.legacyReading,
   }) : colorIndex = colorIndex ?? category.index;
 
   static const int maxActivePerCategory = 5;
@@ -98,6 +99,19 @@ class CalendarEntry implements Record {
   // Habits: 1 = Monday … 7 = Sunday.
   final Set<int> weekdays;
   final Set<String> checkoffs;
+
+  /// Versioned, read-only copy of Reading fields that later versions no
+  /// longer edit (author, highlights, quotes), made by the
+  /// `reading-legacy-payload-v1` migration. Never shown in the Reading
+  /// editor; kept so the old values stay recoverable (export, backups,
+  /// sync). Null when there was nothing to keep. Unrelated to the app-wide
+  /// welcome quotes.
+  final Map<String, dynamic>? legacyReading;
+
+  /// A habit with no time of day yet. Older habits were untimed and stay
+  /// untimed: no time is invented for them; the user picks one.
+  bool get needsTimeConfiguration =>
+      category == CalendarCategory.habits && startMinutes == null;
 
   bool occursOn(DateTime day) {
     final key = dayKey(day);
@@ -176,6 +190,7 @@ class CalendarEntry implements Record {
     String? highlights,
     Set<int>? weekdays,
     Set<String>? checkoffs,
+    Map<String, dynamic>? Function()? legacyReading,
   }) => CalendarEntry(
     id: id,
     category: category ?? this.category,
@@ -208,6 +223,7 @@ class CalendarEntry implements Record {
     highlights: highlights ?? this.highlights,
     weekdays: weekdays ?? this.weekdays,
     checkoffs: checkoffs ?? this.checkoffs,
+    legacyReading: legacyReading != null ? legacyReading() : this.legacyReading,
   );
 
   @override
@@ -237,6 +253,8 @@ class CalendarEntry implements Record {
     'highlights': highlights,
     'weekdays': weekdays.toList()..sort(),
     'checkoffs': checkoffs.toList()..sort(),
+    // Written only when present, so files without it stay unchanged.
+    if (legacyReading != null) 'legacyReading': legacyReading,
   };
 
   factory CalendarEntry.fromJson(Map<String, dynamic> j) {
@@ -272,6 +290,7 @@ class CalendarEntry implements Record {
       highlights: j['highlights'] as String? ?? '',
       weekdays: {...?(j['weekdays'] as List?)?.cast<int>()},
       checkoffs: {...?(j['checkoffs'] as List?)?.cast<String>()},
+      legacyReading: (j['legacyReading'] as Map?)?.cast<String, dynamic>(),
     );
   }
 }

@@ -52,7 +52,13 @@ class SyncClock {
 
   static (int, int, String)? parse(String stamp) {
     final parts = stamp.split('-');
-    if (parts.length < 3) return null;
+    // Exactly the stamp form (16-digit time, 4-digit counter). An ISO date
+    // such as "2026-08-30T09:00:00Z" also splits on "-" into numbers, and
+    // was once taken for a stamp: old tombstones then never got converted
+    // and the hub refused them ("Invalid revision"), blocking the push.
+    if (parts.length < 3 || parts[0].length != 16 || parts[1].length != 4) {
+      return null;
+    }
     final millis = int.tryParse(parts[0]);
     final counter = int.tryParse(parts[1]);
     if (millis == null || counter == null) return null;

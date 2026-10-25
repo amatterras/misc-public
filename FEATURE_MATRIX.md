@@ -274,3 +274,15 @@ Result after the audit: `flutter analyze` clean; 422 passed, 3 skipped, 0 failed
 | Collapsible tool and options strips | P2 | W,i | IMPLEMENTED, UNTESTED | `CollapsibleBar` in `canvas_toolbar.dart` | Codex tests this batch |
 | Custom tags (Archive + Mindmap, synced) | P1 | W,i | IMPLEMENTED, UNTESTED | `tag_models.dart`, `tag_ui.dart`, `workspace.dart` | Codex tests this batch |
 | Light theme | P2 | W,i | NOT STARTED (postponed by the user) | — | — |
+
+## 21. Data safety and storage modes (2026-10-25)
+| Requirement | Pri | Plat | Status | Evidence / references | Blocker |
+|---|---|---|---|---|---|
+| Versioned, checkpointed, idempotent migrations with a verified (manifest + opens) backup; failed upgrade read-only with Retry/Restore | P1 | W,i | VERIFIED (automated) | `migration_runner.dart`; `data_safety_test` (5 migration tests) | — |
+| Legacy Reading author/highlights/quotes kept in a versioned payload | P1 | W,i | VERIFIED (automated) | `reading-legacy-payload-v1`; `data_safety_test` | Reading editor change itself is the next update |
+| Untimed habits stay untimed ("needs configuration") | P1 | W,i | VERIFIED (automated) | `CalendarEntry.needsTimeConfiguration`; `data_safety_test` | UI for picking a time: next update |
+| Backups with checksum manifest, no key files, tamper detection, restore keeps device keys | P1 | W,i | VERIFIED (automated) | `backup_service.dart`, `backup_verifier.dart`; `data_safety_test` | — |
+| Read-only integrity check with recovery hints | P1 | W,i | VERIFIED (automated) | `integrity_check.dart`; Settings → Data safety | — |
+| Recoverable deletion (30 days) compatible with sync tombstones | P1 | W,i | VERIFIED (automated, real hub on 127.0.0.1) | `RecordCollection.restoreDeleted`; `data_safety_test` | — |
+| Storage modes: local only / PC hub / hosted, one provider abstraction, copy-and-verify switch | P1 | W,i | VERIFIED (automated, same PC) | `storage_modes.dart`, `storage_section.dart`; `storage_modes_test` (7) | Tailscale across networks, physical iPad |
+| Hosted service without a Windows PC | P2 | server | PARTIAL: code + Docker/Caddy config; tested in-process on 127.0.0.1 without TLS | `hosted_hub.dart`, `deploy/hosted/`; `storage_modes_test`, `platform_features_test` | needs your server, domain, Docker; not deployed |

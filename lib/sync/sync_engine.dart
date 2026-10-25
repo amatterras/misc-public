@@ -167,6 +167,9 @@ class SyncState {
 
 final _safeFileName = RegExp(r'^[A-Za-z0-9_-]{1,80}(\.[A-Za-z0-9]{1,8})?$');
 
+/// Whether [name] is a valid attachment file name (no folders, no `..`).
+bool isAttachmentFileName(String name) => _safeFileName.hasMatch(name);
+
 class SyncEngine {
   SyncEngine({
     required this.workspace,
@@ -240,7 +243,7 @@ class SyncEngine {
   // ------------------------------------------------------ local versions --
 
   /// Every local record version (rev + data) that syncs, by key.
-  Future<Map<String, SyncChange>> _localVersions() async {
+  Future<Map<String, SyncChange>> localVersions() async {
     final out = <String, SyncChange>{};
     for (final MapEntry(key: name, value: collection)
         in workspace.syncCollections.entries) {
@@ -314,7 +317,7 @@ class SyncEngine {
     // older backup), so "pending" is judged against the right hub.
     final probe = await client.pull(state.cursor, limit: 1);
     _checkHub(state, probe.hubId, probe.lastSeq);
-    final local = await _localVersions();
+    final local = await localVersions();
     final pending = <SyncChange>[];
     for (final c in local.values) {
       if (state.base[c.key] == c.rev) continue;
@@ -616,38 +619,7 @@ class SyncEngine {
     }
   }
 
-  /// Records file checksums on assets (a local edit, so it syncs).
-  Future<void> _fillAttachmentHashes() async {
-    for (final a in workspace.assets.all.toList()) {
-      String? fileSha = a.fileSha256, previewSha = a.previewSha256;
-      int? fileSize = a.fileSize, previewSize = a.previewSize;
-      if (a.file != null && fileSha == null) {
-        final f = workspace.attachments.fileFor(a.file!);
-        if (await f.exists()) {
-          fileSha = await fileSha256(f);
-          fileSize = await f.length();
-        }
-      }
-      if (a.previewFile != null && previewSha == null) {
-        final f = workspace.attachments.fileFor(a.previewFile!);
-        if (await f.exists()) {
-          previewSha = await fileSha256(f);
-          previewSize = await f.length();
-        }
-      }
-      if (fileSha != a.fileSha256 || previewSha != a.previewSha256) {
-        workspace.assets.put(
-          a.copyWith(
-            fileSha256: fileSha,
-            fileSize: fileSize,
-            previewSha256: previewSha,
-            previewSize: previewSize,
-          ),
-        );
-      }
-    }
-    await workspace.flush();
-  }
+  Future<void> _fillAttachmentHashes() => fillAttachmentHashes(workspace);
 
   // ---------------------------------------------------------------- pull --
 
@@ -860,3 +832,37 @@ class SyncEngine {
 File syncConfigFile(Workspace ws) => File(
   '${ws.root.path}${Platform.pathSeparator}sync${Platform.pathSeparator}hub.json',
 );
+
+/// Records file checksums on [workspace]'s assets (a local edit, so it
+/// syncs).
+Future<void> fillAttachmentHashes(Workspace workspace) async {
+  for (final a in workspace.assets.all.toList()) {
+    String? fileSha = a.fileSha256, previewSha = a.previewSha256;
+    int? fileSize = a.fileSize, previewSize = a.previewSize;
+    if (a.file != null && fileSha == null) {
+      final f = workspace.attachments.fileFor(a.file!);
+      if (await f.exists()) {
+        fileSha = await fileSha256(f);
+        fileSize = await f.length();
+      }
+    }
+    if (a.previewFile != null && previewSha == null) {
+      final f = workspace.attachments.fileFor(a.previewFile!);
+      if (await f.exists()) {
+        previewSha = await fileSha256(f);
+        previewSize = await f.length();
+      }
+    }
+    if (fileSha != a.fileSha256 || previewSha != a.previewSha256) {
+      workspace.assets.put(
+        a.copyWith(
+          fileSha256: fileSha,
+          fileSize: fileSize,
+          previewSha256: previewSha,
+          previewSize: previewSize,
+        ),
+      );
+    }
+  }
+  await workspace.flush();
+}

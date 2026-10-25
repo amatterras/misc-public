@@ -222,12 +222,14 @@ void main() {
         expect(live, hasLength(BackupService.keepLive));
         expect(live.first, '20261024-120120-live'); // the oldest 8 went
         expect(Directory(manual.path).existsSync(), isTrue);
-        // Disk use: records only, so each is the size of the records.
+        // Disk use: records only, so each is the size of the records (plus
+        // its checksum manifest, which is not counted here).
         final sizes = [
           for (final n in live)
             Directory('${backups.backupsDir.path}/$n')
                 .listSync(recursive: true)
                 .whereType<File>()
+                .where((f) => !f.path.endsWith(BackupService.manifestFile))
                 .fold<int>(0, (s, f) => s + f.lengthSync()),
         ];
         expect(sizes.every((s) => s < 100), isTrue);

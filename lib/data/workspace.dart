@@ -128,6 +128,15 @@ class Workspace {
     // Version history stays on this device (not in [syncCollections]).
     noteVersions = _c('note_versions', NoteVersion.fromJson);
     notes.onReplace = _keepNoteVersion;
+    // "Recently deleted" keeps what a person deleted, not housekeeping:
+    // pruned note versions, browser history and clipboard clips are not
+    // kept, and an expired calendar entry must stay gone (7-day purge).
+    noteVersions.keepDeleted = (_) => false;
+    history.keepDeleted = (_) => false;
+    clipboard.keepDeleted = (_) => false;
+    entries.keepDeleted = (id) =>
+        !_expiredArchivedEntryIds.contains(id) &&
+        calendarExpirations[id] == null;
     entries.addListener(_onEntriesChanged);
     calendarExpirations.addListener(_onCalendarExpirationsChanged);
   }
@@ -203,6 +212,12 @@ class Workspace {
   };
 
   final List<RecordCollection> _all = [];
+
+  /// Every record collection by its file name, synced or not (backups,
+  /// migrations and integrity checks look at all of them).
+  Map<String, RecordCollection> get allCollections => {
+    for (final c in _all) c.name: c,
+  };
 
   /// Revision stamps for every change made on this device (see [SyncClock]).
   final SyncClock clock;
@@ -845,7 +860,7 @@ class Workspace {
     }
     final allDeleted = {..._expiredArchivedEntryIds, ...expired};
     for (final id in allDeleted) {
-      entries.remove(id);
+      entries.remove(id, recoverable: false);
     }
     await _flushRetentionState();
     await _purgeExpiredEntriesFromBackups();
@@ -924,7 +939,8 @@ class Workspace {
 
   void _removeExpiredLedgerEntries() {
     for (final id in _expiredArchivedEntryIds) {
-      if (entries.contains(id)) entries.remove(id);
+      if (entries.contains(id)) entries.remove(id, recoverable: false);
+      if (entries.recentlyDeleted.containsKey(id)) entries.forgetDeleted(id);
     }
   }
 

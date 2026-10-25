@@ -743,3 +743,26 @@ Windows-authoritative workspace hub in the preceding sections.
 - `maintenance_test` (9): starts once; 10-second cadence on a fake clock; no overlap; truthful outcomes; clean stop; lock; checked, interrupted and bounded backups.
 - `app_hub_sync_test` (1, end to end): outage reported as failed, never "synced"; recovery and catch-up without duplicates; navigation adds no scheduler; clean shutdown.
 - `hub_stability_test`: opt-in long run.
+
+## 21. Storage modes and switching (2026-10-25)
+
+The PC hub stays the authoritative writable hub in PC-hub mode; nothing in
+§9–§20 changed. Added on top (details in [STORAGE_MODES.md](STORAGE_MODES.md)
+and [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md)):
+
+- One `StorageProvider` abstraction for local only / PC hub / hosted
+  (`lib/sync/storage_modes.dart`). The hosted service (`HostedHub`) runs the
+  same `HubStore` rules as the PC hub.
+- Pairing and hosted sign-in now go through the copy-and-verify switch:
+  verified backup → copy from a temporary restore (live data untouched) →
+  read back and compare every record version and attachment checksum →
+  user confirms → activate. Cancel changes nothing; remote data is never
+  deleted.
+- Fixed: ISO-date tombstones from schema-1 files were never converted to
+  stamps and made the hub refuse the push batch ("Invalid revision").
+- Fixed: canvases created without revision stamps (new or welcome canvases
+  never edited) did not sync; `canvas-revisions-v1` stamps existing ones and
+  new canvases are stamped when created.
+- Deletions received from another device are kept locally in "recently
+  deleted" (30 days); a restore is a new edit that wins over the deletion
+  on every device without bringing back anything else.

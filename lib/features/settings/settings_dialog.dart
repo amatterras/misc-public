@@ -11,6 +11,7 @@ import '../../platform/input_hints.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../capture/send_to.dart';
+import 'storage_section.dart';
 import 'sync_section.dart';
 import '../tasks/completion_messages.dart';
 import '../ai/ai_settings_section.dart';
@@ -446,6 +447,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   ),
                 ),
               ],
+              const _Heading('Storage'),
+              StorageModeSection(state: s),
               const _Heading('Sync hub'),
               SyncSection(state: s),
               const _Heading('Backups'),
@@ -502,6 +505,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   'No backups yet.',
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
+              const _Heading('Data safety'),
+              DataSafetySection(state: s),
               const _Heading('About'),
               const SelectableText(
                 'THEapp build $appBuild',

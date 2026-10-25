@@ -8,7 +8,8 @@ Everything is local, in `%APPDATA%\THEapp` (Settings → "Open data folder"):
 | `canvases\<id>.json` | One file per canvas: items, positions, sizes, styling, drawings, camera |
 | `data\*.json` | Notes, folders, assets (links/photos), inbox, calendar entries, calendar days, tasks, projects |
 | `attachments\` | Managed copies of photos, documents and link preview images; shared asset bytes are retained while asset ownership is ambiguous |
-| `backups\<time>-<reason>\` | Daily automatic snapshots (14 kept), manual ones, `pre-v2`, `before-restore` |
+| `backups\<time>-<reason>\` | Daily automatic snapshots (14 kept), weekly full ones, manual ones, `pre-v3`/`pre-level`/`pre-migration-*`/`before-switch`, `before-restore`; each new one has a checksum `manifest.json` and never holds key files |
+| `migrations\` | `state.json`: finished versioned migrations, the open checkpoint, the last failure (DATA_MIGRATIONS.md) |
 | `inbox_requests\` | Hand-off files from Explorer "Send to" launches |
 | `sync\` | Device identity and deleted-canvas markers (for future sync) |
 | `calendar\` | Protected Google/Outlook OAuth token files, when configured |
@@ -145,3 +146,14 @@ audit above; the audit remains intact as a record of its earlier inspection.
   sync. Passing tests establish code behavior, not a fresh visible native-window or
   physical iPad/Pencil check. See `THEAPP_VERIFICATION_REPORT.md` for the exact
   commands and current environment limits.
+
+## Data safety and storage modes (2026-10-25)
+
+- Data model, version map, versioned/checkpointed migrations, backup
+  manifests, recoverable deletion and the read-only integrity check:
+  [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md).
+- The three storage modes (this device only, PC hub, hosted service), one
+  provider abstraction and the copy-and-verify switch:
+  [STORAGE_MODES.md](STORAGE_MODES.md).
+- Settings now has **Storage** (mode, status, Switch…) and **Data safety**
+  (Check data, Recently deleted).

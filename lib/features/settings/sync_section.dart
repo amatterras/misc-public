@@ -9,7 +9,8 @@ import '../../app/theme.dart';
 import '../../hub/hub_host.dart';
 import '../../sync/local_hub.dart';
 import '../../sync/sync_client.dart';
-import '../../widgets/common.dart';
+import '../../sync/storage_modes.dart';
+import 'storage_section.dart';
 
 /// Address pre-filled in the pairing form: the hub this device used before
 /// (when it must pair again), else this PC's hub. On iPhone/iPad 127.0.0.1
@@ -50,17 +51,17 @@ class _SyncSectionState extends State<SyncSection> {
     super.dispose();
   }
 
+  /// Pairing is a change of storage mode: it goes through the verified
+  /// switch (copy, verify, confirm), with the address and code prefilled.
   Future<void> _pair() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final error = await widget.state.pairWithHub(_url.text, _code.text);
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _error = error;
-    });
+    setState(() => _error = null);
+    await showStorageSwitchDialog(
+      context,
+      widget.state,
+      StorageMode.pcHub,
+      address: _url.text,
+      pairingCode: _code.text,
+    );
   }
 
   /// What to type on an iPhone/iPad, after asking this PC's hub for a code.
@@ -276,15 +277,12 @@ class _SyncSectionState extends State<SyncSection> {
                   ),
                 TextButton(
                   onPressed: () async {
-                    final ok = await confirm(
+                    // The same deliberate switch as Settings → Storage.
+                    await showStorageSwitchDialog(
                       context,
-                      title: 'Stop syncing?',
-                      message:
-                          'This PC stops syncing with the hub. Nothing is '
-                          'deleted here or on the hub.',
-                      action: 'Disconnect',
+                      s,
+                      StorageMode.local,
                     );
-                    if (ok) await s.disconnectHub();
                   },
                   child: const Text('Disconnect'),
                 ),
@@ -487,7 +485,7 @@ class _HostedFormState extends State<_HostedForm> {
   final _password = TextEditingController();
   final _invite = TextEditingController();
   String? _error;
-  bool _busy = false;
+  final bool _busy = false;
 
   @override
   void dispose() {
@@ -547,24 +545,18 @@ class _HostedFormState extends State<_HostedForm> {
           key: const ValueKey('hosted-sign-in'),
           onPressed: _busy
               ? null
+              // Signing in changes the storage mode: verified switch.
               : () async {
-                  setState(() {
-                    _busy = true;
-                    _error = null;
-                  });
-                  final error = await widget.state.signInHosted(
-                    _url.text,
-                    _email.text,
-                    _password.text,
+                  setState(() => _error = null);
+                  _password.clear();
+                  await showStorageSwitchDialog(
+                    context,
+                    widget.state,
+                    StorageMode.hosted,
+                    address: _url.text,
+                    email: _email.text,
                     invite: _invite.text,
                   );
-                  _password.clear();
-                  if (mounted) {
-                    setState(() {
-                      _busy = false;
-                      _error = error;
-                    });
-                  }
                 },
           child: Text(
             _busy

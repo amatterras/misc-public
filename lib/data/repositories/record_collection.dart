@@ -52,7 +52,26 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
 
   /// Top-level keys of the file that this version does not know.
   Map<String, dynamic> _unknownFileKeys = const {};
-  static const _fileKeys = {'schema', 'records', 'revs', 'tombstones'};
+  static const _fileKeys = {
+    'schema',
+    'records',
+    'revs',
+    'tombstones',
+    'recentlyDeleted',
+  };
+
+  /// The last content of deleted records (id → deletion stamp, time and
+  /// data), so a deletion can be undone ([restoreDeleted]). Kept on this
+  /// device only (never synced), for [deletedRetention], at most
+  /// [deletedLimit] per collection. Records removed with
+  /// `recoverable: false` (e.g. expired calendar entries) are not kept.
+  final Map<String, Map<String, dynamic>> _recentlyDeleted = {};
+  static const deletedRetention = Duration(days: 30);
+  static const deletedLimit = 200;
+
+  /// Decides whether a removed record may be kept for restoring (null =
+  /// always). Used by the workspace to keep purged records unrecoverable.
+  bool Function(String id)? keepDeleted;
 
   Timer? _timer;
   bool _dirty = false;
@@ -64,6 +83,9 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
   int get length => _records.length;
   T? operator [](String? id) => id == null ? null : _records[id];
   bool contains(String id) => _records.containsKey(id);
+
+  /// Records kept aside because this version could not read them.
+  int get unreadableCount => _unreadable.length;
 
   /// Revision stamp of a record, or null if it doesn't exist.
   String? revOf(String id) => _revs[id];
@@ -78,6 +100,7 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     _tombstones.clear();
     _unreadable.clear();
     _unknownFields.clear();
+    _recentlyDeleted.clear();
     _unknownFileKeys = const {};
     if (json == null) return;
     loadedSchema = json['schema'] as int? ?? 1;
@@ -87,6 +110,14 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     for (final raw in json['records'] as List? ?? const []) {
       try {
         final record = fromJson(raw as Map<String, dynamic>);
+        if (_records.containsKey(record.id)) {
+          // The same id twice (a damaged or badly merged file): the first
+          // is used, the other is kept aside and written back unchanged,
+          // so saving never drops it. The integrity check reports it.
+          AppLog.warn('Keeping a duplicate $name record aside');
+          _unreadable.add(raw);
+          continue;
+        }
         _records[record.id] = record;
         _keepUnknownFields(record, raw);
         // Records from before revisions existed get one from their edit time.
@@ -101,6 +132,9 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     (json['tombstones'] as Map?)?.forEach(
       (k, v) => _tombstones[k as String] = clock.normalize(v as String),
     );
+    (json['recentlyDeleted'] as Map?)?.forEach((k, v) {
+      if (v is Map) _recentlyDeleted[k as String] = v.cast<String, dynamic>();
+    });
     _revs.values.forEach(clock.observe);
     _tombstones.values.forEach(clock.observe);
     if (loadedSchema < schemaVersion) _dirty = true;
@@ -158,12 +192,79 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     if (changed) _changed();
   }
 
-  void remove(String id) {
+  /// Deletes a record: a tombstone with a new stamp replaces it (so the
+  /// deletion syncs), and unless [recoverable] is false its last content is
+  /// kept in "recently deleted" for [restoreDeleted]. Only this record is
+  /// affected: records it refers to (attachments, notes, folders) stay.
+  void remove(String id, {bool recoverable = true}) {
+    final json = jsonOf(id);
     if (_records.remove(id) == null) return;
     _unknownFields.remove(id);
     _revs.remove(id);
-    _tombstones[id] = clock.now();
+    final stamp = _tombstones[id] = clock.now();
+    _keepDeleted(id, stamp, json, recoverable);
     _changed();
+  }
+
+  void _keepDeleted(
+    String id,
+    String stamp,
+    Map<String, dynamic>? json,
+    bool recoverable,
+  ) {
+    if (json == null || !recoverable || !(keepDeleted?.call(id) ?? true)) {
+      _recentlyDeleted.remove(id);
+      return;
+    }
+    _recentlyDeleted[id] = {
+      'rev': stamp,
+      'at': DateTime.now().toUtc().toIso8601String(),
+      'data': json,
+    };
+  }
+
+  /// Deleted records whose content can still be restored, by id.
+  Map<String, Map<String, dynamic>> get recentlyDeleted =>
+      Map.unmodifiable(_recentlyDeleted);
+
+  /// Brings a deleted record back as a new edit: it gets a new stamp that
+  /// is newer than its deletion, so sync spreads the restore instead of the
+  /// deletion. Nothing else is touched (no other record is restored).
+  /// Returns null if [id] exists or is not in "recently deleted".
+  T? restoreDeleted(String id) {
+    if (_records.containsKey(id)) return null;
+    final kept = _recentlyDeleted[id];
+    final data = kept?['data'];
+    if (data is! Map) return null;
+    final json = data.cast<String, dynamic>();
+    final record = fromJson(json);
+    _records[id] = record;
+    _keepUnknownFields(record, json);
+    _revs[id] = clock.now();
+    _tombstones.remove(id);
+    _recentlyDeleted.remove(id);
+    _changed();
+    return record;
+  }
+
+  /// Makes a deleted record unrecoverable here (e.g. it expired).
+  void forgetDeleted(String id) {
+    if (_recentlyDeleted.remove(id) != null) _changed();
+  }
+
+  void _pruneDeleted() {
+    final cutoff = DateTime.now().toUtc().subtract(deletedRetention);
+    _recentlyDeleted.removeWhere((_, v) {
+      final at = DateTime.tryParse(v['at'] as String? ?? '');
+      return at == null || at.isBefore(cutoff);
+    });
+    if (_recentlyDeleted.length > deletedLimit) {
+      final oldest = _recentlyDeleted.entries.toList()
+        ..sort((a, b) => (a.value['at'] as String).compareTo(b.value['at']));
+      for (final e in oldest.take(_recentlyDeleted.length - deletedLimit)) {
+        _recentlyDeleted.remove(e.key);
+      }
+    }
   }
 
   /// Every record and tombstone with its revision, for sync.
@@ -182,10 +283,13 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
   void applyRemote(String id, String rev, Map<String, dynamic>? data) {
     clock.observe(rev);
     if (data == null) {
+      // Deleted on another device: also recoverable here.
+      final json = jsonOf(id);
       _records.remove(id);
       _unknownFields.remove(id);
       _revs.remove(id);
       _tombstones[id] = rev;
+      _keepDeleted(id, rev, json, true);
     } else {
       final record = fromJson(data);
       final existing = _records[id];
@@ -194,6 +298,7 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
       _keepUnknownFields(record, data);
       _revs[id] = rev;
       _tombstones.remove(id);
+      _recentlyDeleted.remove(id);
     }
     _changed();
   }
@@ -210,6 +315,7 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     _timer?.cancel();
     if (!_dirty) return;
     _dirty = false;
+    _pruneDeleted();
     try {
       await store.write(_folder, name, {
         ..._unknownFileKeys,
@@ -221,6 +327,7 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
         ],
         'revs': _revs,
         'tombstones': _tombstones,
+        if (_recentlyDeleted.isNotEmpty) 'recentlyDeleted': _recentlyDeleted,
       });
       onSaveResult?.call(name, true);
     } catch (e) {

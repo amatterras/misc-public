@@ -11,6 +11,9 @@ import '../data/models/library_models.dart';
 import '../data/models/record.dart';
 import '../data/models/task_models.dart';
 import '../data/migrations/canonical_color_migration.dart';
+import '../data/migrations/migration_runner.dart';
+import '../data/storage/backup_service.dart';
+import '../data/storage/backup_verifier.dart';
 import '../data/repositories/canvas_repository.dart';
 import '../data/repositories/record_collection.dart';
 import '../data/storage/app_log.dart';
@@ -40,6 +43,8 @@ import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
 import '../sync/sync_scheduler.dart';
+import '../sync/storage_modes.dart';
+import '../data/integrity/integrity_check.dart';
 import '../hub/hub_host.dart';
 import 'maintenance.dart';
 import '../sync/local_hub.dart';
@@ -224,6 +229,11 @@ class AppState extends ChangeNotifier {
       onStep?.call(name);
     }
 
+    BackupService.schemaVersions = {
+      'records': RecordCollection.schemaVersion,
+      'canvases': CanvasDocument.schemaVersion,
+      'dataFeatureLevel': dataFeatureLevel,
+    };
     step('Loading settings');
     await settings.load();
     step('Loading your data');
@@ -276,7 +286,9 @@ class AppState extends ChangeNotifier {
           'pre-v${CanvasDocument.schemaVersion}',
           includeAttachments: true,
         );
-        verified = await workspace.backups.verify(backup);
+        verified =
+            await workspace.backups.verify(backup) &&
+            (await verifyRestorable(workspace.backups, backup)).ok;
       } catch (e, s) {
         AppLog.error('Pre-upgrade backup failed', e, s);
       }
@@ -296,6 +308,8 @@ class AppState extends ChangeNotifier {
       await settings.set('backupBeforeSchema', CanvasDocument.schemaVersion);
     }
     if (!await _checkFeatureLevel()) return;
+    step('Checking data upgrades');
+    if (!await runMigrations()) return;
     workspace.backups.copiesDir ??= backupCopiesFolder();
     step('Daily backup');
     try {
@@ -590,7 +604,9 @@ class AppState extends ChangeNotifier {
           'pre-level$dataFeatureLevel',
           includeAttachments: true,
         );
-        verified = await workspace.backups.verify(backup);
+        verified =
+            await workspace.backups.verify(backup) &&
+            (await verifyRestorable(workspace.backups, backup)).ok;
       } catch (e, s) {
         AppLog.error('Pre-upgrade backup failed', e, s);
       }
@@ -625,6 +641,71 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  /// The last failed data upgrade (null when none): the app shows it with
+  /// Retry and Restore instead of opening, and writes nothing meanwhile.
+  MigrationOutcome? migrationFailure;
+
+  /// The versioned migrations to run (replaceable in tests).
+  List<MigrationStep> migrationSteps = MigrationRunner.registry;
+
+  /// Runs the pending versioned migrations (migration_runner.dart). False =
+  /// one failed: the data folder is read-only and [dataProblem] says why.
+  /// Never deletes or re-creates the data.
+  Future<bool> runMigrations() async {
+    final hasData =
+        workspace.hasRecords || (await canvases.listCanvases()).isNotEmpty;
+    final outcome = await MigrationRunner(
+      workspace: workspace,
+      canvases: canvases,
+      steps: migrationSteps,
+    ).run(hasData: hasData);
+    if (!outcome.failed) {
+      migrationFailure = null;
+      return true;
+    }
+    migrationFailure = outcome;
+    workspace.store.readOnly = true;
+    dataProblem =
+        'THEapp could not finish upgrading your data: ${outcome.message} '
+        'Nothing was deleted, and THEapp will not change this data folder '
+        'until the upgrade succeeds. '
+        '${outcome.backup == null ? '' : 'A verified copy from before the upgrade is kept in backups.'}';
+    notifyListeners();
+    return false;
+  }
+
+  /// "Retry" on the upgrade problem screen. Returns what to tell the user.
+  Future<String> retryMigrations() async {
+    workspace.store.readOnly = false;
+    if (await runMigrations()) {
+      return 'The upgrade finished. Close and reopen THEapp.';
+    }
+    return dataProblem ?? 'The upgrade failed again.';
+  }
+
+  /// "Restore" on the upgrade problem screen: puts back the verified
+  /// backup made before the failed upgrade (the current state is backed up
+  /// first by BackupService.restore). Returns what to tell the user.
+  Future<String> restoreBeforeMigration() async {
+    final backup = migrationFailure?.backup;
+    if (backup == null || !await backup.exists()) {
+      return 'No backup from before the upgrade was recorded. Your data '
+          'folder was not changed.';
+    }
+    // Pending saves must not write over the restored files.
+    workspace.store.readOnly = true;
+    try {
+      await workspace.backups.restore(backup);
+    } catch (e, s) {
+      AppLog.error('Restoring the pre-upgrade backup failed', e, s);
+      return 'Restoring failed (${e.runtimeType}); your data was not '
+          'replaced. The backup is still at ${backup.path}.';
+    }
+    AppLog.info('Restored the backup from before the failed upgrade');
+    return 'Restored the data from before the upgrade. Close and reopen '
+        'THEapp; it will try the upgrade again and stop safely if it fails.';
+  }
+
   Future<void> _migrateCanonicalColors() async {
     for (final entry in workspace.entries.all.toList()) {
       final migrated = CanonicalColorMigration.migrateCalendarEntry(entry);
@@ -645,6 +726,7 @@ class AppState extends ChangeNotifier {
   Future<void> _startSyncIfPaired() async {
     final config = await workspace.store.read('sync', 'hub');
     final url = config?['url'] as String?;
+    hubHosted = config?['hosted'] == true;
     final token = await readSecret(_hubTokenFile);
     if (url == null) return;
     if (token == null) {
@@ -771,6 +853,7 @@ class AppState extends ChangeNotifier {
             'this device on the hub ("thehub revoke").';
       }
       await workspace.store.write('sync', 'hub', {'url': uri.toString()});
+      hubHosted = false;
       AppLog.info(
         isEncryptedHubRoute(uri)
             ? 'Paired with a hub (this PC or Tailscale)'
@@ -827,6 +910,7 @@ class AppState extends ChangeNotifier {
         'url': uri.toString(),
         'hosted': true,
       });
+      hubHosted = true;
       AppLog.info('Signed in to a hosted sync service');
       _startSync(uri, token);
       notifyListeners();
@@ -887,8 +971,138 @@ class AppState extends ChangeNotifier {
   /// connection and timers; [appResumed] starts them again.
   void syncPaused() => _scheduler?.stop();
 
+  // ------------------------------------------------------- storage modes --
+  //
+  // Local only, PC hub or hosted service (sync/storage_modes.dart). The data
+  // folder on this device is the working copy in every mode; a mode only
+  // says where it is shared. Changing it goes through StorageSwitch (copy,
+  // verify, confirm) and never deletes the previous remote copy.
+
+  /// Whether the configured hub is a hosted service (not the PC hub).
+  bool hubHosted = false;
+
+  /// Where this workspace is shared now.
+  StorageProvider get storageProvider {
+    final url = hubUrl;
+    final uri = url == null ? null : Uri.tryParse(url);
+    if (uri == null) return const LocalOnlyProvider();
+    return hubHosted ? HostedProvider(uri) : PcHubProvider(uri);
+  }
+
+  StorageMode get storageMode => storageProvider.mode;
+
+  /// Starts the copy-and-verify workflow towards [to] (nothing changes
+  /// until [activateStorage] is called with it).
+  Future<StorageSwitch> beginStorageSwitch(StorageProvider to) async {
+    if (TestEnvironment.active && to is! LocalOnlyProvider) {
+      final uri = to.endpoint!;
+      if (to is HostedProvider || !TestEnvironment.isTestHub(uri)) {
+        throw const SyncFailure(
+          'test_mode',
+          'Test data mode connects only to the test hub on port '
+              '${TestEnvironment.testHubPort}.',
+        );
+      }
+    }
+    if (ios != null && to is PcHubProvider && isLoopbackHubUrl(to.endpoint)) {
+      throw const SyncFailure(
+        'bad_address',
+        'On iPhone/iPad, 127.0.0.1 is this device, not your PC. Enter the '
+            'PC’s Tailscale address, e.g. http://100.x.y.z:47710.',
+      );
+    }
+    return StorageSwitch(
+      workspace: workspace,
+      from: storageProvider,
+      to: to,
+      deviceName: await _deviceLabel(workspace.device!.name),
+    );
+  }
+
+  /// Makes [change]'s destination the active provider. Only after a
+  /// successful copy and verification, and only when the user confirmed.
+  /// The previous remote keeps its data; this device keeps all of its own.
+  Future<void> activateStorage(StorageSwitch change) async {
+    if (change.stage != SwitchStage.verified || change.token == null) {
+      throw StateError('Copy and verify before switching');
+    }
+    final to = change.to;
+    final uri = to.endpoint!;
+    // Stop the old connection first; its bookkeeping is replaced below.
+    _scheduler?.stop();
+    _scheduler = null;
+    _sync?.client.close();
+    _sync = null;
+    await writeSecret(_hubTokenFile, change.token!);
+    await workspace.store.write('sync', 'hub', {
+      'url': uri.toString(),
+      if (to is HostedProvider) 'hosted': true,
+    });
+    // New destination, so no bookkeeping carries over: this device offers
+    // everything once (the destination already has it: duplicates), then
+    // follows the destination's change list.
+    for (final name in ['client_state.json', 'client_state.json.bak']) {
+      final f = File(
+        '${workspace.root.path}${Platform.pathSeparator}sync'
+        '${Platform.pathSeparator}$name',
+      );
+      if (await f.exists()) await f.delete();
+    }
+    hubHosted = to is HostedProvider;
+    await settings.set('storageMode', to.mode.name);
+    AppLog.info('Storage mode: ${to.mode.name} (copy verified)');
+    _startSync(uri, change.token!);
+    notifyListeners();
+  }
+
+  /// Back to "this device only": tries one last sync so nothing waits to be
+  /// sent (bounded), then stops syncing. Nothing is deleted here or on the
+  /// previous hub/service. Returns a note for the user, or null.
+  Future<String?> switchToLocalOnly() async {
+    String? note;
+    final s = _scheduler;
+    if (s != null && syncEnabled && !syncNeedsPairing) {
+      try {
+        await s.syncNow().timeout(const Duration(seconds: 20));
+      } catch (_) {
+        // Reported below via pendingLocal.
+      }
+      if (s.pendingLocal) {
+        note =
+            'Some recent changes had not reached the previous hub/service. '
+            'They are safe on this device.';
+      }
+    }
+    await disconnectHub();
+    await settings.set('storageMode', StorageMode.local.name);
+    AppLog.info('Storage mode: local (previous remote copy kept)');
+    return note;
+  }
+
+  // --------------------------------------------------- integrity, undo --
+
+  /// Read-only check of this device's data (reports, never repairs).
+  Future<IntegrityReport> checkIntegrity() async {
+    await flush();
+    return IntegrityChecker(workspace, canvases).run();
+  }
+
+  /// Deleted records that can still be restored, as (collection, id, kept).
+  List<(String, String, Map<String, dynamic>)> recentlyDeletedRecords() => [
+    for (final MapEntry(key: name, value: c)
+        in workspace.allCollections.entries)
+      for (final MapEntry(key: id, value: kept) in c.recentlyDeleted.entries)
+        (name, id, kept),
+  ];
+
+  /// Restores one deleted record (a new edit that syncs; nothing else is
+  /// restored). False if it is gone or already back.
+  bool restoreDeletedRecord(String collection, String id) =>
+      workspace.allCollections[collection]?.restoreDeleted(id) != null;
+
   /// Stops syncing and forgets the hub (local data is untouched).
   Future<void> disconnectHub() async {
+    hubHosted = false;
     syncNeedsPairing = false;
     _scheduler?.stop();
     _scheduler = null;
@@ -1607,6 +1821,8 @@ class AppState extends ChangeNotifier {
           title: 'Untitled Mindmap',
           items: const [],
           updatedAt: DateTime.now(),
+          // Stamped now, so it syncs even if it is never edited.
+          metaRev: workspace.clock.now(),
         );
         await canvases.save(doc);
         await _refreshList();
@@ -2510,12 +2726,16 @@ class AppState extends ChangeNotifier {
     bool show = true,
     String? folderId,
   }) async {
+    final items = withWelcome ? _welcomeItems() : const <CanvasItem>[];
     final doc = CanvasDocument(
       id: newId(),
       title: title,
       updatedAt: DateTime.now(),
       folderId: folderId,
-      items: withWelcome ? _welcomeItems() : const [],
+      items: items,
+      // Stamped now, so it syncs even if it is never edited.
+      itemRevs: {for (final i in items) i.id: workspace.clock.now()},
+      metaRev: workspace.clock.now(),
     );
     await canvases.save(doc);
     await _refreshList();

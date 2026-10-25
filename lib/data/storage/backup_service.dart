@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+
 import '../../platform/windows_native.dart' as win;
 
 /// Point-in-time copies of all records under
@@ -23,6 +25,7 @@ class BackupService {
     'sync',
     'canvas_snapshots', // named mindmap versions
     'retention', // permanent calendar-expiration ledger
+    'migrations', // migration checkpoints and history
   ];
   static const _attachments = 'attachments';
   static const keepAutomatic = 14;
@@ -65,6 +68,7 @@ class BackupService {
           'Data changed while it was copied; the backup is made again shortly',
         );
       }
+      await writeManifest(partial, reason: 'live');
       var target = Directory('${backupsDir.path}$_sep$name');
       for (var n = 1; await target.exists(); n++) {
         target = Directory('${backupsDir.path}$_sep$name-$n');
@@ -147,6 +151,8 @@ class BackupService {
         if (entity is! File) continue;
         final rel = entity.path.substring(base.path.length + 1);
         if (rel.endsWith('.tmp') || rel.contains('.trash')) continue;
+        // Credentials never go into a backup or export (see [isSecret]).
+        if (isSecret(rel)) continue;
         yield (rel, entity);
       }
     }
@@ -159,25 +165,171 @@ class BackupService {
     bool includeAttachments = false,
     DateTime? now,
   }) async {
-    var target = Directory(
-      '${backupsDir.path}$_sep${_stamp(now ?? DateTime.now())}-$reason',
-    );
+    final name = '${_stamp(now ?? DateTime.now())}-$reason';
+    var target = Directory('${backupsDir.path}$_sep$name');
     var n = 1;
     while (await target.exists()) {
-      target = Directory('${target.path}-${n++}');
+      target = Directory('${backupsDir.path}$_sep$name-${n++}');
     }
-    await for (final (rel, file) in _files(
-      root,
-      attachments: includeAttachments,
-    )) {
-      final dest = File('${target.path}$_sep$rel');
-      await dest.parent.create(recursive: true);
-      await file.copy(dest.path);
+    // Written under a hidden name and renamed only when complete, with its
+    // manifest, so an interrupted copy is never mistaken for a backup.
+    final partial = Directory(
+      '${backupsDir.path}$_sep$partialPrefix${_name(target)}',
+    );
+    try {
+      if (await partial.exists()) await partial.delete(recursive: true);
+      await partial.create(recursive: true);
+      await for (final (rel, file) in _files(
+        root,
+        attachments: includeAttachments,
+      )) {
+        final dest = File('${partial.path}$_sep$rel');
+        await dest.parent.create(recursive: true);
+        await file.copy(dest.path);
+      }
+      await writeManifest(
+        partial,
+        reason: reason,
+        includesAttachments: includeAttachments,
+      );
+      await partial.rename(target.path);
+    } catch (_) {
+      if (await partial.exists()) await partial.delete(recursive: true);
+      rethrow;
     }
-    await target.create(recursive: true);
     await _prune();
     return target;
   }
+
+  // ------------------------------------------------------------ manifest --
+
+  static const manifestFile = 'manifest.json';
+  static const manifestFormat = 'theapp-backup';
+  static const manifestFormatVersion = 1;
+
+  /// Files that hold credentials (device keys, API keys, OAuth tokens):
+  /// never copied into a backup or export, and never replaced by a
+  /// restore. A restored device keeps its own keys.
+  static bool isSecret(String relativePath) {
+    final name = relativePath.split(RegExp(r'[\\/]')).last.toLowerCase();
+    return name.endsWith('.token') ||
+        name.endsWith('.token.bak') ||
+        name.endsWith('.key') ||
+        name.endsWith('.client');
+  }
+
+  /// Schema versions written into each manifest (set by the app at start;
+  /// informational, used to report what a backup holds).
+  static Map<String, int> schemaVersions = const {};
+
+  /// Writes `manifest.json` into [backup]: every file with its size and
+  /// SHA-256, record counts per collection, and the schema versions. A
+  /// backup is trusted only when [checkManifest] agrees with it.
+  Future<File> writeManifest(
+    Directory backup, {
+    required String reason,
+    bool? includesAttachments,
+  }) async {
+    final files = <Map<String, dynamic>>[];
+    final counts = <String, int>{};
+    final entities = await backup.list(recursive: true).toList();
+    entities.sort((a, b) => a.path.compareTo(b.path));
+    for (final e in entities) {
+      if (e is! File) continue;
+      final rel = _rel(backup, e);
+      if (rel == manifestFile) continue;
+      files.add({
+        'path': rel,
+        'size': await e.length(),
+        'sha256': (await sha256.bind(e.openRead()).first).toString(),
+      });
+      if (rel.startsWith('data/') && rel.endsWith('.json')) {
+        try {
+          final json = jsonDecode(await e.readAsString());
+          final records = json is Map ? json['records'] : null;
+          if (records is List) {
+            counts[rel.substring(5, rel.length - 5)] = records.length;
+          }
+        } on FormatException {
+          // Reported as unreadable by checkManifest.
+        }
+      }
+    }
+    final manifest = File('${backup.path}$_sep$manifestFile');
+    await manifest.writeAsString(
+      const JsonEncoder.withIndent(' ').convert({
+        'format': manifestFormat,
+        'formatVersion': manifestFormatVersion,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'reason': reason,
+        'schemas': schemaVersions,
+        'includesAttachments':
+            includesAttachments ??
+            await Directory('${backup.path}$_sep$_attachments').exists(),
+        'secretsIncluded': false,
+        'recordCounts': counts,
+        'files': files,
+      }),
+      flush: true,
+    );
+    return manifest;
+  }
+
+  /// Checks [backup] against its manifest: every listed file is present
+  /// with the same size and SHA-256, and every record file parses as JSON.
+  /// Returns the problems found (empty = the backup is intact). A backup
+  /// without a manifest (made by an older version) is reported as such.
+  Future<List<String>> checkManifest(Directory backup) async {
+    final problems = <String>[];
+    final manifest = File('${backup.path}$_sep$manifestFile');
+    if (!await manifest.exists()) return ['No manifest (older backup).'];
+    Map<String, dynamic> json;
+    try {
+      json = jsonDecode(await manifest.readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return ['The manifest is damaged.'];
+    }
+    if (json['format'] != manifestFormat) return ['Not a THEapp backup.'];
+    for (final entry in (json['files'] as List? ?? const [])) {
+      final rel = (entry as Map)['path'] as String;
+      final file = File('${backup.path}$_sep${rel.replaceAll('/', _sep)}');
+      if (!await file.exists()) {
+        problems.add('Missing: $rel');
+        continue;
+      }
+      if (await file.length() != entry['size']) {
+        problems.add('Wrong size: $rel');
+        continue;
+      }
+      final sha = (await sha256.bind(file.openRead()).first).toString();
+      if (sha != entry['sha256']) {
+        problems.add('Checksum mismatch: $rel');
+        continue;
+      }
+      if (rel.endsWith('.json') && !rel.startsWith('attachments/')) {
+        try {
+          jsonDecode(await file.readAsString());
+        } on FormatException {
+          problems.add('Unreadable: $rel');
+        }
+      }
+    }
+    return problems;
+  }
+
+  /// The manifest of [backup], or null if it has none or it is damaged.
+  Future<Map<String, dynamic>?> readManifest(Directory backup) async {
+    try {
+      final f = File('${backup.path}$_sep$manifestFile');
+      if (!await f.exists()) return null;
+      return jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _rel(Directory base, File file) =>
+      file.path.substring(base.path.length + 1).replaceAll(_sep, '/');
 
   /// True if every file currently in the live folders has an identical copy
   /// in [backup] (records, plus attachments if the backup contains them).
@@ -239,34 +391,52 @@ class BackupService {
     required String tombstoneRev,
   }) async {
     for (final backup in await list()) {
+      // Work out every change first; a backup that needs none is not
+      // touched (this runs at each start for every expired entry).
+      final writes = <File, String>{};
+      final copies = <File, File>{};
+      final deletes = <File>[];
       final collectionFile = File(
         '${backup.path}$_sep$dataDir$_sep$calendarEntriesFile',
       );
       for (final suffix in ['', '.bak']) {
         final file = File('${collectionFile.path}$suffix');
-        if (await file.exists()) {
-          final json = jsonDecode(await file.readAsString());
-          if (json is! Map<String, dynamic>) {
-            throw FormatException('Invalid calendar collection in $file');
-          }
-          final records = (json['records'] as List? ?? const [])
-              .where((raw) => raw is! Map || raw['id'] != id)
-              .toList();
-          final revs = Map<String, dynamic>.of(
-            (json['revs'] as Map?)?.cast<String, dynamic>() ?? const {},
-          )..remove(id);
-          final tombstones = Map<String, dynamic>.of(
-            (json['tombstones'] as Map?)?.cast<String, dynamic>() ?? const {},
-          )..[id] = tombstoneRev;
-          await _atomicWrite(
-            file,
-            const JsonEncoder.withIndent(' ').convert({
-              ...json,
-              'records': records,
-              'revs': revs,
-              'tombstones': tombstones,
-            }),
-          );
+        if (!await file.exists()) continue;
+        final text = await file.readAsString();
+        final json = jsonDecode(text);
+        if (json is! Map<String, dynamic>) {
+          throw FormatException('Invalid calendar collection in $file');
+        }
+        final records = (json['records'] as List? ?? const [])
+            .where((raw) => raw is! Map || raw['id'] != id)
+            .toList();
+        final revs = Map<String, dynamic>.of(
+          (json['revs'] as Map?)?.cast<String, dynamic>() ?? const {},
+        )..remove(id);
+        final tombstones = Map<String, dynamic>.of(
+          (json['tombstones'] as Map?)?.cast<String, dynamic>() ?? const {},
+        )..[id] = tombstoneRev;
+        final recentlyDeleted = Map<String, dynamic>.of(
+          (json['recentlyDeleted'] as Map?)?.cast<String, dynamic>() ??
+              const {},
+        )..remove(id);
+        final purged = {
+          ...json,
+          'records': records,
+          'revs': revs,
+          'tombstones': tombstones,
+        }..remove('recentlyDeleted');
+        if (recentlyDeleted.isNotEmpty) {
+          purged['recentlyDeleted'] = recentlyDeleted;
+        }
+        final hadRecord =
+            (json['records'] as List? ?? const []).length != records.length;
+        final hadKept = (json['recentlyDeleted'] as Map?)?.containsKey(id);
+        if (hadRecord ||
+            hadKept == true ||
+            (json['revs'] as Map?)?.containsKey(id) == true ||
+            (json['tombstones'] as Map?)?[id] != tombstoneRev) {
+          writes[file] = const JsonEncoder.withIndent(' ').convert(purged);
         }
       }
 
@@ -280,7 +450,7 @@ class BackupService {
               file.uri.pathSegments.last.startsWith(
                 '$calendarEntriesFile.corrupt-',
               )) {
-            await file.delete();
+            deletes.add(file);
           }
         }
       }
@@ -292,10 +462,37 @@ class BackupService {
         final source = File('${root.path}$_sep$rel');
         if (!await source.exists()) continue;
         final target = File('${backup.path}$_sep$rel');
+        if (await target.exists() &&
+            await target.readAsString() == await source.readAsString()) {
+          continue;
+        }
+        copies[target] = source;
+      }
+      if (writes.isEmpty && copies.isEmpty && deletes.isEmpty) continue;
+
+      // The purge is an intended change to files the manifest lists: a
+      // backup that was intact gets a manifest with the new checksums. One
+      // that was already damaged keeps its old manifest (still failing).
+      final manifest = await readManifest(backup);
+      final intact = manifest != null && (await checkManifest(backup)).isEmpty;
+      for (final MapEntry(key: file, value: text) in writes.entries) {
+        await _atomicWrite(file, text);
+      }
+      for (final file in deletes) {
+        await file.delete();
+      }
+      for (final MapEntry(key: target, value: source) in copies.entries) {
         await target.parent.create(recursive: true);
         final staging = File('${target.path}.purge.tmp');
         await source.copy(staging.path);
         await _replace(staging, target);
+      }
+      if (intact) {
+        await writeManifest(
+          backup,
+          reason: manifest['reason'] as String? ?? 'unknown',
+          includesAttachments: manifest['includesAttachments'] as bool?,
+        );
       }
     }
   }
@@ -358,7 +555,7 @@ class BackupService {
 
   /// Backups that are never removed automatically, by reason (the end of the
   /// folder name): the state before the first sync with a hub.
-  static const protectedReasons = {'before-first-sync'};
+  static const protectedReasons = {'before-first-sync', 'pre-migration'};
 
   static const dataDir = 'data';
   static const calendarEntriesFile = 'calendar_entries.json';
@@ -370,8 +567,9 @@ class BackupService {
   bool _isReason(Directory d, String reason) =>
       RegExp('-${RegExp.escape(reason)}(-\\d+)?\$').hasMatch(_name(d));
 
-  bool _isProtected(Directory d) =>
-      protectedReasons.any((r) => RegExp('-$r(-\\d+)?\$').hasMatch(_name(d)));
+  bool _isProtected(Directory d) => protectedReasons.any(
+    (r) => RegExp('-$r(-[a-z0-9-]+)?\$').hasMatch(_name(d)),
+  );
 
   /// Keeps a bounded number of backups. The newest pre-upgrade backup and
   /// [protectedReasons] backups are never removed.
@@ -428,6 +626,17 @@ class BackupService {
   /// live folders are swapped, so a failure part-way leaves the live data
   /// as it was. Attachments are only ever added, never replaced.
   Future<void> restore(Directory backup) async {
+    // A backup with a manifest must match it before anything is replaced.
+    if (await readManifest(backup) != null) {
+      final problems = await checkManifest(backup);
+      if (problems.isNotEmpty) {
+        throw FileSystemException(
+          'This backup failed its check (${problems.first}); nothing was '
+          'changed',
+          backup.path,
+        );
+      }
+    }
     await snapshot('before-restore');
     final staging = Directory(
       '${root.path}$_sep.restore-${DateTime.now().millisecondsSinceEpoch}',
@@ -448,6 +657,8 @@ class BackupService {
       // Trash folders are not in backups: keep them (e.g. deleted notes'
       // handwriting, which "Recently deleted" can still bring back).
       await _keepTrash(old, current);
+      // This device's keys stay (backups never hold them).
+      await _keepSecrets(old, current);
       if (await old.exists()) await old.delete(recursive: true);
     }
     // Forget what the restored data last synced, so a paired hub treats the
@@ -470,6 +681,21 @@ class BackupService {
       }
     }
     await staging.delete(recursive: true);
+  }
+
+  /// Moves credential files ([isSecret]) from [from] into the same place
+  /// under [to] when [to] has none there.
+  Future<void> _keepSecrets(Directory from, Directory to) async {
+    if (!await from.exists()) return;
+    await for (final e in from.list(recursive: true)) {
+      if (e is! File) continue;
+      final rel = e.path.substring(from.path.length + 1);
+      if (!isSecret(rel)) continue;
+      final target = File('${to.path}$_sep$rel');
+      if (await target.exists()) continue;
+      await target.parent.create(recursive: true);
+      await e.rename(target.path);
+    }
   }
 
   /// Moves every `.trash` folder (at any depth) from [from] into the same

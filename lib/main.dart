@@ -205,19 +205,70 @@ class _TheAppState extends State<TheApp> {
       theme: buildAppTheme(),
       home: widget.state.dataProblem == null
           ? AppShell(state: widget.state)
-          : _DataProblemPage(message: widget.state.dataProblem!),
+          : _DataProblemPage(state: widget.state),
     );
   }
 }
 
-/// Shown instead of the app when the data can't be opened safely.
-class _DataProblemPage extends StatelessWidget {
-  const _DataProblemPage({required this.message});
+/// Shown instead of the app when the data can't be opened safely. After a
+/// failed upgrade it offers Retry and Restore (never "reset" or "clear").
+class _DataProblemPage extends StatefulWidget {
+  const _DataProblemPage({this.state, this.message});
 
-  final String message;
+  final AppState? state;
+
+  /// Shown when there is no app state yet (bad test-data folder).
+  final String? message;
+
+  @override
+  State<_DataProblemPage> createState() => _DataProblemPageState();
+}
+
+class _DataProblemPageState extends State<_DataProblemPage> {
+  bool _busy = false;
+  String? _result;
+
+  Future<void> _run(Future<String> Function() action) async {
+    setState(() => _busy = true);
+    final result = await action();
+    if (mounted) {
+      setState(() {
+        _busy = false;
+        _result = result;
+      });
+    }
+  }
+
+  Future<void> _restore() async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Restore the data from before the upgrade?'),
+        content: const Text(
+          'The current data folder is backed up first, then replaced by the '
+          'verified copy made just before the upgrade. Photos and PDFs are '
+          'only ever added back, never removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('confirm-restore-before-migration'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+    if (yes == true) await _run(widget.state!.restoreBeforeMigration);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final message = widget.message ?? widget.state?.dataProblem ?? '';
+    final failure = widget.state?.migrationFailure;
     return Scaffold(
       body: Center(
         child: ConstrainedBox(
@@ -237,8 +288,50 @@ class _DataProblemPage extends StatelessWidget {
                 style: const TextStyle(fontSize: 15, height: 1.5),
               ),
               const SizedBox(height: Space.md),
+              if (failure != null) ...[
+                const SizedBox(height: Space.lg),
+                Wrap(
+                  spacing: Space.md,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    FilledButton(
+                      key: const ValueKey('retry-migration'),
+                      onPressed: _busy
+                          ? null
+                          : () => _run(widget.state!.retryMigrations),
+                      child: const Text('Retry the upgrade'),
+                    ),
+                    if (failure.backup != null)
+                      OutlinedButton(
+                        key: const ValueKey('restore-before-migration'),
+                        onPressed: _busy ? null : _restore,
+                        child: const Text('Restore the backup'),
+                      ),
+                  ],
+                ),
+                if (_result != null) ...[
+                  const SizedBox(height: Space.md),
+                  Text(
+                    _result!,
+                    key: const ValueKey('migration-action-result'),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                if (failure.backup != null) ...[
+                  const SizedBox(height: Space.md),
+                  SelectableText(
+                    'Backup: ${failure.backup!.path}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
+              ],
+              const SizedBox(height: Space.md),
               Text(
-                'Nothing was changed. Data folder: ${defaultDataDirectory().path}',
+                'Nothing was deleted. Data folder: ${widget.state?.workspace.root.path ?? defaultDataDirectory().path}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 12,
