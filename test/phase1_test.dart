@@ -296,7 +296,7 @@ void main() {
     await shutDown(tester, s);
   });
 
-  testWidgets('calendar days are twice as tall and show 11 items', (
+  testWidgets('calendar cells are twice baseline width and height', (
     tester,
   ) async {
     final s = await boot(tester);
@@ -306,9 +306,11 @@ void main() {
     }
     s.goTo(AppPage.calendar);
     await settle(tester);
-    expect(CalendarPage.cellHeight, 312, reason: 'was 156');
+    expect(CalendarPage.cellWidth, 392, reason: 'was 196');
+    expect(CalendarPage.cellHeight, 624, reason: 'was 312');
     final cell = find.byType(DayCell).at(1);
-    expect(tester.getSize(cell).height, 312);
+    expect(tester.getSize(cell).width, 392);
+    expect(tester.getSize(cell).height, 624);
     for (var i = 0; i < 11; i++) {
       expect(find.text('Item $i'), findsOneWidget, reason: 'Item $i shown');
     }

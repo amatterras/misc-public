@@ -109,7 +109,7 @@ class _MindmapWindowState extends State<MindmapWindow> {
   Widget build(BuildContext context) {
     final c = _c;
     if (_missing) {
-      return const Center(
+      return Center(
         child: Text(
           'This mindmap no longer exists.',
           style: TextStyle(color: AppColors.textFaint),

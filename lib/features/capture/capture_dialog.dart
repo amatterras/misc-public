@@ -340,7 +340,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
       },
       child: AlertDialog(
         titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-        title: const Row(
+        title: Row(
           children: [
             Icon(Icons.bolt_outlined, size: 20, color: AppColors.textMuted),
             SizedBox(width: Space.sm),
@@ -368,13 +368,13 @@ class _CaptureDialogState extends State<CaptureDialog> {
                 if (url != null) ...[
                   Row(
                     children: [
-                      const Icon(Icons.link, size: 16, color: AppColors.accent),
+                      Icon(Icons.link, size: 16, color: AppColors.accent),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           'Link: ${displayUrl(url)}',
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             color: AppColors.textMuted,
                           ),
@@ -450,7 +450,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                   ],
                 ),
                 const SizedBox(height: Space.xl),
-                const Text(
+                Text(
                   'SAVE TO',
                   style: TextStyle(
                     fontSize: 11,
@@ -509,10 +509,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: AppColors.textMuted),
-            ),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
           ),
           FilledButton(
             onPressed: _canSave ? _save : null,
@@ -535,7 +532,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
         fit: BoxFit.cover,
       );
     }
-    return const ColoredBox(color: AppColors.cardRaised);
+    return ColoredBox(color: AppColors.cardRaised);
   }
 
   Widget _destinationOptions() {
@@ -727,7 +724,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
           ],
         );
       case CaptureDestination.inbox:
-        return const Text(
+        return Text(
           'Keep it in the Inbox (on Home) and decide later.',
           style: TextStyle(fontSize: 12, color: AppColors.textMuted),
         );

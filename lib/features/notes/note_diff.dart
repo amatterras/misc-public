@@ -54,7 +54,7 @@ Future<void> showVersionComparison(
           children: [
             Text(
               heading,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textMuted,

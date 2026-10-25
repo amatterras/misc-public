@@ -323,7 +323,7 @@ class _PaletteState extends State<_Palette> {
               ),
               Expanded(
                 child: shown.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text(
                           'No matching command.',
                           style: TextStyle(color: AppColors.textFaint),
@@ -341,7 +341,7 @@ class _PaletteState extends State<_Palette> {
                               ? null
                               : Text(
                                   shown[i].hint,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 11,
                                     color: AppColors.textFaint,
                                   ),

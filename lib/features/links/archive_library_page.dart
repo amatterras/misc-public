@@ -12,6 +12,7 @@ import '../sharing/share_dialog.dart';
 import '../../platform/input_hints.dart';
 import '../transfer/transfer.dart';
 import 'archive_library.dart';
+import '../interaction/item_actions.dart';
 
 Future<void> showArchiveLibrary(BuildContext context, AppState s) =>
     showDialog<void>(
@@ -194,7 +195,7 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
                 padding: EdgeInsets.fromLTRB(8.0 + depth * 14, 6, 4, 6),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.folder_outlined,
                       size: 16,
                       color: AppColors.textMuted,
@@ -205,7 +206,7 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
                     ),
                     InkWell(
                       onTap: () => _folderMenu(f.id),
-                      child: const Icon(
+                      child: Icon(
                         Icons.more_horiz,
                         size: 14,
                         color: AppColors.textFaint,
@@ -319,7 +320,7 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
                   const VerticalDivider(width: 1),
                   Expanded(
                     child: items.isEmpty
-                        ? const Center(
+                        ? Center(
                             child: Text(
                               'Nothing in this folder.',
                               style: TextStyle(color: AppColors.textFaint),
@@ -333,49 +334,55 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
                                   transfer: () => AssetsTransfer([a.id]),
                                   touch: touchFirst,
                                   feedback: Text(a.label),
-                                  child: ListTile(
-                                    key: ValueKey('archive-item-${a.id}'),
-                                    dense: true,
-                                    selected: a.id == _selected,
-                                    leading: Icon(switch (a.kind) {
-                                      AssetKind.link => Icons.link,
-                                      AssetKind.image => Icons.image_outlined,
-                                      AssetKind.document =>
-                                        Icons.picture_as_pdf_outlined,
-                                    }, size: 18),
-                                    title: Text(
-                                      a.label,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    subtitle: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          '${_refs?[a.id]?.length ?? 0} uses'
-                                          '${a.folderId == null ? '' : ' · ${ws.archiveFolderLabel(a.folderId)}'}',
-                                          style: const TextStyle(fontSize: 11),
-                                        ),
-                                        // The user's own tags, in their colours.
-                                        if (ws.tagsOfAsset(a) case final tags
-                                            when tags.isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 3,
-                                            ),
-                                            child: Wrap(
-                                              spacing: 4,
-                                              runSpacing: 3,
-                                              children: [
-                                                for (final t in tags)
-                                                  TagChip(t, small: true),
-                                              ],
+                                  child: ItemActionRegion(
+                                    state: s,
+                                    item: ArchiveActionItem(a),
+                                    child: ListTile(
+                                      key: ValueKey('archive-item-${a.id}'),
+                                      dense: true,
+                                      selected: a.id == _selected,
+                                      leading: Icon(switch (a.kind) {
+                                        AssetKind.link => Icons.link,
+                                        AssetKind.image => Icons.image_outlined,
+                                        AssetKind.document =>
+                                          Icons.picture_as_pdf_outlined,
+                                      }, size: 18),
+                                      title: Text(
+                                        a.label,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      subtitle: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${_refs?[a.id]?.length ?? 0} uses'
+                                            '${a.folderId == null ? '' : ' · ${ws.archiveFolderLabel(a.folderId)}'}',
+                                            style: const TextStyle(
+                                              fontSize: 11,
                                             ),
                                           ),
-                                      ],
+                                          // The user's own tags, in their colours.
+                                          if (ws.tagsOfAsset(a) case final tags
+                                              when tags.isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 3,
+                                              ),
+                                              child: Wrap(
+                                                spacing: 4,
+                                                runSpacing: 3,
+                                                children: [
+                                                  for (final t in tags)
+                                                    TagChip(t, small: true),
+                                                ],
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      onTap: () =>
+                                          setState(() => _selected = a.id),
                                     ),
-                                    onTap: () =>
-                                        setState(() => _selected = a.id),
                                   ),
                                 ),
                             ],
@@ -428,7 +435,7 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
             (a.description ?? '').isEmpty
                 ? 'Add a description…'
                 : a.description!,
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         ),
         if (a.url != null)
@@ -436,7 +443,7 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
             padding: const EdgeInsets.only(top: 6),
             child: SelectableText(
               a.url!,
-              style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
+              style: TextStyle(fontSize: 11, color: AppColors.textFaint),
             ),
           ),
         Padding(
@@ -444,7 +451,7 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
           child: Text(
             'Added ${formatShortDate(a.createdAt)}'
             '${a.fileSize == null ? '' : ' · ${(a.fileSize! / 1024).round()} KB'}',
-            style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),
         ),
         const SizedBox(height: 8),

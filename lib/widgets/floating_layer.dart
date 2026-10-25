@@ -54,7 +54,7 @@ class _FloatingWindowState extends State<_FloatingWindow> {
   Rect? _dragging; // while moving or resizing; saved when let go
 
   Rect get _rect => FloatingWindows.fit(
-    _dragging ?? widget.windows.rectOf(widget.spec),
+    _dragging ?? widget.windows.rectOf(widget.spec, viewport: widget.area),
     widget.area,
     widget.spec.minSize,
   );
@@ -132,7 +132,7 @@ class _FloatingWindowState extends State<_FloatingWindow> {
                       child: Container(
                         height: 36,
                         padding: const EdgeInsets.only(left: Space.md),
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           border: Border(
                             bottom: BorderSide(color: AppColors.border),
                           ),
@@ -217,7 +217,7 @@ class _FloatingWindowState extends State<_FloatingWindow> {
                     }),
                     onPanEnd: (_) => _end(),
                     onPanCancel: _end,
-                    child: const MouseRegion(
+                    child: MouseRegion(
                       cursor: SystemMouseCursors.resizeDownRight,
                       child: Align(
                         alignment: Alignment.bottomRight,

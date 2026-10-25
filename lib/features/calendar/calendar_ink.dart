@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
 import '../../data/models/record.dart';
+import '../../platform/input_hints.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
 import '../ink/pen_sizes.dart';
@@ -36,11 +37,11 @@ DateTime inkDayAt(Offset world) =>
 /// navigates while Draw mode is on. One for the whole grid, shared by every
 /// day cell (a stroke and a pinch can start in different cells):
 /// - the Pencil and the mouse always draw (one stroke at a time);
-/// - one finger draws;
+/// - one finger draws on non-iOS touch-first platforms;
 /// - a second finger makes it a pinch / two-finger pan: the finger stroke
 ///   in progress is cancelled (nothing half-drawn is kept);
-/// - fingers that touch while the Pencil draws are a resting palm: they
-///   neither draw nor move the Calendar.
+/// - on iOS only stylus-kind events draw; fingers are navigation only and
+///   fingers beside an active Pencil are treated as resting palms.
 /// Nothing stays locked: every up or cancel is forgotten at once.
 class CalendarInkArbiter extends ChangeNotifier {
   CalendarInkArbiter(this.controller);
@@ -87,7 +88,8 @@ class CalendarInkArbiter extends ChangeNotifier {
     final ok = switch (e.kind) {
       PointerDeviceKind.stylus || PointerDeviceKind.invertedStylus => true,
       PointerDeviceKind.mouse => e.buttons & kPrimaryButton != 0,
-      PointerDeviceKind.touch => _touches.length <= 1 && _stylus == null,
+      PointerDeviceKind.touch =>
+        !touchFirst && _touches.length <= 1 && _stylus == null,
       _ => false,
     };
     if (ok) {

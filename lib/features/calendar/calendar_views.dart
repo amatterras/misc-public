@@ -115,10 +115,7 @@ class CalendarGridView extends StatelessWidget {
                   child: Text(
                     weekdayShort(days[i]).toUpperCase(),
                     textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textFaint,
-                    ),
+                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
                   ),
                 ),
               ),
@@ -228,7 +225,7 @@ class _CompactDayCell extends StatelessWidget {
                     height: labelHeight,
                     child: Text(
                       '+$more more',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
                         color: AppColors.textFaint,
                       ),
@@ -316,7 +313,7 @@ class CalendarAgendaView extends StatelessWidget {
         if (itemsOn(d).isNotEmpty) d,
     ];
     if (days.isEmpty) {
-      return const Center(
+      return Center(
         key: ValueKey('calendar-agenda'),
         child: Text(
           'Nothing planned in these 30 days.',
@@ -334,7 +331,7 @@ class CalendarAgendaView extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
               child: Text(
                 formatLongDate(d),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textMuted,
@@ -459,15 +456,13 @@ class CalendarTimelineView extends StatelessWidget {
                       color: daysBetween(days[i], today) == 0
                           ? AppColors.accent.withValues(alpha: 0.12)
                           : null,
-                      border: const Border(
-                        left: BorderSide(color: AppColors.border),
-                      ),
+                      border: Border(left: BorderSide(color: AppColors.border)),
                     ),
                     alignment: Alignment.topCenter,
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
                       '${days[i].day}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
                         color: AppColors.textFaint,
                       ),
@@ -475,7 +470,7 @@ class CalendarTimelineView extends StatelessWidget {
                   ),
                 ),
               if (rows.isEmpty)
-                const Positioned(
+                Positioned(
                   left: 0,
                   top: 60,
                   child: Text(

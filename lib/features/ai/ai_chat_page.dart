@@ -184,7 +184,7 @@ class _AiChatPageState extends State<AiChatPage> {
         const SizedBox(height: Space.sm),
         Expanded(
           child: items.isEmpty
-              ? const Center(
+              ? Center(
                   child: Padding(
                     padding: EdgeInsets.all(Space.lg),
                     child: Text(

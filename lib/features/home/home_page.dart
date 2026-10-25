@@ -93,7 +93,7 @@ class HomePage extends StatelessWidget {
         );
         Widget empty(String text) => Text(
           text,
-          style: const TextStyle(fontSize: 13, color: AppColors.textFaint),
+          style: TextStyle(fontSize: 13, color: AppColors.textFaint),
         );
         Widget row(
           IconData icon,
@@ -119,10 +119,7 @@ class HomePage extends StatelessWidget {
                 ),
                 Text(
                   trailing,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textFaint,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
               ],
             ),
@@ -242,7 +239,7 @@ class HomePage extends StatelessWidget {
                                 DateTime.now(),
                                 formatShortDate,
                               ),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 color: AppColors.textFaint,
                               ),
@@ -316,7 +313,7 @@ class _InboxRow extends StatelessWidget {
           if (asset != null)
             AssetChip(workspace: ws, asset: asset)
           else
-            const Icon(Icons.notes, size: 16, color: AppColors.textMuted),
+            Icon(Icons.notes, size: 16, color: AppColors.textMuted),
           if (asset == null) ...[
             const SizedBox(width: Space.md),
             Expanded(

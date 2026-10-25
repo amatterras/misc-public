@@ -275,6 +275,37 @@ void main() {
   });
 
   test(
+    'habit occurrence check-offs survive sync independently by date',
+    () async {
+      final pc = await device('habit-pc'),
+          tablet = await device('habit-tablet');
+      final start = DateTime(2026, 10, 19);
+      final habit = CalendarEntry(
+        id: 'habit-sync-1',
+        category: CalendarCategory.habits,
+        name: 'Walk',
+        createdAt: start,
+        updatedAt: start,
+        startDate: start,
+        startMinutes: 8 * 60 + 30,
+      );
+      pc.ws.saveEntry(habit);
+      pc.ws.toggleHabit(habit.id, start);
+      await converge([pc, tablet]);
+      expect(tablet.ws.entries[habit.id]!.isCheckedOn(start), isTrue);
+      expect(
+        tablet.ws.entries[habit.id]!.isCheckedOn(DateTime(2026, 10, 20)),
+        isFalse,
+      );
+
+      tablet.ws.toggleHabit(habit.id, DateTime(2026, 10, 20));
+      await converge([pc, tablet]);
+      expect(pc.ws.entries[habit.id]!.checkoffs, {'2026-10-19', '2026-10-20'});
+      expect(pc.ws.entries[habit.id]!.timeLabel, '08:30');
+    },
+  );
+
+  test(
     'expired calendar archives sync as tombstones to stale devices',
     () async {
       var now = DateTime.utc(2026, 10, 24, 12);

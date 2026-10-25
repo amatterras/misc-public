@@ -224,7 +224,7 @@ class AiMarkdown extends StatelessWidget {
                 ),
                 MdQuote(:final text) => Container(
                   padding: const EdgeInsets.only(left: 10),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     border: Border(
                       left: BorderSide(color: AppColors.textFaint, width: 3),
                     ),
@@ -273,10 +273,7 @@ class _CodeBlock extends StatelessWidget {
             Expanded(
               child: Text(
                 language.isEmpty ? 'Code' : language,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textFaint,
-                ),
+                style: TextStyle(fontSize: 11, color: AppColors.textFaint),
               ),
             ),
             TextButton.icon(

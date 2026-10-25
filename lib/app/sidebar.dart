@@ -50,7 +50,7 @@ class Sidebar extends StatelessWidget {
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
       width: collapsed ? collapsedWidth : expandedWidth,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.sidebar,
         border: Border(left: BorderSide(color: AppColors.border)),
       ),
@@ -149,7 +149,7 @@ class Sidebar extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: Space.sm),
             child: Text(
               state.timer.label,
-              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
           ),
         _IconButton(
@@ -192,7 +192,7 @@ class Sidebar extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: AppColors.border),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.wb_sunny_outlined,
                           size: 16,
                           color: AppColors.textMuted,
@@ -241,7 +241,7 @@ class Sidebar extends StatelessWidget {
             label: 'Search',
             trailing: touchFirst
                 ? null
-                : const Text(
+                : Text(
                     'Ctrl K',
                     style: TextStyle(fontSize: 11, color: AppColors.textFaint),
                   ),
@@ -253,7 +253,7 @@ class Sidebar extends StatelessWidget {
             label: 'Commands',
             trailing: touchFirst
                 ? null
-                : const Text(
+                : Text(
                     'Ctrl ⇧ P',
                     style: TextStyle(fontSize: 11, color: AppColors.textFaint),
                   ),
@@ -272,10 +272,25 @@ class Sidebar extends StatelessWidget {
                       label: label,
                       active: state.page == page,
                       onTap: () => state.goTo(page),
+                      groupId: page == AppPage.canvas
+                          ? 'mindmap'
+                          : page == AppPage.notes
+                          ? 'notes'
+                          : null,
+                      expanded: page == AppPage.canvas
+                          ? state.sidebarGroupExpanded('mindmap')
+                          : page == AppPage.notes
+                          ? state.sidebarGroupExpanded('notes')
+                          : null,
+                      onToggle: page == AppPage.canvas || page == AppPage.notes
+                          ? () => state.toggleSidebarGroup(
+                              page == AppPage.canvas ? 'mindmap' : 'notes',
+                            )
+                          : null,
                       trailing: page == AppPage.calendar && state.timer.running
                           ? Text(
                               state.timer.label,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 color: AppColors.textMuted,
                               ),
@@ -283,11 +298,15 @@ class Sidebar extends StatelessWidget {
                           : null,
                     ),
                   ),
-                  if (page == AppPage.canvas) _CanvasList(state: state),
-                  if (page == AppPage.notes) _RecentNotes(state: state),
+                  if (page == AppPage.canvas &&
+                      state.sidebarGroupExpanded('mindmap'))
+                    _CanvasList(state: state),
+                  if (page == AppPage.notes &&
+                      state.sidebarGroupExpanded('notes'))
+                    _RecentNotes(state: state),
                 ],
                 if (favorites.isNotEmpty) ...[
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.fromLTRB(12, 20, 12, 6),
                     child: Text(
                       'FAVORITES',
@@ -309,7 +328,7 @@ class Sidebar extends StatelessWidget {
                         ),
                         child: Row(
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.star_outline,
                               size: 15,
                               color: AppColors.warm,
@@ -319,7 +338,7 @@ class Sidebar extends StatelessWidget {
                               child: Text(
                                 note.displayTitle,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 13,
                                   color: AppColors.textMuted,
                                 ),
@@ -354,7 +373,7 @@ class _Badge extends StatelessWidget {
     ),
     child: Text(
       '$count',
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 11,
         color: AppColors.text,
         fontWeight: FontWeight.w600,
@@ -378,7 +397,7 @@ class _NewButton extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: onTap,
-          child: const SizedBox(
+          child: SizedBox(
             height: 40,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -409,6 +428,9 @@ class _NavItem extends StatelessWidget {
     required this.active,
     required this.onTap,
     this.trailing,
+    this.groupId,
+    this.expanded,
+    this.onToggle,
   });
 
   final IconData icon;
@@ -416,6 +438,9 @@ class _NavItem extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
   final Widget? trailing;
+  final String? groupId;
+  final bool? expanded;
+  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -453,6 +478,24 @@ class _NavItem extends StatelessWidget {
                   trailing!,
                   const SizedBox(width: Space.md),
                 ],
+                if (onToggle != null)
+                  IconButton(
+                    key: ValueKey('sidebar-group-${groupId!}-toggle'),
+                    tooltip: expanded!
+                        ? 'Collapse $groupId items'
+                        : 'Expand $groupId items',
+                    onPressed: onToggle,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                    icon: Icon(
+                      expanded! ? Icons.expand_more : Icons.chevron_right,
+                      size: 18,
+                      color: AppColors.textFaint,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -526,7 +569,7 @@ class _CanvasList extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(left: 21, top: 2, bottom: 4),
       padding: const EdgeInsets.only(left: Space.md),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(left: BorderSide(color: AppColors.border)),
       ),
       child: Column(
@@ -587,7 +630,7 @@ class _CanvasList extends StatelessWidget {
           InkWell(
             borderRadius: BorderRadius.circular(6),
             onTap: () => state.createCanvas(),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 7),
               child: Row(
                 children: [
@@ -682,7 +725,7 @@ class _RecentNotes extends StatelessWidget {
       key: const ValueKey('sidebar-recent-notes'),
       margin: const EdgeInsets.only(left: 21, top: 2, bottom: 4),
       padding: const EdgeInsets.only(left: Space.md),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(left: BorderSide(color: AppColors.border)),
       ),
       child: Column(
@@ -708,7 +751,7 @@ class _RecentNotes extends StatelessWidget {
                       note.displayTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         color: AppColors.textMuted,
                       ),
@@ -745,7 +788,7 @@ class SidebarQuote extends StatelessWidget {
           key: const ValueKey('sidebar-quote-compact'),
           message: text,
           triggerMode: TooltipTriggerMode.tap,
-          child: const Padding(
+          child: Padding(
             padding: EdgeInsets.all(10),
             child: Icon(
               Icons.format_quote,
@@ -760,14 +803,14 @@ class SidebarQuote extends StatelessWidget {
         key: const ValueKey('motivational-quote'),
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           border: Border(top: BorderSide(color: AppColors.border)),
         ),
         child: Text(
           text,
           maxLines: 4,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.textMuted,
             fontSize: 12,
             height: 1.4,

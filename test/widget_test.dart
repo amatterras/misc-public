@@ -14,6 +14,7 @@ import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/calendar/calendar_page.dart';
 import 'package:flutter_application_1/features/canvas/canvas_page.dart';
+import 'package:flutter_application_1/features/canvas/canvas_controller.dart';
 import 'package:flutter_application_1/features/capture/capture_dialog.dart';
 import 'package:flutter_application_1/features/motivation/motivation_service.dart';
 import 'package:flutter_application_1/features/search/search_dialog.dart';
@@ -314,6 +315,8 @@ void main() {
   ) async {
     addTearDown(tester.view.reset);
     final s = await boot(tester, dir);
+    tester.view.physicalSize = const Size(1700, 1900);
+    await tester.pump();
     final start = s.calendarStart;
     final ws = s.workspace;
     final e = CalendarEntry(
@@ -349,14 +352,14 @@ void main() {
       kind: PointerDeviceKind.mouse,
     );
     await tester.pump(const Duration(milliseconds: 50));
-    for (var i = 1; i <= 10; i++) {
-      await gesture.moveBy(Offset(0, CalendarPage.cellHeight / 10));
-      await tester.pump(const Duration(milliseconds: 16));
-    }
+    final destination = find.byKey(
+      ValueKey('calendar-cell-${dayKey(addDays(start, 7))}'),
+    );
+    await gesture.moveTo(tester.getCenter(destination));
     await gesture.up();
     await tester.pump();
     final moved = ws.entries[e.id]!;
-    expect(dayKey(moved.startDate!), dayKey(addDays(start, 8)));
+    expect(dayKey(moved.startDate!), dayKey(addDays(start, 7)));
     expect(ws.entries.length, 1);
     // The drop's result (with Undo) stays a few seconds.
     await tester.pump(const Duration(seconds: 9));
@@ -371,6 +374,107 @@ void main() {
     );
     await shutDown(tester, s);
   });
+
+  testWidgets('single pen tap selects tool; double tap unfolds shared colors', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    final s = await boot(tester, dir);
+    s.goTo(AppPage.canvas);
+    await settle(tester);
+    s.canvas!.tool = CanvasTool.pen;
+    await tester.pump();
+    expect(find.byKey(const ValueKey('context-bar-collapse')), findsOneWidget);
+    final pen = find.byTooltip('Draw  (P)');
+    await tester.tap(pen);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('context-bar-collapse')));
+    await tester.pump();
+    expect(s.canvasOptionsCollapsed, isTrue);
+
+    await tester.tap(pen);
+    await tester.pump();
+    expect(s.canvas!.tool, CanvasTool.pen);
+    expect(
+      s.canvasOptionsCollapsed,
+      isTrue,
+      reason: 'a single tap keeps the existing tool action',
+    );
+
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(pen);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(pen);
+    await tester.pump();
+    expect(s.canvasOptionsCollapsed, isFalse);
+    expect(find.byTooltip('Bright Red'), findsOneWidget);
+    await shutDown(tester, s);
+  });
+
+  testWidgets(
+    'calendar chips expose habit-only check-off and exact reading page',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      final s = await boot(tester, dir);
+      final day = s.calendarStart;
+      final habit = CalendarEntry(
+        id: 'walk-at-830',
+        category: CalendarCategory.habits,
+        name: 'Morning walk',
+        createdAt: day,
+        updatedAt: day,
+        startDate: day,
+        endDate: day,
+        startMinutes: 8 * 60 + 30,
+      );
+      s.workspace.saveEntry(habit);
+      s.workspace.createTask('Ordinary task', dueDate: day);
+
+      final plan = CalendarEntry(
+        id: 'book-plan',
+        category: CalendarCategory.reading,
+        name: 'Plan book',
+        createdAt: day,
+        updatedAt: day,
+        readingPlanStartDate: day,
+        readingPlanEndDate: day,
+      );
+      s.workspace.saveReadingPlan(plan);
+      final dailyId = '${plan.id}/${dayKey(day)}';
+      s.workspace.saveEntry(
+        s.workspace.entries[dailyId]!.copyWith(notes: 'Exact day notes'),
+      );
+
+      s.goTo(AppPage.calendar);
+      await settle(tester);
+      expect(find.text('08:30'), findsOneWidget);
+      expect(
+        find.byIcon(Icons.check_box_outline_blank),
+        findsOneWidget,
+        reason: 'only the habit has a calendar-cell checkbox',
+      );
+      final check = find.bySemanticsLabel(
+        RegExp(r'Mark Morning walk complete on'),
+      );
+      expect(check, findsOneWidget);
+      await tester.tap(check);
+      await tester.pump();
+      expect(s.workspace.entries[habit.id]!.isCheckedOn(day), isTrue);
+      expect(
+        s.workspace.entries[habit.id]!.isCheckedOn(addDays(day, 1)),
+        isFalse,
+      );
+
+      final pageLabel = '${plan.name} · ${dayKey(day)}';
+      await tester.tap(find.text(pageLabel));
+      await tester.pump();
+      final notesField = tester.widget<TextField>(find.byType(TextField).last);
+      expect(notesField.controller!.text, 'Exact day notes');
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+      await shutDown(tester, s);
+    },
+  );
 
   testWidgets('calendar: the sixth active entry is refused in the UI', (
     tester,

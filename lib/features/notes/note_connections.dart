@@ -24,14 +24,13 @@ class NoteConnections extends StatelessWidget {
   final Note note;
   final ValueChanged<String> onOpenNote;
 
-  static const _heading = TextStyle(
-    fontSize: 11,
-    letterSpacing: 0.6,
-    color: AppColors.textFaint,
-  );
-
   @override
   Widget build(BuildContext context) {
+    final heading = TextStyle(
+      fontSize: 11,
+      letterSpacing: 0.6,
+      color: AppColors.textFaint,
+    );
     final ws = state.workspace;
     final tasks = ws.tasksForNote(note.id);
     final projects = ws.projects.all.where((p) => !p.archived).toList()
@@ -42,7 +41,7 @@ class NoteConnections extends StatelessWidget {
       key: const ValueKey('note-connections'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('CONNECTIONS', style: _heading),
+        Text('CONNECTIONS', style: heading),
         const SizedBox(height: Space.sm),
         Wrap(
           spacing: 6,

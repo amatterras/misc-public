@@ -102,11 +102,11 @@ the current state first). There is no "reset" or "clear data" path.
 | Change in the next update | Existing data | How it is kept |
 |---|---|---|
 | Reading editor drops author / highlights / quotes | `author`, `highlights` fields; `quotes` (unknown field) | Kept in the record **and** in `legacyReading` (versioned); exported in backups; syncs as a normal field. The editor must not show them. |
-| Dated daily Reading entries | `readingLog` (day → pages) on the Reading record | Keep `readingLog` as the source; new per-day records must take their ids from `<entryId>/<dayKey>` so a re-run cannot duplicate a day |
+| Dated daily Reading plans | `readingLog` (day → pages) and legacy book records remain unchanged; plan fields are optional additive JSON fields | Separate day pages use `<entryId>/<dayKey>` IDs, with date-only local fields; missing fields default safely. Removed dates are detached, never deleted. |
 | Habit times | `startMinutes` (null = untimed) | Untimed habits stay untimed: `CalendarEntry.needsTimeConfiguration` is true until the user picks a time. No time is invented. |
 | Occurrence-level checkboxes | `checkoffs` (set of day keys) | The completion history is the set of day keys; occurrence records must be keyed `<entryId>/<dayKey>` and derived from it, never replacing it until verified. Completions outside the current schedule are kept (integrity check reports them) |
 | Extended Archive metadata | `assets` (url, title, tags, folder, preview, file hashes) | New fields are additive; unknown-field preservation keeps them on older devices; the original `url` is never rewritten |
-| Colour/theme values | ARGB in items and tags; no theme setting yet | New settings must default to today's look; existing colours are only changed by a versioned step (as canonical colour migration v1 was) |
+| Colour/theme values | ARGB in items and tags; `themeMode` is an optional local setting | Defaults to dark; light/system changes semantic rendering only and never rewrite stored drawing colors. |
 
 ### Fixed while building this (2026-10-25)
 

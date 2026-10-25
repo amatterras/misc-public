@@ -129,7 +129,7 @@ Future<ContentTemplate?> pickTemplate(
                   ? 'None yet. Open a note and choose "Save as a template".'
                   : 'None yet. Right-click a project in Tasks and choose '
                         '"Save as a template".',
-              style: const TextStyle(color: AppColors.textFaint),
+              style: TextStyle(color: AppColors.textFaint),
             ),
           ),
         for (final t in list)

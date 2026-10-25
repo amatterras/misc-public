@@ -8,7 +8,7 @@ import '../../platform/input_hints.dart';
 import '../ink/pen_sizes.dart';
 import 'canvas_controller.dart';
 
-const _canvasFormatColors = [
+List<Color> get _canvasFormatColors => [
   AppColors.text,
   AppColors.textMuted,
   AppColors.accent,
@@ -34,6 +34,7 @@ class CanvasToolbar extends StatelessWidget {
     required this.onAddLink,
     this.onAddDocument,
     this.onMore,
+    this.onPenDoubleTap,
   });
 
   final CanvasController controller;
@@ -44,15 +45,22 @@ class CanvasToolbar extends StatelessWidget {
   /// Opens the canvas menu (versions, components, links to mindmaps);
   /// on Windows it is also on right-click.
   final ValueChanged<Offset>? onMore;
+  final VoidCallback? onPenDoubleTap;
 
   @override
   Widget build(BuildContext context) {
     final tool = controller.tool;
-    Widget toolButton(CanvasTool t, Widget icon, String label) => ToolButton(
+    Widget toolButton(
+      CanvasTool t,
+      Widget icon,
+      String label, {
+      VoidCallback? onDoubleTap,
+    }) => ToolButton(
       icon: icon,
       tooltip: label,
       active: tool == t,
       onPressed: () => controller.tool = t,
+      onDoubleTap: onDoubleTap,
     );
 
     return Column(
@@ -84,6 +92,7 @@ class CanvasToolbar extends StatelessWidget {
               CanvasTool.pen,
               const Icon(Icons.draw_outlined, size: 18),
               'Draw  (P)',
+              onDoubleTap: onPenDoubleTap,
             ),
             toolButton(
               CanvasTool.highlighter,
@@ -195,8 +204,6 @@ class CanvasContextBar extends StatelessWidget {
   /// Keeps the chosen pen thickness for next time (else this canvas only).
   final void Function(CanvasController c, double width)? onPenWidth;
 
-  static const _penColors = InkColors.all;
-  static const _highlighterColors = InkColors.all;
   static const _highlighterWidths = [12.0, 18.0, 26.0, 36.0];
   static const _fontSizes = {'S': 13.0, 'M': 16.0, 'L': 22.0, 'XL': 32.0};
 
@@ -204,15 +211,25 @@ class CanvasContextBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final panel = _panel(context);
+    final width = MediaQuery.sizeOf(context).width;
+    final usable = width < 900
+        ? SizedBox(
+            width: width - 64,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Align(alignment: Alignment.centerLeft, child: panel),
+            ),
+          )
+        : panel;
     final toggle = onToggleCollapsed;
-    if (toggle == null || panel is SizedBox) return panel;
+    if (toggle == null || panel is SizedBox) return usable;
     return CollapsibleBar(
       collapsed: collapsed,
       onToggle: toggle,
       vertical: false,
       what: 'colours and options',
       handleKey: const ValueKey('context-bar-collapse'),
-      child: panel,
+      child: usable,
     );
   }
 
@@ -222,11 +239,12 @@ class CanvasContextBar extends StatelessWidget {
       return ToolPanel(
         horizontal: true,
         children: [
-          for (final color in _penColors)
+          for (final swatch in InkColors.library)
             _Swatch(
-              color: color,
-              active: c.penColor == color,
-              onTap: () => c.setPen(color: color),
+              color: swatch.color,
+              label: swatch.name,
+              active: c.penColor == swatch.color,
+              onTap: () => c.setPen(color: swatch.color),
             ),
           const _PanelDivider(vertical: true),
           for (final width in penSizes)
@@ -240,7 +258,7 @@ class CanvasContextBar extends StatelessWidget {
               icon: Container(
                 width: (width + 2).clamp(2.5, 20.0),
                 height: (width + 2).clamp(2.5, 20.0),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: AppColors.text,
                   shape: BoxShape.circle,
                 ),
@@ -266,11 +284,12 @@ class CanvasContextBar extends StatelessWidget {
       return ToolPanel(
         horizontal: true,
         children: [
-          for (final color in _highlighterColors)
+          for (final swatch in InkColors.library)
             _Swatch(
-              color: color,
-              active: c.highlighterColor == color,
-              onTap: () => c.setHighlighter(color: color),
+              color: swatch.color,
+              label: swatch.name,
+              active: c.highlighterColor == swatch.color,
+              onTap: () => c.setHighlighter(color: swatch.color),
             ),
           const _PanelDivider(vertical: true),
           for (final width in _highlighterWidths)
@@ -360,6 +379,7 @@ class CanvasContextBar extends StatelessWidget {
             icon: Icons.format_color_text,
             current: first.textColor,
             noneLabel: 'Default',
+            onOpened: c.cancelPendingLineStraightening,
             onSelected: (color) => c.updateSelectedTexts(
               (t) => t.copyWith(textColor: () => color),
             ),
@@ -369,6 +389,7 @@ class CanvasContextBar extends StatelessWidget {
             icon: Icons.format_color_fill,
             current: first.background,
             noneLabel: 'None',
+            onOpened: c.cancelPendingLineStraightening,
             onSelected: (color) => c.updateSelectedTexts(
               (t) => t.copyWith(background: () => color),
             ),
@@ -401,6 +422,7 @@ class CanvasContextBar extends StatelessWidget {
             key: const ValueKey('canvas-recolor'),
             tooltip: 'Recolor ink and text',
             position: PopupMenuPosition.under,
+            onOpened: c.cancelPendingLineStraightening,
             onSelected: c.recolorSelection,
             itemBuilder: (_) => [
               for (final color in InkColors.all)
@@ -410,7 +432,7 @@ class CanvasContextBar extends StatelessWidget {
                   child: Container(width: 70, height: 14, color: color),
                 ),
             ],
-            child: const SizedBox(
+            child: SizedBox(
               width: 36,
               height: 36,
               child: Icon(
@@ -424,6 +446,7 @@ class CanvasContextBar extends StatelessWidget {
           key: const ValueKey('canvas-tag'),
           tooltip: 'Tag (colored dots, glows in the minimap)',
           position: PopupMenuPosition.under,
+          onOpened: c.cancelPendingLineStraightening,
           onSelected: (i) => c.tagSelection(i < 0 ? null : i),
           itemBuilder: (_) => [
             const PopupMenuItem(value: -1, height: 30, child: Text('No tag')),
@@ -540,6 +563,7 @@ class _ColorMenu extends StatelessWidget {
     required this.icon,
     required this.current,
     required this.noneLabel,
+    required this.onOpened,
     required this.onSelected,
   });
 
@@ -547,6 +571,7 @@ class _ColorMenu extends StatelessWidget {
   final IconData icon;
   final Color? current;
   final String noneLabel;
+  final VoidCallback onOpened;
   final ValueChanged<Color?> onSelected;
 
   @override
@@ -554,6 +579,7 @@ class _ColorMenu extends StatelessWidget {
     return PopupMenuButton<int>(
       tooltip: tooltip,
       position: PopupMenuPosition.under,
+      onOpened: onOpened,
       onSelected: (i) => onSelected(i < 0 ? null : _canvasFormatColors[i]),
       itemBuilder: (_) => [
         PopupMenuItem(
@@ -561,7 +587,7 @@ class _ColorMenu extends StatelessWidget {
           height: 34,
           child: Row(
             children: [
-              const Icon(Icons.block, size: 14, color: AppColors.textFaint),
+              Icon(Icons.block, size: 14, color: AppColors.textFaint),
               const SizedBox(width: 10),
               Text(noneLabel),
             ],
@@ -633,7 +659,10 @@ class ToolPanel extends StatelessWidget {
         ],
       ),
       child: horizontal
-          ? Row(mainAxisSize: MainAxisSize.min, children: children)
+          ? SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(mainAxisSize: MainAxisSize.min, children: children),
+            )
           : Column(mainAxisSize: MainAxisSize.min, children: children),
     );
   }
@@ -662,12 +691,14 @@ class ToolButton extends StatelessWidget {
     required this.tooltip,
     required this.onPressed,
     this.active = false,
+    this.onDoubleTap,
   });
 
   final Widget icon;
   final String tooltip;
   final VoidCallback? onPressed;
   final bool active;
+  final VoidCallback? onDoubleTap;
 
   @override
   Widget build(BuildContext context) {
@@ -682,6 +713,7 @@ class ToolButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           hoverColor: AppColors.hover,
           onTap: onPressed,
+          onDoubleTap: onDoubleTap,
           child: SizedBox(
             width: 36,
             height: 36,
@@ -712,31 +744,41 @@ class ToolButton extends StatelessWidget {
 class _Swatch extends StatelessWidget {
   const _Swatch({
     required this.color,
+    required this.label,
     required this.active,
     required this.onTap,
   });
 
   final Color color;
+  final String label;
   final bool active;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.all(5),
-        child: Container(
-          width: 18,
-          height: 18,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: active ? AppColors.text : Colors.transparent,
-              width: 2,
-              strokeAlign: BorderSide.strokeAlignOutside,
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        label: 'Pen color $label',
+        selected: active,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(5),
+            child: Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: active ? AppColors.text : Colors.transparent,
+                  width: 2,
+                  strokeAlign: BorderSide.strokeAlignOutside,
+                ),
+              ),
             ),
           ),
         ),
@@ -971,14 +1013,22 @@ class CollapsibleBar extends StatelessWidget {
       alignment: vertical ? Alignment.topCenter : Alignment.centerLeft,
       child: collapsed ? const SizedBox.shrink() : child,
     );
-    return vertical
-        ? Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [handle, const SizedBox(height: 4), body],
-          )
-        : Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [body, const SizedBox(width: 4), handle],
-          );
+    if (vertical) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [handle, const SizedBox(height: 4), body],
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // During a phone-width change, AnimatedSize can still hold its old
+        // desktop width for one frame. Flex keeps that transition within
+        // the viewport while the panel itself remains horizontally scrollable.
+        Flexible(child: body),
+        const SizedBox(width: 4),
+        handle,
+      ],
+    );
   }
 }

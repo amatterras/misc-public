@@ -154,6 +154,34 @@ void main() {
       },
     );
 
+    test(
+      'habit time is local wall-clock metadata and legacy null stays null',
+      () {
+        final untimed = entry(
+          CalendarCategory.habits,
+          'Legacy walk',
+        ).copyWith(checkoffs: {'2026-10-19'});
+        expect(untimed.needsTimeConfiguration, isTrue);
+        final restored = CalendarEntry.fromJson(untimed.toJson());
+        expect(restored.startMinutes, isNull);
+        expect(restored.checkoffs, {'2026-10-19'});
+        final timed = restored.copyWith(startMinutes: () => 8 * 60 + 30);
+        expect(timed.timeLabel, '08:30');
+        expect(CalendarEntry.fromJson(timed.toJson()).timeLabel, '08:30');
+      },
+    );
+
+    test(
+      'date stepping follows local calendar dates instead of 24-hour spans',
+      () {
+        final before = DateTime(2026, 3, 28, 12, 15);
+        final after = addDays(before, 1);
+        expect(dayKey(after), '2026-03-29');
+        expect(after.isUtc, isFalse, reason: 'date math stays in local time');
+        expect(daysBetween(before, after), 1);
+      },
+    );
+
     test('dragging moves events (keeping length) and other-entry dates', () {
       final ev = entry(
         CalendarCategory.events,
@@ -193,6 +221,97 @@ void main() {
       expect(ws.itemsOn(DateTime(2026, 10, 20)), hasLength(1));
       expect(ws.itemsOn(DateTime(2026, 10, 21)), isEmpty);
     });
+
+    test(
+      'reading plans materialize stable inclusive daily pages safely',
+      () async {
+        final series = entry(CalendarCategory.reading, 'The Book').copyWith(
+          readingPlanStartDate: () => DateTime(2026, 2, 27),
+          readingPlanEndDate: () => DateTime(2026, 3, 2),
+        );
+        ws.saveReadingPlan(series);
+        final ids = [
+          for (
+            var day = DateTime(2026, 2, 27);
+            daysBetween(day, DateTime(2026, 3, 2)) >= 0;
+            day = addDays(day, 1)
+          )
+            '${series.id}/${dayKey(day)}',
+        ];
+        expect(ids, hasLength(4));
+        expect(ids.toSet(), hasLength(4));
+        expect(ws.itemsOn(DateTime(2026, 3, 2)).single, isA<EntryOnDay>());
+        expect(
+          (ws.itemsOn(DateTime(2026, 3, 2)).single as EntryOnDay).entry.id,
+          ids.last,
+        );
+        expect(ws.activeCount(CalendarCategory.reading), 1);
+
+        final day12 = ws.entries[ids[1]]!.copyWith(notes: 'Only page two');
+        ws.saveEntry(day12);
+        ws.saveReadingPlan(series);
+        expect(ws.entries[ids[1]]!.notes, 'Only page two');
+        expect(ws.entries[ids[2]]!.notes, isEmpty);
+        expect(
+          ws.entries.all.where((e) => e.readingPlanId == series.id),
+          hasLength(4),
+        );
+
+        // A changed range reuses matching IDs, adds missing dates, and detaches
+        // removed user-authored pages without clearing their notes.
+        ws.saveReadingPlan(
+          series.copyWith(
+            readingPlanStartDate: () => DateTime(2026, 2, 28),
+            readingPlanEndDate: () => DateTime(2026, 3, 3),
+          ),
+        );
+        expect(ws.entries[ids.first]!.readingPlanDetached, isTrue);
+        expect(ws.entries[ids.first]!.notes, isEmpty);
+        expect(ws.entries[ids[1]]!.notes, 'Only page two');
+        expect(ws.entries['${series.id}/2026-03-03'], isNotNull);
+        expect(ws.itemsOn(DateTime(2026, 2, 27)), isEmpty);
+
+        final again = await reopen();
+        expect(again.entries['${series.id}/2026-03-03'], isNotNull);
+        expect(again.entries[ids[1]]!.notes, 'Only page two');
+        expect(
+          again.entries.all.where((e) => e.readingPlanId == series.id),
+          hasLength(5),
+        );
+        again.dispose();
+      },
+    );
+
+    test('reversed reading plan writes no parent or partial pages', () {
+      final invalid = entry(CalendarCategory.reading, 'Invalid').copyWith(
+        readingPlanStartDate: () => DateTime(2026, 3, 2),
+        readingPlanEndDate: () => DateTime(2026, 2, 27),
+      );
+      expect(() => ws.saveReadingPlan(invalid), throwsArgumentError);
+      expect(ws.entries[invalid.id], isNull);
+      expect(
+        ws.entries.all.where((e) => e.readingPlanId == invalid.id),
+        isEmpty,
+      );
+    });
+
+    test(
+      'calendar-date iteration includes leap day without fixed durations',
+      () {
+        final series = entry(CalendarCategory.reading, 'Leap').copyWith(
+          readingPlanStartDate: () => DateTime(2024, 2, 28),
+          readingPlanEndDate: () => DateTime(2024, 3, 1),
+        );
+        ws.saveReadingPlan(series);
+        expect(ws.entries['${series.id}/2024-02-28'], isNotNull);
+        expect(ws.entries['${series.id}/2024-02-29'], isNotNull);
+        expect(ws.entries['${series.id}/2024-03-01'], isNotNull);
+        expect(
+          ws.entries.all.where((e) => e.readingPlanId == series.id),
+          hasLength(3),
+        );
+      },
+    );
 
     test(
       'tasks with a due date appear on the calendar as the original record',

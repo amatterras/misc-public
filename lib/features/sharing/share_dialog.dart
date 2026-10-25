@@ -128,7 +128,7 @@ class _ShareDialogState extends State<_ShareDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'A read-only copy of it as it is now, served by your own hub. '
               'Anyone with the link who can reach your hub can read it: '
               'normally that is your home network only, unless you made '
@@ -173,7 +173,7 @@ class _ShareDialogState extends State<_ShareDialog> {
                 style: const TextStyle(fontSize: 12),
               ),
               const SizedBox(height: Space.xs),
-              const Text(
+              Text(
                 'It works after the next sync. Revoke it any time in '
                 'Settings → Sharing → Shared links.',
                 style: TextStyle(fontSize: 11, color: AppColors.textFaint),
@@ -232,7 +232,7 @@ Future<void> showSharedLinks(BuildContext context, AppState s) =>
               width: 480,
               height: 360,
               child: list.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text(
                         'Nothing is shared.',
                         style: TextStyle(color: AppColors.textFaint),

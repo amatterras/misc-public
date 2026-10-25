@@ -96,6 +96,8 @@ class TextItem extends BoxItem {
     this.align = TextAlignment.left,
     this.textColor,
     this.background,
+    this.sourceNoteId,
+    this.sourceNoteTitle,
   });
 
   static const double defaultWidth = 260;
@@ -113,6 +115,11 @@ class TextItem extends BoxItem {
   /// Null means no card behind the text.
   final Color? background;
 
+  /// Stable source context for text brought in from a note. This points to
+  /// the original record; the text box remains an independent THEapp item.
+  final String? sourceNoteId;
+  final String? sourceNoteTitle;
+
   TextItem copyWith({
     Offset? position,
     double? width,
@@ -124,6 +131,8 @@ class TextItem extends BoxItem {
     TextAlignment? align,
     Color? Function()? textColor,
     Color? Function()? background,
+    String? Function()? sourceNoteId,
+    String? Function()? sourceNoteTitle,
   }) {
     return TextItem(
       id: id,
@@ -137,6 +146,10 @@ class TextItem extends BoxItem {
       align: align ?? this.align,
       textColor: textColor != null ? textColor() : this.textColor,
       background: background != null ? background() : this.background,
+      sourceNoteId: sourceNoteId != null ? sourceNoteId() : this.sourceNoteId,
+      sourceNoteTitle: sourceNoteTitle != null
+          ? sourceNoteTitle()
+          : this.sourceNoteTitle,
     );
   }
 
@@ -160,6 +173,8 @@ class TextItem extends BoxItem {
     align: align,
     textColor: textColor,
     background: background,
+    sourceNoteId: sourceNoteId,
+    sourceNoteTitle: sourceNoteTitle,
   );
 
   @override
@@ -177,6 +192,8 @@ class TextItem extends BoxItem {
     if (align != TextAlignment.left) 'align': align.name,
     if (textColor != null) 'textColor': textColor!.toARGB32(),
     if (background != null) 'background': background!.toARGB32(),
+    if (sourceNoteId != null) 'sourceNoteId': sourceNoteId,
+    if (sourceNoteTitle != null) 'sourceNoteTitle': sourceNoteTitle,
   };
 
   factory TextItem.fromJson(Map<String, dynamic> json) => TextItem(
@@ -198,6 +215,8 @@ class TextItem extends BoxItem {
     background: json['background'] == null
         ? null
         : Color(json['background'] as int),
+    sourceNoteId: json['sourceNoteId'] as String?,
+    sourceNoteTitle: json['sourceNoteTitle'] as String?,
   );
 }
 

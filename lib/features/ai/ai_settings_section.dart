@@ -68,7 +68,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
               ? const Center(child: Text('Nothing has been sent.'))
               : ListView(
                   children: [
-                    const Text(
+                    Text(
                       'Only a record of each request is kept here (on this '
                       'device), not what was in it.',
                       style: TextStyle(
@@ -138,7 +138,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
 
   @override
   Widget build(BuildContext context) {
-    const small = TextStyle(fontSize: 12, color: AppColors.textFaint);
+    final small = TextStyle(fontSize: 12, color: AppColors.textFaint);
     return Column(
       key: const ValueKey('ai-settings'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,14 +149,14 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
           value: ai.enabled,
           onChanged: (v) => _change(() => ai.setEnabled(v)),
           title: const Text('Use AI', style: TextStyle(fontSize: 14)),
-          subtitle: const Text(
+          subtitle: Text(
             'Off: nothing is ever sent. On: still only what you attach and '
             'send yourself from the AI window.',
             style: small,
           ),
         ),
         if (ai.enabled) ...[
-          const Text(
+          Text(
             'Free: install Ollama on this PC and a model (e.g. llama3.2); '
             'THEapp talks to it on this PC only. A ChatGPT subscription does '
             'not include API access — the OpenAI option needs a separate '
@@ -186,7 +186,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
             onChanged: (v) => _change(() => ai.setEndpoint(v)),
           ),
           if (!ai.isLocal)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 4),
               child: Text(
                 'This address is not this PC: what you send leaves the PC. '
@@ -205,7 +205,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 warning,
-                style: const TextStyle(fontSize: 12, color: AppColors.warm),
+                style: TextStyle(fontSize: 12, color: AppColors.warm),
               ),
             ),
           const SizedBox(height: Space.sm),
@@ -223,7 +223,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
             onChanged: (v) => ai.setWorkingRules(v),
           ),
           if (ai.provider == AiProvider.gemini)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 4),
               child: Text(
                 'Get a key at aistudio.google.com (Google may charge for use '
@@ -296,10 +296,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
               style: TextStyle(fontSize: 13),
             ),
           ),
-          const Text(
-            'Content the AI may be given:',
-            style: TextStyle(fontSize: 13),
-          ),
+          Text('Content the AI may be given:', style: TextStyle(fontSize: 13)),
           for (final source in AiSource.values)
             CheckboxListTile(
               dense: true,

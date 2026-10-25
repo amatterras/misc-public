@@ -52,7 +52,7 @@ class TagChip extends StatelessWidget {
 }
 
 /// Colours offered for tags: the app's ink colours (the existing picker).
-const tagPalette = InkColors.all;
+final tagPalette = InkColors.all;
 
 /// Chooses custom tags for [what] (e.g. "2 items"). Starts with
 /// [selected] ticked; returns the chosen ids, or null when cancelled
@@ -177,7 +177,7 @@ class _TagPickerState extends State<_TagPicker> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (tags.isEmpty)
-                const Text(
+                Text(
                   'No tags yet. Make one below.',
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
@@ -205,7 +205,7 @@ class _TagPickerState extends State<_TagPicker> {
                 ],
               ),
               if (tags.isNotEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(top: 4),
                   child: Text(
                     'Right-click or press and hold a tag to rename, recolour '
@@ -242,7 +242,7 @@ class _TagPickerState extends State<_TagPicker> {
                 Text(
                   _problem!,
                   key: const ValueKey('tag-problem'),
-                  style: const TextStyle(fontSize: 12, color: AppColors.warm),
+                  style: TextStyle(fontSize: 12, color: AppColors.warm),
                 ),
             ],
           ),

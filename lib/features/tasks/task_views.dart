@@ -100,7 +100,7 @@ class TaskBoardView extends StatelessWidget {
                         BoardColumn.doing => 'In progress',
                         BoardColumn.done => 'Done',
                       },
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textMuted,
@@ -168,10 +168,7 @@ class _BoardCard extends StatelessWidget {
                   if (task.dueDate != null) formatShortDate(task.dueDate!),
                   ...task.labels,
                 ].join('  ·  '),
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textFaint,
-                ),
+                style: TextStyle(fontSize: 11, color: AppColors.textFaint),
               ),
             ),
         ],
@@ -309,7 +306,7 @@ class _TaskTableViewState extends State<TaskTableView> {
                 key: const ValueKey('task-table'),
                 sortColumnIndex: _column.index,
                 sortAscending: _ascending,
-                headingTextStyle: const TextStyle(
+                headingTextStyle: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textMuted,
@@ -410,7 +407,7 @@ class TaskGanttView extends StatelessWidget {
         if (ganttSpan(t) != null) t,
     ]..sort((a, b) => ganttSpan(a)!.start.compareTo(ganttSpan(b)!.start));
     if (dated.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No tasks with dates here. Give tasks a due date (and a start '
           'date) to see them on the timeline.',
@@ -449,7 +446,7 @@ class TaskGanttView extends StatelessWidget {
                       final done = all.where((t) => t.done).length;
                       return Text(
                         '${p.name}: $done/${all.length} done',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: AppColors.textMuted,
                         ),
@@ -481,7 +478,7 @@ class TaskGanttView extends StatelessWidget {
                             color: daysBetween(addDays(first, i), today) == 0
                                 ? AppColors.accent.withValues(alpha: 0.12)
                                 : null,
-                            border: const Border(
+                            border: Border(
                               left: BorderSide(color: AppColors.border),
                             ),
                           ),
@@ -489,7 +486,7 @@ class TaskGanttView extends StatelessWidget {
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
                             '${addDays(first, i).day}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 10,
                               color: AppColors.textFaint,
                             ),
@@ -528,7 +525,7 @@ class TaskGanttView extends StatelessWidget {
             if (waiting.isNotEmpty)
               Tooltip(
                 message: 'Waits for: ${waiting.map((w) => w.title).join(', ')}',
-                child: const Icon(Icons.link, size: 14, color: AppColors.warm),
+                child: Icon(Icons.link, size: 14, color: AppColors.warm),
               ),
             Expanded(
               child: Text(

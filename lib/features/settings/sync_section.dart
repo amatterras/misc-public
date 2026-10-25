@@ -104,10 +104,7 @@ class _SyncSectionState extends State<SyncSection> {
                   padding: const EdgeInsets.only(bottom: Space.sm),
                   child: Text(
                     s.syncStatus,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.danger,
-                    ),
+                    style: TextStyle(fontSize: 13, color: AppColors.danger),
                   ),
                 ),
               _ConnectGuide(mobile: mobile),
@@ -187,7 +184,7 @@ class _SyncSectionState extends State<SyncSection> {
                       isAllowedHubUrl(uri) &&
                       !isEncryptedHubRoute(uri);
                   if (!unencrypted) return const SizedBox.shrink();
-                  return const Padding(
+                  return Padding(
                     key: ValueKey('unencrypted-warning'),
                     padding: EdgeInsets.only(top: 6),
                     child: Text(
@@ -206,10 +203,7 @@ class _SyncSectionState extends State<SyncSection> {
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
                     _error!,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.danger,
-                    ),
+                    style: TextStyle(fontSize: 12, color: AppColors.danger),
                   ),
                 ),
             ],
@@ -227,7 +221,7 @@ class _SyncSectionState extends State<SyncSection> {
             ),
             Text(
               'Hub: ${s.hubUrl}',
-              style: const TextStyle(fontSize: 12, color: AppColors.textFaint),
+              style: TextStyle(fontSize: 12, color: AppColors.textFaint),
             ),
             if (s.maintenance case final m?)
               MaintenanceStatusView(state: s, m: m),
@@ -254,7 +248,7 @@ class _SyncSectionState extends State<SyncSection> {
                   'Sync between devices',
                   style: TextStyle(fontSize: 14),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'Off pauses syncing on every device. Nothing is deleted: '
                   'changes are kept and sync when it is turned back on.',
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
@@ -296,7 +290,7 @@ class _SyncSectionState extends State<SyncSection> {
             ),
             if (_shownCode != null) SelectableText(_shownCode!),
             if (_error != null)
-              Text(_error!, style: const TextStyle(color: AppColors.danger)),
+              Text(_error!, style: TextStyle(color: AppColors.danger)),
           ],
         );
       },
@@ -329,7 +323,7 @@ Future<void> showConflictsDialog(BuildContext context, AppState state) {
             width: 560,
             height: 420,
             child: list.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
                       'No conflicts.',
                       style: TextStyle(color: AppColors.textFaint),
@@ -348,7 +342,7 @@ Future<void> showConflictsDialog(BuildContext context, AppState state) {
                           subtitle: Text(
                             '${_reasons[c.reason] ?? c.reason} · other version: '
                             '${c.otherDeleted ? 'deleted' : 'kept here'}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               color: AppColors.textFaint,
                             ),
@@ -455,10 +449,7 @@ class _ConnectGuide extends StatelessWidget {
                         TextSpan(text: text),
                       ],
                     ),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textMuted,
-                    ),
+                    style: TextStyle(fontSize: 13, color: AppColors.textMuted),
                   ),
                 ),
               ],
@@ -503,7 +494,7 @@ class _HostedFormState extends State<_HostedForm> {
       'Or use a hosted sync service',
       style: TextStyle(fontSize: 13),
     ),
-    subtitle: const Text(
+    subtitle: Text(
       'A server run for you (e.g. one you deployed from deploy/hosted). '
       'Your data is stored there; THEapp keeps working offline.',
       style: TextStyle(fontSize: 11, color: AppColors.textFaint),
@@ -536,7 +527,7 @@ class _HostedFormState extends State<_HostedForm> {
           padding: const EdgeInsets.only(top: 4),
           child: Text(
             _error!,
-            style: const TextStyle(fontSize: 12, color: AppColors.danger),
+            style: TextStyle(fontSize: 12, color: AppColors.danger),
           ),
         ),
       Align(
@@ -598,7 +589,7 @@ class MaintenanceStatusView extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: m,
     builder: (context, _) {
-      const small = TextStyle(fontSize: 12, color: AppColors.textMuted);
+      final small = TextStyle(fontSize: 12, color: AppColors.textMuted);
       final host = state.hubHost;
       final failing = [
         for (final j in m.jobs)
@@ -634,7 +625,7 @@ class MaintenanceStatusView extends StatelessWidget {
               Text(
                 '${j.label ?? j.name} failed at ${_time(j.lastErrorAt)}: '
                 '${j.lastError} — retrying every 10 s',
-                style: const TextStyle(fontSize: 12, color: AppColors.warm),
+                style: TextStyle(fontSize: 12, color: AppColors.warm),
               ),
           ],
         ),

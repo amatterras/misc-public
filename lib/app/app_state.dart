@@ -220,6 +220,13 @@ class AppState extends ChangeNotifier {
 
   /// Short message shown at the bottom of the window.
   final ValueNotifier<String?> toast = ValueNotifier(null);
+  final ValueNotifier<String> themeModePreference = ValueNotifier('dark');
+
+  Future<void> setThemeMode(String mode) async {
+    if (!const {'system', 'light', 'dark'}.contains(mode)) return;
+    await settings.set('themeMode', mode);
+    themeModePreference.value = mode;
+  }
 
   /// Opens the data and starts the background services. [onStep] is told
   /// which step is running, for the start-up screen and the log.
@@ -236,6 +243,7 @@ class AppState extends ChangeNotifier {
     };
     step('Loading settings');
     await settings.load();
+    themeModePreference.value = settings.get<String>('themeMode') ?? 'dark';
     step('Loading your data');
     await workspace.load();
     _sidebarCollapsed = settings.get<bool>('sidebarCollapsed') ?? false;
@@ -1647,6 +1655,22 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Expanded/collapsed state for navigation groups lives in local settings,
+  /// never in the notes or canvas records those rows point to.
+  bool sidebarGroupExpanded(String group) {
+    final saved = settings.get<Map<String, dynamic>>('sidebarGroupExpanded');
+    return saved?[group] as bool? ?? true;
+  }
+
+  void toggleSidebarGroup(String group) {
+    final saved = <String, dynamic>{
+      ...?settings.get<Map<String, dynamic>>('sidebarGroupExpanded'),
+    };
+    saved[group] = !sidebarGroupExpanded(group);
+    unawaited(settings.set('sidebarGroupExpanded', saved));
+    notifyListeners();
+  }
+
   /// Keeps THEapp's window above other windows (Windows only; a setting
   /// of this device). Never touches a real window during `flutter test`.
   bool get alwaysOnTop => settings.get<bool>('alwaysOnTop') ?? false;
@@ -2353,7 +2377,22 @@ class AppState extends ChangeNotifier {
         } else {
           showToast('That note no longer exists.');
         }
-      case TextItem() || ImageItem() || StrokeItem() || ConnectorItem():
+      case ImageItem():
+        if (workspace.assets.contains(item.assetId)) {
+          openArchiveItem(assetId: item.assetId);
+        } else {
+          showToast('That image reference no longer exists.');
+        }
+      case TextItem(:final sourceNoteId?, :final sourceNoteTitle)
+          when sourceNoteId.isNotEmpty:
+        if (workspace.notes.contains(sourceNoteId)) {
+          openNote(sourceNoteId);
+        } else {
+          showToast(
+            'The original note “${sourceNoteTitle ?? sourceNoteId}” is no longer available.',
+          );
+        }
+      case TextItem() || StrokeItem() || ConnectorItem():
         break;
     }
   }
@@ -2900,6 +2939,7 @@ class AppState extends ChangeNotifier {
     workspace.tasks.removeListener(checkReminders);
     _sync?.client.close();
     sendTo.dispose();
+    themeModePreference.dispose();
     timer.dispose();
     _canvas?.dispose();
     _links?.dispose();

@@ -98,10 +98,7 @@ Future<String?> convertSelection(
                   details,
                   maxLines: 6,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textMuted,
-                  ),
+                  style: TextStyle(fontSize: 13, color: AppColors.textMuted),
                 ),
               ],
               const SizedBox(height: Space.md),
@@ -118,26 +115,20 @@ Future<String?> convertSelection(
                   ],
                   onChanged: (v) => setState(() => parentId = v),
                 ),
-              Text(
-                switch (target) {
-                  ConversionTarget.task ||
-                  ConversionTarget.subtask => 'It will be linked to this note.',
-                  ConversionTarget.project =>
-                    'This note will be added to the project.',
-                  ConversionTarget.note =>
-                    'A new note; this note keeps its text.',
-                },
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textFaint,
-                ),
-              ),
+              Text(switch (target) {
+                ConversionTarget.task ||
+                ConversionTarget.subtask => 'It will be linked to this note.',
+                ConversionTarget.project =>
+                  'This note will be added to the project.',
+                ConversionTarget.note =>
+                  'A new note; this note keeps its text.',
+              }, style: TextStyle(fontSize: 12, color: AppColors.textFaint)),
               if (duplicate) ...[
                 const SizedBox(height: Space.sm),
                 Text(
                   'A ${target == ConversionTarget.subtask ? 'task' : target.label.toLowerCase()} '
                   'with this name already exists.',
-                  style: const TextStyle(fontSize: 13, color: AppColors.warm),
+                  style: TextStyle(fontSize: 13, color: AppColors.warm),
                 ),
               ],
             ],

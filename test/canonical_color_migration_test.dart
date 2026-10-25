@@ -136,6 +136,7 @@ void main() {
         0xFF793BE8,
         0xFFF2D84A,
         0xFF176B4D,
+        0xFFFF3B30,
       ]);
       expect(inkColorNames, [
         'Pearl',
@@ -156,7 +157,14 @@ void main() {
         'Ultraviolet',
         'Electric Gold',
         'Deep Pine',
+        'Bright Red',
       ]);
+      expect(InkColors.library.map((s) => s.id).toSet().length, 19);
+      expect(
+        InkColors.library.where((s) => s.color == const Color(0xFFFF3B30)),
+        hasLength(1),
+      );
+      expect(InkColors.byId('bright-red')?.color, InkColors.brightRed);
       expect(CanvasTagColors.selected.map(hex), [
         0xFFB5E1DF,
         0xFF15563F,

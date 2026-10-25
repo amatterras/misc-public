@@ -237,7 +237,7 @@ class _GraphViewState extends State<GraphView> {
     final g = _g;
     if (g == null) return const Center(child: CircularProgressIndicator());
     if (g.nodes.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'Nothing is linked yet: link notes with [[Title]], attach things '
           'or put cards on a mindmap.',
@@ -366,7 +366,7 @@ class _GraphPainter extends CustomPainter {
             text: n.label.length > 32
                 ? '${n.label.substring(0, 32)}…'
                 : n.label,
-            style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 11, color: AppColors.textMuted),
           ),
           textDirection: TextDirection.ltr,
         )..layout();

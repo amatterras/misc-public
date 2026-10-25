@@ -262,6 +262,7 @@ class CanvasController extends ChangeNotifier {
   CanvasTool get tool => _tool;
   set tool(CanvasTool value) {
     if (value == _tool) return;
+    cancelPendingLineStraightening();
     endEditing();
     _pendingFrom = null;
     // A tool picked by hand during a squeeze stays after the squeeze.
@@ -329,6 +330,7 @@ class CanvasController extends ChangeNotifier {
   Set<String> get selection => _selection;
 
   void select(Iterable<String> ids) {
+    cancelPendingLineStraightening();
     _selection = Set.unmodifiable(ids);
     notifyListeners();
   }
@@ -518,6 +520,33 @@ class CanvasController extends ChangeNotifier {
       _marksChanged.add(e.key);
     }
     addItems(items);
+  }
+
+  /// Applies one side of a cross-canvas move without adding a local undo
+  /// entry. The transfer owner records a coordinated inverse so undo affects
+  /// both canvases as one logical operation.
+  void applyTransferredItems({
+    List<CanvasItem> add = const [],
+    Set<String> removeIds = const {},
+    Map<String, Map<String, dynamic>> marks = const {},
+  }) {
+    if (add.isEmpty && removeIds.isEmpty) return;
+    endEditing();
+    for (final e in marks.entries) {
+      _itemUnknownFields[e.key] = {...e.value};
+      _marksChanged.add(e.key);
+    }
+    _setItems([
+      for (final item in _items)
+        if (!removeIds.contains(item.id)) item,
+      ...add,
+    ]);
+    _selection = Set.unmodifiable({
+      ..._selection.where((id) => !removeIds.contains(id)),
+      ...add.map((item) => item.id),
+    });
+    _markDirty();
+    notifyListeners();
   }
 
   /// Replaces every item with [items] and their [marks] (restoring a
@@ -868,6 +897,7 @@ class CanvasController extends ChangeNotifier {
 
   /// Records the current items as one undoable step, then applies [items].
   void _commit(List<CanvasItem> items) {
+    cancelPendingLineStraightening();
     _pushUndo(_items);
     _setItems(items);
   }
@@ -884,6 +914,7 @@ class CanvasController extends ChangeNotifier {
   }
 
   void undo() {
+    cancelPendingLineStraightening();
     endEditing();
     if (_undo.isEmpty) return;
     _redo.add(_items);
@@ -893,6 +924,7 @@ class CanvasController extends ChangeNotifier {
   }
 
   void redo() {
+    cancelPendingLineStraightening();
     endEditing();
     if (_redo.isEmpty) return;
     _undo.add(_items);
@@ -1154,7 +1186,7 @@ class CanvasController extends ChangeNotifier {
   /// Where the pen is expected to be next, or null.
   Offset? get predictedPoint {
     final v = _velocity;
-    if (_drag != _Drag.draw || _straight || v == null || _livePoints.isEmpty) {
+    if (_drag != _Drag.draw || v == null || _livePoints.isEmpty) {
       return null;
     }
     var ahead = v * (predictionHorizon.inMicroseconds / 1000);
@@ -1163,32 +1195,89 @@ class CanvasController extends ChangeNotifier {
     return _livePoints.last.offset + ahead;
   }
 
-  // Draw-and-hold: a stroke held still at its end becomes a straight line.
-  static Duration holdToStraighten = const Duration(milliseconds: 500);
-
-  /// Pen movement (screen pixels) that still counts as holding still.
-  static double holdTolerance = 4;
+  /// A completed line-like stroke is straightened after a two-second dwell.
+  static Duration holdToStraighten = const Duration(seconds: 2);
   Timer? _holdTimer;
-  Offset? _holdAnchor;
-  bool _straight = false;
-
-  /// The live stroke has been straightened (its end follows the pen).
-  bool get liveStrokeIsStraight => _straight;
-
-  void _restartHold(Offset screen) {
-    _holdTimer?.cancel();
-    _holdAnchor = screen;
-    _holdTimer = Timer(holdToStraighten, holdElapsed);
+  StrokeItem? _pendingStraighten;
+  CanvasTool? _pendingStraightenTool;
+  List<StrokePoint>? _liveLinePreview;
+  StrokeItem? get lineStraightenPreview {
+    final live = _liveLinePreview;
+    if (live != null && _liveStroke != null) {
+      return StrokeItem(
+        id: _liveStroke!.id,
+        color: _liveStroke!.color,
+        strokeWidth: _liveStroke!.strokeWidth,
+        pressureWidth: _liveStroke!.pressureWidth,
+        points: live,
+      );
+    }
+    return null;
   }
 
-  /// Called when the pen has been still for [holdToStraighten].
-  @visibleForTesting
-  void holdElapsed() {
-    if (_drag != _Drag.draw || _straight) return;
-    if (!looksLikeLine(_livePoints, _scale)) return;
-    _livePoints = straightened(_livePoints);
-    _straight = true;
-    _updateLiveStroke();
+  /// Cancels delayed straightening when input changes context.
+  void cancelPendingLineStraightening() {
+    final hadPreview = _liveLinePreview != null;
+    _holdTimer?.cancel();
+    _holdTimer = null;
+    _pendingStraighten = null;
+    _pendingStraightenTool = null;
+    _liveLinePreview = null;
+    if (hadPreview && !_disposed) (liveInk as _Ping).ping();
+  }
+
+  void _restartLineHold() {
+    _holdTimer?.cancel();
+    _holdTimer = null;
+    _liveLinePreview = null;
+    if (_livePoints.length < 2 || !looksLikeLine(_livePoints, _scale)) {
+      (liveInk as _Ping).ping();
+      return;
+    }
+    _pendingStraightenTool = _tool;
+    _holdTimer = Timer(holdToStraighten, () {
+      _holdTimer = null;
+      if (_disposed || _tool != _pendingStraightenTool) {
+        cancelPendingLineStraightening();
+        return;
+      }
+      if (_drag == _Drag.draw) {
+        if (!looksLikeLine(_livePoints, _scale)) return;
+        _liveLinePreview = straightened(_livePoints);
+        (liveInk as _Ping).ping();
+        return;
+      }
+      final original = _pendingStraighten;
+      _pendingStraighten = null;
+      _pendingStraightenTool = null;
+      if (original == null) return;
+      final current = itemById(original.id);
+      if (current != original || current is! StrokeItem) return;
+      final replacement = StrokeItem(
+        id: original.id,
+        color: original.color,
+        strokeWidth: original.strokeWidth,
+        pressureWidth: original.pressureWidth,
+        points: straightened(original.points),
+      );
+      _commit([
+        for (final item in _items) item.id == original.id ? replacement : item,
+      ]);
+      (liveInk as _Ping).ping();
+      notifyListeners();
+    });
+  }
+
+  void _scheduleLineStraightening(StrokeItem stroke) {
+    if (!looksLikeLine(stroke.points, _scale)) {
+      cancelPendingLineStraightening();
+      return;
+    }
+    _pendingStraighten = stroke;
+    _pendingStraightenTool = _tool;
+    if (_holdTimer == null && _liveLinePreview == null) {
+      _restartLineHold();
+    }
     (liveInk as _Ping).ping();
   }
 
@@ -1279,6 +1368,7 @@ class CanvasController extends ChangeNotifier {
     bool ctrl = false,
     Duration timeStamp = Duration.zero,
   }) {
+    cancelPendingLineStraightening();
     _lastScreen = screen;
     lastInput = ++_inputCount;
     lastPointer = screen;
@@ -1354,12 +1444,10 @@ class CanvasController extends ChangeNotifier {
         _beginTransaction();
         _drag = _Drag.draw;
         _livePressure = kind == PointerDeviceKind.stylus;
-        _straight = false;
         _velocity = null;
         _lastMoveTime = timeStamp;
         _livePoints = [StrokePoint(world.dx, world.dy, pressure)];
         _updateLiveStroke();
-        _restartHold(screen);
       case CanvasTool.eraser:
         endEditing();
         _beginTransaction();
@@ -1524,7 +1612,11 @@ class CanvasController extends ChangeNotifier {
     }
 
     final hit = hitTest(world);
-    final opensSomething = hit is LinkItem || hit is NoteCardItem;
+    final opensSomething =
+        hit is LinkItem ||
+        hit is NoteCardItem ||
+        hit is ImageItem ||
+        (hit is TextItem && hit.sourceNoteId != null);
     if (opensSomething && (isDouble || ctrl)) {
       // Double-click (or Ctrl+click) opens the link / note.
       onActivate?.call(hit!);
@@ -1626,16 +1718,6 @@ class CanvasController extends ChangeNotifier {
         }
       case _Drag.draw:
         // Only the live stroke repaints (see [liveInk]); no full rebuild.
-        if (_straight) {
-          // Straightened by a hold: the end follows the pen, still straight.
-          _livePoints = straightened([
-            _livePoints.first,
-            StrokePoint(world.dx, world.dy, _livePoints.last.pressure),
-          ]);
-          _updateLiveStroke();
-          (liveInk as _Ping).ping();
-          return;
-        }
         final last = _livePoints.last.offset;
         // Skip points closer than half a screen pixel to keep files small.
         if ((world - last).distance * _scale < 0.5) return;
@@ -1647,10 +1729,7 @@ class CanvasController extends ChangeNotifier {
         _lastMoveTime = timeStamp ?? _lastMoveTime;
         _livePoints.add(StrokePoint(world.dx, world.dy, pressure));
         _updateLiveStroke();
-        final anchor = _holdAnchor;
-        if (anchor == null || (screen - anchor).distance > holdTolerance) {
-          _restartHold(screen);
-        }
+        _restartLineHold();
         (liveInk as _Ping).ping();
         return;
       case _Drag.erase:
@@ -1678,15 +1757,36 @@ class CanvasController extends ChangeNotifier {
   }
 
   void pointerUp() {
-    _holdTimer?.cancel();
     switch (_drag) {
       case _Drag.draw:
         final stroke = _liveStroke;
         _liveStroke = null;
         _velocity = null;
-        _straight = false;
         (liveInk as _Ping).ping();
-        if (stroke != null) _setItems([..._items, _cleanShape(stroke)]);
+        if (stroke != null) {
+          final displayedPoints = _liveLinePreview;
+          _liveLinePreview = null;
+          if (displayedPoints != null) (liveInk as _Ping).ping();
+          final stored = _cleanShape(
+            displayedPoints == null
+                ? stroke
+                : StrokeItem(
+                    id: stroke.id,
+                    color: stroke.color,
+                    strokeWidth: stroke.strokeWidth,
+                    pressureWidth: stroke.pressureWidth,
+                    points: displayedPoints,
+                  ),
+          );
+          _setItems([..._items, stored]);
+          if (displayedPoints != null) {
+            _holdTimer?.cancel();
+            _holdTimer = null;
+            _pendingStraightenTool = null;
+          } else {
+            _scheduleLineStraightening(stored);
+          }
+        }
         _endTransaction();
       case _Drag.move || _Drag.resize || _Drag.erase:
         final narrow = _narrowTo;
@@ -1836,7 +1936,7 @@ class CanvasController extends ChangeNotifier {
   }
 
   void pointerCancel() {
-    _holdTimer?.cancel();
+    cancelPendingLineStraightening();
     if (_drag == _Drag.draw) _liveStroke = null;
     if (_drag == _Drag.lasso) _lassoPoints = [];
     if (_drag == _Drag.connect) _connectFrom = _connectEnd = null;
@@ -2022,6 +2122,7 @@ class CanvasController extends ChangeNotifier {
   /// Puts PDF pages under notebook pages (saved and synced with the
   /// document's metadata).
   void setPageBackgrounds(List<PageBackground> backgrounds) {
+    cancelPendingLineStraightening();
     _pageBackgrounds = List.unmodifiable(backgrounds);
     _metaChanged = true;
     _markDirty();
@@ -2196,7 +2297,7 @@ class CanvasController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _saveTimer?.cancel();
-    _holdTimer?.cancel();
+    cancelPendingLineStraightening();
     liveInk.dispose();
     resources?.removeListener(_onResourcesChanged);
     for (final layout in _layouts.values) {

@@ -81,7 +81,6 @@ class _EntryEditorState extends State<_EntryEditor> {
   late final _name = TextEditingController(text: e.name);
   late final _description = TextEditingController(text: e.description);
   late final _notes = TextEditingController(text: e.notes);
-  late final _author = TextEditingController(text: e.author);
   late final _total = TextEditingController(
     text: e.totalPages?.toString() ?? '',
   );
@@ -92,7 +91,8 @@ class _EntryEditorState extends State<_EntryEditor> {
     text: e.targetPagesPerDay?.toString() ?? '',
   );
   late DateTime? _goalStartDate = e.goalStartDate;
-  late final _highlights = TextEditingController(text: e.highlights);
+  late DateTime? _readingPlanStart = e.readingPlanStartDate;
+  late DateTime? _readingPlanEnd = e.readingPlanEndDate;
   late final _duration = TextEditingController(
     text: e.durationMinutes?.toString() ?? '',
   );
@@ -109,11 +109,9 @@ class _EntryEditorState extends State<_EntryEditor> {
       _name,
       _description,
       _notes,
-      _author,
       _total,
       _current,
       _pagesPerDay,
-      _highlights,
       _duration,
       _logPages,
     ]) {
@@ -126,12 +124,10 @@ class _EntryEditorState extends State<_EntryEditor> {
     name: _name.text.trim(),
     description: _description.text.trim(),
     notes: _notes.text,
-    author: _author.text.trim(),
     totalPages: () => int.tryParse(_total.text.trim()),
     currentPage: int.tryParse(_current.text.trim()) ?? 0,
     targetPagesPerDay: () => int.tryParse(_pagesPerDay.text.trim()),
     goalStartDate: () => _goalStartDate,
-    highlights: _highlights.text,
     durationMinutes: () => int.tryParse(_duration.text.trim()),
   );
 
@@ -141,7 +137,27 @@ class _EntryEditorState extends State<_EntryEditor> {
       setState(() => _error = 'Give it a name.');
       return;
     }
+    if (widget.isNew &&
+        entry.category == CalendarCategory.habits &&
+        entry.startMinutes == null) {
+      setState(() => _error = 'Choose a time for this habit before saving.');
+      return;
+    }
     if (entry.category == CalendarCategory.reading) {
+      final planStart = _readingPlanStart;
+      final planEnd = _readingPlanEnd;
+      if ((planStart == null) != (planEnd == null)) {
+        setState(() => _error = 'Choose both plan dates, or clear both.');
+        return;
+      }
+      if (planStart != null &&
+          planEnd != null &&
+          daysBetween(planStart, planEnd) < 0) {
+        setState(
+          () => _error = 'The end date must be on or after the start date.',
+        );
+        return;
+      }
       final target = entry.targetPagesPerDay;
       if (_pagesPerDay.text.trim().isNotEmpty && target == null) {
         setState(() => _error = 'Enter pages per day as a whole number.');
@@ -180,10 +196,22 @@ class _EntryEditorState extends State<_EntryEditor> {
       }
     }
     try {
-      ws.saveEntry(entry);
+      if (entry.category == CalendarCategory.reading &&
+          entry.readingPlanId == null) {
+        ws.saveReadingPlan(
+          entry.copyWith(
+            readingPlanStartDate: () => _readingPlanStart,
+            readingPlanEndDate: () => _readingPlanEnd,
+          ),
+        );
+      } else {
+        ws.saveEntry(entry);
+      }
       Navigator.pop(context, entry);
     } on CalendarLimitException catch (err) {
       setState(() => _error = err.toString());
+    } on ArgumentError catch (err) {
+      setState(() => _error = err.message?.toString() ?? err.toString());
     }
   }
 
@@ -337,6 +365,15 @@ class _EntryEditorState extends State<_EntryEditor> {
         ];
       case CalendarCategory.habits:
         return [
+          _timeFields(),
+          if (e.needsTimeConfiguration)
+            LabeledField(
+              label: 'Needs a time',
+              child: Text(
+                'Choose a local time for this habit. Existing untimed habits stay unscheduled until you choose one.',
+                style: TextStyle(fontSize: 12, color: AppColors.warm),
+              ),
+            ),
           LabeledField(
             label: 'Repeats',
             child: Wrap(
@@ -379,18 +416,64 @@ class _EntryEditorState extends State<_EntryEditor> {
             label: 'Done',
             child: Text(
               '${e.checkoffs.length} check-offs so far',
-              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
             ),
           ),
         ];
       case CalendarCategory.reading:
+        final plan = e.readingPlanId == null
+            ? null
+            : ws.entries[e.readingPlanId];
         final log = e.readingLog.entries.toList()
           ..sort((a, b) => b.key.compareTo(a.key));
         return [
-          LabeledField(
-            label: 'Author',
-            child: TextField(controller: _author),
-          ),
+          if (e.readingPlanId != null && e.readingPlanDate != null)
+            LabeledField(
+              label: 'Daily page',
+              child: Text(
+                'Part of ${plan?.name ?? e.readingPlanId} · ${formatLongDate(e.readingPlanDate!)}',
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ),
+          if (e.readingPlanId == null) ...[
+            LabeledField(
+              label: 'Daily plan',
+              child: Wrap(
+                spacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _dateButton(
+                    'Starts',
+                    _readingPlanStart,
+                    (d) {
+                      setState(() {
+                        _readingPlanStart = d;
+                        if (_readingPlanEnd != null &&
+                            daysBetween(d, _readingPlanEnd!) < 0) {
+                          _readingPlanEnd = d;
+                        }
+                      });
+                    },
+                    onClear: () => setState(() {
+                      _readingPlanStart = null;
+                      _readingPlanEnd = null;
+                    }),
+                  ),
+                  _dateButton('Ends (inclusive)', _readingPlanEnd, (d) {
+                    setState(() => _readingPlanEnd = d);
+                  }, onClear: () => setState(() => _readingPlanEnd = null)),
+                ],
+              ),
+            ),
+            if (_readingPlanStart != null && _readingPlanEnd != null)
+              LabeledField(
+                label: 'Daily pages',
+                child: Text(
+                  '${daysBetween(_readingPlanStart!, _readingPlanEnd!) + 1} independent pages · end date included',
+                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                ),
+              ),
+          ],
           LabeledField(
             label: 'Progress',
             child: Row(
@@ -526,15 +609,6 @@ class _EntryEditorState extends State<_EntryEditor> {
                 ],
               ),
             ),
-          const SizedBox(height: Space.sm),
-          TextField(
-            controller: _highlights,
-            minLines: 2,
-            maxLines: 6,
-            decoration: const InputDecoration(
-              hintText: 'Highlights and quotes',
-            ),
-          ),
         ];
     }
   }
@@ -548,7 +622,7 @@ class _EntryEditorState extends State<_EntryEditor> {
       return const SizedBox.shrink();
     }
     if (target == null || total == null || start == null) {
-      return const LabeledField(
+      return LabeledField(
         label: 'Estimate',
         child: Text(
           'Enter a valid total page count, daily target, and start date.',
@@ -574,11 +648,11 @@ class _EntryEditorState extends State<_EntryEditor> {
                     '${formatLongDate(estimate.completionDate!)}\n'
                     'Assumes $target pages every calendar day, starting on '
                     'the later of today and ${formatShortDate(start)}.',
-          style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
         ),
       );
     } on ArgumentError {
-      return const LabeledField(
+      return LabeledField(
         label: 'Estimate',
         child: Text(
           'Use positive page counts and keep current progress within the book.',
@@ -696,7 +770,7 @@ class _EntryEditorState extends State<_EntryEditor> {
                 const SizedBox(height: Space.md),
                 Text(
                   _error!,
-                  style: const TextStyle(color: AppColors.danger, fontSize: 13),
+                  style: TextStyle(color: AppColors.danger, fontSize: 13),
                 ),
               ],
             ],
@@ -734,10 +808,7 @@ class _EntryEditorState extends State<_EntryEditor> {
                 Navigator.pop(context);
               }
             },
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: AppColors.danger),
-            ),
+            child: Text('Delete', style: TextStyle(color: AppColors.danger)),
           ),
           TextButton(
             onPressed: () {
@@ -754,10 +825,7 @@ class _EntryEditorState extends State<_EntryEditor> {
         const SizedBox(width: Space.xl),
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text(
-            'Cancel',
-            style: TextStyle(color: AppColors.textMuted),
-          ),
+          child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
         ),
         FilledButton(onPressed: _save, child: const Text('Save')),
       ],

@@ -84,9 +84,16 @@ class CalendarItemTransfer extends Transfer {
 /// note's text, so a move removes exactly that text (and nothing, if the
 /// note has changed there since).
 class TextTransfer extends Transfer {
-  const TextTransfer(this.text, {this.sourceNoteId, this.start, this.end});
+  const TextTransfer(
+    this.text, {
+    this.sourceNoteId,
+    this.sourceNoteTitle,
+    this.start,
+    this.end,
+  });
   final String text;
   final String? sourceNoteId;
+  final String? sourceNoteTitle;
   final int? start;
   final int? end;
 
@@ -517,6 +524,10 @@ extension Transfers on AppState {
           return const TransferResult('Linked to the mindmap.');
         }
         final target = await _canvasFor(p.canvasId);
+        final originals = op == TransferOp.move
+            ? t.items.where((i) => !t.source.isLocked(i.id)).toList()
+            : const <CanvasItem>[];
+        final marks = t.source.marksOf(originals.map((i) => i.id));
         final n = await copyItemsInto(
           t.source,
           t.items,
@@ -524,6 +535,18 @@ extension Transfers on AppState {
           at: p.at,
           move: op == TransferOp.move,
         );
+        if (op == TransferOp.move && n > 0) {
+          final ids = originals.map((i) => i.id).toSet();
+          return TransferResult(
+            'Moved $n item(s).',
+            undo: () async {
+              target.applyTransferredItems(removeIds: ids);
+              await target.flush();
+              t.source.applyTransferredItems(add: originals, marks: marks);
+              await t.source.flush();
+            },
+          );
+        }
         return TransferResult(
           '${op == TransferOp.move ? 'Moved' : 'Copied'} $n item(s).',
         );
@@ -717,6 +740,8 @@ extension Transfers on AppState {
           width: TextItem.defaultWidth,
           minHeight: 0,
           text: t.text,
+          sourceNoteId: t.sourceNoteId,
+          sourceNoteTitle: t.sourceNoteTitle,
         );
         target.addItems([box]);
         return TransferResult(
@@ -1058,22 +1083,56 @@ extension Transfers on AppState {
       }
       place = Offset(right + 80 + area.width / 2, area.height / 2);
     }
-    final (copies, ids) = CanvasController.copyItems(
-      items,
-      place - area.center,
-    );
     final marks = from.marksOf(items.map((i) => i.id));
-    target.addItemsWithMarks(copies, {
-      for (final e in ids.entries) e.value: ?marks[e.key],
-    });
-    await target.flush();
-    // Only after the copy arrived: remove the originals of a move.
-    final arrived = copies.every((c) => target.itemById(c.id) != null);
-    if (move && arrived) {
-      from.select(items.map((i) => i.id));
-      from.deleteSelection();
+    final List<CanvasItem> placed;
+    if (move) {
+      // A move retains item IDs and metadata. Save the destination first;
+      // only then remove the source so a failed destination save is harmless.
+      placed = [for (final item in items) item.translated(place - area.center)];
+      if (placed.any((item) => target.itemById(item.id) != null)) {
+        throw StateError('The destination already contains a moved item ID.');
+      }
+      target.applyTransferredItems(add: placed, marks: marks);
+    } else {
+      final (copies, ids) = CanvasController.copyItems(
+        items,
+        place - area.center,
+      );
+      placed = copies;
+      target.addItemsWithMarks(copies, {
+        for (final e in ids.entries) e.value: ?marks[e.key],
+      });
     }
-    return copies.length;
+    try {
+      await target.flush();
+    } catch (_) {
+      if (move) {
+        target.applyTransferredItems(
+          removeIds: placed.map((item) => item.id).toSet(),
+        );
+        await target.flush();
+      }
+      rethrow;
+    }
+    // Only after the copy arrived: remove the originals of a move.
+    final arrived = placed.every((c) => target.itemById(c.id) != null);
+    if (move && arrived) {
+      from.applyTransferredItems(removeIds: items.map((i) => i.id).toSet());
+      try {
+        await from.flush();
+      } catch (_) {
+        // If source persistence fails, restore the source in memory and
+        // remove the newly placed destination items before propagating.
+        from.applyTransferredItems(add: items, marks: marks);
+        await from.flush();
+        target.applyTransferredItems(
+          removeIds: placed.map((item) => item.id).toSet(),
+        );
+        await target.flush();
+        rethrow;
+      }
+    }
+    return placed.length;
   }
 
   /// Moves selected text: places a copy, then removes the text from its
@@ -1219,7 +1278,7 @@ class TransferSource extends StatelessWidget {
             feedback ??
             Text(
               'Drag ${data.label}',
-              style: const TextStyle(fontSize: 13, color: AppColors.text),
+              style: TextStyle(fontSize: 13, color: AppColors.text),
             ),
       ),
     );

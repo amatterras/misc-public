@@ -50,6 +50,11 @@ class CalendarEntry implements Record {
     this.weekdays = const {},
     this.checkoffs = const {},
     this.legacyReading,
+    this.readingPlanId,
+    this.readingPlanDate,
+    this.readingPlanDetached = false,
+    this.readingPlanStartDate,
+    this.readingPlanEndDate,
   }) : colorIndex = colorIndex ?? category.index;
 
   static const int maxActivePerCategory = 5;
@@ -108,6 +113,14 @@ class CalendarEntry implements Record {
   /// welcome quotes.
   final Map<String, dynamic>? legacyReading;
 
+  /// Reading-plan occurrence identity. The parent keeps its own id; each
+  /// date-specific page uses `<parent id>/<yyyy-MM-dd>` as its stable id.
+  final String? readingPlanId;
+  final DateTime? readingPlanDate;
+  final bool readingPlanDetached;
+  final DateTime? readingPlanStartDate;
+  final DateTime? readingPlanEndDate;
+
   /// A habit with no time of day yet. Older habits were untimed and stay
   /// untimed: no time is invented for them; the user picks one.
   bool get needsTimeConfiguration =>
@@ -124,6 +137,11 @@ class CalendarEntry implements Record {
       case CalendarCategory.other:
         return dates.contains(key);
       case CalendarCategory.reading:
+        if (readingPlanId != null) {
+          return !readingPlanDetached &&
+              readingPlanDate != null &&
+              dayKey(readingPlanDate!) == key;
+        }
         return readingLog.containsKey(key);
       case CalendarCategory.habits:
         final start = startDate ?? createdAt;
@@ -191,6 +209,11 @@ class CalendarEntry implements Record {
     Set<int>? weekdays,
     Set<String>? checkoffs,
     Map<String, dynamic>? Function()? legacyReading,
+    String? Function()? readingPlanId,
+    DateTime? Function()? readingPlanDate,
+    bool? readingPlanDetached,
+    DateTime? Function()? readingPlanStartDate,
+    DateTime? Function()? readingPlanEndDate,
   }) => CalendarEntry(
     id: id,
     category: category ?? this.category,
@@ -224,6 +247,17 @@ class CalendarEntry implements Record {
     weekdays: weekdays ?? this.weekdays,
     checkoffs: checkoffs ?? this.checkoffs,
     legacyReading: legacyReading != null ? legacyReading() : this.legacyReading,
+    readingPlanId: readingPlanId != null ? readingPlanId() : this.readingPlanId,
+    readingPlanDate: readingPlanDate != null
+        ? _dateOnlyOrNull(readingPlanDate())
+        : this.readingPlanDate,
+    readingPlanDetached: readingPlanDetached ?? this.readingPlanDetached,
+    readingPlanStartDate: readingPlanStartDate != null
+        ? _dateOnlyOrNull(readingPlanStartDate())
+        : this.readingPlanStartDate,
+    readingPlanEndDate: readingPlanEndDate != null
+        ? _dateOnlyOrNull(readingPlanEndDate())
+        : this.readingPlanEndDate,
   );
 
   @override
@@ -255,6 +289,13 @@ class CalendarEntry implements Record {
     'checkoffs': checkoffs.toList()..sort(),
     // Written only when present, so files without it stay unchanged.
     if (legacyReading != null) 'legacyReading': legacyReading,
+    if (readingPlanId != null) 'readingPlanId': readingPlanId,
+    if (readingPlanDate != null) 'readingPlanDate': dayKey(readingPlanDate!),
+    if (readingPlanDetached) 'readingPlanDetached': true,
+    if (readingPlanStartDate != null)
+      'readingPlanStartDate': dayKey(readingPlanStartDate!),
+    if (readingPlanEndDate != null)
+      'readingPlanEndDate': dayKey(readingPlanEndDate!),
   };
 
   factory CalendarEntry.fromJson(Map<String, dynamic> j) {
@@ -291,6 +332,11 @@ class CalendarEntry implements Record {
       weekdays: {...?(j['weekdays'] as List?)?.cast<int>()},
       checkoffs: {...?(j['checkoffs'] as List?)?.cast<String>()},
       legacyReading: (j['legacyReading'] as Map?)?.cast<String, dynamic>(),
+      readingPlanId: j['readingPlanId'] as String?,
+      readingPlanDate: day(j['readingPlanDate']),
+      readingPlanDetached: j['readingPlanDetached'] as bool? ?? false,
+      readingPlanStartDate: day(j['readingPlanStartDate']),
+      readingPlanEndDate: day(j['readingPlanEndDate']),
     );
   }
 }

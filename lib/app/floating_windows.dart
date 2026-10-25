@@ -15,6 +15,7 @@ class FloatingWindowSpec {
     required this.title,
     required this.builder,
     this.initialRect = const Rect.fromLTWH(80, 80, 380, 420),
+    this.initialRectFor,
     this.minSize = const Size(220, 140),
     this.onMinimize,
     this.onDock,
@@ -35,7 +36,37 @@ class FloatingWindowSpec {
   final String title;
   final WidgetBuilder builder;
   final Rect initialRect;
+
+  /// Optional viewport-aware initial geometry. Used by content windows whose
+  /// default size is defined relative to the page-content viewport.
+  final Rect Function(Size viewport)? initialRectFor;
   final Size minSize;
+}
+
+/// Shared default geometry for floating page content. Coordinates are local
+/// to the visible page-content area (below the page bar and beside the
+/// sidebar), never the operating-system display or a document canvas.
+abstract final class ContentWindowGeometry {
+  static const phoneBreakpoint = 640.0;
+  static const desktopWidthFraction = 2 / 5;
+  static const verticalMarginFraction = .075;
+  static const phoneHorizontalMargin = 12.0;
+
+  static Rect initial(Size viewport) {
+    final width = viewport.width < phoneBreakpoint
+        ? (viewport.width - phoneHorizontalMargin * 2).clamp(
+            0.0,
+            viewport.width,
+          )
+        : viewport.width * desktopWidthFraction;
+    final top = viewport.height * verticalMarginFraction;
+    final height = viewport.height - top * 2;
+    final left =
+        viewport.width -
+        width -
+        (viewport.width < phoneBreakpoint ? phoneHorizontalMargin : 0.0);
+    return Rect.fromLTWH(left.clamp(0.0, viewport.width), top, width, height);
+  }
 }
 
 class FloatingWindows extends ChangeNotifier {
@@ -56,7 +87,7 @@ class FloatingWindows extends ChangeNotifier {
 
   /// Where window [spec] is (its last place on this device, or its
   /// initial one).
-  Rect rectOf(FloatingWindowSpec spec) {
+  Rect rectOf(FloatingWindowSpec spec, {Size? viewport}) {
     final r = _saved[spec.id];
     if (r is List && r.length == 4 && r.every((v) => v is num)) {
       final v = [for (final n in r) (n as num).toDouble()];
@@ -67,7 +98,9 @@ class FloatingWindows extends ChangeNotifier {
         v[3] < spec.minSize.height ? spec.minSize.height : v[3],
       );
     }
-    return spec.initialRect;
+    return viewport != null && spec.initialRectFor != null
+        ? spec.initialRectFor!(viewport)
+        : spec.initialRect;
   }
 
   /// Opens [spec] (or brings it to the front if it is open).

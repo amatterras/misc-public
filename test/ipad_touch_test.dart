@@ -15,6 +15,7 @@ import 'package:flutter_application_1/data/models/task_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/canvas/canvas_controller.dart';
+import 'package:flutter_application_1/features/canvas/canvas_page.dart';
 import 'package:flutter_application_1/features/settings/settings_dialog.dart';
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/platform/ios_bridge.dart';
@@ -158,6 +159,65 @@ void main() {
       tapTwice(make(), PointerDeviceKind.touch);
       expect(opened, ['l']);
     });
+  });
+
+  testWidgets('iPad touch pans and pinches; only stylus kind creates ink', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final s = await bootIpad(tester, dir);
+    await tester.runAsync(() => s.createCanvas(show: true));
+    s.goTo(AppPage.canvas);
+    await settle(tester);
+    final c = s.canvas!;
+    c.tool = CanvasTool.pen;
+    final rect = tester.getRect(find.byType(CanvasView));
+    final center = rect.center;
+    final initialOffset = c.offset;
+    final finger = await tester.createGesture(
+      kind: PointerDeviceKind.touch,
+      pointer: 61,
+    );
+    await finger.down(center);
+    await finger.moveTo(center + const Offset(50, 35));
+    await finger.up();
+    await tester.pump();
+    expect(c.items.whereType<StrokeItem>(), isEmpty);
+    expect(c.offset, isNot(initialOffset));
+
+    final beforeScale = c.scale;
+    final left = await tester.createGesture(
+      kind: PointerDeviceKind.touch,
+      pointer: 62,
+    );
+    final right = await tester.createGesture(
+      kind: PointerDeviceKind.touch,
+      pointer: 63,
+    );
+    await left.down(center - const Offset(40, 0));
+    await right.down(center + const Offset(40, 0));
+    await tester.pump();
+    await left.moveTo(center - const Offset(90, 0));
+    await right.moveTo(center + const Offset(90, 0));
+    await tester.pump();
+    await left.up();
+    await right.up();
+    await tester.pump();
+    expect(c.scale, greaterThan(beforeScale));
+    expect(c.items.whereType<StrokeItem>(), isEmpty);
+
+    final pencil = await tester.createGesture(
+      kind: PointerDeviceKind.stylus,
+      pointer: 64,
+    );
+    await pencil.down(center);
+    await pencil.moveTo(center + const Offset(80, 12));
+    await pencil.up();
+    await tester.pump();
+    expect(c.items.whereType<StrokeItem>(), hasLength(1));
+    await shutDown(tester, s);
+    debugDefaultTargetPlatformOverride = null;
   });
 
   group('menus without right-click', () {

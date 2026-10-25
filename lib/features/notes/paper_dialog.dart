@@ -140,7 +140,7 @@ class _PaperDialogState extends State<_PaperDialog> {
     padding: const EdgeInsets.only(bottom: 4),
     child: Text(
       text,
-      style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+      style: TextStyle(fontSize: 12, color: AppColors.textMuted),
     ),
   );
 

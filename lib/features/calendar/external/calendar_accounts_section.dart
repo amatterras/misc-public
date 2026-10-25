@@ -79,7 +79,7 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
     final connected = _connected[key] ?? false;
     final busy = _busy.contains(key);
     final last = a.lastSuccess;
-    const small = TextStyle(fontSize: 12, color: AppColors.textFaint);
+    final small = TextStyle(fontSize: 12, color: AppColors.textFaint);
     return Padding(
       padding: const EdgeInsets.only(bottom: Space.md),
       child: Column(
@@ -169,7 +169,7 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
                 'Also send my Reminder/Event entries there',
                 style: TextStyle(fontSize: 13),
               ),
-              subtitle: const Text(
+              subtitle: Text(
                 'THEapp entries sync both ways. Provider-created events are '
                 'shown here read-only; edit those in Google Calendar or Outlook. '
                 'Connected calendars refresh every 5 minutes while the app is open.',
@@ -182,10 +182,7 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
               style: small,
             ),
           if (_error[key] case final e?)
-            Text(
-              e,
-              style: const TextStyle(fontSize: 12, color: AppColors.warm),
-            ),
+            Text(e, style: TextStyle(fontSize: 12, color: AppColors.warm)),
         ],
       ),
     );
@@ -206,7 +203,7 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
     key: const ValueKey('calendar-accounts'),
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const Text(
+      Text(
         'Optional. Uses your own Google Cloud / Microsoft app registration '
         '(set up once; see the setup notes). You sign in on the provider\'s '
         'own page; THEapp never sees your password.',

@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/app/theme.dart';
@@ -7,6 +9,8 @@ import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/notes/note_page.dart';
+import 'package:flutter_application_1/features/notes/notes_page.dart'
+    show NoteEditor;
 import 'package:flutter_test/flutter_test.dart';
 
 class _EmptyCanvasRepository implements CanvasRepository {
@@ -27,6 +31,18 @@ class _EmptyCanvasRepository implements CanvasRepository {
 
   @override
   Future<void> save(CanvasDocument document) async {}
+}
+
+class _MemoryCanvasRepository extends _EmptyCanvasRepository {
+  final documents = <String, CanvasDocument>{};
+
+  @override
+  Future<CanvasDocument?> load(String id) async => documents[id];
+
+  @override
+  Future<void> save(CanvasDocument document) async {
+    documents[document.id] = document;
+  }
 }
 
 void main() {
@@ -92,6 +108,151 @@ void main() {
       await tester.pump();
       expect(find.text('100%'), findsOneWidget);
       await tester.runAsync(state.flush);
+    },
+  );
+
+  testWidgets(
+    'iPad finger pinch zooms without adding ink and preserves saved geometry',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      tester.view.physicalSize = const Size(1700, 1050);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final root = Directory.systemTemp.createTempSync('theapp_note_pinch_');
+      addTearDown(() {
+        try {
+          root.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      final ws = Workspace(Directory('${root.path}/data'));
+      final canvases = _MemoryCanvasRepository();
+      final state = AppState(
+        canvases: canvases,
+        settings: SettingsRepository(ws.store),
+        workspace: ws,
+        enableSendTo: false,
+      );
+      addTearDown(state.dispose);
+      state.capture.fetchPreviews = false;
+      await tester.runAsync(state.init);
+      final note = state.workspace.createNote(title: 'Pinch test');
+      await tester.runAsync(state.flush);
+
+      Future<void> open() async {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: NotePage(state: state, noteId: note.id),
+          ),
+        );
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(seconds: 1)),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await open();
+      expect(state.workspace.notes[note.id], isNotNull);
+      expect(find.byType(NotePage), findsOneWidget);
+      expect(state.openNotebooks, hasLength(1));
+      expect(find.byType(NoteEditor), findsOneWidget);
+      expect(tester.widget<NoteEditor>(find.byType(NoteEditor)).pageCount, 1);
+      final noteList = find.byType(ListView).last;
+      final noteScrollable = find.descendant(
+        of: noteList,
+        matching: find.byType(Scrollable),
+      );
+      final scrollState = tester.state<ScrollableState>(noteScrollable.first);
+      scrollState.position.jumpTo(scrollState.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      final page = tester.getRect(
+        find.byKey(const ValueKey('notebook-page-0')),
+      );
+      final visiblePage = page.intersect(Offset.zero & const Size(1700, 1050));
+      expect(visiblePage.isEmpty, isFalse);
+      final pageCenter = visiblePage.center;
+      final pencil = await tester.createGesture(
+        kind: PointerDeviceKind.stylus,
+        pointer: 80,
+      );
+      await pencil.down(pageCenter - const Offset(80, 0));
+      await pencil.moveTo(pageCenter + const Offset(80, 0));
+      await pencil.up();
+      await tester.pump();
+      final controller = state.openNotebooks.single;
+      final points = (controller.items.single as StrokeItem).points;
+      final before = points.map((p) => p.offset).toList();
+      final beforeMidpoint = (before.first + before.last) / 2;
+
+      final center = pageCenter;
+      final left = await tester.createGesture(
+        kind: PointerDeviceKind.touch,
+        pointer: 81,
+      );
+      final right = await tester.createGesture(
+        kind: PointerDeviceKind.touch,
+        pointer: 82,
+      );
+      await left.down(center - const Offset(50, 0));
+      await right.down(center + const Offset(50, 0));
+      await tester.pump();
+      await left.moveTo(center - const Offset(100, 0));
+      await right.moveTo(center + const Offset(100, 0));
+      await tester.pump();
+      await left.up();
+      await right.up();
+      await tester.pumpAndSettle();
+      expect(find.text('100%'), findsNothing);
+      expect(controller.items, hasLength(1));
+      expect(
+        (controller.items.single as StrokeItem).points.map((p) => p.offset),
+        before,
+      );
+      final zoomedContent = tester.getRect(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('notebook-page-0')),
+              matching: find.byType(CustomPaint),
+            )
+            .first,
+      );
+      final mappedMidpoint =
+          zoomedContent.topLeft + beforeMidpoint * controller.scale;
+      expect(
+        (mappedMidpoint - center).distance,
+        lessThan(8),
+        reason:
+            'mapped=$mappedMidpoint, centroid=$center, content=$zoomedContent, '
+            'scale=${controller.scale}, doc=$beforeMidpoint',
+      );
+
+      // A touch on the page while the Pen tool is selected is navigation only.
+      final finger = await tester.createGesture(
+        kind: PointerDeviceKind.touch,
+        pointer: 83,
+      );
+      await finger.down(center);
+      await finger.moveTo(center + const Offset(40, 30));
+      await finger.up();
+      await tester.pump();
+      expect(controller.items, hasLength(1));
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 150)),
+      );
+      await open();
+      final reopened = state.openNotebooks.single;
+      expect(
+        (reopened.items.single as StrokeItem).points.map((p) => p.offset),
+        before,
+      );
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 150)),
+      );
+      debugDefaultTargetPlatformOverride = null;
     },
   );
 }

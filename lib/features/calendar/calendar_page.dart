@@ -38,11 +38,11 @@ class CalendarPage extends StatefulWidget {
   /// own, over the same calendar records.
   final String viewKey;
 
-  static const double cellWidth = 196;
-
-  /// Twice the earlier 156, so a day shows up to [DayCell.maxLabels] items
-  /// instead of 5. The grid pans and zooms, so taller weeks scroll.
-  static const double cellHeight = 312;
+  /// The existing rendered cell baseline was 196×312 logical pixels. Keep
+  /// both axes at exactly 2×; InteractiveViewer provides pan/zoom on narrow
+  /// Windows, iPad and iPhone viewports instead of shrinking hit targets.
+  static const double cellWidth = 392;
+  static const double cellHeight = 624;
 
   @override
   State<CalendarPage> createState() => _CalendarPageState();
@@ -287,7 +287,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           (suggestion.dateRecognized
                               ? 'Check the detected title, date, and time before creating the event.'
                               : 'No date was confidently detected. The selected calendar day is filled in; change it if needed.'),
-                      style: const TextStyle(color: AppColors.textMuted),
+                      style: TextStyle(color: AppColors.textMuted),
                     ),
                     const SizedBox(height: Space.md),
                     TextField(
@@ -334,7 +334,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     const SizedBox(height: Space.xs),
                     SelectableText(
                       recognized.trim(),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textMuted,
                         fontSize: 12,
                       ),
@@ -479,7 +479,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 Expanded(flex: 2, child: _calendar()),
                 // Tasks live here, in a collapsible column about 3/5 wide.
                 if (s.calendarTasksOpen) ...[
-                  const VerticalDivider(width: 1, color: AppColors.border),
+                  VerticalDivider(width: 1, color: AppColors.border),
                   Expanded(
                     flex: 3,
                     child: TasksPage(
@@ -738,11 +738,7 @@ class _CalendarPageState extends State<CalendarPage> {
         ),
         child: Row(
           children: [
-            const Icon(
-              Icons.warning_amber_rounded,
-              size: 18,
-              color: AppColors.warm,
-            ),
+            Icon(Icons.warning_amber_rounded, size: 18, color: AppColors.warm),
             const SizedBox(width: Space.sm),
             Expanded(
               child: Text(
@@ -781,7 +777,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: AppColors.border),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.calendar_today_outlined,
                 size: 18,
                 color: AppColors.textMuted,
@@ -805,14 +801,14 @@ class _CalendarPageState extends State<CalendarPage> {
                           child: Text(
                             '${formatShortDate(start)} – ${formatShortDate(end)} ${end.year}  ·  ${s.calendarDays} days',
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
                               color: AppColors.textMuted,
                             ),
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(
+                        Icon(
                           Icons.edit_calendar_outlined,
                           size: 14,
                           color: AppColors.textFaint,
@@ -1034,7 +1030,7 @@ class _CalendarPageState extends State<CalendarPage> {
             crossAxisAlignment: WrapCrossAlignment.center,
             runSpacing: 4,
             children: [
-              const Text(
+              Text(
                 'Show',
                 style: TextStyle(fontSize: 12, color: AppColors.textFaint),
               ),
@@ -1109,6 +1105,9 @@ class _CalendarPageState extends State<CalendarPage> {
                   children: [
                     for (var i = 0; i < days; i++)
                       Positioned(
+                        key: ValueKey(
+                          'calendar-cell-${dayKey(addDays(start, i))}',
+                        ),
                         left: (i % 7) * w,
                         top: (i ~/ 7) * h,
                         width: w,
@@ -1238,7 +1237,7 @@ class DayCell extends StatelessWidget {
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
                             formatShortDate(day).split(' ').first,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               color: AppColors.textMuted,
                             ),
@@ -1247,7 +1246,7 @@ class DayCell extends StatelessWidget {
                       ],
                       const Spacer(),
                       if (record != null && record.text.trim().isNotEmpty)
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.only(right: 4, top: 2),
                           child: Icon(
                             Icons.sticky_note_2_outlined,
@@ -1256,7 +1255,7 @@ class DayCell extends StatelessWidget {
                           ),
                         ),
                       if (record != null && record.assetIds.isNotEmpty)
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.only(right: 4, top: 2),
                           child: Icon(
                             Icons.attach_file,
@@ -1266,7 +1265,7 @@ class DayCell extends StatelessWidget {
                         ),
                       Text(
                         weekdayShort(day).toUpperCase(),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
                           color: AppColors.textFaint,
                           letterSpacing: 0.5,
@@ -1281,24 +1280,30 @@ class DayCell extends StatelessWidget {
                         record.text.trim(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           color: AppColors.textMuted,
                         ),
                       ),
                     ),
                   const Spacer(),
-                  for (final item in items.take(maxLabels))
-                    DayLabel(
-                      state: state,
-                      item: item,
-                      day: day,
-                      onTap: () => onEditItem(item),
-                    ),
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 3,
+                    children: [
+                      for (final item in items.take(maxLabels))
+                        DayLabel(
+                          state: state,
+                          item: item,
+                          day: day,
+                          onTap: () => onEditItem(item),
+                        ),
+                    ],
+                  ),
                   if (items.length > maxLabels)
                     Text(
                       '+${items.length - maxLabels} more',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
                         color: AppColors.textFaint,
                       ),
@@ -1334,10 +1339,14 @@ class DayLabel extends StatelessWidget {
     final color = item is EntryOnDay
         ? calendarCategoryColor(item.entry.category)
         : AppColors.accent;
-    final isHabit =
-        item is EntryOnDay && item.entry.category == CalendarCategory.habits;
-    final taskDone = item is TaskOnDay && item.task.done;
-    final checked = (isHabit && item.entry.isCheckedOn(day)) || taskDone;
+    final habitEntry =
+        item is EntryOnDay && item.entry.category == CalendarCategory.habits
+        ? item.entry
+        : null;
+    final isHabit = habitEntry != null;
+    final checked =
+        (habitEntry?.isCheckedOn(day) ?? false) ||
+        (item is TaskOnDay && item.task.done);
     final time = switch (item) {
       EntryOnDay(:final entry) => entry.timeLabel,
       TaskOnDay(:final task) =>
@@ -1349,63 +1358,99 @@ class DayLabel extends StatelessWidget {
             ? null
             : '${(event.startMinutes! ~/ 60).toString().padLeft(2, '0')}:${(event.startMinutes! % 60).toString().padLeft(2, '0')}',
     };
-    final label = Container(
-      height: 18,
-      margin: const EdgeInsets.only(top: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        children: [
-          if (isHabit)
-            InkWell(
-              onTap: () => state.workspace.toggleHabit(item.entry.id, day),
-              child: Icon(
-                checked ? Icons.check_box : Icons.check_box_outline_blank,
-                size: 12,
-                color: color,
-              ),
-            )
-          else if (item is TaskOnDay)
-            InkWell(
-              onTap: () => state.toggleTask(item.task.id),
-              child: Icon(
-                taskDone ? Icons.check_box : Icons.check_box_outline_blank,
-                size: 12,
-                color: taskDone ? AppColors.success : color,
-              ),
-            )
-          else
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-          const SizedBox(width: 4),
-          if (time != null) ...[
-            Text(
-              time,
-              style: const TextStyle(fontSize: 9, color: AppColors.textMuted),
-            ),
-            const SizedBox(width: 4),
-          ],
-          Expanded(
-            child: Text(
-              item.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w500,
-                color: checked ? AppColors.textFaint : AppColors.text,
-                decoration: checked ? TextDecoration.lineThrough : null,
-              ),
-            ),
+    const labelStyle = TextStyle(fontSize: 12, fontWeight: FontWeight.w500);
+    final timeStyle = TextStyle(fontSize: 10, color: AppColors.textMuted);
+    final label = LayoutBuilder(
+      builder: (context, constraints) {
+        final limit = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : CalendarPage.cellWidth - 24;
+        final nameStyle = labelStyle.copyWith(
+          color: checked ? AppColors.textFaint : AppColors.text,
+          decoration: checked ? TextDecoration.lineThrough : null,
+        );
+        double measure(String text, TextStyle style, double max) {
+          final painter = TextPainter(
+            text: TextSpan(text: text, style: style),
+            textDirection: Directionality.of(context),
+            maxLines: 1,
+            ellipsis: '…',
+          )..layout(maxWidth: max);
+          return painter.width;
+        }
+
+        const padding = 10.0;
+        final controlWidth = isHabit ? 30.0 : 12.0;
+        final timeWidth = time == null ? 0.0 : measure(time, timeStyle, limit);
+        final metadataWidth = controlWidth + (time == null ? 0 : timeWidth + 6);
+        final textWidth = measure(
+          item.label,
+          nameStyle,
+          (limit - metadataWidth - padding).clamp(24.0, limit).toDouble(),
+        );
+        final width = (metadataWidth + textWidth + padding)
+            .clamp(48.0, limit)
+            .toDouble();
+        return Container(
+          width: width,
+          height: 30,
+          margin: const EdgeInsets.only(top: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 5),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(5),
           ),
-        ],
-      ),
+          child: Row(
+            children: [
+              if (isHabit)
+                Semantics(
+                  label:
+                      'Mark ${item.label} complete on ${formatLongDate(day)}',
+                  button: true,
+                  toggled: checked,
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: InkWell(
+                      onTap: () =>
+                          state.workspace.toggleHabit(habitEntry.id, day),
+                      child: Icon(
+                        checked
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                        size: 18,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              if (time != null) ...[
+                const SizedBox(width: 5),
+                Text(time, style: timeStyle, maxLines: 1),
+                const SizedBox(width: 5),
+              ] else
+                const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: nameStyle,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
     final tappable = GestureDetector(
       onTap: onTap,
@@ -1512,7 +1557,12 @@ class _DayPanelState extends State<DayPanel> {
     final record = ws.dayRecord(day);
     syncText(this, _text, record.text);
     final reading = ws.entries.all
-        .where((e) => e.category == CalendarCategory.reading && !e.archived)
+        .where(
+          (e) =>
+              e.category == CalendarCategory.reading &&
+              e.readingPlanId == null &&
+              !e.archived,
+        )
         .toList();
     return Container(
       decoration: BoxDecoration(
@@ -1571,7 +1621,7 @@ class _DayPanelState extends State<DayPanel> {
           ),
           const SizedBox(height: Space.md),
           if (items.isEmpty)
-            const Text(
+            Text(
               'Nothing on this day.',
               style: TextStyle(fontSize: 13, color: AppColors.textFaint),
             ),
@@ -1613,7 +1663,7 @@ class _DayPanelState extends State<DayPanel> {
             ),
           ],
           const SizedBox(height: Space.xl),
-          const Text(
+          Text(
             'DAY NOTE',
             style: TextStyle(
               fontSize: 11,
@@ -1635,7 +1685,7 @@ class _DayPanelState extends State<DayPanel> {
           const SizedBox(height: Space.lg),
           Row(
             children: [
-              const Text(
+              Text(
                 'ATTACHED',
                 style: TextStyle(
                   fontSize: 11,
@@ -1721,7 +1771,7 @@ class _DayPanelState extends State<DayPanel> {
               ?entry.timeLabel,
               if (entry.description.isNotEmpty) entry.description,
             ].join(' · '),
-            style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),
           trailing: GhostIconButton(
             icon: Icons.edit_outlined,
@@ -1734,22 +1784,20 @@ class _DayPanelState extends State<DayPanel> {
         return ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          leading: Checkbox(
-            value: task.done,
-            activeColor: AppColors.success,
-            checkColor: AppColors.text,
-            onChanged: (_) => widget.state.toggleTask(task.id),
+          leading: const Padding(
+            padding: EdgeInsets.all(8),
+            child: Icon(Icons.task_alt_outlined, size: 14),
           ),
           title: Text(
             item.label,
             style: task.done
-                ? const TextStyle(
+                ? TextStyle(
                     decoration: TextDecoration.lineThrough,
                     color: AppColors.textFaint,
                   )
                 : null,
           ),
-          subtitle: const Text(
+          subtitle: Text(
             'Task (from Tasks)',
             style: TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),
@@ -1777,7 +1825,7 @@ class _DayPanelState extends State<DayPanel> {
                     '${(event.startMinutes! % 60).toString().padLeft(2, '0')}',
               if (event.location.isNotEmpty) event.location,
             ].join(' · '),
-            style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),
           trailing: event.link.isEmpty
               ? null
@@ -1813,18 +1861,19 @@ class CategoryView extends StatelessWidget {
             .where((e) => e.category == category && !e.archived)
             .toList()
           ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final countedEntries = ws.activeCount(category);
     final full = !ws.hasRoomIn(category);
     return ListView(
       children: [
         Row(
           children: [
             Text(
-              '${entries.length} of ${CalendarEntry.maxActivePerCategory} active',
-              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+              '$countedEntries of ${CalendarEntry.maxActivePerCategory} active',
+              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
             ),
             const Spacer(),
             if (full)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(right: Space.md),
                 child: Text(
                   'Full — archive an entry to add another.',
@@ -1838,7 +1887,7 @@ class CategoryView extends StatelessWidget {
             ),
           ],
         ),
-        if (entries.length > CalendarEntry.maxActivePerCategory)
+        if (countedEntries > CalendarEntry.maxActivePerCategory)
           Container(
             margin: const EdgeInsets.only(top: Space.md),
             padding: const EdgeInsets.all(Space.md),
@@ -1848,16 +1897,16 @@ class CategoryView extends StatelessWidget {
               border: Border.all(color: AppColors.warm.withValues(alpha: 0.5)),
             ),
             child: Text(
-              '${category.label} has ${entries.length} active entries (the limit is '
+              '${category.label} has $countedEntries active entries (the limit is '
               '${CalendarEntry.maxActivePerCategory}) because changes from several '
               'devices were combined. Nothing was archived automatically — please '
-              'archive ${entries.length - CalendarEntry.maxActivePerCategory}.',
+              'archive ${countedEntries - CalendarEntry.maxActivePerCategory}.',
               style: const TextStyle(fontSize: 13),
             ),
           ),
         const SizedBox(height: Space.lg),
         if (entries.isEmpty)
-          const Padding(
+          Padding(
             padding: EdgeInsets.all(Space.xl),
             child: Text(
               'Nothing here yet.',
@@ -1899,10 +1948,19 @@ class EntryCard extends StatelessWidget {
             ? null
             : (e.currentPage / total).clamp(0.0, 1.0);
         details.addAll([
-          if (e.author.isNotEmpty)
+          if (e.readingPlanId != null && e.readingPlanDate != null)
             Text(
-              e.author,
-              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+              e.readingPlanDetached
+                  ? 'Detached daily page · ${formatLongDate(e.readingPlanDate!)}'
+                  : 'Daily page · ${formatLongDate(e.readingPlanDate!)}',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          if (e.readingPlanId == null &&
+              e.readingPlanStartDate != null &&
+              e.readingPlanEndDate != null)
+            Text(
+              'Daily plan · ${formatShortDate(e.readingPlanStartDate!)} – ${formatShortDate(e.readingPlanEndDate!)} (inclusive)',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
           const SizedBox(height: 8),
           if (progress != null) ...[
@@ -1921,11 +1979,11 @@ class EntryCard extends StatelessWidget {
             total == null
                 ? 'Page ${e.currentPage}'
                 : 'Page ${e.currentPage} of $total',
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
           Text(
             '${e.readingLog.length} reading days logged',
-            style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),
         ]);
         final target = e.targetPagesPerDay;
@@ -1945,15 +2003,12 @@ class EntryCard extends StatelessWidget {
                     ? 'Reading goal complete'
                     : 'Goal: ${estimate.daysLabel} · '
                           'finish ${formatShortDate(estimate.completionDate!)}',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textFaint,
-                ),
+                style: TextStyle(fontSize: 11, color: AppColors.textFaint),
               ),
             );
           } on ArgumentError {
             details.add(
-              const Text(
+              Text(
                 'Reading goal needs correction',
                 style: TextStyle(fontSize: 11, color: AppColors.textFaint),
               ),
@@ -1969,13 +2024,24 @@ class EntryCard extends StatelessWidget {
         final today = dateOnly(DateTime.now());
         details.addAll([
           Text(
+            e.timeLabel == null
+                ? 'Choose time to schedule'
+                : 'At ${e.timeLabel}',
+            style: TextStyle(
+              fontSize: 12,
+              color: e.needsTimeConfiguration
+                  ? AppColors.warm
+                  : AppColors.textMuted,
+            ),
+          ),
+          Text(
             e.weekdays.isEmpty
                 ? 'Every day'
                 : [
                     for (var d = 1; d <= 7; d++)
                       if (e.weekdays.contains(d)) weekdayLetters[d - 1],
                   ].join(' '),
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -2003,7 +2069,7 @@ class EntryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Click a square to check a day off.',
             style: TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),
@@ -2021,7 +2087,7 @@ class EntryCard extends StatelessWidget {
                     ?e.timeLabel,
                     if (e.durationMinutes != null) '${e.durationMinutes} min',
                   ].join('  ·  '),
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         );
       case CalendarCategory.other:
@@ -2031,7 +2097,7 @@ class EntryCard extends StatelessWidget {
             dates.isEmpty
                 ? 'No dates'
                 : dates.map((k) => formatShortDate(parseDayKey(k))).join(', '),
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         );
     }
@@ -2096,7 +2162,7 @@ class EntryCard extends StatelessWidget {
         if (e.description.isNotEmpty)
           Text(
             e.description,
-            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 13, color: AppColors.textMuted),
           ),
         const SizedBox(height: 6),
         ...details,
@@ -2106,7 +2172,7 @@ class EntryCard extends StatelessWidget {
             e.notes.trim(),
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, color: AppColors.textFaint),
+            style: TextStyle(fontSize: 12, color: AppColors.textFaint),
           ),
         ],
         if (e.assetIds.isNotEmpty) ...[
@@ -2140,7 +2206,7 @@ Future<void> showArchive(BuildContext context, AppState state) {
             width: 480,
             height: 380,
             child: archived.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
                       'Archived entries appear here.',
                       style: TextStyle(color: AppColors.textFaint),
@@ -2161,7 +2227,7 @@ Future<void> showArchive(BuildContext context, AppState state) {
                                       '${formatLongDate(e.archivedAt!.toLocal())} · '
                                       'permanently deleted '
                                       '${formatLongDate(e.archivedAt!.add(Workspace.archivedEntryRetention).toLocal())}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               color: AppColors.textFaint,
                             ),

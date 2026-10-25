@@ -170,7 +170,7 @@ class LabeledField extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Text(
       label,
-      style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+      style: TextStyle(fontSize: 13, color: AppColors.textMuted),
     );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -219,7 +219,7 @@ class FolderDropdown extends StatelessWidget {
               padding: EdgeInsets.only(left: depth * 14.0),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.folder_outlined,
                     size: 15,
                     color: AppColors.textMuted,
@@ -253,7 +253,7 @@ void openDocumentAsset(BuildContext context, Workspace ws, Asset asset) {
             ? 'This document is not on this device yet. It arrives with the '
                   'next sync.'
             : 'No app on this device could open it.',
-        style: const TextStyle(color: AppColors.textMuted),
+        style: TextStyle(color: AppColors.textMuted),
       ),
       actions: [
         TextButton(
@@ -283,9 +283,9 @@ class AssetChip extends StatelessWidget {
     final isDocument = asset.kind == AssetKind.document;
     final Widget leading;
     if (isLink) {
-      leading = const Icon(Icons.link, size: 16, color: AppColors.accent);
+      leading = Icon(Icons.link, size: 16, color: AppColors.accent);
     } else if (isDocument) {
-      leading = const Icon(
+      leading = Icon(
         Icons.picture_as_pdf_outlined,
         size: 16,
         color: AppColors.danger,
@@ -308,7 +308,7 @@ class AssetChip extends StatelessWidget {
       color: AppColors.background,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AppColors.border),
+        side: BorderSide(color: AppColors.border),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -332,11 +332,19 @@ class AssetChip extends StatelessWidget {
                   style: const TextStyle(fontSize: 12),
                 ),
               ),
+              if (isDocument && onOpenPdfEditor != null)
+                IconButton(
+                  tooltip: 'Open in PDF editor',
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                  onPressed: onOpenPdfEditor,
+                  icon: const Icon(Icons.edit_document, size: 16),
+                ),
               if (onRemove != null) ...[
                 const SizedBox(width: 4),
                 InkWell(
                   onTap: onRemove,
-                  child: const Icon(
+                  child: Icon(
                     Icons.close,
                     size: 14,
                     color: AppColors.textFaint,
@@ -376,17 +384,11 @@ Future<bool> confirm(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title, style: const TextStyle(fontSize: 16)),
-      content: Text(
-        message,
-        style: const TextStyle(color: AppColors.textMuted),
-      ),
+      content: Text(message, style: TextStyle(color: AppColors.textMuted)),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text(
-            'Cancel',
-            style: TextStyle(color: AppColors.textMuted),
-          ),
+          child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, true),
@@ -426,10 +428,7 @@ Future<String?> promptText(
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: AppColors.textMuted),
-            ),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text),

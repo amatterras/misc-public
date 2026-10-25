@@ -273,7 +273,7 @@ Result after the audit: `flutter analyze` clean; 422 passed, 3 skipped, 0 failed
 | Dot opacity (Mindmap, Archive) | P2 | W,i | IMPLEMENTED, UNTESTED | `canvas_painter.dart`, `app_state.dart` dotOpacityFor | Codex tests this batch |
 | Collapsible tool and options strips | P2 | W,i | IMPLEMENTED, UNTESTED | `CollapsibleBar` in `canvas_toolbar.dart` | Codex tests this batch |
 | Custom tags (Archive + Mindmap, synced) | P1 | W,i | IMPLEMENTED, UNTESTED | `tag_models.dart`, `tag_ui.dart`, `workspace.dart` | Codex tests this batch |
-| Light theme | P2 | W,i | NOT STARTED (postponed by the user) | — | — |
+| System/light/dark theme and semantic light tokens | P2 | W,i | IMPLEMENTED (provisional light palette) | `theme_mode_test`; see `MASTER_SPEC.md` | Exact prior palette could not be recovered; host rendering still needs verification |
 
 ## 21. Data safety and storage modes (2026-10-25)
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |

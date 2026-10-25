@@ -122,6 +122,7 @@ void main() {
       );
       final boxes = c.items.whereType<TextItem>().where((i) => i.text == 'two');
       expect(boxes, hasLength(1));
+      expect(boxes.single.sourceNoteId, from.id);
       expect(ws.notes[from.id]!.body, 'one  three');
       await r.undo!();
       expect(
@@ -146,6 +147,57 @@ void main() {
       s.dispose();
     });
   });
+
+  test(
+    'canvas cross-mindmap move retains item identity and source reference',
+    () async {
+      final s = await app();
+      final original = s.workspace.createNote(title: 'Original note');
+      final source = s.canvas!;
+      final text = TextItem(
+        id: 'source-text',
+        position: const Offset(20, 30),
+        width: 200,
+        minHeight: 40,
+        text: 'excerpt',
+        sourceNoteId: original.id,
+        sourceNoteTitle: original.displayTitle,
+      );
+      source.addItems([text]);
+      final sourceId = source.id;
+      await s.acquireCanvas(sourceId);
+      await s.createCanvas(title: 'Destination', show: false);
+      final destinationId = s.canvasList
+          .firstWhere((c) => c.title == 'Destination')
+          .id;
+      final destination = await s.acquireCanvas(destinationId);
+      expect(destination, isNotNull);
+      final dest = destination!;
+      final moved = await s.performTransfer(
+        CanvasItemsTransfer(source, [text.id]),
+        CanvasPlace(destinationId, at: const Offset(500, 400)),
+        TransferOp.move,
+      );
+      expect(moved.message, startsWith('Moved'));
+      expect(source.itemById(text.id), isNull);
+      final landed = dest.itemById(text.id) as TextItem;
+      expect(landed.sourceNoteId, original.id);
+      expect(landed.sourceNoteTitle, original.displayTitle);
+      expect(
+        (landed.bounds.center - const Offset(500, 400)).distance,
+        lessThan(2),
+      );
+      s.activateCanvasItem(landed);
+      expect(s.selectedNoteId, original.id);
+      await moved.undo!();
+      expect(source.itemById(text.id), isA<TextItem>());
+      expect(dest.itemById(text.id), isNull);
+      await s.releaseCanvas(destinationId);
+      await s.releaseCanvas(sourceId);
+      await s.flush();
+      s.dispose();
+    },
+  );
 
   group('photos', () {
     test('move to another note keeps the same asset; never attached twice; '

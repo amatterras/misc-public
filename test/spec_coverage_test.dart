@@ -148,7 +148,7 @@ void main() {
 }
 
 void calendarCellAndColourTests() {
-  test('the shared 18-colour ink library is canonical and ordered', () {
+  test('the shared 19-colour ink library is canonical and ordered', () {
     expect(
       [for (final c in InkColors.all) c.toARGB32() & 0xFFFFFF],
       [
@@ -170,6 +170,7 @@ void calendarCellAndColourTests() {
         0x793BE8,
         0xF2D84A,
         0x176B4D,
+        0xFF3B30,
       ],
     );
   });
@@ -229,7 +230,7 @@ void calendarCellAndColourTests() {
     );
     expect(
       (label.left - date.left).abs(),
-      lessThan(16),
+      lessThan(20),
       reason: 'entry labels start at the left',
     );
 

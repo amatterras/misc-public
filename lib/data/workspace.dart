@@ -790,7 +790,13 @@ class Workspace {
   // ------------------------------------------------------------- calendar --
 
   int activeCount(CalendarCategory category, {String? excludeId}) => entries.all
-      .where((e) => e.category == category && !e.archived && e.id != excludeId)
+      .where(
+        (e) =>
+            e.category == category &&
+            !e.archived &&
+            e.id != excludeId &&
+            !(category == CalendarCategory.reading && e.readingPlanId != null),
+      )
       .length;
 
   bool hasRoomIn(CalendarCategory category, {String? excludeId}) =>
@@ -823,6 +829,70 @@ class Workspace {
                 entry.archivedAt ?? existing?.archivedAt ?? _now().toUtc(),
           );
     entries.put(saved);
+  }
+
+  /// Saves a Reading series and ensures one stable, independently editable
+  /// entry exists for every inclusive local calendar date in its range.
+  /// Existing pages are never replaced. Removed dates are detached instead
+  /// of deleted, so their notes remain available in the Reading list.
+  void saveReadingPlan(CalendarEntry series) {
+    if (series.category != CalendarCategory.reading) {
+      throw ArgumentError.value(series.category, 'category', 'Must be Reading');
+    }
+    final start = series.readingPlanStartDate;
+    final end = series.readingPlanEndDate;
+    if ((start == null) != (end == null)) {
+      throw ArgumentError('Choose both a start and end date for the plan.');
+    }
+    if (start != null && end != null && daysBetween(start, end) < 0) {
+      throw ArgumentError('The end date must be on or after the start date.');
+    }
+    // Validate the entire range before writing the parent or any occurrence.
+    final dates = <DateTime>[];
+    if (start != null && end != null) {
+      for (
+        var day = dateOnly(start);
+        daysBetween(day, end) >= 0;
+        day = addDays(day, 1)
+      ) {
+        dates.add(day);
+        if (dates.length > 3660) {
+          throw ArgumentError('A reading plan can span at most ten years.');
+        }
+      }
+    }
+    saveEntry(series);
+    final expected = <String>{};
+    for (final day in dates) {
+      final key = dayKey(day);
+      final id = '${series.id}/$key';
+      expected.add(id);
+      final existing = entries[id];
+      if (existing == null) {
+        entries.put(
+          CalendarEntry(
+            id: id,
+            category: CalendarCategory.reading,
+            name: '${series.name} · $key',
+            createdAt: _now(),
+            updatedAt: _now(),
+            readingPlanId: series.id,
+            readingPlanDate: day,
+          ),
+        );
+      } else if (existing.readingPlanId == series.id &&
+          existing.readingPlanDetached) {
+        // Re-including a date reattaches the same page, preserving its content.
+        entries.put(existing.copyWith(readingPlanDetached: false));
+      }
+    }
+    for (final page in entries.all) {
+      if (page.readingPlanId == series.id &&
+          !expected.contains(page.id) &&
+          !page.readingPlanDetached) {
+        entries.put(page.copyWith(readingPlanDetached: true));
+      }
+    }
   }
 
   /// Permanently removes archived calendar entries whose seven-day retention

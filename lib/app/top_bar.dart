@@ -168,7 +168,7 @@ class TopBar extends StatelessWidget {
                 key: const ValueKey('top-bar-expand'),
                 onTap: () => w.setCollapsed(false),
                 borderRadius: BorderRadius.circular(6),
-                child: const SizedBox(
+                child: SizedBox(
                   width: 56,
                   height: 14,
                   child: Icon(
@@ -185,7 +185,7 @@ class TopBar extends StatelessWidget {
       return Container(
         key: const ValueKey('top-bar'),
         height: height,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.sidebar,
           border: Border(bottom: BorderSide(color: AppColors.border)),
         ),
@@ -265,7 +265,7 @@ class TopBar extends StatelessWidget {
                   color: active ? AppColors.accent : Colors.transparent,
                   width: 2,
                 ),
-                right: const BorderSide(color: AppColors.border),
+                right: BorderSide(color: AppColors.border),
               ),
             ),
             child: Opacity(
@@ -274,7 +274,7 @@ class TopBar extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (p.pinned)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(right: 4),
                       child: Icon(
                         Icons.push_pin,
@@ -297,7 +297,7 @@ class TopBar extends StatelessWidget {
                     ),
                   ),
                   if (p.mode == PageMode.floating)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(left: 4),
                       child: Icon(
                         Icons.open_in_new,
@@ -315,7 +315,7 @@ class TopBar extends StatelessWidget {
                         box?.localToGlobal(const Offset(0, 34)) ?? Offset.zero,
                       );
                     },
-                    child: const Padding(
+                    child: Padding(
                       padding: EdgeInsets.only(left: 4),
                       child: Icon(
                         Icons.more_vert,

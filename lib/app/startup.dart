@@ -116,7 +116,7 @@ class _StartupScreenState extends State<StartupScreen> {
                         Text(
                           '${p.step}…',
                           key: const ValueKey('startup-step'),
-                          style: const TextStyle(color: AppColors.textMuted),
+                          style: TextStyle(color: AppColors.textMuted),
                         ),
                       ],
                     ),
@@ -126,14 +126,14 @@ class _StartupScreenState extends State<StartupScreen> {
                       '(${DateTime.now().difference(p.stepSince).inSeconds} s). '
                       'Please take a screenshot of this screen.',
                       key: const ValueKey('startup-stuck'),
-                      style: const TextStyle(color: AppColors.warm),
+                      style: TextStyle(color: AppColors.warm),
                     ),
                   if (failed) ...[
                     Text(
                       'THEapp could not start (step: ${p.step}). Nothing was '
                       'deleted. Please take a screenshot of this screen.',
                       key: const ValueKey('startup-error'),
-                      style: const TextStyle(color: AppColors.danger),
+                      style: TextStyle(color: AppColors.danger),
                     ),
                     const SizedBox(height: Space.md),
                     SelectableText(
@@ -144,14 +144,14 @@ class _StartupScreenState extends State<StartupScreen> {
                   ],
                   if (failed || stuck) ...[
                     const SizedBox(height: Space.lg),
-                    const Text(
+                    Text(
                       'Latest log lines',
                       style: TextStyle(color: AppColors.textMuted),
                     ),
                     const SizedBox(height: Space.sm),
                     SelectableText(
                       log.join('\n'),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         color: AppColors.textMuted,
                       ),
@@ -160,7 +160,7 @@ class _StartupScreenState extends State<StartupScreen> {
                       const SizedBox(height: Space.md),
                       Text(
                         startupLogHint!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: AppColors.textFaint,
                         ),
@@ -187,7 +187,7 @@ Widget readableErrorWidget(FlutterErrorDetails details) => Directionality(
       padding: const EdgeInsets.all(8),
       child: Text(
         'This part of THEapp could not be shown: ${details.exceptionAsString()}',
-        style: const TextStyle(color: AppColors.danger, fontSize: 12),
+        style: TextStyle(color: AppColors.danger, fontSize: 12),
         maxLines: 6,
         overflow: TextOverflow.ellipsis,
       ),

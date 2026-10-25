@@ -1,26 +1,63 @@
 import 'package:flutter/material.dart';
 
+import 'dart:ui' show PlatformDispatcher;
+
 /// Colour tokens taken from the Gemini prototype: near-black surfaces,
 /// hairline white borders and soft grey text.
 abstract final class AppColors {
-  static const background = Color(0xFF191A1D);
-  static const canvas = background;
-  static const sidebar = Color(0xFF222429);
-  static const card = Color(0xFF222429);
-  static const cardRaised = Color(0xFF303239);
-  static const border = Color(0xFF41444A);
-  static const hover = Color(0x1A789BB5);
-  static const selected = Color(0xFF303239);
-  static const text = Color(0xFFF5F3EF);
-  static const textMuted = Color(0xFFAAAEB6);
-  static const textFaint = Color(0xFFAAAEB6);
-  static const accent = Color(0xFF789BB5);
-  static const accentSecondary = Color(0xFF829CB5);
-  static const success = Color(0xFF8FBFA9);
-  static const brand = Color(0xFF172943);
-  static const warm = Color(0xFFE5D5B8);
-  // No separate danger hue was selected; warnings use the approved warm role.
-  static const danger = warm;
+  static ThemeMode mode = ThemeMode.dark;
+  static bool get light => switch (mode) {
+    ThemeMode.light => true,
+    ThemeMode.dark => false,
+    ThemeMode.system =>
+      PlatformDispatcher.instance.platformBrightness == Brightness.light,
+  };
+
+  // Provisional light palette: the repository history and current spec only
+  // record that light theme was postponed, with no recoverable prior values.
+  static const _darkBackground = Color(0xFF191A1D);
+  static const _darkSidebar = Color(0xFF222429);
+  static const _darkRaised = Color(0xFF303239);
+  static const _darkBorder = Color(0xFF41444A);
+  static const _darkText = Color(0xFFF5F3EF);
+  static const _darkMuted = Color(0xFFAAAEB6);
+  static const _lightBackground = Color(0xFFF4F2ED);
+  static const _lightCanvas = Color(0xFFFBFAF7);
+  static const _lightSidebar = Color(0xFFFFFFFF);
+  static const _lightRaised = Color(0xFFECE9E3);
+  static const _lightBorder = Color(0xFFC9C6BF);
+  static const _lightText = Color(0xFF202328);
+  static const _lightMuted = Color(0xFF5C6169);
+  static const _lightDisabled = Color(0xFF777C84);
+  static const _lightAccent = Color(0xFF456E8B);
+  static const _lightAccentSecondary = Color(0xFF56738A);
+  static const _lightSuccess = Color(0xFF34734F);
+  static const _lightWarm = Color(0xFF8A551A);
+  static const _lightDanger = Color(0xFFB42318);
+
+  static Color get background => light ? _lightBackground : _darkBackground;
+  static Color get canvas => light ? _lightCanvas : _darkBackground;
+  static Color get sidebar => light ? _lightSidebar : _darkSidebar;
+  static Color get card => light ? _lightSidebar : _darkSidebar;
+  static Color get cardRaised => light ? _lightRaised : _darkRaised;
+  static Color get border => light ? _lightBorder : _darkBorder;
+  static Color get hover =>
+      light ? const Color(0x1A456E8B) : const Color(0x1A789BB5);
+  static Color get selected => light ? const Color(0xFFDCE6ED) : _darkRaised;
+  static Color get text => light ? _lightText : _darkText;
+  static Color get textMuted => light ? _lightMuted : _darkMuted;
+  static Color get textFaint => light ? _lightDisabled : _darkMuted;
+  static Color get disabled => light ? _lightDisabled : _darkMuted;
+  static Color get accent => light ? _lightAccent : const Color(0xFF789BB5);
+  static Color get accentSecondary =>
+      light ? _lightAccentSecondary : const Color(0xFF829CB5);
+  static Color get focus => accent;
+  static Color get selection =>
+      light ? const Color(0x55456E8B) : const Color(0x55789BB5);
+  static Color get success => light ? _lightSuccess : const Color(0xFF8FBFA9);
+  static Color get brand => const Color(0xFF172943);
+  static Color get warm => light ? _lightWarm : const Color(0xFFE5D5B8);
+  static Color get danger => light ? _lightDanger : warm;
 }
 
 /// Canonical ink choices shared by fineliner, brush, pencil, highlighter,
@@ -45,26 +82,48 @@ abstract final class InkColors {
   static const electricGold = Color(0xFFF2D84A);
   static const deepPine = Color(0xFF176B4D);
 
-  static const all = [
-    pearl,
-    steelBlue,
-    dustyBlue,
-    midnightNavy,
-    petrol,
-    dustyMint,
-    pistachio,
-    orchidMist,
-    softAmber,
-    fuchsia,
-    antiqueGold,
-    electricAzure,
-    sapphire,
-    vividTurquoise,
-    electricLime,
-    ultraviolet,
-    electricGold,
-    deepPine,
+  /// Single approved bright red swatch. Added last so all legacy indices and
+  /// any IDs derived from the original swatch order remain stable.
+  static const brightRed = Color(0xFFFF3B30);
+
+  static const library = <InkSwatch>[
+    InkSwatch('pearl', 'Pearl', pearl),
+    InkSwatch('steel-blue', 'Steel Blue', steelBlue),
+    InkSwatch('dusty-blue', 'Dusty Blue', dustyBlue),
+    InkSwatch('midnight-navy', 'Midnight Navy', midnightNavy),
+    InkSwatch('petrol', 'Petrol', petrol),
+    InkSwatch('dusty-mint', 'Dusty Mint', dustyMint),
+    InkSwatch('pistachio', 'Pistachio', pistachio),
+    InkSwatch('orchid-mist', 'Orchid Mist', orchidMist),
+    InkSwatch('soft-amber', 'Soft Amber', softAmber),
+    InkSwatch('fuchsia', 'Fuchsia', fuchsia),
+    InkSwatch('antique-gold', 'Antique Gold', antiqueGold),
+    InkSwatch('electric-azure', 'Electric Azure', electricAzure),
+    InkSwatch('sapphire', 'Sapphire', sapphire),
+    InkSwatch('vivid-turquoise', 'Vivid Turquoise', vividTurquoise),
+    InkSwatch('electric-lime', 'Electric Lime', electricLime),
+    InkSwatch('ultraviolet', 'Ultraviolet', ultraviolet),
+    InkSwatch('electric-gold', 'Electric Gold', electricGold),
+    InkSwatch('deep-pine', 'Deep Pine', deepPine),
+    InkSwatch('bright-red', 'Bright Red', brightRed),
   ];
+
+  static final List<Color> all = List.unmodifiable(
+    library.map((swatch) => swatch.color),
+  );
+  static InkSwatch? byId(String id) {
+    for (final swatch in library) {
+      if (swatch.id == id) return swatch;
+    }
+    return null;
+  }
+}
+
+class InkSwatch {
+  const InkSwatch(this.id, this.name, this.color);
+  final String id;
+  final String name;
+  final Color color;
 }
 
 abstract final class ArchiveCategoryColors {
@@ -92,26 +151,8 @@ abstract final class CanvasTagColors {
   ];
 }
 
-const inkColorNames = [
-  'Pearl',
-  'Steel Blue',
-  'Dusty Blue',
-  'Midnight Navy',
-  'Petrol',
-  'Dusty Mint',
-  'Pistachio',
-  'Orchid Mist',
-  'Soft Amber',
-  'Fuchsia',
-  'Antique Gold',
-  'Electric Azure',
-  'Sapphire',
-  'Vivid Turquoise',
-  'Electric Lime',
-  'Ultraviolet',
-  'Electric Gold',
-  'Deep Pine',
-];
+List<String> get inkColorNames =>
+    InkColors.library.map((swatch) => swatch.name).toList(growable: false);
 
 /// Shared spacing scale, so every page lines up the same way.
 abstract final class Space {
@@ -124,32 +165,48 @@ abstract final class Space {
   static const page = 48.0;
 }
 
-ThemeData buildAppTheme() {
-  const scheme = ColorScheme.dark(
-    surface: AppColors.background,
-    onSurface: AppColors.text,
-    primary: AppColors.accent,
-    onPrimary: AppColors.background,
-    secondary: AppColors.accent,
-    error: AppColors.danger,
-    outline: AppColors.border,
-  );
+ThemeData buildAppTheme({Brightness brightness = Brightness.dark}) {
+  final previousMode = AppColors.mode;
+  AppColors.mode = brightness == Brightness.light
+      ? ThemeMode.light
+      : ThemeMode.dark;
+  final scheme = brightness == Brightness.light
+      ? ColorScheme.light(
+          surface: AppColors.background,
+          onSurface: AppColors.text,
+          primary: AppColors.accent,
+          onPrimary: Colors.white,
+          secondary: AppColors.accentSecondary,
+          onSecondary: Colors.white,
+          error: AppColors.danger,
+          onError: Colors.white,
+          outline: AppColors.border,
+        )
+      : ColorScheme.dark(
+          surface: AppColors.background,
+          onSurface: AppColors.text,
+          primary: AppColors.accent,
+          onPrimary: AppColors.background,
+          secondary: AppColors.accent,
+          error: AppColors.danger,
+          outline: AppColors.border,
+        );
   final base = ThemeData(
     useMaterial3: true,
-    brightness: Brightness.dark,
+    brightness: brightness,
     colorScheme: scheme,
     scaffoldBackgroundColor: AppColors.background,
     fontFamily: 'Segoe UI',
     splashFactory: NoSplash.splashFactory,
     visualDensity: VisualDensity.compact,
   );
-  return base.copyWith(
+  final result = base.copyWith(
     textTheme: base.textTheme.apply(
       bodyColor: AppColors.text,
       displayColor: AppColors.text,
     ),
-    dividerTheme: const DividerThemeData(color: AppColors.border, space: 1),
-    tooltipTheme: const TooltipThemeData(
+    dividerTheme: DividerThemeData(color: AppColors.border, space: 1),
+    tooltipTheme: TooltipThemeData(
       waitDuration: Duration(milliseconds: 400),
       decoration: BoxDecoration(
         color: AppColors.cardRaised,
@@ -157,22 +214,22 @@ ThemeData buildAppTheme() {
       ),
       textStyle: TextStyle(color: AppColors.text, fontSize: 12),
     ),
-    dialogTheme: const DialogThemeData(
+    dialogTheme: DialogThemeData(
       backgroundColor: AppColors.card,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
+        borderRadius: const BorderRadius.all(Radius.circular(12)),
         side: BorderSide(color: AppColors.border),
       ),
     ),
-    popupMenuTheme: const PopupMenuThemeData(
+    popupMenuTheme: PopupMenuThemeData(
       color: AppColors.cardRaised,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(8)),
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
         side: BorderSide(color: AppColors.border),
       ),
       textStyle: TextStyle(color: AppColors.text, fontSize: 13),
     ),
-    inputDecorationTheme: const InputDecorationTheme(
+    inputDecorationTheme: InputDecorationTheme(
       isDense: true,
       filled: true,
       fillColor: AppColors.background,
@@ -186,9 +243,11 @@ ThemeData buildAppTheme() {
         borderSide: BorderSide(color: AppColors.textMuted),
       ),
     ),
-    textSelectionTheme: const TextSelectionThemeData(
-      cursorColor: AppColors.text,
-      selectionColor: Color(0x55789BB5),
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: AppColors.focus,
+      selectionColor: AppColors.selection,
     ),
   );
+  AppColors.mode = previousMode;
+  return result;
 }

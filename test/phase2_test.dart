@@ -173,37 +173,52 @@ void main() {
     });
   });
 
-  group('draw and hold → straight line', () {
-    test('a wobbly line held still becomes straight, end follows the pen', () {
-      final c = make();
-      c.tool = CanvasTool.pen;
-      pencil(c, const Offset(0, 0), [
-        for (var i = 1; i <= 20; i++) Offset(i * 10.0, i.isEven ? 3 : -3),
-      ]);
-      c.holdElapsed();
-      expect(c.liveStrokeIsStraight, isTrue);
-      c.pointerMove(const Offset(200, 50));
-      c.pointerUp();
-      final s = c.items.single as StrokeItem;
-      expect(s.points.first.offset, Offset.zero);
-      expect(s.points.last.offset, const Offset(200, 50));
-      for (final p in s.points) {
+  group('idle line straightening', () {
+    testWidgets(
+      'a line straightens exactly after two idle seconds and undoes',
+      (tester) async {
+        final c = make();
+        c.tool = CanvasTool.pen;
+        pencil(c, Offset.zero, [
+          for (var i = 1; i <= 20; i++) Offset(i * 10.0, i.isEven ? 3 : -3),
+        ]);
+        c.pointerUp();
+        final original = c.items.single as StrokeItem;
+        await tester.pump(const Duration(milliseconds: 1999));
+        expect(identical(c.items.single, original), isTrue);
+        await tester.pump(const Duration(milliseconds: 1));
+        final straight = c.items.single as StrokeItem;
+        expect(straight.points.first.offset, Offset.zero);
+        expect(straight.points.last.offset, const Offset(200, 3));
+        expect(straight.points.length, greaterThan(2));
+        for (final point in straight.points) {
+          expect(
+            distanceToSegment(point.offset, Offset.zero, const Offset(200, 3)),
+            lessThan(1e-6),
+          );
+        }
         expect(
-          distanceToSegment(p.offset, Offset.zero, const Offset(200, 50)),
-          lessThan(1e-6),
+          (rt(c.document).items.single as StrokeItem).points
+              .map((point) => point.offset)
+              .toList(),
+          straight.points.map((point) => point.offset).toList(),
         );
-      }
-      // Real geometry: saved straight, undo removes it in one step.
-      expect(rt(c.document).items.single, isA<StrokeItem>());
-      c.undo();
-      expect(c.items, isEmpty);
-      c.dispose();
-    });
+        c.undo();
+        expect(c.items.single, same(original));
+        c.redo();
+        expect(
+          (c.items.single as StrokeItem).points.length,
+          straight.points.length,
+        );
+        c.dispose();
+      },
+    );
 
-    test('handwriting, short marks and dots are never straightened', () {
+    testWidgets('curves, scribbles, short lines and taps remain unchanged', (
+      tester,
+    ) async {
       final c = make();
       c.tool = CanvasTool.pen;
-      // A loop like the letter "o".
       pencil(c, const Offset(50, 0), [
         for (var a = 0; a <= 12; a++)
           Offset(
@@ -211,41 +226,62 @@ void main() {
             30 * math.sin(a / 12 * 6.28),
           ),
       ]);
-      c.holdElapsed();
-      expect(c.liveStrokeIsStraight, isFalse);
       c.pointerUp();
-      // A short dash.
-      pencil(c, const Offset(0, 100), [const Offset(15, 100)]);
-      c.holdElapsed();
-      expect(c.liveStrokeIsStraight, isFalse);
+      pencil(c, const Offset(0, 100), [
+        const Offset(40, 100),
+        const Offset(20, 100),
+        const Offset(60, 100),
+      ]);
       c.pointerUp();
-      // A dot.
+      pencil(c, const Offset(0, 200), [const Offset(15, 200)]);
+      c.pointerUp();
       c.pointerDown(const Offset(300, 300), kind: PointerDeviceKind.stylus);
-      c.holdElapsed();
-      expect(c.liveStrokeIsStraight, isFalse);
       c.pointerUp();
-      expect(c.items, hasLength(3));
+      await tester.pump(const Duration(seconds: 3));
+      expect(c.items, hasLength(4));
+      expect((c.items[0] as StrokeItem).points.length, greaterThan(10));
+      expect((c.items[1] as StrokeItem).points.length, greaterThan(2));
+      expect((c.items[2] as StrokeItem).points.length, 2);
+      expect((c.items[3] as StrokeItem).points.length, 1);
       c.dispose();
     });
 
-    testWidgets('the hold fires only after the pen stays still', (
+    testWidgets('movement resets dwell and a tool switch cancels it', (
       tester,
     ) async {
       final c = make();
       c.tool = CanvasTool.pen;
       pencil(c, Offset.zero, [for (var i = 1; i <= 10; i++) Offset(i * 10, 0)]);
-      await tester.pump(const Duration(milliseconds: 300));
-      c.pointerMove(const Offset(120, 0)); // still drawing: timer restarts
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(c.liveStrokeIsStraight, isFalse);
-      c.pointerMove(const Offset(121, 1)); // a tremble within tolerance
-      await tester.pump(const Duration(milliseconds: 250));
-      expect(c.liveStrokeIsStraight, isTrue);
+      await tester.pump(const Duration(milliseconds: 1500));
+      c.pointerMove(const Offset(110, 0));
+      await tester.pump(const Duration(milliseconds: 1500));
+      expect(c.lineStraightenPreview, isNull);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(c.lineStraightenPreview, isNotNull);
       c.pointerUp();
+      expect(c.lineStraightenPreview, isNull);
+
+      pencil(c, Offset.zero, [for (var i = 1; i <= 10; i++) Offset(i * 10, 0)]);
+      c.pointerUp();
+      c.tool = CanvasTool.select;
+      await tester.pump(const Duration(seconds: 3));
+      expect(c.lineStraightenPreview, isNull);
       c.dispose();
     });
-  });
 
+    testWidgets('disposing the controller removes its pending timer', (
+      tester,
+    ) async {
+      final c = make();
+      c.tool = CanvasTool.pen;
+      pencil(c, Offset.zero, [for (var i = 1; i <= 10; i++) Offset(i * 10, 0)]);
+      c.pointerUp();
+      final original = c.items.single;
+      c.dispose();
+      await tester.pump(const Duration(seconds: 3));
+      expect(c.items.single, same(original));
+    });
+  });
   group('Apple Pencil Pro squeeze', () {
     test('eraser while squeezed, then the tool before', () {
       final c = make();

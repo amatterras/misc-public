@@ -158,7 +158,7 @@ class _AiPanelState extends State<AiPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'AI is off. Nothing is ever sent until you turn it on and '
                 'press Send here.',
                 style: TextStyle(color: AppColors.textMuted),
@@ -208,7 +208,7 @@ class _AiPanelState extends State<AiPanel> {
             onDeleted: () => session.detach(c),
           ),
         if (session.attached.isEmpty)
-          const Text(
+          Text(
             'Nothing attached. Select text in a note, a task or items on a '
             'mindmap and choose “Ask AI”, or add a photo.',
             style: TextStyle(fontSize: 12, color: AppColors.textFaint),
@@ -236,7 +236,7 @@ class _AiPanelState extends State<AiPanel> {
   Widget _messages() {
     final turns = session.turns;
     if (turns.isEmpty && !session.busy) {
-      return const Center(
+      return Center(
         key: ValueKey('ai-empty'),
         child: Padding(
           padding: EdgeInsets.all(Space.lg),
@@ -290,8 +290,8 @@ class _AiPanelState extends State<AiPanel> {
   );
 
   Widget _turn(AiTurn t, {required bool last}) {
-    const faint = TextStyle(fontSize: 11, color: AppColors.textFaint);
-    const warn = TextStyle(fontSize: 11, color: AppColors.warm);
+    final faint = TextStyle(fontSize: 11, color: AppColors.textFaint);
+    final warn = TextStyle(fontSize: 11, color: AppColors.warm);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -427,10 +427,7 @@ class _AiPanelState extends State<AiPanel> {
                   Expanded(
                     child: Text(
                       session.error!,
-                      style: const TextStyle(
-                        color: AppColors.warm,
-                        fontSize: 13,
-                      ),
+                      style: TextStyle(color: AppColors.warm, fontSize: 13),
                     ),
                   ),
                   if (kind == AiErrorKind.settings ||
@@ -496,7 +493,7 @@ class _AiPanelState extends State<AiPanel> {
               'What will be sent: ${preview.length} characters'
               '${pictures > 0 ? ' and $pictures picture(s)' : ''}'
               '${session.turns.isEmpty ? '' : ', plus up to 3 earlier questions and answers'}',
-              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
             children: [
               ConstrainedBox(
@@ -504,10 +501,7 @@ class _AiPanelState extends State<AiPanel> {
                 child: SingleChildScrollView(
                   child: SelectableText(
                     preview,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textFaint,
-                    ),
+                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
                   ),
                 ),
               ),
@@ -520,10 +514,7 @@ class _AiPanelState extends State<AiPanel> {
                   'To: ${s.ai.isLocal ? 'the local model on this PC' : s.ai.endpoint} (${s.ai.model})',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textFaint,
-                  ),
+                  style: TextStyle(fontSize: 11, color: AppColors.textFaint),
                 ),
               ),
               if (session.busy)

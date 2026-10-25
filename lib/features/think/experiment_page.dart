@@ -59,7 +59,7 @@ Future<void> showExperiments(BuildContext context, AppState s) =>
               width: 420,
               height: 360,
               child: list.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text(
                         'None yet.',
                         style: TextStyle(color: AppColors.textFaint),
@@ -196,7 +196,7 @@ class ExperimentPage extends StatelessWidget {
     builder: (context, _) {
       final e = x;
       if (e == null) {
-        return const Center(
+        return Center(
           child: Text(
             'This thought experiment was deleted.',
             style: TextStyle(color: AppColors.textFaint),
@@ -541,7 +541,7 @@ class ExperimentPage extends StatelessWidget {
               ),
             ],
           ),
-          const Text(
+          Text(
             'Relies on',
             style: TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),

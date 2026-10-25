@@ -217,15 +217,43 @@ Path strokePath(StrokeItem stroke) =>
 /// line: long enough on screen and close to the line between its ends, so
 /// handwriting (letters, curves) is never straightened.
 bool looksLikeLine(List<StrokePoint> points, double scale) {
-  if (points.length < 2) return false;
+  if (points.length < 2 || !scale.isFinite || scale <= 0) return false;
   final a = points.first.offset, b = points.last.offset;
-  final length = (b - a).distance * scale;
-  if (length < minLineLength) return false;
+  final chord = (b - a).distance;
+  final screenLength = chord * scale;
+  if (screenLength < minLineLength || chord == 0) return false;
+  var pathLength = 0.0;
   var deviation = 0.0;
+  var squaredDeviation = 0.0;
+  var backwards = 0.0;
+  var previous = points.first.offset;
+  final direction = (b - a) / chord;
   for (final p in points) {
-    deviation = math.max(deviation, distanceToSegment(p.offset, a, b) * scale);
+    final error = distanceToSegment(p.offset, a, b) * scale;
+    deviation = math.max(deviation, error);
+    squaredDeviation += error * error;
+    final segment = p.offset - previous;
+    pathLength += segment.distance;
+    if (segment.distance > 0) {
+      backwards +=
+          math.max(
+            0,
+            -((segment / segment.distance).dx * direction.dx +
+                (segment / segment.distance).dy * direction.dy),
+          ) *
+          segment.distance;
+    }
+    previous = p.offset;
   }
-  return deviation <= math.max(10, length * 0.12);
+  final rms = math.sqrt(squaredDeviation / points.length);
+  // Exclude loops and scribbles that happen to remain inside a narrow band:
+  // their travelled path is too long or turns substantially back on itself.
+  final efficient = pathLength / chord;
+  final backtrackRatio = backwards / chord;
+  return deviation <= math.max(8, screenLength * 0.09) &&
+      rms <= math.max(3, screenLength * 0.035) &&
+      efficient <= 1.16 &&
+      backtrackRatio <= 0.08;
 }
 
 /// Shortest straight line (screen pixels) that a hold can produce.

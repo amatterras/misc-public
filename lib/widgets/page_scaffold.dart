@@ -40,7 +40,7 @@ class PageScaffold extends StatelessWidget {
           const SizedBox(height: Space.xs),
           Text(
             subtitle!,
-            style: const TextStyle(fontSize: 14, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 14, color: AppColors.textMuted),
           ),
         ],
       ],
@@ -148,12 +148,12 @@ class ComingSoon extends StatelessWidget {
                 children: [
                   TextSpan(
                     text: 'Planned for Milestone $milestone. ',
-                    style: const TextStyle(color: AppColors.textMuted),
+                    style: TextStyle(color: AppColors.textMuted),
                   ),
                   TextSpan(text: description),
                 ],
               ),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 color: AppColors.textFaint,
                 height: 1.5,

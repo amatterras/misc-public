@@ -143,13 +143,26 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const _Heading('Appearance'),
+              DropdownButtonFormField<String>(
+                key: const ValueKey('theme-mode'),
+                initialValue: s.themeModePreference.value,
+                decoration: const InputDecoration(labelText: 'Theme'),
+                items: const [
+                  DropdownMenuItem(value: 'system', child: Text('System')),
+                  DropdownMenuItem(value: 'light', child: Text('Light')),
+                  DropdownMenuItem(value: 'dark', child: Text('Dark')),
+                ],
+                onChanged: (mode) async {
+                  if (mode == null) return;
+                  await s.setThemeMode(mode);
+                  if (mounted) setState(() {});
+                },
+              ),
               const _Heading('Your data'),
               Text(
                 'Everything is stored only on $thisDevice, in:\n$dataPath',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textMuted,
-                ),
+                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
               ),
               const SizedBox(height: Space.sm),
               OutlinedButton.icon(
@@ -183,10 +196,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                             'text copied there arrives on this clipboard. Off '
                             'by default: copied passwords would be shared too. '
                             'The hub must run this version of THEapp.',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textFaint,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
               ),
               if (s.shareClipboard && touchFirst)
@@ -217,10 +227,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   '${s.workspace.shares.all.where((l) => l.activeAt(DateTime.now())).length} '
                   'active. Read-only links served by your own hub; revoke '
                   'them here.',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textFaint,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => showSharedLinks(context, s),
@@ -232,7 +239,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   'Private vault',
                   style: TextStyle(fontSize: 14),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'Notes encrypted with a password; never searched, sent to '
                   'AI, shared or exported.',
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
@@ -255,7 +262,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   'Read scanned PDFs for search',
                   style: TextStyle(fontSize: 14),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'On-device text recognition (Windows OCR, Apple Vision on '
                   'iPhone/iPad). Nothing is sent to AI or online services.',
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
@@ -274,7 +281,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     'Apple Pencil double-tap undoes',
                     style: TextStyle(fontSize: 14),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'On the drawing you are using (canvas, note handwriting, '
                     'Calendar in Draw mode). Apple Pencil 2 and Pro. Turning '
                     'double-tap off in iPadOS Settings is respected too.',
@@ -294,7 +301,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   'Full screen',
                   style: TextStyle(fontSize: 14),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'Windows: no window frame (F11). iPhone/iPad: no status bar '
                   '(swipe from the edge to see it; the home indicator stays).',
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
@@ -320,10 +327,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                             'Saved on this device only.'
                       : 'Not available here: iPhone and iPad apps cannot '
                             'stay above other apps.',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textFaint,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
               ),
               const _Heading('Calendar'),
@@ -411,7 +415,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   'Fetch titles and previews for pasted links',
                   style: TextStyle(fontSize: 14),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'THEapp visits the page you pasted, like a browser would. '
                   'None of your own content is sent anywhere.',
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
@@ -421,7 +425,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               // through the Share menu / Shortcut (see ios/README_IOS.md).
               if (!touchFirst) ...[
                 const _Heading('Send to THEapp'),
-                const Text(
+                Text(
                   'Adds “THEapp” to the right-click “Send to” menu in File Explorer. '
                   'Photos and files you send land in the Inbox on Home, where you '
                   'choose Canvas, Notes or Calendar.',
@@ -457,10 +461,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 'last 14 are kept), and once a week one that also holds photos '
                 'and PDFs (the last 4 are kept). Backups stay on $thisDevice'
                 '${s.workspace.backups.copiesDir == null ? '.' : ': use “Save a copy to Files” to keep one elsewhere.'}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textMuted,
-                ),
+                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
               ),
               const SizedBox(height: Space.sm),
               Wrap(
@@ -486,7 +487,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.history,
                     size: 18,
                     color: AppColors.textFaint,
@@ -501,19 +502,19 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   ),
                 ),
               if (_backups.isEmpty)
-                const Text(
+                Text(
                   'No backups yet.',
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
               const _Heading('Data safety'),
               DataSafetySection(state: s),
               const _Heading('About'),
-              const SelectableText(
+              SelectableText(
                 'THEapp build $appBuild',
                 key: ValueKey('about-build'),
                 style: TextStyle(fontSize: 13, color: AppColors.textMuted),
               ),
-              const Text(
+              Text(
                 'Every device paired with the same hub should run the same '
                 'build (at least 371c6ca).',
                 style: TextStyle(fontSize: 12, color: AppColors.textFaint),
@@ -542,7 +543,7 @@ class _Heading extends StatelessWidget {
     padding: const EdgeInsets.only(top: Space.xl, bottom: Space.sm),
     child: Text(
       text.toUpperCase(),
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 11,
         letterSpacing: 0.6,
         color: AppColors.textFaint,

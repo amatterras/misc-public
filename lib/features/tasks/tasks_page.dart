@@ -48,7 +48,7 @@ class LabelTaskList extends TaskList {
   final String label;
 }
 
-const priorityColors = [
+List<Color> get priorityColors => [
   AppColors.textFaint,
   AppColors.accentSecondary,
   AppColors.warm,
@@ -280,10 +280,7 @@ class _TasksPageState extends State<TasksPage> {
                 if (count != null && count > 0)
                   Text(
                     '$count',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textFaint,
-                    ),
+                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
                   ),
               ],
             ),
@@ -313,7 +310,7 @@ class _TasksPageState extends State<TasksPage> {
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 letterSpacing: 0.6,
                 color: AppColors.textFaint,
@@ -447,7 +444,7 @@ class _TasksPageState extends State<TasksPage> {
         ),
         for (final p in subjects) projectItem(p),
         if (ws.taskLabels.isNotEmpty) ...[
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(10, 18, 4, 6),
             child: Text(
               'LABELS',
@@ -472,7 +469,7 @@ class _TasksPageState extends State<TasksPage> {
             touchFirst
                 ? 'Press and hold a project to rename or archive it.'
                 : 'Right-click a project to rename or archive it.',
-            style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),
         ),
       ],
@@ -654,7 +651,7 @@ class _TasksPageState extends State<TasksPage> {
         children: [
           Text(
             '${ids.length} selected',
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
           TextButton(
             onPressed: ids.isEmpty ? null : () => run('complete'),
@@ -786,7 +783,7 @@ class _TasksPageState extends State<TasksPage> {
                     : null,
               ),
               child: tasks.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text(
                         'Nothing here.',
                         style: TextStyle(color: AppColors.textFaint),
@@ -943,7 +940,7 @@ class TaskRow extends StatelessWidget {
                           if (waiting.isNotEmpty)
                             'waits for ${waiting.first.title}${waiting.length > 1 ? ' +${waiting.length - 1}' : ''}',
                         ].join('  ·  '),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           color: AppColors.textFaint,
                         ),
@@ -1152,7 +1149,7 @@ class _TaskDetailState extends State<TaskDetail> {
             ),
           ),
         if (t.dueDate != null)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(left: 96, bottom: 4),
             child: Text(
               'Shown on Calendar on this date.',
@@ -1229,10 +1226,7 @@ class _TaskDetailState extends State<TaskDetail> {
                   Text(
                     'Moved from ${formatShortDate(t.seriesDate!)}; '
                     'the series continues from there.',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textFaint,
-                    ),
+                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
                   ),
               ],
             ),
@@ -1509,7 +1503,7 @@ class _TaskDetailState extends State<TaskDetail> {
           contentPadding: EdgeInsets.zero,
           value: t.isExam,
           title: const Text('This is an exam', style: TextStyle(fontSize: 13)),
-          subtitle: const Text(
+          subtitle: Text(
             'Add revision tasks as subtasks below.',
             style: TextStyle(fontSize: 11, color: AppColors.textFaint),
           ),
@@ -1518,7 +1512,7 @@ class _TaskDetailState extends State<TaskDetail> {
         const SizedBox(height: Space.md),
         Text(
           t.isExam ? 'REVISION TASKS' : 'SUBTASKS',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11,
             letterSpacing: 0.6,
             color: AppColors.textFaint,
@@ -1694,7 +1688,7 @@ class FocusTimerCard extends StatelessWidget {
                       child: Text(
                         task.title,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           color: AppColors.textMuted,
                         ),

@@ -192,7 +192,7 @@ class _ReviewCenterState extends State<ReviewCenter> {
                           'Last 7 days: ${r.doneThisWeek.length} tasks done, '
                           '${r.notesThisWeek} notes written or changed, '
                           '${r.archivedThisWeek} things added to the Archive.',
-                          style: const TextStyle(color: AppColors.textMuted),
+                          style: TextStyle(color: AppColors.textMuted),
                         ),
                       ),
                       _heading('Deadlines that look at risk', r.atRisk.length),
@@ -234,7 +234,7 @@ class _ReviewCenterState extends State<ReviewCenter> {
                           child: Text(
                             '${r.inbox} things wait in the inbox on the start '
                             'page.',
-                            style: const TextStyle(color: AppColors.textMuted),
+                            style: TextStyle(color: AppColors.textMuted),
                           ),
                         ),
                     ],

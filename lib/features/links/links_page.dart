@@ -102,7 +102,7 @@ class _LinksPageState extends State<LinksPage> {
   Widget build(BuildContext context) {
     final board = s.linksBoard;
     if (board == null) {
-      return const ColoredBox(color: AppColors.canvas);
+      return ColoredBox(color: AppColors.canvas);
     }
     return ListenableBuilder(
       listenable: Listenable.merge([
@@ -132,7 +132,7 @@ class _LinksPageState extends State<LinksPage> {
                     ),
                   ),
                   if (!hasLinks)
-                    const Positioned(
+                    Positioned(
                       left: 0,
                       right: 0,
                       top: 80,
@@ -162,89 +162,101 @@ class _LinksPageState extends State<LinksPage> {
         Space.sm,
         Space.sm,
       ),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.sidebar,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
-      child: Row(
-        children: [
-          const Text(
-            'archive',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(width: Space.md),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _chip(
-                    key: const ValueKey('links-filter-all'),
-                    label: 'All',
-                    color: AppColors.textMuted,
-                    on: _filter == null,
-                    onTap: () => _setFilter(board, null),
-                  ),
-                  for (final tag in LinkTag.values)
-                    _chip(
-                      key: ValueKey('links-filter-${tag.id}'),
-                      label: tag.label,
-                      color: tag.color,
-                      on: _filter == tag,
-                      onTap: () =>
-                          _setFilter(board, _filter == tag ? null : tag),
-                    ),
-                  // The user's own tags (shared with the Mindmap).
-                  for (final t in s.workspace.tagsByName)
-                    _chip(
-                      key: ValueKey('links-filter-tag-${t.id}'),
-                      label: t.name,
-                      color: Color(t.color),
-                      on: _customFilter == t.id,
-                      onTap: () => _setFilter(
-                        board,
-                        null,
-                        custom: _customFilter == t.id ? null : t.id,
-                      ),
-                    ),
-                  const SizedBox(width: Space.sm),
-                  _projectMenu(
-                    key: const ValueKey('links-filter-project'),
-                    label: _project == null
-                        ? 'Project ▾'
-                        : '${s.workspace.projects[_project]?.name ?? 'Project'} ▾',
-                    includeAll: true,
-                    onSelected: (id) =>
-                        _setProject(board, id.isEmpty ? null : id),
-                  ),
-                ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final row = Row(
+            children: [
+              const Text(
+                'archive',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
-            ),
-          ),
-          IconButton(
-            key: const ValueKey('links-dots'),
-            tooltip: 'Background dots',
-            onPressed: () async {
-              final board = await s.openLinksBoard();
-              if (mounted) {
-                await showDotOpacityDialog(context, board, s.setDotOpacity);
-              }
-            },
-            icon: const Icon(Icons.grain, size: 18),
-          ),
-          IconButton(
-            key: const ValueKey('links-library'),
-            tooltip: 'Library: folders, where things are used, link check',
-            onPressed: () => showArchiveLibrary(context, s),
-            icon: const Icon(Icons.folder_copy_outlined, size: 18),
-          ),
-          TextButton.icon(
-            key: const ValueKey('links-add'),
-            onPressed: _addLink,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Add link'),
-          ),
-        ],
+              const SizedBox(width: Space.md),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _chip(
+                        key: const ValueKey('links-filter-all'),
+                        label: 'All',
+                        color: AppColors.textMuted,
+                        on: _filter == null,
+                        onTap: () => _setFilter(board, null),
+                      ),
+                      for (final tag in LinkTag.values)
+                        _chip(
+                          key: ValueKey('links-filter-${tag.id}'),
+                          label: tag.label,
+                          color: tag.color,
+                          on: _filter == tag,
+                          onTap: () =>
+                              _setFilter(board, _filter == tag ? null : tag),
+                        ),
+                      // The user's own tags (shared with the Mindmap).
+                      for (final t in s.workspace.tagsByName)
+                        _chip(
+                          key: ValueKey('links-filter-tag-${t.id}'),
+                          label: t.name,
+                          color: Color(t.color),
+                          on: _customFilter == t.id,
+                          onTap: () => _setFilter(
+                            board,
+                            null,
+                            custom: _customFilter == t.id ? null : t.id,
+                          ),
+                        ),
+                      const SizedBox(width: Space.sm),
+                      _projectMenu(
+                        key: const ValueKey('links-filter-project'),
+                        label: _project == null
+                            ? 'Project ▾'
+                            : '${s.workspace.projects[_project]?.name ?? 'Project'} ▾',
+                        includeAll: true,
+                        onSelected: (id) =>
+                            _setProject(board, id.isEmpty ? null : id),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              IconButton(
+                key: const ValueKey('links-dots'),
+                tooltip: 'Background dots',
+                onPressed: () async {
+                  final board = await s.openLinksBoard();
+                  if (!context.mounted) return;
+                  await showDotOpacityDialog(context, board, s.setDotOpacity);
+                },
+                icon: const Icon(Icons.grain, size: 18),
+              ),
+              IconButton(
+                key: const ValueKey('links-library'),
+                tooltip: 'Library: folders, where things are used, link check',
+                onPressed: () => showArchiveLibrary(context, s),
+                icon: const Icon(Icons.folder_copy_outlined, size: 18),
+              ),
+              TextButton.icon(
+                key: const ValueKey('links-add'),
+                onPressed: _addLink,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add link'),
+              ),
+            ],
+          );
+          return constraints.maxWidth < 500
+              ? SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  // The filter row's natural width grows with custom tags.
+                  // Give it enough room inside its horizontal scroller so a
+                  // narrow app window never triggers a RenderFlex overflow.
+                  child: SizedBox(width: 500, child: row),
+                )
+              : row;
+        },
       ),
     );
   }
@@ -257,67 +269,79 @@ class _LinksPageState extends State<LinksPage> {
         vertical: Space.xs,
       ),
       color: AppColors.card,
-      child: Row(
-        children: [
-          Flexible(
-            flex: 2,
-            child: Text(
-              link.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-            ),
-          ),
-          const SizedBox(width: Space.sm),
-          Flexible(
-            flex: 5,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (final tag in LinkTag.values)
-                    _chip(
-                      key: ValueKey('links-tag-${tag.id}'),
-                      label: tag.label,
-                      color: tag.color,
-                      on: link.linkTags.contains(tag.id),
-                      onTap: () {
-                        final tags = [...link.linkTags];
-                        tags.contains(tag.id)
-                            ? tags.remove(tag.id)
-                            : tags.add(tag.id);
-                        s.setLinkTags(link.id, tags);
-                      },
-                    ),
-                  const SizedBox(width: Space.sm),
-                  for (final id in link.projectIds)
-                    if (s.workspace.projects[id] case final p?)
-                      _chip(
-                        key: ValueKey('links-project-$id'),
-                        label: p.name,
-                        color: AppColors.accent,
-                        on: true,
-                        onTap: () => s.workspace.assets.put(
-                          link.copyWith(
-                            projectIds: [...link.projectIds]..remove(id),
-                          ),
-                        ),
-                      ),
-                  _projectMenu(
-                    key: const ValueKey('links-add-project'),
-                    label: '+ Project',
-                    onSelected: (id) {
-                      if (id.isEmpty || link.projectIds.contains(id)) return;
-                      s.workspace.assets.put(
-                        link.copyWith(projectIds: [...link.projectIds, id]),
-                      );
-                    },
-                  ),
-                ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final row = Row(
+            children: [
+              Flexible(
+                flex: 2,
+                child: Text(
+                  link.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
               ),
-            ),
-          ),
-        ],
+              const SizedBox(width: Space.sm),
+              Flexible(
+                flex: 5,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final tag in LinkTag.values)
+                        _chip(
+                          key: ValueKey('links-tag-${tag.id}'),
+                          label: tag.label,
+                          color: tag.color,
+                          on: link.linkTags.contains(tag.id),
+                          onTap: () {
+                            final tags = [...link.linkTags];
+                            tags.contains(tag.id)
+                                ? tags.remove(tag.id)
+                                : tags.add(tag.id);
+                            s.setLinkTags(link.id, tags);
+                          },
+                        ),
+                      const SizedBox(width: Space.sm),
+                      for (final id in link.projectIds)
+                        if (s.workspace.projects[id] case final p?)
+                          _chip(
+                            key: ValueKey('links-project-$id'),
+                            label: p.name,
+                            color: AppColors.accent,
+                            on: true,
+                            onTap: () => s.workspace.assets.put(
+                              link.copyWith(
+                                projectIds: [...link.projectIds]..remove(id),
+                              ),
+                            ),
+                          ),
+                      _projectMenu(
+                        key: const ValueKey('links-add-project'),
+                        label: '+ Project',
+                        onSelected: (id) {
+                          if (id.isEmpty || link.projectIds.contains(id)) {
+                            return;
+                          }
+                          s.workspace.assets.put(
+                            link.copyWith(projectIds: [...link.projectIds, id]),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+          return constraints.maxWidth < 500
+              ? SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(width: 520, child: row),
+                )
+              : row;
+        },
       ),
     );
   }
@@ -381,7 +405,7 @@ extension on _LinksPageState {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Text(
           label,
-          style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
         ),
       ),
     );

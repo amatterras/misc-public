@@ -317,21 +317,32 @@ class _SearchDialogState extends State<_SearchDialog> {
   @override
   Widget build(BuildContext context) {
     final results = _meaning ?? searchEverything(widget.state, _query);
+    final viewport = MediaQuery.sizeOf(context);
+    final dialogWidth = (viewport.width - 24).clamp(0.0, 620.0).toDouble();
+    final dialogHeight = (viewport.height - 24).clamp(180.0, 460.0).toDouble();
     return Dialog(
       alignment: const Alignment(0, -0.5),
+      insetPadding: const EdgeInsets.all(12),
+      constraints: const BoxConstraints(minWidth: 0, maxWidth: 620),
       child: SizedBox(
-        width: 620,
-        height: 460,
+        width: dialogWidth,
+        height: dialogHeight,
         child: Column(
           children: [
             Padding(
               padding: const EdgeInsets.all(Space.lg),
               child: TextField(
+                key: const ValueKey('global-search-field'),
                 autofocus: true,
                 style: const TextStyle(fontSize: 15),
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.search, size: 18),
                   hintText: 'Search notes, canvases, links, calendar and tasks',
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: Space.md,
+                    vertical: 16,
+                  ),
+                  constraints: BoxConstraints(minHeight: 56),
                 ),
                 onChanged: (v) => setState(() {
                   _query = v;
@@ -354,7 +365,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                       listenable: widget.state.pdfTexts,
                       builder: (context, _) => Text(
                         _pdfLine(widget.state),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           color: AppColors.textFaint,
                         ),
@@ -380,7 +391,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                         _query.isEmpty
                             ? 'Start typing to search everything.'
                             : 'Nothing found.',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.textFaint,
                           fontSize: 13,
                         ),
@@ -402,14 +413,14 @@ class _SearchDialogState extends State<_SearchDialog> {
                             r.subtitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               color: AppColors.textFaint,
                             ),
                           ),
                           trailing: Text(
                             r.kind,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               color: AppColors.textFaint,
                             ),

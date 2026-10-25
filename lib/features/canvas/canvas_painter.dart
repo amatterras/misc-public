@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -427,7 +428,7 @@ class CanvasPainter extends CustomPainter {
     IconData icon,
     Offset center,
     double size, {
-    Color color = AppColors.textFaint,
+    Color? color,
   }) {
     final painter = layoutText(
       TextSpan(
@@ -436,7 +437,7 @@ class CanvasPainter extends CustomPainter {
           fontFamily: icon.fontFamily,
           package: icon.fontPackage,
           fontSize: size,
-          color: color,
+          color: color ?? AppColors.textFaint,
         ),
       ),
       size * 2,
@@ -687,9 +688,10 @@ class LiveInkPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final live = controller.liveStroke;
-    if (live == null) return;
+    final preview = controller.lineStraightenPreview;
+    if (live == null && preview == null) return;
     final page = this.page;
-    if (page != null && !live.bounds.overlaps(page)) return;
+    if (page != null && live != null && !live.bounds.overlaps(page)) return;
     canvas.save();
     if (page == null) {
       canvas.translate(controller.offset.dx, controller.offset.dy);
@@ -699,7 +701,27 @@ class LiveInkPainter extends CustomPainter {
       canvas.translate(-page.left * pageScale, -page.top * pageScale);
       canvas.scale(pageScale);
     }
-    paintStroke(canvas, live, predicted: controller.predictedPoint);
+    if (live != null) {
+      paintStroke(canvas, live, predicted: controller.predictedPoint);
+    }
+    if (preview != null) {
+      if (page == null || preview.bounds.overlaps(page)) {
+        final color = AppColors.accent.withValues(alpha: 0.48);
+        final path = Path()
+          ..moveTo(preview.points.first.x, preview.points.first.y);
+        for (final point in preview.points.skip(1)) {
+          path.lineTo(point.x, point.y);
+        }
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = color
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = math.max(1.5, preview.strokeWidth)
+            ..strokeCap = StrokeCap.round,
+        );
+      }
+    }
     canvas.restore();
   }
 

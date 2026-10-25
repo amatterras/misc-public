@@ -29,7 +29,7 @@ class CanvasPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = state.canvas;
     if (controller == null) {
-      return const ColoredBox(color: AppColors.canvas);
+      return ColoredBox(color: AppColors.canvas);
     }
     return CanvasView(
       key: ValueKey(controller.id),
@@ -104,13 +104,17 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     _focusWhenShown();
     _registerTap();
     final ios = s.ios;
+    _lifecycle = AppLifecycleListener(
+      onInactive: () {
+        c.squeezeEnded();
+        c.cancelPendingLineStraightening();
+      },
+    );
     if (ios != null) {
       _squeeze = ios.pencilSqueeze.listen(_onSqueeze);
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => unawaited(ios.enablePencilSqueeze()),
       );
-      // Leaving the app ends a squeeze too: the tool must not stay eraser.
-      _lifecycle = AppLifecycleListener(onInactive: () => c.squeezeEnded());
     }
   }
 
@@ -130,7 +134,10 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
       _unregisterTap();
       _registerTap();
     }
-    if (s.page != widget.page) c.squeezeEnded();
+    if (s.page != widget.page) {
+      c.squeezeEnded();
+      c.cancelPendingLineStraightening();
+    }
     _focusWhenShown();
   }
 
@@ -139,6 +146,10 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   /// (P, V, Ctrl+V…) only work after clicking it.
   void _focusWhenShown() {
     final visible = s.page == widget.page;
+    if (!visible && _wasVisible) {
+      c.squeezeEnded();
+      c.cancelPendingLineStraightening();
+    }
     if (visible && !_wasVisible) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && s.page == widget.page && c.editingId == null) {
@@ -161,6 +172,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     _unregisterTap();
     _lifecycle?.dispose();
     c.squeezeEnded();
+    c.cancelPendingLineStraightening();
     _focusNode.dispose();
     super.dispose();
   }
@@ -378,6 +390,17 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     };
     if (tools.containsKey(key)) {
       c.tool = tools[key]!;
+    } else if (key == LogicalKeyboardKey.contextMenu ||
+        (key == LogicalKeyboardKey.f10 &&
+            HardwareKeyboard.instance.isShiftPressed)) {
+      final bounds = c.selectionBounds;
+      final box = context.findRenderObject() as RenderBox?;
+      if (bounds == null || box == null) return KeyEventResult.ignored;
+      final local = c.toScreen(bounds.center);
+      unawaited(
+        showCanvasMenu(context, s, c, box.localToGlobal(local), bounds.center),
+      );
+      return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.delete ||
         key == LogicalKeyboardKey.backspace) {
       c.deleteSelection();
@@ -430,6 +453,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   // ------------------------------------------------------------ pointer --
 
   void _onPointerDown(PointerDownEvent e) {
+    c.cancelPendingLineStraightening();
     _focusNode.requestFocus();
     if (e.kind == PointerDeviceKind.mouse &&
         e.buttons & kSecondaryMouseButton != 0) {
@@ -447,26 +471,39 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
       // ignore the fingers (the palm) until the pen lifts.
       if (_drawingPointer != null) c.pointerUp();
       _drawingPointer = null;
-      _touchPointers.clear();
-      _endPinch();
+      if (_touchPointers.length < 2) {
+        _touchPointers.clear();
+        _endPinch();
+      }
       _activeStylusPointer = e.pointer;
     } else if (e.kind == PointerDeviceKind.touch) {
-      if (_activeStylusPointer != null) {
-        // Palm rejection: finger touches are ignored while stylus is in contact.
-        return;
-      }
       _touchPointers[e.pointer] = e.localPosition;
       if (_touchPointers.length == 2) {
         _cancelWelcomeDrag();
-        // Multi-touch gesture started: cancel active single pointer drawing
-        if (_drawingPointer != null) c.pointerCancel();
-        _drawingPointer = null;
+        // Two fingers are an explicit navigation gesture, including while
+        // Pencil ink continues. Never cancel the active Pencil stroke.
+        if (_drawingPointer != null &&
+            _drawingPointer != _activeStylusPointer) {
+          c.pointerCancel();
+          _drawingPointer = null;
+        }
         final points = _touchPointers.values.toList();
         _initialPinchDistance = (points[0] - points[1]).distance;
         _initialPinchScale = c.scale;
         _lastPinchFocal = (points[0] + points[1]) / 2;
         return;
       } else if (_touchPointers.length > 2) {
+        return;
+      }
+      // While a stylus is active, a single touch is a resting palm. Keep it
+      // out of the drawing pointer path on every platform; two-finger
+      // navigation was handled above.
+      if (_activeStylusPointer != null) return;
+      // On iOS a lone finger remains available for panning even when a
+      // drawing tool is selected. Only Flutter's stylus-kind signal creates
+      // ink; this fails closed if the platform cannot identify the Pencil.
+      if (touchFirst && _isDrawingTool(c.tool)) {
+        if (_activeStylusPointer == null) _drawingPointer = null;
         return;
       }
     }
@@ -497,10 +534,8 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   }
 
   void _onPointerMove(PointerMoveEvent e) {
-    if (e.kind == PointerDeviceKind.touch && _activeStylusPointer != null) {
-      return; // Palm rejection
-    }
     if (_touchPointers.containsKey(e.pointer)) {
+      final previous = _touchPointers[e.pointer]!;
       _touchPointers[e.pointer] = e.localPosition;
       if (_touchPointers.length >= 2) {
         final pts = _touchPointers.values.take(2).toList();
@@ -519,6 +554,12 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
         }
         return;
       }
+      if (touchFirst && _isDrawingTool(c.tool)) {
+        if (_activeStylusPointer != null) return; // one resting finger is palm
+        c.panBy(e.localPosition - previous);
+        return;
+      }
+      if (_activeStylusPointer != null) return; // one resting finger is palm
     }
     if (e.pointer != _drawingPointer) return;
     c.pointerMove(
@@ -527,6 +568,11 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
       timeStamp: e.timeStamp,
     );
   }
+
+  bool _isDrawingTool(CanvasTool tool) =>
+      tool == CanvasTool.pen ||
+      tool == CanvasTool.highlighter ||
+      tool == CanvasTool.eraser;
 
   /// Pen pressure as 0..1 (Apple Pencil reports a raw force on iOS);
   /// fingers and mice have none, so they draw at the middle value.
@@ -716,47 +762,67 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       child: MouseRegion(
                         cursor: _cursor(),
                         onExit: (_) => c.pointerHover(null),
-                        child: Listener(
+                        child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onPointerDown: _onPointerDown,
-                          onPointerMove: _onPointerMove,
-                          onPointerUp: _onPointerUp,
-                          onPointerCancel: _onPointerCancel,
-                          onPointerHover: (e) =>
-                              c.pointerHover(e.localPosition),
-                          onPointerSignal: _onPointerSignal,
-                          onPointerPanZoomStart: _onPanZoomStart,
-                          onPointerPanZoomUpdate: _onPanZoomUpdate,
-                          // Two layers: the canvas repaints when items change;
-                          // the stroke being drawn repaints on its own, so a
-                          // pen movement does not redraw everything.
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              RepaintBoundary(
-                                child: CustomPaint(
-                                  painter: CanvasPainter(
-                                    c,
-                                    itemOpacityFor: (item) =>
-                                        item.id == welcomeGuideItemId &&
-                                            _welcomeFading
-                                        ? _welcomeFade.value
-                                        : 1,
-                                    repaint: Listenable.merge([
+                          onLongPressStart: (details) {
+                            if (_touchPointers.isEmpty ||
+                                _activeStylusPointer != null) {
+                              return;
+                            }
+                            final world = c.toWorld(details.localPosition);
+                            if (c.hitTest(world) == null) return;
+                            unawaited(
+                              showCanvasMenu(
+                                context,
+                                s,
+                                c,
+                                details.globalPosition,
+                                world,
+                              ),
+                            );
+                          },
+                          child: Listener(
+                            behavior: HitTestBehavior.opaque,
+                            onPointerDown: _onPointerDown,
+                            onPointerMove: _onPointerMove,
+                            onPointerUp: _onPointerUp,
+                            onPointerCancel: _onPointerCancel,
+                            onPointerHover: (e) =>
+                                c.pointerHover(e.localPosition),
+                            onPointerSignal: _onPointerSignal,
+                            onPointerPanZoomStart: _onPanZoomStart,
+                            onPointerPanZoomUpdate: _onPanZoomUpdate,
+                            // Two layers: the canvas repaints when items change;
+                            // the stroke being drawn repaints on its own, so a
+                            // pen movement does not redraw everything.
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                RepaintBoundary(
+                                  child: CustomPaint(
+                                    painter: CanvasPainter(
                                       c,
-                                      _welcomeFade,
-                                    ]),
+                                      itemOpacityFor: (item) =>
+                                          item.id == welcomeGuideItemId &&
+                                              _welcomeFading
+                                          ? _welcomeFade.value
+                                          : 1,
+                                      repaint: Listenable.merge([
+                                        c,
+                                        _welcomeFade,
+                                      ]),
+                                    ),
+                                    size: Size.infinite,
                                   ),
-                                  size: Size.infinite,
                                 ),
-                              ),
-                              RepaintBoundary(
-                                child: CustomPaint(
-                                  painter: LiveInkPainter(c),
-                                  size: Size.infinite,
+                                RepaintBoundary(
+                                  child: CustomPaint(
+                                    painter: LiveInkPainter(c),
+                                    size: Size.infinite,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -825,6 +891,15 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                           onAddImage: _addImages,
                           onAddLink: _addLink,
                           onAddDocument: _addDocuments,
+                          onPenDoubleTap: () {
+                            // The existing context bar is THEapp's shared
+                            // pen color library. A double tap only unfolds it;
+                            // the normal single-tap tool action remains intact.
+                            unawaited(
+                              s.settings.set('canvasOptionsCollapsed', false),
+                            );
+                            setState(() {});
+                          },
                           onMore: (at) {
                             c.select(const []);
                             unawaited(
@@ -865,7 +940,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                 ),
                 if (c.items.isEmpty) const _EmptyHint(),
                 if (c.squeezeEraser)
-                  const Positioned(
+                  Positioned(
                     bottom: Space.md,
                     left: 0,
                     right: 0,
@@ -899,7 +974,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                     ),
                   ),
                 if (c.tool == CanvasTool.connect && c.connectSource != null)
-                  const Positioned(
+                  Positioned(
                     top: Space.md,
                     left: 0,
                     right: 0,
@@ -1146,17 +1221,14 @@ class _TitleChip extends StatelessWidget {
             if (folder.isNotEmpty)
               Text(
                 '${folder.map((f) => f.name).join(' / ')} / ',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textMuted,
-                ),
+                style: TextStyle(fontSize: 14, color: AppColors.textMuted),
               ),
             Text(
               controller.title,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
             const SizedBox(width: 4),
-            const Icon(Icons.expand_more, size: 16, color: AppColors.textFaint),
+            Icon(Icons.expand_more, size: 16, color: AppColors.textFaint),
           ],
         ),
       ),
@@ -1244,10 +1316,7 @@ class _ZoomControls extends StatelessWidget {
                 child: Text(
                   '${(controller.scale * 100).round()}%',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                 ),
               ),
             ),
@@ -1282,7 +1351,7 @@ class _EmptyHint extends StatelessWidget {
       child: Center(
         child: Text(
           touchFirst ? 'Double-tap anywhere to write  ·  pick the pen to draw' : 'Double-click anywhere to write  ·  Ctrl+V to paste text, links or images  ·  P to draw',
-          style: const TextStyle(color: AppColors.textFaint, fontSize: 13),
+          style: TextStyle(color: AppColors.textFaint, fontSize: 13),
         ),
       ),
     );

@@ -20,14 +20,14 @@ Future<Uint8List?> renderItemsPng(
   Iterable<String>? items,
   double margin = 24,
   double maxSide = 2400,
-  Color background = AppColors.background,
+  Color? background,
 }) async {
   final picture = await renderItemsPicture(
     source,
     items: items,
     margin: margin,
     maxSide: maxSide,
-    background: background,
+    background: background ?? AppColors.canvas,
   );
   return picture?.png;
 }
@@ -38,7 +38,7 @@ Future<({Uint8List png, int missingImages})?> renderItemsPicture(
   Iterable<String>? items,
   double margin = 24,
   double maxSide = 2400,
-  Color background = AppColors.background,
+  Color? background,
 }) async {
   final ids = items?.toSet();
   final chosen = [
@@ -68,7 +68,7 @@ Future<({Uint8List png, int missingImages})?> renderItemsPicture(
       copy,
       rect,
       maxSide: maxSide,
-      background: background,
+      background: background ?? AppColors.canvas,
     );
     if (png == null) return null;
     return (png: png, missingImages: missingImagesIn(copy, rect));
@@ -110,7 +110,7 @@ Future<Uint8List?> renderRectPng(
   CanvasController c,
   Rect rect, {
   double maxSide = 2400,
-  Color background = AppColors.background,
+  Color? background,
   void Function(Canvas canvas, Size size)? underlay,
 }) async {
   if (rect.isEmpty) return null;
@@ -124,7 +124,10 @@ Future<Uint8List?> renderRectPng(
   );
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
-  canvas.drawRect(Offset.zero & size, Paint()..color = background);
+  canvas.drawRect(
+    Offset.zero & size,
+    Paint()..color = background ?? AppColors.canvas,
+  );
   underlay?.call(canvas, size);
   CanvasPainter(c, page: rect, pageScale: scale).paint(canvas, size);
   final image = await recorder.endRecording().toImage(

@@ -157,3 +157,18 @@ audit above; the audit remains intact as a record of its earlier inspection.
   [STORAGE_MODES.md](STORAGE_MODES.md).
 - Settings now has **Storage** (mode, status, Switch…) and **Data safety**
   (Check data, Recently deleted).
+
+## Calendar, Reading and themes (2026-10-25)
+
+- Reading plans and their daily pages are `CalendarEntry` records in the existing
+  calendar collection. Daily IDs are derived from the plan ID and local calendar
+  date; range edits preserve page contents, add missing dates and detach removed
+  dates without deleting them. Calendar routing carries the exact daily entry ID.
+- Habit completion is a date-keyed `checkoffs` set on the existing habit entry.
+  The selected local wall-clock time is stored as minutes after midnight;
+  legacy habits without a time remain untimed until the user configures them.
+- System/light/dark preference is per-device settings data. `AppColors` in
+  `lib/app/theme.dart` owns semantic theme roles and the shared drawing swatches;
+  stored ink colors remain object colors and do not change with the UI theme.
+  The light token values are provisional because the earlier exact palette was
+  not recoverable from repository docs or history; see `MASTER_SPEC.md`.

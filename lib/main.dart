@@ -199,13 +199,22 @@ class _TheAppState extends State<TheApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'THEapp',
-      debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(),
-      home: widget.state.dataProblem == null
-          ? AppShell(state: widget.state)
-          : _DataProblemPage(state: widget.state),
+    return ValueListenableBuilder<String>(
+      valueListenable: widget.state.themeModePreference,
+      builder: (context, rawMode, _) {
+        final mode = ThemeMode.values.asNameMap()[rawMode] ?? ThemeMode.dark;
+        AppColors.mode = mode;
+        return MaterialApp(
+          title: 'THEapp',
+          debugShowCheckedModeBanner: false,
+          theme: buildAppTheme(brightness: Brightness.light),
+          darkTheme: buildAppTheme(brightness: Brightness.dark),
+          themeMode: mode,
+          home: widget.state.dataProblem == null
+              ? AppShell(state: widget.state)
+              : _DataProblemPage(state: widget.state),
+        );
+      },
     );
   }
 }
@@ -276,11 +285,7 @@ class _DataProblemPageState extends State<_DataProblemPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.shield_outlined,
-                size: 40,
-                color: AppColors.warm,
-              ),
+              Icon(Icons.shield_outlined, size: 40, color: AppColors.warm),
               const SizedBox(height: Space.lg),
               Text(
                 message,
@@ -322,10 +327,7 @@ class _DataProblemPageState extends State<_DataProblemPage> {
                   SelectableText(
                     'Backup: ${failure.backup!.path}',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
-                    ),
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                   ),
                 ],
               ],
@@ -333,10 +335,7 @@ class _DataProblemPageState extends State<_DataProblemPage> {
               Text(
                 'Nothing was deleted. Data folder: ${widget.state?.workspace.root.path ?? defaultDataDirectory().path}',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textMuted,
-                ),
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
               ),
             ],
           ),

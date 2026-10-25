@@ -8,6 +8,7 @@
 //   the Pencil does nothing, and nothing stays stuck afterwards.
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +17,7 @@ import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/canvas/canvas_controller.dart';
+import 'package:flutter_application_1/features/calendar/calendar_ink.dart';
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/platform/ios_bridge.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,6 +39,47 @@ void main() {
       return null;
     });
   });
+
+  test(
+    'iOS calendar ink claims stylus-kind input and rejects finger strokes',
+    () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        final controller = CanvasController(
+          document: CanvasDocument(
+            id: 'calendar-ink-test',
+            title: 'Test',
+            items: const [],
+            updatedAt: DateTime(2026),
+          ),
+          onSave: (_) async {},
+        );
+        final arbiter = CalendarInkArbiter(controller);
+        final finger = PointerDownEvent(
+          pointer: 91,
+          position: Offset.zero,
+          kind: PointerDeviceKind.touch,
+          buttons: kPrimaryButton,
+        );
+        arbiter.down(finger);
+        expect(arbiter.claim(finger), isFalse);
+        final pencil = PointerDownEvent(
+          pointer: 92,
+          position: Offset.zero,
+          kind: PointerDeviceKind.stylus,
+          buttons: kPrimaryButton,
+        );
+        arbiter.down(pencil);
+        expect(arbiter.claim(pencil), isTrue);
+        arbiter.release(91);
+        arbiter.release(92);
+        controller.dispose();
+        arbiter.dispose();
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
   tearDown(() {
     messenger.setMockMethodCallHandler(channel, null);
     try {

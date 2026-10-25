@@ -71,6 +71,26 @@ void main() {
     expect((c.items.single as TextItem).background, isNull);
   });
 
+  test('text source note reference survives canvas save and reopen', () {
+    final c = make(
+      items: [
+        TextItem(
+          id: 'selection',
+          position: Offset.zero,
+          width: 180,
+          minHeight: 40,
+          text: 'quoted text',
+          sourceNoteId: 'note-original',
+          sourceNoteTitle: 'Original title',
+        ),
+      ],
+    );
+    final restored = roundTrip(c.document).items.single as TextItem;
+    expect(restored.sourceNoteId, 'note-original');
+    expect(restored.sourceNoteTitle, 'Original title');
+    expect(restored.text, 'quoted text');
+  });
+
   test('duplicate makes independent copies and is undoable', () {
     final c = make(items: [note('a', Offset.zero, text: 'hi')])..select(['a']);
     c.duplicateSelection();

@@ -211,6 +211,7 @@ class _AppShellState extends State<AppShell> {
                 Expanded(
                   child: ClipRect(
                     child: Stack(
+                      key: const ValueKey('page-content-viewport'),
                       fit: StackFit.expand,
                       children: [
                         Offstage(
@@ -268,6 +269,10 @@ class _AppShellState extends State<AppShell> {
                                 child: windows.instanceHost(context, p),
                               ),
                             ),
+                        // Floating page windows share this exact content
+                        // viewport: below the page bar, above phone tabs,
+                        // and to the left of the desktop sidebar.
+                        FloatingLayer(windows: state.floating),
                       ],
                     ),
                   ),
@@ -309,21 +314,6 @@ class _AppShellState extends State<AppShell> {
                         Sidebar(state: state, motivation: _motivation),
                       ],
                     ),
-                  // Windows float below the page bar, so the bar (and its
-                  // handle when collapsed) is always reachable.
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    top:
-                        (isCompact
-                            ? MediaQuery.paddingOf(context).top + 48
-                            : 0) +
-                        (windows.collapsed
-                            ? TopBar.collapsedHeight
-                            : TopBar.height),
-                    child: FloatingLayer(windows: state.floating),
-                  ),
                   _Toast(state: state, bottomOffset: isCompact ? 72 : 28),
                   _TransferBar(
                     state: state,
@@ -372,7 +362,7 @@ class _CompactTopBar extends StatelessWidget {
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: Space.md),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.sidebar,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
@@ -383,7 +373,7 @@ class _CompactTopBar extends StatelessWidget {
               pageTitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: AppColors.text,
@@ -425,18 +415,14 @@ class _CompactTopBar extends StatelessWidget {
             onPressed: () => state.goTo(AppPage.home),
           ),
           IconButton(
-            icon: const Icon(
-              Icons.search,
-              size: 20,
-              color: AppColors.textMuted,
-            ),
+            icon: Icon(Icons.search, size: 20, color: AppColors.textMuted),
             tooltip: 'Search',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
             onPressed: () => showSearchDialog(context, state),
           ),
           IconButton(
-            icon: const Icon(
+            icon: Icon(
               Icons.add_circle_outline,
               size: 22,
               color: AppColors.accent,
@@ -447,7 +433,7 @@ class _CompactTopBar extends StatelessWidget {
             onPressed: () => openQuickAdd(context, state),
           ),
           IconButton(
-            icon: const Icon(
+            icon: Icon(
               Icons.settings_outlined,
               size: 20,
               color: AppColors.textMuted,
@@ -474,7 +460,7 @@ class _CompactBottomNav extends StatelessWidget {
     const items = appDestinations;
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.sidebar,
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
@@ -524,7 +510,7 @@ class _CompactBottomNav extends StatelessWidget {
                                       ),
                                       child: Text(
                                         '${state.workspace.inbox.length}',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           color: AppColors.text,
                                           fontSize: 9,
                                           fontWeight: FontWeight.bold,
@@ -580,7 +566,7 @@ class _MotivationalQuoteBar extends StatelessWidget {
         key: const ValueKey('motivational-quote'),
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.sidebar,
           border: Border(top: BorderSide(color: AppColors.border)),
         ),
@@ -591,7 +577,7 @@ class _MotivationalQuoteBar extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textMuted,
               fontSize: 11,
               height: 1.4,
@@ -623,11 +609,7 @@ class _GreetingWindow extends StatelessWidget {
       ),
       child: Text(
         service.greeting ?? '',
-        style: const TextStyle(
-          color: AppColors.text,
-          fontSize: 14,
-          height: 1.4,
-        ),
+        style: TextStyle(color: AppColors.text, fontSize: 14, height: 1.4),
       ),
     ),
   );
@@ -648,7 +630,7 @@ class _TestDataBanner extends StatelessWidget {
         child: Center(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: AppColors.danger,
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(6)),
             ),
@@ -656,7 +638,7 @@ class _TestDataBanner extends StatelessWidget {
               'TEST DATA — ${TestEnvironment.dataDir?.path ?? ''}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: AppColors.text,
@@ -694,7 +676,7 @@ class _UnsavedNotice extends StatelessWidget {
                 color: AppColors.danger,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Text(
+              child: Text(
                 'Some changes are not saved yet. THEapp keeps retrying — '
                 'keep the app open (details in the log).',
                 style: TextStyle(fontSize: 13, color: AppColors.text),
@@ -745,10 +727,7 @@ class _ReminderNotice extends StatelessWidget {
               children: [
                 Text(
                   due.length == 1 ? 'Reminder' : '${due.length} reminders',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                 ),
                 for (final t in due.take(3))
                   Row(
@@ -779,10 +758,7 @@ class _ReminderNotice extends StatelessWidget {
                 if (due.length > 3)
                   Text(
                     '+ ${due.length - 3} more',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
-                    ),
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                   ),
               ],
             ),

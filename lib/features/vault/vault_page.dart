@@ -153,7 +153,7 @@ class _VaultPageState extends State<VaultPage> {
                     'sync first so both use the same one.'
               : 'Locks itself after ${VaultService.idleLimit.inMinutes} '
                     'minutes without use and when THEapp is hidden.',
-          style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
         ),
         const SizedBox(height: Space.md),
         if (_recovering)
@@ -310,7 +310,7 @@ class _VaultPageState extends State<VaultPage> {
         const Divider(height: 1),
         Expanded(
           child: list.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
                     'Nothing here yet.',
                     style: TextStyle(color: AppColors.textFaint),

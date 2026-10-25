@@ -47,7 +47,7 @@ bool notebookStartsWithPen(Size screen) =>
     touchFirst && screen.shortestSide >= 600;
 
 /// Pen colours offered on notebook pages (dark ones for PDF pages).
-const notebookInk = InkColors.all;
+final notebookInk = InkColors.all;
 
 class NotePage extends StatefulWidget {
   const NotePage({super.key, required this.state, required this.noteId});
@@ -65,6 +65,18 @@ class _NotePageState extends State<NotePage> {
   double _zoom = 1; // times "fit the page width"
   bool _fingerDraws = false;
   final _scroll = ScrollController();
+  final _horizontalScroll = ScrollController();
+  final _gestureSurfaceKey = GlobalKey();
+  final Map<int, GlobalKey> _pageKeys = {};
+  final Map<int, Offset> _noteTouches = {};
+  double? _pinchStartDistance;
+  double? _pinchStartZoom;
+  Offset? _pinchStartFocal;
+  Offset? _pinchDocumentAnchor;
+  Offset? _pinchPrefix;
+  double _pinchStartScale = 1;
+  double _fitScale = 1;
+  NotebookLayout? _currentLayout;
   StreamSubscription<String>? _squeeze;
   AppLifecycleListener? _lifecycle;
 
@@ -72,6 +84,7 @@ class _NotePageState extends State<NotePage> {
   // rejection: fingers are ignored meanwhile).
   int? _pointer;
   bool _stylusDown = false;
+  bool _pointerIsStylus = false;
 
   AppState get s => widget.state;
 
@@ -80,6 +93,8 @@ class _NotePageState extends State<NotePage> {
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(_onNotebookScroll);
+    _horizontalScroll.addListener(_onNotebookScroll);
     final savedZoom = s.settings.get<num>(_zoomSetting)?.toDouble();
     _zoom = savedZoom != null && savedZoom.isFinite
         ? savedZoom.clamp(0.4, 3.0)
@@ -94,16 +109,143 @@ class _NotePageState extends State<NotePage> {
     _lifecycle = AppLifecycleListener(
       onInactive: () {
         _c?.squeezeEnded();
+        _c?.cancelPendingLineStraightening();
         unawaited(_c?.flush());
       },
     );
   }
+
+  void _onNotebookScroll() => _c?.cancelPendingLineStraightening();
 
   void _setZoom(double value) {
     final zoom = value.clamp(0.4, 3.0);
     if (_zoom == zoom) return;
     setState(() => _zoom = zoom);
     unawaited(s.settings.set(_zoomSetting, zoom));
+  }
+
+  void _notePointerDown(PointerDownEvent e) {
+    if (e.kind != PointerDeviceKind.touch) return;
+    _c?.cancelPendingLineStraightening();
+    _noteTouches[e.pointer] = e.localPosition;
+    if (_noteTouches.length == 2) {
+      final c = _c;
+      if (_pointer != null && !_pointerIsStylus && c != null) {
+        _pointer = null;
+        c.pointerCancel();
+      }
+      final points = _noteTouches.values.toList();
+      _pinchStartDistance = (points[0] - points[1]).distance;
+      _pinchStartZoom = _zoom;
+      _pinchStartFocal = (points[0] + points[1]) / 2;
+      _pinchStartScale = _c?.scale ?? _fitScale * _zoom;
+      _capturePinchAnchor(_pinchStartFocal!);
+    }
+  }
+
+  void _notePointerMove(PointerMoveEvent e) {
+    if (!_noteTouches.containsKey(e.pointer)) return;
+    _noteTouches[e.pointer] = e.localPosition;
+    if (_noteTouches.length < 2 ||
+        _pinchStartDistance == null ||
+        _pinchStartFocal == null ||
+        _pinchStartZoom == null) {
+      return;
+    }
+    final points = _noteTouches.values.take(2).toList();
+    final distance = (points[0] - points[1]).distance;
+    if (_pinchStartDistance! < 10) return;
+    final focal = (points[0] + points[1]) / 2;
+    final nextZoom = (_pinchStartZoom! * distance / _pinchStartDistance!).clamp(
+      0.4,
+      3.0,
+    );
+    if ((_zoom - nextZoom).abs() < 0.001) return;
+    setState(() => _zoom = nextZoom);
+    final anchor = _pinchDocumentAnchor;
+    final prefix = _pinchPrefix;
+    final nextScale = (_fitScale * nextZoom).clamp(0.2, 4.0);
+    // The note header is fixed size; page coordinates alone scale. Use the
+    // measured page origin to compensate both axes around the pinch centroid.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (anchor != null && prefix != null && _scroll.hasClients) {
+        final target = prefix.dy + anchor.dy * nextScale - focal.dy;
+        _scroll.jumpTo(target.clamp(0, _scroll.position.maxScrollExtent));
+      }
+      if (anchor != null && prefix != null && _horizontalScroll.hasClients) {
+        final target = prefix.dx + anchor.dx * nextScale - focal.dx;
+        _horizontalScroll.jumpTo(
+          target.clamp(0, _horizontalScroll.position.maxScrollExtent),
+        );
+      }
+    });
+  }
+
+  void _capturePinchAnchor(Offset focal) {
+    final layout = _currentLayout;
+    final bodyObject = _gestureSurfaceKey.currentContext?.findRenderObject();
+    if (layout == null || bodyObject is! RenderBox || !bodyObject.hasSize) {
+      _pinchDocumentAnchor = null;
+      _pinchPrefix = null;
+      return;
+    }
+    final globalFocal = bodyObject.localToGlobal(focal);
+    var selectedIndex = 0;
+    Rect? selectedGlobal;
+    var nearestDistance = double.infinity;
+    for (final entry in _pageKeys.entries) {
+      final object = entry.value.currentContext?.findRenderObject();
+      if (object is! RenderBox || !object.hasSize) continue;
+      final rect = object.localToGlobal(Offset.zero) & object.size;
+      if (rect.contains(globalFocal)) {
+        selectedIndex = entry.key;
+        selectedGlobal = rect;
+        break;
+      }
+      final distance = (rect.center - globalFocal).distance;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        selectedIndex = entry.key;
+        selectedGlobal = rect;
+      }
+    }
+    if (selectedGlobal == null || _pinchStartScale <= 0) {
+      _pinchDocumentAnchor = null;
+      _pinchPrefix = null;
+      return;
+    }
+    final page = layout.pageRect(selectedIndex);
+    final bodyGlobal = bodyObject.localToGlobal(Offset.zero);
+    final pageLocal = selectedGlobal.topLeft - bodyGlobal;
+    final pageScrollTop = _scroll.hasClients ? _scroll.offset : 0;
+    final pageScrollLeft = _horizontalScroll.hasClients
+        ? _horizontalScroll.offset
+        : 0;
+    _pinchDocumentAnchor =
+        page.topLeft +
+        Offset(
+          (globalFocal.dx - selectedGlobal.left) / _pinchStartScale,
+          (globalFocal.dy - selectedGlobal.top) / _pinchStartScale,
+        );
+    _pinchPrefix = Offset(
+      pageScrollLeft + pageLocal.dx - page.left * _pinchStartScale,
+      pageScrollTop + pageLocal.dy - page.top * _pinchStartScale,
+    );
+  }
+
+  void _notePointerEnd(PointerEvent e) {
+    _noteTouches.remove(e.pointer);
+    if (_noteTouches.length < 2) {
+      if (_pinchStartDistance != null) {
+        unawaited(s.settings.set(_zoomSetting, _zoom));
+      }
+      _pinchStartDistance = null;
+      _pinchStartZoom = null;
+      _pinchStartFocal = null;
+      _pinchDocumentAnchor = null;
+      _pinchPrefix = null;
+    }
   }
 
   Future<void> _open() async {
@@ -162,6 +304,7 @@ class _NotePageState extends State<NotePage> {
     if (c == null || _closed) return;
     _closed = true;
     c.squeezeEnded();
+    c.cancelPendingLineStraightening();
     c.endEditing();
     try {
       await c.flush();
@@ -176,9 +319,13 @@ class _NotePageState extends State<NotePage> {
     _squeeze?.cancel();
     _unregisterTap?.call();
     _lifecycle?.dispose();
+    _scroll.removeListener(_onNotebookScroll);
+    _horizontalScroll.removeListener(_onNotebookScroll);
     _scroll.dispose();
+    _horizontalScroll.dispose();
     final c = _c;
     if (c != null) {
+      c.cancelPendingLineStraightening();
       unawaited(_close().whenComplete(c.dispose));
     }
     super.dispose();
@@ -189,8 +336,12 @@ class _NotePageState extends State<NotePage> {
   bool _accepts(PointerEvent e, CanvasController c) => switch (e.kind) {
     PointerDeviceKind.stylus || PointerDeviceKind.invertedStylus => true,
     PointerDeviceKind.mouse => e.buttons & kPrimaryButton != 0,
+    // iOS reports Pencil through Flutter's stylus kind. Touch never starts
+    // ink there, including when the legacy finger-draw preference is on.
     PointerDeviceKind.touch =>
-      !_stylusDown && (_fingerDraws || c.tool == CanvasTool.text),
+      !touchFirst &&
+          !_stylusDown &&
+          (_fingerDraws || c.tool == CanvasTool.text),
     _ => false,
   };
 
@@ -212,6 +363,9 @@ class _NotePageState extends State<NotePage> {
       _stylusDown = true;
     }
     _pointer = e.pointer;
+    _pointerIsStylus =
+        e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus;
     c.pointerDown(
       _screen(e.localPosition, page, sc),
       kind: e.kind,
@@ -232,6 +386,7 @@ class _NotePageState extends State<NotePage> {
   void _up(PointerEvent e, CanvasController c, {bool cancel = false}) {
     if (e.pointer != _pointer) return;
     _pointer = null;
+    _pointerIsStylus = false;
     _stylusDown = false;
     cancel ? c.pointerCancel() : c.pointerUp();
   }
@@ -424,13 +579,15 @@ class _NotePageState extends State<NotePage> {
       builder: (context, box) {
         final fit = (box.maxWidth - 80) / NotebookLayout.pageWidth;
         final scale = (fit * _zoom).clamp(0.2, 4.0);
+        _currentLayout = layout;
+        _fitScale = fit;
         c?.setView(Offset.zero, scale);
         final width = NotebookLayout.pageWidth * scale + 80;
         Widget list = ScrollConfiguration(
           // Fingers scroll and the Pencil (or mouse) writes; with "draw
           // with finger" on, only the scrollbar and trackpad scroll.
           behavior: ScrollConfiguration.of(context).copyWith(
-            dragDevices: _fingerDraws
+            dragDevices: !touchFirst && _fingerDraws
                 ? {PointerDeviceKind.trackpad}
                 : {PointerDeviceKind.touch, PointerDeviceKind.trackpad},
           ),
@@ -460,11 +617,20 @@ class _NotePageState extends State<NotePage> {
         );
         if (width > box.maxWidth) {
           list = SingleChildScrollView(
+            controller: _horizontalScroll,
             scrollDirection: Axis.horizontal,
             child: SizedBox(width: width, height: box.maxHeight, child: list),
           );
         }
-        return list;
+        return Listener(
+          key: _gestureSurfaceKey,
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: _notePointerDown,
+          onPointerMove: _notePointerMove,
+          onPointerUp: _notePointerEnd,
+          onPointerCancel: _notePointerEnd,
+          child: list,
+        );
       },
     );
   }
@@ -480,85 +646,88 @@ class _NotePageState extends State<NotePage> {
     final editing = c.editingItem;
     final editingHere =
         editing != null && layout.pageAt(editing.position.dy) == index;
-    return Padding(
+    return KeyedSubtree(
       key: ValueKey('notebook-page-$index'),
-      padding: EdgeInsets.only(
-        top: index == 0 ? Space.xl : 0,
-        bottom: NotebookLayout.gap * scale,
-      ),
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: SizedBox(
-          width: rect.width * scale,
-          height: rect.height * scale,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                CustomPaint(
-                  painter: PaperPainter(
-                    s.workspace.notes[widget.noteId]?.paperOrDefault ??
-                        const NotePaper(),
-                    scale: scale,
-                  ),
-                ),
-                if (background != null)
-                  PdfPageView(state: s, background: background, scale: scale),
-                RepaintBoundary(
-                  child: CustomPaint(
-                    painter: CanvasPainter(c, page: rect, pageScale: scale),
-                  ),
-                ),
-                RepaintBoundary(
-                  child: CustomPaint(
-                    painter: LiveInkPainter(c, page: rect, pageScale: scale),
-                  ),
-                ),
-                Listener(
-                  behavior: HitTestBehavior.translucent,
-                  onPointerDown: (e) => _down(e, c, rect, scale),
-                  onPointerMove: (e) => _move(e, c, rect, scale),
-                  onPointerUp: (e) => _up(e, c),
-                  onPointerCancel: (e) => _up(e, c, cancel: true),
-                ),
-                if (editingHere)
-                  Positioned(
-                    left: (editing.position.dx - rect.left) * scale,
-                    top: (editing.position.dy - rect.top) * scale,
-                    width: editing.width * scale,
-                    child: _NoteTextField(
-                      key: ValueKey(editing.id),
-                      controller: c,
-                      item: editing,
+      child: Padding(
+        padding: EdgeInsets.only(
+          top: index == 0 ? Space.xl : 0,
+          bottom: NotebookLayout.gap * scale,
+        ),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            key: _pageKeys.putIfAbsent(index, GlobalKey.new),
+            width: rect.width * scale,
+            height: rect.height * scale,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CustomPaint(
+                    painter: PaperPainter(
+                      s.workspace.notes[widget.noteId]?.paperOrDefault ??
+                          const NotePaper(),
                       scale: scale,
                     ),
                   ),
-                Positioned(
-                  right: 8,
-                  bottom: 6,
-                  child: IgnorePointer(
-                    child: Text(
-                      '${index + 1}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textFaint,
+                  if (background != null)
+                    PdfPageView(state: s, background: background, scale: scale),
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      painter: CanvasPainter(c, page: rect, pageScale: scale),
+                    ),
+                  ),
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      painter: LiveInkPainter(c, page: rect, pageScale: scale),
+                    ),
+                  ),
+                  Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: (e) => _down(e, c, rect, scale),
+                    onPointerMove: (e) => _move(e, c, rect, scale),
+                    onPointerUp: (e) => _up(e, c),
+                    onPointerCancel: (e) => _up(e, c, cancel: true),
+                  ),
+                  if (editingHere)
+                    Positioned(
+                      left: (editing.position.dx - rect.left) * scale,
+                      top: (editing.position.dy - rect.top) * scale,
+                      width: editing.width * scale,
+                      child: _NoteTextField(
+                        key: ValueKey(editing.id),
+                        controller: c,
+                        item: editing,
+                        scale: scale,
+                      ),
+                    ),
+                  Positioned(
+                    right: 8,
+                    bottom: 6,
+                    child: IgnorePointer(
+                      child: Text(
+                        '${index + 1}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textFaint,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                if (c.squeezeEraser)
-                  const Positioned(
-                    top: 6,
-                    right: 8,
-                    child: Icon(
-                      Icons.auto_fix_normal,
-                      size: 16,
-                      color: AppColors.textMuted,
-                      semanticLabel: 'Eraser (squeeze)',
+                  if (c.squeezeEraser)
+                    Positioned(
+                      top: 6,
+                      right: 8,
+                      child: Icon(
+                        Icons.auto_fix_normal,
+                        size: 16,
+                        color: AppColors.textMuted,
+                        semanticLabel: 'Eraser (squeeze)',
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -646,7 +815,7 @@ class _NotePageState extends State<NotePage> {
                 child: Text(
                   '${(_zoom * 100).round()}%',
                   key: const ValueKey('note-zoom-value'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     color: AppColors.textMuted,
                     fontFeatures: [ui.FontFeature.tabularFigures()],
@@ -659,25 +828,12 @@ class _NotePageState extends State<NotePage> {
               tooltip: 'Larger pages',
               onTap: () => _setZoom(_zoom * 1.25),
             ),
-            if (touchFirst)
-              GhostIconButton(
-                icon: Icons.touch_app_outlined,
-                tooltip: _fingerDraws
-                    ? 'Finger draws (tap to scroll with finger)'
-                    : 'Finger scrolls (tap to draw with finger)',
-                active: _fingerDraws,
-                onTap: () {
-                  setState(() => _fingerDraws = !_fingerDraws);
-                  unawaited(
-                    s.settings.set('notebookFingerDraws', _fingerDraws),
-                  );
-                },
-              ),
             const SizedBox(width: Space.sm),
             PopupMenuButton<String>(
               key: const ValueKey('note-export'),
               tooltip: 'Export (Markdown, pictures, web page)',
               icon: const Icon(Icons.ios_share, size: 18),
+              onOpened: c.cancelPendingLineStraightening,
               onSelected: (what) async {
                 final note = s.workspace.notes[widget.noteId];
                 if (note == null) return;

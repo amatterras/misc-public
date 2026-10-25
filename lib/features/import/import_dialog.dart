@@ -57,7 +57,7 @@ Future<void> showImportDialog(BuildContext context, AppState s) async {
                 ],
               ),
               const SizedBox(height: Space.sm),
-              const Text(
+              Text(
                 'Files are only read, never changed. Notion: unzip the '
                 'export first. Apple Notes has no export of its own: export '
                 'notes as HTML or text files (e.g. with an exporter app), '

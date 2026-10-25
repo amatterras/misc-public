@@ -15,6 +15,7 @@ import 'branch_conversion.dart';
 import 'canvas_controller.dart';
 import 'canvas_toolbar.dart' show showDotOpacityDialog;
 import 'canvas_export.dart';
+import '../interaction/item_actions.dart';
 
 Future<void> showCanvasMenu(
   BuildContext context,
@@ -47,7 +48,9 @@ Future<void> showCanvasMenu(
     position: RelativeRect.fromLTRB(global.dx, global.dy, global.dx, global.dy),
     items: selected.isNotEmpty
         ? [
-            if (hit is LinkItem || hit is NoteCardItem)
+            if (hit is LinkItem ||
+                hit is NoteCardItem ||
+                (hit is TextItem && hit.sourceNoteId != null))
               item('open', 'Open', Icons.open_in_new),
             item('duplicate', 'Duplicate', Icons.copy_all_outlined),
             item('toNote', 'Copy to a note…', Icons.note_add_outlined),
@@ -57,6 +60,12 @@ Future<void> showCanvasMenu(
               Icons.drive_file_move_outline,
             ),
             item('toCanvas', 'Copy to another mindmap…', Icons.hub_outlined),
+            item(
+              'moveCanvas',
+              'Move to another mindmap…',
+              Icons.drive_file_move_outline,
+            ),
+            item('shareExternal', 'Share externally', Icons.ios_share_outlined),
             item('component', 'Save as component…', Icons.widgets_outlined),
             if (hit is TextItem) ...[
               item('branchTasks', switch (branchProgress(
@@ -139,6 +148,10 @@ Future<void> showCanvasMenu(
       if (id == null) return;
       final n = await s.copyToCanvas(c, items, id);
       s.showToast('Copied $n item(s).');
+    case 'moveCanvas':
+      await moveActionItem(context, s, CanvasActionItems(c, items));
+    case 'shareExternal':
+      await shareActionItem(context, s, CanvasActionItems(c, items));
     case 'component':
       final name = await promptText(
         context,
@@ -264,7 +277,7 @@ Future<void> showCanvasVersions(
       content: SizedBox(
         width: 420,
         child: list.isEmpty
-            ? const Text(
+            ? Text(
                 'No versions saved yet. Right-click the empty canvas and '
                 'choose “Save a version…”.',
                 style: TextStyle(color: AppColors.textFaint),

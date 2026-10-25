@@ -36,7 +36,7 @@ class StorageModeSection extends StatelessWidget {
           Text(
             _statusLine(state),
             key: const ValueKey('storage-status'),
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         ],
       );
@@ -104,10 +104,7 @@ class _ModeTile extends StatelessWidget {
               ),
               Text(
                 mode.explanation,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textMuted,
-                ),
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
               ),
             ],
           ),
@@ -316,10 +313,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
                   child: Text(
                     _error!,
                     key: const ValueKey('switch-error'),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.danger,
-                    ),
+                    style: TextStyle(fontSize: 12, color: AppColors.danger),
                   ),
                 ),
               if (_info != null)
@@ -364,10 +358,10 @@ class _SwitchDialogState extends State<_SwitchDialog> {
   List<Widget> _detailsStep() => [
     Text(
       widget.target.explanation,
-      style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+      style: TextStyle(fontSize: 13, color: AppColors.textMuted),
     ),
     const SizedBox(height: Space.sm),
-    const Text(
+    Text(
       'Nothing changes until the copy is verified and you confirm. Your data '
       'on this device is never replaced by the switch.',
       style: TextStyle(fontSize: 12, color: AppColors.textFaint),
@@ -401,7 +395,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
           final unencrypted =
               uri != null && isAllowedHubUrl(uri) && !isEncryptedHubRoute(uri);
           if (!unencrypted) return const SizedBox.shrink();
-          return const Text(
+          return Text(
             'Home-network address: this connection is not encrypted. Prefer '
             '127.0.0.1 or a Tailscale address (100.x.y.z).',
             key: ValueKey('switch-unencrypted-warning'),
@@ -451,7 +445,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
         ),
       ),
       const SizedBox(height: Space.sm),
-      const Text(
+      Text(
         'Next: a full backup of this device is made and checked, copied to '
         'the destination from that backup (your live data is not touched), '
         'then every record and attachment is read back and compared.',
@@ -464,7 +458,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
           'so nothing was switched. First: ${v.problems.first}. You can try '
           'again or cancel.',
           key: const ValueKey('switch-verify-failed'),
-          style: const TextStyle(fontSize: 12, color: AppColors.danger),
+          style: TextStyle(fontSize: 12, color: AppColors.danger),
         ),
       ],
     ];
@@ -485,7 +479,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
         'Switch now? This device keeps all its data. '
         '${widget.state.storageMode == StorageMode.local ? '' : 'The ${widget.state.storageMode.label.toLowerCase()} keeps its copy; nothing is deleted there. '}'
         'A backup from just before the copy is kept on this device.',
-        style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+        style: TextStyle(fontSize: 12, color: AppColors.textMuted),
       ),
     ];
   }
@@ -540,7 +534,7 @@ class DataSafetySection extends StatelessWidget {
               : ListView(
                   key: const ValueKey('integrity-issues'),
                   children: [
-                    const Text(
+                    Text(
                       'Nothing was changed or removed. Each item says what '
                       'you can do.',
                       style: TextStyle(

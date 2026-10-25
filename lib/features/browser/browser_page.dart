@@ -327,7 +327,7 @@ class _BrowserPageState extends State<BrowserPage> {
                     padding: const EdgeInsets.only(left: 10),
                     decoration: BoxDecoration(
                       color: tab.id == active?.id ? AppColors.card : null,
-                      border: const Border(
+                      border: Border(
                         right: BorderSide(color: AppColors.border),
                       ),
                     ),
@@ -386,7 +386,7 @@ class _BrowserPageState extends State<BrowserPage> {
     final bookmarked = t != null && b.isBookmarked(t.url);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
@@ -415,7 +415,7 @@ class _BrowserPageState extends State<BrowserPage> {
               transfer: () => UrlTransfer(t.url, title: t.title),
               touch: touchFirst,
               feedback: Text(t.title.isEmpty ? t.url : t.title),
-              child: const Tooltip(
+              child: Tooltip(
                 message: 'Drag this page somewhere in THEapp',
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 6),
@@ -574,7 +574,7 @@ class _BrowserPageState extends State<BrowserPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.explore_off_outlined,
                 size: 36,
                 color: AppColors.textFaint,
@@ -585,7 +585,7 @@ class _BrowserPageState extends State<BrowserPage> {
                 child: Text(
                   BrowserEngine.unavailableReason,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppColors.textMuted),
+                  style: TextStyle(color: AppColors.textMuted),
                 ),
               ),
               if (t.url.isNotEmpty) ...[
@@ -626,7 +626,7 @@ class _BrowserPageState extends State<BrowserPage> {
                 st.error!,
                 key: const ValueKey('browser-error'),
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.warm),
+                style: TextStyle(color: AppColors.warm),
               ),
             ),
         ],
@@ -855,7 +855,7 @@ class _PrivacyDialog extends StatelessWidget {
           child: ListView(
             shrinkWrap: true,
             children: [
-              const Text(
+              Text(
                 'Private tabs keep no history here and use a separate, '
                 'temporary data store in the engine (iPhone/iPad WebKit). '
                 'They do not make you anonymous to websites or networks.',
