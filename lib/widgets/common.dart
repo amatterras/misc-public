@@ -271,11 +271,13 @@ class AssetChip extends StatelessWidget {
     required this.workspace,
     required this.asset,
     this.onRemove,
+    this.onOpenPdfEditor,
   });
 
   final Workspace workspace;
   final Asset asset;
   final VoidCallback? onRemove;
+  final VoidCallback? onOpenPdfEditor;
 
   @override
   Widget build(BuildContext context) {
@@ -336,7 +338,10 @@ class AssetChip extends StatelessWidget {
                 IconButton(
                   tooltip: 'Open in PDF editor',
                   visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
                   onPressed: onOpenPdfEditor,
                   icon: const Icon(Icons.edit_document, size: 16),
                 ),
