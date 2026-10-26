@@ -10,7 +10,7 @@ import '../../data/models/canvas_models.dart';
 import '../../widgets/common.dart';
 import '../ai/ai_service.dart';
 import '../ai/ai_session.dart';
-import '../export/exports.dart';
+import '../export/export_dialog.dart';
 import 'branch_conversion.dart';
 import 'canvas_controller.dart';
 import 'canvas_toolbar.dart' show showDotOpacityDialog;
@@ -347,7 +347,7 @@ Future<void> showCanvasMenu(
     case 'versions':
       await showCanvasVersions(context, s, c);
     case 'exportPicture' || 'exportWeb':
-      await exportCanvasFromMenu(s, c, web: choice == 'exportWeb');
+      await showExportDialog(context, s, c, web: choice == 'exportWeb');
     case 'release':
       c.releaseReferences();
     case 'selectAll':

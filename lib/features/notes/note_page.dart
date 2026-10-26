@@ -26,7 +26,7 @@ import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
 import '../ink/stroke_geometry.dart';
 import 'notebook_layout.dart';
-import '../export/exports.dart';
+import '../export/export_dialog.dart';
 import 'paper_dialog.dart';
 import 'paper_painter.dart';
 import 'notes_page.dart' show NoteEditor;
@@ -840,7 +840,17 @@ class _NotePageState extends State<NotePage> {
                 final note = s.workspace.notes[widget.noteId];
                 if (note == null) return;
                 await c.flush();
-                await exportNoteFromMenu(s, note, what);
+                if (!context.mounted) return;
+                await showNoteExportDialog(
+                  context,
+                  s,
+                  note,
+                  switch (what) {
+                    'png' => ExportFormat.pages,
+                    'html' => ExportFormat.web,
+                    _ => ExportFormat.markdown,
+                  },
+                );
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(
