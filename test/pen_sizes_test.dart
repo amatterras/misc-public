@@ -44,11 +44,14 @@ void draw(CanvasController c, double y) {
 void main() {
   test('the original four kept; two thinner and two thicker, all distinct', () {
     expect(penSizes, containsAllInOrder([1.5, 2.5, 5.0, 9.0]));
-    expect(penSizes.where((w) => w < 1.5), hasLength(2));
-    expect(penSizes.where((w) => w > 9.0), hasLength(2));
+    expect(penSizes.where((w) => w < 1.5), hasLength(4)); // 2 + 2 thinner
+    expect(penSizes.where((w) => w > 9.0), hasLength(3)); // 2 + 1 thicker
+    expect(penSizes.first, 0.45);
+    expect(penSizes.where((w) => w < 0.8), hasLength(2));
+    expect(penSizes.last, 30.0);
     expect(penSizes.toSet(), hasLength(penSizes.length));
     expect([...penSizes]..sort(), penSizes);
-    expect(penSizes.first, greaterThan(0.5)); // still visible
+    expect(penSizes.first, greaterThan(0.4)); // still visible
   });
 
   test('saved values: older ones load as they were, odd ones are safe', () {
@@ -58,7 +61,9 @@ void main() {
     expect(savedPenWidth(-3), defaultPenSize);
     expect(savedPenWidth(5), 5.0); // an int from older settings
     expect(savedPenWidth(9.0), 9.0);
-    expect(savedPenWidth(0.5), penSizes.first);
+    expect(savedPenWidth(0.3), penSizes.first);
+    expect(savedPenWidth(30), 30.0);
+    expect(savedPenWidth(14), 14.0);
     expect(savedPenWidth(500), penSizes.last);
   });
 
@@ -90,7 +95,7 @@ void main() {
     for (var i = 1; i < counts.length; i++) {
       expect(counts[i], greaterThan(counts[i - 1]), reason: '$counts');
     }
-    expect(counts.first, greaterThan(100 * 255 * 0.5)); // thinnest visible
+    expect(counts.first, greaterThan(100 * 255 * 0.4)); // thinnest visible
     final c = make();
     for (var i = 0; i < penSizes.length; i++) {
       c.setPen(width: penSizes[i]);

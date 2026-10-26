@@ -2713,8 +2713,8 @@ class AppState extends ChangeNotifier {
 
   /// Thinnest and thickest Calendar pen (world units: 1 = one point at
   /// the 38-day grid's size).
-  static const calendarPenMin = 0.5;
-  static const calendarPenMax = 20.0;
+  static const calendarPenMin = 0.3;
+  static const calendarPenMax = 30.0;
 
   /// The Calendar pen's thickness (this device's setting). Each stroke
   /// keeps the thickness it was drawn with, also through undo and sync.

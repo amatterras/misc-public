@@ -253,8 +253,8 @@ class CanvasContextBar extends StatelessWidget {
                   ? onPenWidth!(c, width)
                   : c.setPen(width: width),
               icon: Container(
-                width: (width + 2).clamp(2.5, 20.0),
-                height: (width + 2).clamp(2.5, 20.0),
+                width: (width + 2).clamp(2.5, 26.0),
+                height: (width + 2).clamp(2.5, 26.0),
                 decoration: BoxDecoration(
                   color: AppColors.text,
                   shape: BoxShape.circle,
