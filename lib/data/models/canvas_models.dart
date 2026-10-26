@@ -700,6 +700,70 @@ class CanvasViewport {
 }
 
 /// A whole canvas board as it is stored on disk.
+/// A named layer of a mindmap (see CanvasController layers).
+class CanvasLayer {
+  const CanvasLayer({
+    required this.id,
+    required this.name,
+    this.hidden = false,
+    this.locked = false,
+  });
+
+  final String id;
+  final String name;
+  final bool hidden;
+  final bool locked;
+
+  CanvasLayer copyWith({String? name, bool? hidden, bool? locked}) =>
+      CanvasLayer(
+        id: id,
+        name: name ?? this.name,
+        hidden: hidden ?? this.hidden,
+        locked: locked ?? this.locked,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    if (hidden) 'hidden': true,
+    if (locked) 'locked': true,
+  };
+
+  /// Null for anything that is not a usable layer record.
+  static CanvasLayer? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['id'], name = raw['name'];
+    if (id is! String || id.isEmpty || name is! String) return null;
+    return CanvasLayer(
+      id: id,
+      name: name,
+      hidden: raw['hidden'] == true,
+      locked: raw['locked'] == true,
+    );
+  }
+
+  /// A list read from stored data: unusable records and repeated ids are
+  /// left out.
+  static List<CanvasLayer> listFrom(Object? raw) {
+    final seen = <String>{};
+    return [
+      for (final r in raw as List? ?? const [])
+        if (fromJson(r) case final l? when seen.add(l.id)) l,
+    ];
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is CanvasLayer &&
+      other.id == id &&
+      other.name == name &&
+      other.hidden == hidden &&
+      other.locked == locked;
+
+  @override
+  int get hashCode => Object.hash(id, name, hidden, locked);
+}
+
 class CanvasDocument {
   CanvasDocument({
     required this.id,
@@ -718,6 +782,7 @@ class CanvasDocument {
     this.metaUnknownFields = const {},
     this.kind,
     this.pageBackgrounds = const [],
+    this.layers = const [],
   });
 
   /// 2: note styling, images, link and note cards.
@@ -768,6 +833,9 @@ class CanvasDocument {
   /// Notebook pages that show a PDF page underneath (see [PageBackground]).
   final List<PageBackground> pageBackgrounds;
 
+  /// The mindmap's layers, bottom to top (empty: none).
+  final List<CanvasLayer> layers;
+
   /// Whether this document is a note's handwriting. The id prefix also
   /// counts, in case a version that drops [kind] passed it on.
   bool get isNotebook => isNotebookId(id, kind);
@@ -789,6 +857,7 @@ class CanvasDocument {
     'metaUnknownFields',
     'kind',
     'pageBackgrounds',
+    'layers',
   };
 
   /// [item] as stored and synced, including fields this version does not
@@ -819,6 +888,7 @@ class CanvasDocument {
       metaUnknownFields: metaUnknownFields,
       kind: kind,
       pageBackgrounds: pageBackgrounds,
+      layers: layers,
     );
   }
 
@@ -838,6 +908,7 @@ class CanvasDocument {
     'kind': ?kind,
     if (pageBackgrounds.isNotEmpty)
       'pageBackgrounds': [for (final b in pageBackgrounds) b.toJson()],
+    if (layers.isNotEmpty) 'layers': [for (final l in layers) l.toJson()],
   };
 
   factory CanvasDocument.fromJson(Map<String, dynamic> json) {
@@ -879,6 +950,7 @@ class CanvasDocument {
         for (final b in json['pageBackgrounds'] as List? ?? const [])
           PageBackground.fromJson(b as Map<String, dynamic>),
       ],
+      layers: CanvasLayer.listFrom(json['layers']),
     );
   }
 }

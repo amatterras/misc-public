@@ -37,7 +37,13 @@ class CanvasToolbar extends StatelessWidget {
     this.onAddDocument,
     this.onMore,
     this.onPenDoubleTap,
+    this.onLayers,
+    this.layersOpen = false,
   });
+
+  /// Opens / closes the Layers panel.
+  final VoidCallback? onLayers;
+  final bool layersOpen;
 
   final CanvasController controller;
   final VoidCallback onAddImage;
@@ -152,6 +158,14 @@ class CanvasToolbar extends StatelessWidget {
               tooltip: 'Redo  (Ctrl+Y)',
               onPressed: controller.canRedo ? controller.redo : null,
             ),
+            if (onLayers != null)
+              ToolButton(
+                key: const ValueKey('canvas-layers'),
+                icon: const Icon(Icons.layers_outlined, size: 18),
+                tooltip: 'Layers',
+                active: layersOpen,
+                onPressed: onLayers,
+              ),
             if (onMore != null)
               Builder(
                 builder: (context) => ToolButton(

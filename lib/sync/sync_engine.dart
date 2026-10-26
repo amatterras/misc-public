@@ -276,6 +276,7 @@ class SyncEngine {
             doc.metaUnknownFields,
             doc.kind,
             doc.pageBackgrounds,
+            doc.layers,
           ),
         );
       }
@@ -576,6 +577,7 @@ class SyncEngine {
         metaUnknownFields: doc.metaUnknownFields,
         kind: doc.kind,
         pageBackgrounds: merged,
+        layers: doc.layers,
       ),
     );
     return true;
@@ -756,6 +758,7 @@ class SyncEngine {
         metaUnknownFields: doc?.metaUnknownFields ?? const {},
         kind: doc?.kind,
         pageBackgrounds: doc?.pageBackgrounds ?? const [],
+        layers: doc?.layers ?? const [],
       );
       applied = applyCanvasChanges(s, canvasId, changes, isPending);
       if (applied.isNotEmpty) {
@@ -776,6 +779,7 @@ class SyncEngine {
             metaUnknownFields: s.metaUnknownFields,
             kind: s.kind,
             pageBackgrounds: s.pageBackgrounds,
+            layers: s.layers,
           ),
         );
       }

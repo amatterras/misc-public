@@ -85,7 +85,8 @@ class CanvasPainter extends CustomPainter {
 
     // Mind-map connections first, so they run underneath the items.
     final selectedIds = controller.selection;
-    for (final c in controller.items.whereType<ConnectorItem>()) {
+    for (final c in controller.drawOrder.whereType<ConnectorItem>()) {
+      if (controller.connectorHidden(c)) continue;
       final shape = controller.connectorShape(c);
       if (shape == null) continue;
       _paintConnector(
@@ -110,7 +111,7 @@ class CanvasPainter extends CustomPainter {
       );
     }
 
-    for (final item in controller.items) {
+    for (final item in controller.drawOrder) {
       if (item is ConnectorItem || controller.isReference(item.id)) continue;
       final bounds = controller.itemBounds(item);
       if (!bounds.overlaps(visible)) continue;

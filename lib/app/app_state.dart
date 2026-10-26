@@ -1316,6 +1316,7 @@ class AppState extends ChangeNotifier {
           metaUnknownFields: doc.metaUnknownFields,
           kind: doc.kind,
           pageBackgrounds: doc.pageBackgrounds,
+          layers: doc.layers,
         ),
       );
       migrated++;
@@ -2951,6 +2952,7 @@ class AppState extends ChangeNotifier {
         metaUnknownFields: trashed.metaUnknownFields,
         kind: trashed.kind ?? 'notebook',
         pageBackgrounds: trashed.pageBackgrounds,
+        layers: trashed.layers,
       ),
     );
     await workspace.forgetCanvasDeletion(id);

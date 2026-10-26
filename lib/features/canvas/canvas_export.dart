@@ -43,7 +43,7 @@ Future<({Uint8List png, int missingImages})?> renderItemsPicture(
   final ids = items?.toSet();
   final chosen = [
     for (final i in source.items)
-      if (ids == null || ids.contains(i.id)) i,
+      if ((ids == null || ids.contains(i.id)) && !source.isHidden(i.id)) i,
   ];
   if (chosen.isEmpty) return null;
   final copy = CanvasController(
@@ -53,6 +53,7 @@ Future<({Uint8List png, int missingImages})?> renderItemsPicture(
       items: chosen,
       updatedAt: DateTime.now(),
       itemUnknownFields: source.marksOf(chosen.map((i) => i.id)),
+      layers: source.layers,
     ),
     onSave: (_) async {},
     resources: source.resources,

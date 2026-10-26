@@ -81,6 +81,8 @@ class CanvasController extends ChangeNotifier {
        _metaUnknownFields = document.metaUnknownFields,
        _docKind = document.kind,
        _pageBackgrounds = document.pageBackgrounds,
+       _layers = document.layers,
+       _layerIndex = {for (final l in document.layers) l.id: l},
        _savedTitle = document.title,
        _savedFolderId = document.folderId,
        _savedItems = {for (final i in document.items) i.id: i} {
@@ -362,7 +364,7 @@ class CanvasController extends ChangeNotifier {
     // Reference overlays are never selected (so never deleted by accident).
     select([
       for (final i in _items)
-        if (!isReference(i.id)) i.id,
+        if (!isReference(i.id) && !isHidden(i.id)) i.id,
     ]);
   }
 
@@ -438,7 +440,9 @@ class CanvasController extends ChangeNotifier {
   /// Every unit of the canvas that has a tag, with its bounds: one pair of
   /// dots per unit. A group shows its tag when all its members share it.
   List<(Rect, int)> get taggedUnits => [
-    for (final unit in unitsOf(_items.where((i) => !isReference(i.id))))
+    for (final unit in unitsOf(
+      _items.where((i) => !isReference(i.id) && !isHidden(i.id)),
+    ))
       if (tagOf(unit.first.id) case final tag?
           when unit.every((i) => tagOf(i.id) == tag))
         (boundsOf(unit)!, tag),
@@ -457,7 +461,8 @@ class CanvasController extends ChangeNotifier {
   Object? markOf(String id, String key) => _itemUnknownFields[id]?[key];
 
   /// Locked items cannot be moved, resized, edited, erased or deleted.
-  bool isLocked(String id) => markOf(id, lockedMark) == true;
+  bool isLocked(String id) =>
+      markOf(id, lockedMark) == true || layerOfItem(id)?.locked == true;
 
   /// Index into the lasso/tag colors, or null.
   int? tagOf(String id) {
@@ -494,6 +499,7 @@ class CanvasController extends ChangeNotifier {
     _items = state;
     _markDirty();
     _restoreTags(_tagsAt[state]);
+    _restoreLayerState(_layersAt[state]);
   }
 
   Map<String, List<String>> _tagSnapshot() => {
@@ -938,7 +944,251 @@ class CanvasController extends ChangeNotifier {
 
 
 
+  // -------------------------------------------------------------- layers --
+  //
+  // Named layers of a mindmap. The layer list (names, order, hidden, locked)
+  // is saved and synced with the canvas metadata; which layer an object is on
+  // is a mark on the object (`layer`), so it travels with the object.
+  //   - order: layers draw bottom to top; objects with no layer sit on the
+  //     base, below all layers;
+  //   - hidden: not drawn, not hit, not selected by marquee/lasso/select-all,
+  //     not exported; still in the document;
+  //   - locked: drawn and selectable but they resist moving, drawing over,
+  //     deleting and editing (the same rule as a single locked object);
+  //   - moving objects between layers never changes their coordinates or
+  //     connections.
+
+  static const layerMark = 'layer';
+
+  List<CanvasLayer> _layers;
+  List<CanvasLayer> get layers => _layers;
+  Map<String, CanvasLayer> _layerIndex;
+
+  /// The layer new objects are put on (null: the base).
+  String? activeLayerId;
+
+  Map<String, CanvasLayer> get _byId => _layerIndex;
+
+  void _setLayersRaw(List<CanvasLayer> next) {
+    _layers = List.unmodifiable(next);
+    _layerIndex = {for (final l in _layers) l.id: l};
+    if (activeLayerId != null && !_layerIndex.containsKey(activeLayerId)) {
+      activeLayerId = null;
+    }
+    _drawOrderFor = null;
+    _metaChanged = true;
+    _markDirty();
+  }
+
+  /// The layer [id] is on, or null (the base, or a layer that is gone).
+  CanvasLayer? layerOfItem(String id) {
+    final v = markOf(id, layerMark);
+    return v is String ? _byId[v] : null;
+  }
+
+  bool isHidden(String id) => layerOfItem(id)?.hidden == true;
+
+  /// Position of [id]'s layer in the stack: -1 for the base.
+  int layerRank(String id) {
+    final l = layerOfItem(id);
+    return l == null ? -1 : _layers.indexOf(l);
+  }
+
+  List<CanvasItem>? _drawOrderFor;
+  List<CanvasItem> _drawOrder = const [];
+
+  /// The items bottom to top as they are drawn and hit: by layer, and in
+  /// their own order within a layer. Hidden objects are left out.
+  List<CanvasItem> get drawOrder {
+    if (_layers.isEmpty) return _items;
+    if (!identical(_drawOrderFor, _items)) {
+      final ranked = <(int, int, CanvasItem)>[];
+      for (var i = 0; i < _items.length; i++) {
+        final item = _items[i];
+        if (item is ConnectorItem) {
+          ranked.add((-1, i, item)); // lines are drawn under all objects
+          continue;
+        }
+        final l = layerOfItem(item.id);
+        if (l?.hidden == true) continue;
+        ranked.add((l == null ? -1 : _layers.indexOf(l), i, item));
+      }
+      ranked.sort((a, b) {
+        final c = a.$1.compareTo(b.$1);
+        return c != 0 ? c : a.$2.compareTo(b.$2);
+      });
+      _drawOrder = [for (final r in ranked) r.$3];
+      _drawOrderFor = _items;
+    }
+    return _drawOrder;
+  }
+
+  /// Whether a connection is hidden because one of its ends is.
+  bool connectorHidden(ConnectorItem c) =>
+      isHidden(c.fromId) || isHidden(c.toId);
+
+  /// How many objects are on layer [id] (null: the base).
+  int countOnLayer(String? id) => _items.where((i) {
+    if (i is ConnectorItem) return false;
+    final v = markOf(i.id, layerMark);
+    final on = v is String && _byId.containsKey(v) ? v : null;
+    return on == id;
+  }).length;
+
+  final Expando<(List<CanvasLayer>, Map<String, String>)> _layersAt = Expando();
+
+  (List<CanvasLayer>, Map<String, String>) _layerSnapshot() => (
+    _layers,
+    {
+      for (final i in _items)
+        if (markOf(i.id, layerMark) case final String l) i.id: l,
+    },
+  );
+
+  void _restoreLayerState((List<CanvasLayer>, Map<String, String>)? snap) {
+    if (snap == null) return;
+    final ids = {
+      for (final i in _items)
+        if (markOf(i.id, layerMark) != null) i.id,
+      ...snap.$2.keys,
+    };
+    for (final id in ids) {
+      final want = snap.$2[id];
+      if (markOf(id, layerMark) != want) {
+        setMark([id], layerMark, want);
+      }
+    }
+    _setLayersRaw(snap.$1);
+  }
+
+  /// Changes the layer list and/or which layer objects are on, as ONE undo
+  /// step (undo restores both).
+  void applyLayerChange(
+    List<CanvasLayer> next, {
+    Map<String, String?> assign = const {},
+  }) {
+    final changed =
+        !listEquals(next, _layers) ||
+        assign.entries.any((e) => markOf(e.key, layerMark) != e.value);
+    if (!changed) return;
+    cancelPendingLineStraightening();
+    _layersAt[_items] = _layerSnapshot();
+    _pushUndo(_items);
+    _setItems(List.of(_items));
+    for (final e in assign.entries) {
+      if (itemById(e.key) != null) setMark([e.key], layerMark, e.value);
+    }
+    _setLayersRaw(next);
+    _layersAt[_items] = _layerSnapshot();
+    _pruneSelection();
+    notifyListeners();
+  }
+
+  /// Chooses the layer new objects go on (null: the base).
+  void setActiveLayer(String? id) {
+    activeLayerId = id == null || _byId.containsKey(id) ? id : activeLayerId;
+    notifyListeners();
+  }
+
+  /// Adds a layer on top and makes it the active one.
+  CanvasLayer addLayer([String? name]) {
+    final layer = CanvasLayer(
+      id: newId(),
+      name: (name == null || name.trim().isEmpty)
+          ? 'Layer ${_layers.length + 1}'
+          : name.trim(),
+    );
+    applyLayerChange([..._layers, layer]);
+    activeLayerId = layer.id;
+    notifyListeners();
+    return layer;
+  }
+
+  void renameLayer(String id, String name) {
+    final clean = name.trim();
+    if (clean.isEmpty) return;
+    applyLayerChange([
+      for (final l in _layers) l.id == id ? l.copyWith(name: clean) : l,
+    ]);
+  }
+
+  void setLayerHidden(String id, bool hidden) => applyLayerChange([
+    for (final l in _layers) l.id == id ? l.copyWith(hidden: hidden) : l,
+  ]);
+
+  void setLayerLocked(String id, bool locked) => applyLayerChange([
+    for (final l in _layers) l.id == id ? l.copyWith(locked: locked) : l,
+  ]);
+
+  /// Moves layer [id] one step up (later: drawn above) or down.
+  void moveLayer(String id, {required bool up}) {
+    final i = _layers.indexWhere((l) => l.id == id);
+    final j = up ? i + 1 : i - 1;
+    if (i < 0 || j < 0 || j >= _layers.length) return;
+    final next = [..._layers];
+    final t = next[i];
+    next[i] = next[j];
+    next[j] = t;
+    applyLayerChange(next);
+  }
+
+  /// Takes layer [id] away. Its objects are NOT deleted: they move to the
+  /// base, where they were drawn and keep every coordinate and connection.
+  void deleteLayer(String id) => applyLayerChange(
+    [
+      for (final l in _layers)
+        if (l.id != id) l,
+    ],
+    assign: {
+      for (final i in _items)
+        if (markOf(i.id, layerMark) == id) i.id: null,
+    },
+  );
+
+  /// Puts [ids] on layer [layerId] (null: the base). Deliberate and
+  /// therefore allowed for locked objects too. Coordinates and connections
+  /// do not change.
+  void moveToLayer(Iterable<String> ids, String? layerId) {
+    if (layerId != null && !_byId.containsKey(layerId)) return;
+    applyLayerChange(
+      _layers,
+      assign: {
+        for (final id in ids)
+          if (itemById(id) != null && itemById(id) is! ConnectorItem)
+            id: layerId,
+      },
+    );
+  }
+
+  /// Selects everything on layer [id] (hidden layers included: this is the
+  /// deliberate way to reach their objects).
+  void selectLayer(String? id) {
+    select([
+      for (final i in _items)
+        if (i is! ConnectorItem &&
+            ((markOf(i.id, layerMark) is String &&
+                    _byId.containsKey(markOf(i.id, layerMark)))
+                ? markOf(i.id, layerMark) == id
+                : id == null))
+          i.id,
+    ]);
+  }
+
+  /// New objects go on the active layer (unless it is hidden or locked, in
+  /// which case they go to the base so they are not lost from view).
+  void _putOnActiveLayer(Iterable<CanvasItem> added) {
+    final layer = activeLayerId == null ? null : _byId[activeLayerId];
+    if (layer == null || layer.hidden || layer.locked) return;
+    for (final i in added) {
+      if (i is ConnectorItem) continue;
+      if (markOf(i.id, layerMark) == null) {
+        setMark([i.id], layerMark, layer.id);
+      }
+    }
+  }
+
   String? _bendId;
+
   int _bendIndex = -1;
   Offset _bendStart = Offset.zero;
 
@@ -1120,6 +1370,7 @@ class CanvasController extends ChangeNotifier {
     if (items.isEmpty) return;
     endEditing();
     _commit([..._items, ...items]);
+    _putOnActiveLayer(items);
     _tool = CanvasTool.select;
     _selection = Set.unmodifiable(items.map((i) => i.id));
     notifyListeners();
@@ -1260,6 +1511,7 @@ class CanvasController extends ChangeNotifier {
     );
     _beginTransaction();
     _setItems([..._items, item]);
+    _putOnActiveLayer([item]);
     _editingId = item.id;
     _selection = {item.id};
     notifyListeners();
@@ -1321,7 +1573,10 @@ class CanvasController extends ChangeNotifier {
 
   void _pruneSelection() {
     final ids = _items.map((i) => i.id).toSet();
-    _selection = Set.unmodifiable(_selection.where(ids.contains));
+    // Objects on a hidden layer cannot stay selected (they are not shown).
+    _selection = Set.unmodifiable(
+      _selection.where((id) => ids.contains(id) && !isHidden(id)),
+    );
   }
 
   // --------------------------------------------------------------- layout --
@@ -1580,7 +1835,7 @@ class CanvasController extends ChangeNotifier {
   /// never hit.
   CanvasItem? hitTest(Offset world) {
     final tolerance = 6 / _scale;
-    for (final item in _items.reversed) {
+    for (final item in drawOrder.reversed) {
       if (isReference(item.id)) continue; // behind the ink, not selectable
       switch (item) {
         case BoxItem():
@@ -1592,6 +1847,7 @@ class CanvasController extends ChangeNotifier {
       }
     }
     for (final item in _items.reversed.whereType<ConnectorItem>()) {
+      if (connectorHidden(item)) continue;
       final shape = connectorShape(item);
       if (shape != null &&
           nearestOnConnector(
@@ -2266,7 +2522,9 @@ class CanvasController extends ChangeNotifier {
           withGroups({
             ..._selectionAtDragStart,
             for (final item in _items)
-              if (!isReference(item.id) && _marquee!.overlaps(itemBounds(item)))
+              if (!isReference(item.id) &&
+                  !isHidden(item.id) &&
+                  _marquee!.overlaps(itemBounds(item)))
                 item.id,
           }),
         );
@@ -2339,6 +2597,7 @@ class CanvasController extends ChangeNotifier {
                   ),
           );
           _setItems([..._items, stored]);
+          _putOnActiveLayer([stored]);
           if (displayedPoints != null) {
             _holdTimer?.cancel();
             _holdTimer = null;
@@ -2365,6 +2624,7 @@ class CanvasController extends ChangeNotifier {
           final hits = <String>{};
           for (final item in _items) {
             if (!isReference(item.id) &&
+                !isHidden(item.id) &&
                 _lassoContainsOrIntersects(itemBounds(item), _lassoPoints)) {
               hits.add(item.id);
             }
@@ -2751,6 +3011,7 @@ class CanvasController extends ChangeNotifier {
       metaUnknownFields: _metaUnknownFields,
       kind: _docKind,
       pageBackgrounds: _pageBackgrounds,
+      layers: _layers,
     );
     final applied = applyCanvasChanges(state, _id, changes, (key, rev) {
       final itemId = key.substring(key.lastIndexOf('/') + 1);
@@ -2779,6 +3040,9 @@ class CanvasController extends ChangeNotifier {
       ..addAll(state.itemUnknownFields);
     _metaUnknownFields = state.metaUnknownFields;
     _pageBackgrounds = state.pageBackgrounds;
+    _layers = List.unmodifiable(state.layers);
+    _layerIndex = {for (final l in _layers) l.id: l};
+    _drawOrderFor = null;
     // Remote versions count as saved, so they are not stamped as local edits.
     _savedItems = {
       for (final i in _items)
@@ -2848,6 +3112,7 @@ class CanvasController extends ChangeNotifier {
     metaUnknownFields: _metaUnknownFields,
     kind: _docKind,
     pageBackgrounds: _pageBackgrounds,
+    layers: _layers,
   );
 
   /// Saves immediately if there are unsaved changes.

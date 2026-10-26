@@ -16,6 +16,7 @@ import 'canvas_menu.dart';
 import '../transfer/transfer.dart';
 import 'canvas_painter.dart';
 import 'canvas_text.dart';
+import 'layers_panel.dart';
 import 'canvas_toolbar.dart';
 import '../tags/tag_ui.dart' show showTagPicker;
 import '../ink/stroke_geometry.dart';
@@ -79,6 +80,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   int? _welcomePointer;
   Offset? _welcomeStartPosition;
   bool _welcomeFading = false;
+  bool _layersOpen = false;
   bool _welcomeRemovalDone = false;
 
   // Apple Pencil Pro squeeze (iPhone/iPad): eraser while squeezed.
@@ -886,6 +888,15 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                   top: Space.xl + 10,
                   child: _SaveIndicator(state: c.saveState),
                 ),
+                if (_layersOpen)
+                  Positioned(
+                    right: Space.xl,
+                    top: Space.xl + 44,
+                    child: LayersPanel(
+                      controller: c,
+                      onClose: () => setState(() => _layersOpen = false),
+                    ),
+                  ),
                 Positioned(
                   left: Space.xl,
                   top: 0,
@@ -904,6 +915,9 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                         handleKey: const ValueKey('toolbar-collapse'),
                         child: CanvasToolbar(
                           controller: c,
+                          layersOpen: _layersOpen,
+                          onLayers: () =>
+                              setState(() => _layersOpen = !_layersOpen),
                           onAddImage: _addImages,
                           onAddLink: _addLink,
                           onAddDocument: _addDocuments,
