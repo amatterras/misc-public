@@ -11,6 +11,7 @@ import '../../data/models/record.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../links/link_tags.dart';
+import '../smartlinks/smart_links.dart' show plainLinkText;
 
 class SearchResult {
   const SearchResult({
@@ -32,8 +33,11 @@ class SearchResult {
 List<SearchResult> searchEverything(AppState s, String query) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return const [];
-  bool has(String? text) => text != null && text.toLowerCase().contains(q);
-  String snippet(String text) {
+  // Workspace links are read as their labels (no ids in matches/snippets).
+  bool has(String? text) =>
+      text != null && plainLinkText(text).toLowerCase().contains(q);
+  String snippet(String raw) {
+    final text = plainLinkText(raw);
     final i = text.toLowerCase().indexOf(q);
     if (i < 0) return text.length > 90 ? '${text.substring(0, 90)}…' : text;
     final start = (i - 30).clamp(0, text.length);

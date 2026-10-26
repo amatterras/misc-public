@@ -15,6 +15,8 @@ import '../ai/ai_session.dart';
 import '../ai/similarity.dart';
 import '../import/import_dialog.dart';
 import 'conversion.dart';
+import '../smartlinks/smart_links.dart';
+import '../smartlinks/smart_links_ui.dart';
 import 'note_connections.dart';
 import 'note_diff.dart';
 import 'note_page.dart';
@@ -882,6 +884,21 @@ class _NoteEditorState extends State<NoteEditor> {
                   tooltip: 'Place on canvas (as a reference)',
                   onTap: _placeOnCanvas,
                 ),
+                GhostIconButton(
+                  key: const ValueKey('insert-workspace-link'),
+                  icon: Icons.add_link,
+                  tooltip:
+                      'Link to a note, mindmap, calendar item or Archive item',
+                  onTap: () async {
+                    await insertLinkInto(
+                      context,
+                      s,
+                      _body,
+                      owner: WorkspaceRef(RefKind.note, n.id),
+                    );
+                    _update((x) => x.copyWith(body: _body.text));
+                  },
+                ),
                 if (s.ai.enabled)
                   GhostIconButton(
                     key: const ValueKey('note-ask-ai'),
@@ -1161,6 +1178,15 @@ class _NoteEditorState extends State<NoteEditor> {
         ),
       const SizedBox(height: Space.xl),
       NoteConnections(state: s, note: n, onOpenNote: widget.onOpenNote),
+      const SizedBox(height: Space.xl),
+      SmartLinksPanel(
+        state: s,
+        owner: WorkspaceRef(RefKind.note, n.id),
+        text: n.body,
+        onRemoveLink: (target) => _update(
+          (x) => x.copyWith(body: removeLinkTo(x.body, target)),
+        ),
+      ),
       if (linked.isNotEmpty || backlinks.isNotEmpty) ...[
         const SizedBox(height: Space.xl),
         Text(

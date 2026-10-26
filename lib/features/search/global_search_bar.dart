@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
+import '../smartlinks/smart_links_ui.dart' show LinkBackButton;
 import 'search_dialog.dart';
 
 /// Height of the strip on every layout.
@@ -49,7 +50,14 @@ class GlobalSearchHost extends StatelessWidget {
               bottom: false,
               child: SizedBox(
                 height: globalSearchBarHeight,
-                child: GlobalSearchBar(state: state, onOpen: _open),
+                child: Row(
+                  children: [
+                    LinkBackButton(state: state),
+                    Expanded(
+                      child: GlobalSearchBar(state: state, onOpen: _open),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

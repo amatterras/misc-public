@@ -69,6 +69,9 @@ enum DotSurface { mindmap, archive }
 
 /// A simple focus (Pomodoro-style) timer that keeps running while you
 /// switch pages.
+/// Where to go back to after following a workspace link.
+typedef ReturnPoint = ({String label, Future<void> Function() restore});
+
 class FocusTimer extends ChangeNotifier {
   static const focusLength = Duration(minutes: 25);
   static const breakLength = Duration(minutes: 5);
@@ -231,6 +234,10 @@ class AppState extends ChangeNotifier {
   /// Short message shown at the bottom of the window.
   final ValueNotifier<String?> toast = ValueNotifier(null);
   final ValueNotifier<String> themeModePreference = ValueNotifier('dark');
+
+  /// The places the user followed workspace links from, newest last (see
+  /// smart_links.dart); the bar above the app offers 'Back'.
+  final ValueNotifier<List<ReturnPoint>> linkReturn = ValueNotifier(const []);
 
   /// The text in the global search: kept while results are opened and while
   /// the user moves around; only the search's own clear button empties it.

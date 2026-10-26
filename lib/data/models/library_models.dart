@@ -359,7 +359,7 @@ class Note implements Record {
 
   /// `[[Other note]]` references inside the body.
   Iterable<String> get linkedTitles =>
-      RegExp(r'\[\[([^\[\]]+)\]\]')
+      RegExp(r'\[\[(?!theapp:)([^\[\]]+)\]\]')
           .allMatches(body)
           .map((m) => m.group(1)!.trim());
 

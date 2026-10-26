@@ -16,6 +16,8 @@ import 'canvas_controller.dart';
 import 'canvas_toolbar.dart' show showDotOpacityDialog;
 import 'canvas_export.dart';
 import '../interaction/item_actions.dart';
+import '../smartlinks/smart_links.dart';
+import '../smartlinks/smart_links_ui.dart';
 
 Future<void> showCanvasMenu(
   BuildContext context,
@@ -70,6 +72,10 @@ Future<void> showCanvasMenu(
                 (hit is TextItem && hit.sourceNoteId != null))
               item('open', 'Open', Icons.open_in_new),
             item('duplicate', 'Duplicate', Icons.copy_all_outlined),
+            if (hit is TextItem)
+              item('linkTo', 'Insert a linkâ€¦', Icons.add_link),
+            if (selected.length == 1)
+              item('smartLinks', 'Links & backlinksâ€¦', Icons.link),
             item('toNote', 'Copy to a note…', Icons.note_add_outlined),
             item(
               'moveToNote',
@@ -177,6 +183,51 @@ Future<void> showCanvasMenu(
       s.activateCanvasItem(hit!);
     case 'duplicate':
       c.duplicateSelection();
+    case 'linkTo':
+      final token = await pickWorkspaceLink(
+        context,
+        s,
+        exclude: WorkspaceRef(RefKind.object, c.id, hit!.id),
+      );
+      if (token == null) return;
+      c.updateSelectedTexts(
+        (t) => t.copyWith(text: '${t.text}${t.text.isEmpty ? '' : ' '}$token'),
+      );
+    case 'smartLinks':
+      final owner = WorkspaceRef(RefKind.object, c.id, hit!.id);
+      final body = hit is TextItem ? hit.text : '';
+      await showDialog<void>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('Links & backlinks', style: TextStyle(fontSize: 16)),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: SmartLinksPanel(
+                state: s,
+                owner: owner,
+                text: body,
+                beforeOpen: () async {
+                  Navigator.pop(dialog);
+                  return true;
+                },
+                onRemoveLink: (target) {
+                  c.updateSelectedTexts(
+                    (t) => t.copyWith(text: removeLinkTo(t.text, target)),
+                  );
+                  Navigator.pop(dialog);
+                },
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
     case 'toNote' || 'moveToNote':
       final noteId = await _pickNote(context, s);
       if (noteId == null) return;
