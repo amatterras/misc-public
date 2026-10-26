@@ -46,7 +46,16 @@ Future<void> showCanvasMenu(
   final choice = await showMenu<String>(
     context: context,
     position: RelativeRect.fromLTRB(global.dx, global.dy, global.dx, global.dy),
-    items: selected.isNotEmpty
+    items: hit is ConnectorItem
+        ? [
+            item('connColor', 'Line colorâ€¦', Icons.palette_outlined),
+            if (hit.bends.isNotEmpty) ...[
+              item('connStraight', 'Straighten', Icons.horizontal_rule),
+            ],
+            const PopupMenuDivider(),
+            if (!locked) item('delete', 'Delete line', Icons.delete_outline),
+          ]
+        : selected.isNotEmpty
         ? [
             if (hit is LinkItem ||
                 hit is NoteCardItem ||
@@ -126,6 +135,28 @@ Future<void> showCanvasMenu(
   if (choice == null || !context.mounted) return;
   final items = c.selectedItems;
   switch (choice) {
+    case 'connColor':
+      final color = await showMenu<Color>(
+        context: context,
+        position: RelativeRect.fromLTRB(global.dx, global.dy, global.dx, global.dy),
+        items: [
+          for (final swatch in InkColors.library)
+            PopupMenuItem(
+              value: swatch.color,
+              height: 30,
+              child: Row(
+                children: [
+                  Container(width: 40, height: 14, color: swatch.color),
+                  const SizedBox(width: 8),
+                  Text(swatch.name, style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+        ],
+      );
+      if (color != null) c.setConnectorColor(color);
+    case 'connStraight':
+      c.straightenSelectedConnectors();
     case 'open':
       s.activateCanvasItem(hit!);
     case 'duplicate':

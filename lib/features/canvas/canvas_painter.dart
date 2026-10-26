@@ -8,6 +8,7 @@ import '../../app/canvas_ops.dart' show canvasLinkTarget;
 import '../../data/models/canvas_models.dart';
 import '../tags/tag_ui.dart' show tagForeground;
 import 'canvas_controller.dart';
+import 'connector_geometry.dart';
 import 'canvas_text.dart';
 import '../ink/stroke_geometry.dart';
 
@@ -85,18 +86,27 @@ class CanvasPainter extends CustomPainter {
     // Mind-map connections first, so they run underneath the items.
     final selectedIds = controller.selection;
     for (final c in controller.items.whereType<ConnectorItem>()) {
-      final ends = controller.connectorEnds(c);
-      if (ends == null) continue;
+      final pts = controller.connectorPoints(c);
+      if (pts == null) continue;
       _paintConnector(
         canvas,
-        ends,
+        pts,
         scale,
         selected: selectedIds.contains(c.id),
+        color: c.color,
+        handles: selectedIds.contains(c.id) && selectedIds.length == 1
+            ? c.bends
+            : const [],
       );
     }
     final liveConnection = controller.liveConnection;
     if (liveConnection != null) {
-      _paintConnector(canvas, liveConnection, scale, selected: true);
+      _paintConnector(
+        canvas,
+        [liveConnection.$1, liveConnection.$2],
+        scale,
+        selected: true,
+      );
     }
 
     for (final item in controller.items) {
@@ -455,22 +465,47 @@ class CanvasPainter extends CustomPainter {
     cachedPath: _pathCache[stroke] ??= strokePath(stroke),
   );
 
-  /// A connection: a line with small dots where it meets the two items.
+  /// A connection: a smooth line through [pts] with small dots where it
+  /// meets the two items, and round handles on its waypoints when selected.
   void _paintConnector(
     Canvas canvas,
-    (Offset, Offset) ends,
+    List<Offset> pts,
     double scale, {
     required bool selected,
+    Color? color,
+    List<Offset> handles = const [],
   }) {
-    final color = selected ? AppColors.accent : AppColors.textMuted;
+    final base = color ?? AppColors.textMuted;
+    if (selected) {
+      canvas.drawPath(
+        connectorPath(pts),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = AppColors.accent.withValues(alpha: 0.35)
+          ..strokeWidth = 7 / scale
+          ..strokeCap = StrokeCap.round,
+      );
+    }
     final line = Paint()
-      ..color = color
+      ..style = PaintingStyle.stroke
+      ..color = base
       ..strokeWidth = (selected ? 2.5 : 1.6) / scale
       ..strokeCap = StrokeCap.round;
-    canvas.drawLine(ends.$1, ends.$2, line);
-    final dot = Paint()..color = color;
-    canvas.drawCircle(ends.$1, 3 / scale, dot);
-    canvas.drawCircle(ends.$2, 3 / scale, dot);
+    canvas.drawPath(connectorPath(pts), line);
+    final dot = Paint()..color = base;
+    canvas.drawCircle(pts.first, 3 / scale, dot);
+    canvas.drawCircle(pts.last, 3 / scale, dot);
+    for (final h in handles) {
+      canvas.drawCircle(h, 6 / scale, Paint()..color = AppColors.canvas);
+      canvas.drawCircle(
+        h,
+        6 / scale,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = AppColors.accent
+          ..strokeWidth = 2 / scale,
+      );
+    }
   }
 
   void _paintSelection(Canvas canvas, double scale) {

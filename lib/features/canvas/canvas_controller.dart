@@ -15,6 +15,7 @@ import '../../sync/canvas_merge.dart';
 import '../../sync/protocol.dart';
 import 'canvas_resources.dart';
 import 'canvas_text.dart';
+import 'connector_geometry.dart';
 import '../ink/stroke_geometry.dart';
 import '../ink/partial_erase.dart';
 import '../ink/shape_recognition.dart';
@@ -41,6 +42,8 @@ enum _Drag {
   connect,
   // Connect tool, second tap (choosing the target of a tapped source).
   connectTap,
+  // Dragging a bend point of the selected connection (or pulling a new one out of the line).
+  bend,
 }
 
 /// Owns the state of one open canvas: its items, camera, selection, current
@@ -672,13 +675,94 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------------------------------------------------- connection editing --
+
+  String? _bendId;
+  int _bendIndex = -1;
+  Offset _bendStart = Offset.zero;
+
+  /// The selected connection and waypoint index when [world] is on one of
+  /// its waypoint handles (a bigger target than the line: it is grabbed by
+  /// finger or pen too).
+  (ConnectorItem, int)? _bendHandleAt(Offset world) {
+    if (_tool != CanvasTool.select || _selection.length != 1) return null;
+    final c = itemById(_selection.first);
+    if (c is! ConnectorItem || c.bends.isEmpty) return null;
+    final reach = 14 / _scale;
+    var best = -1;
+    var bestD = reach;
+    for (var i = 0; i < c.bends.length; i++) {
+      final d = (c.bends[i] - world).distance;
+      if (d <= bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best < 0 ? null : (c, best);
+  }
+
+  void _dragBend(Offset world) {
+    var c = itemById(_bendId ?? '');
+    if (c is! ConnectorItem) return;
+    final bends = [...c.bends];
+    if (_bendIndex < 0) {
+      if ((world - _bendStart).distance * _scale < 4) return;
+      final pts = connectorPoints(c);
+      if (pts == null) return;
+      final near = nearestOnConnector(_bendStart, pts);
+      _bendIndex = near.span.clamp(0, bends.length);
+      bends.insert(_bendIndex, near.point);
+    }
+    bends[_bendIndex] = world;
+    _replaceItems({c.id: c.copyWith(bends: bends)});
+  }
+
+  /// Removes waypoint [index] of connection [id] (one undo step).
+  void removeBend(String id, int index) {
+    final c = itemById(id);
+    if (c is! ConnectorItem || index < 0 || index >= c.bends.length) return;
+    _commit([
+      for (final i in _items)
+        if (i.id == id)
+          c.copyWith(bends: [...c.bends]..removeAt(index))
+        else
+          i,
+    ]);
+    notifyListeners();
+  }
+
+  /// Makes the selected connections straight again (one undo step).
+  void straightenSelectedConnectors() {
+    final changes = <String, CanvasItem>{
+      for (final i in selectedItems)
+        if (i is ConnectorItem && i.bends.isNotEmpty)
+          i.id: i.copyWith(bends: const []),
+    };
+    if (changes.isEmpty) return;
+    _commit([for (final i in _items) changes[i.id] ?? i]);
+    notifyListeners();
+  }
+
+  /// Colors the selected connections (null: back to the default color).
+  void setConnectorColor(Color? color) {
+    final changes = <String, CanvasItem>{
+      for (final i in selectedItems)
+        if (i is ConnectorItem) i.id: i.copyWith(color: () => color),
+    };
+    if (changes.isEmpty) return;
+    _commit([for (final i in _items) changes[i.id] ?? i]);
+    notifyListeners();
+  }
+
   /// Recolors the selected strokes and texts (one undo step). Locked items
   /// keep their colors.
   void recolorSelection(Color color) {
     final changes = <String, CanvasItem>{
       for (final item in selectedItems)
         if (!isLocked(item.id))
-          if (item is StrokeItem)
+          if (item is ConnectorItem)
+            item.id: item.copyWith(color: () => color)
+          else if (item is StrokeItem)
             item.id: item.recolored(color)
           else if (item is TextItem)
             item.id: item.copyWith(textColor: () => color),
@@ -1017,8 +1101,8 @@ class CanvasController extends ChangeNotifier {
       case StrokeItem():
         return item.bounds;
       case ConnectorItem():
-        final ends = connectorEnds(item);
-        return ends == null ? Rect.zero : Rect.fromPoints(ends.$1, ends.$2);
+        final pts = connectorPoints(item);
+        return pts == null ? Rect.zero : connectorBounds(pts);
     }
   }
 
@@ -1033,10 +1117,16 @@ class CanvasController extends ChangeNotifier {
     final pa = a is StrokeItem ? strokeAnchor(a, c.fromT ?? 0) : null;
     final pb = b is StrokeItem ? strokeAnchor(b, c.toT ?? 1) : null;
     final ra = itemBounds(a!), rb = itemBounds(b!);
-    return (
-      pa ?? _edgePoint(ra, pb ?? rb.center),
-      pb ?? _edgePoint(rb, pa ?? ra.center),
-    );
+    // With waypoints the ends face the first / last waypoint.
+    final towardsA = c.bends.isEmpty ? (pb ?? rb.center) : c.bends.first;
+    final towardsB = c.bends.isEmpty ? (pa ?? ra.center) : c.bends.last;
+    return (pa ?? _edgePoint(ra, towardsA), pb ?? _edgePoint(rb, towardsB));
+  }
+
+  /// The points the line of [c] is drawn through: start, waypoints, end.
+  List<Offset>? connectorPoints(ConnectorItem c) {
+    final ends = connectorEnds(c);
+    return ends == null ? null : [ends.$1, ...c.bends, ends.$2];
   }
 
   /// Objects and drawn lines can be connected (not connections themselves).
@@ -1117,9 +1207,9 @@ class CanvasController extends ChangeNotifier {
       }
     }
     for (final item in _items.reversed.whereType<ConnectorItem>()) {
-      final ends = connectorEnds(item);
-      if (ends != null &&
-          distanceToSegment(world, ends.$1, ends.$2) <= tolerance) {
+      final pts = connectorPoints(item);
+      if (pts != null &&
+          nearestOnConnector(world, pts).distance <= tolerance) {
         return item;
       }
     }
@@ -1611,6 +1701,21 @@ class CanvasController extends ChangeNotifier {
       return;
     }
 
+    final bendHit = _bendHandleAt(world);
+    if (bendHit != null && !shift) {
+      endEditing();
+      if (isDouble) {
+        removeBend(bendHit.$1.id, bendHit.$2);
+        return;
+      }
+      _beginTransaction();
+      _drag = _Drag.bend;
+      _bendId = bendHit.$1.id;
+      _bendIndex = bendHit.$2;
+      _bendStart = world;
+      return;
+    }
+
     final hit = hitTest(world);
     final opensSomething =
         hit is LinkItem ||
@@ -1632,6 +1737,18 @@ class CanvasController extends ChangeNotifier {
     }
     if (_editingId != null && hit?.id == _editingId) return;
     endEditing();
+
+    if (hit is ConnectorItem && !shift && !ctrl) {
+      // Select the line; dragging it bends it (a new waypoint is pulled out
+      // of the line where it was grabbed).
+      _selection = Set.unmodifiable({hit.id});
+      _beginTransaction();
+      _drag = _Drag.bend;
+      _bendId = hit.id;
+      _bendIndex = -1;
+      _bendStart = world;
+      return;
+    }
 
     if (hit != null) {
       // A grouped item brings its whole group.
@@ -1682,10 +1799,22 @@ class CanvasController extends ChangeNotifier {
         _markDirty();
       case _Drag.move:
         final worldDelta = delta / _scale;
+        final moved = {
+          for (final item in selectedItems)
+            if (!isLocked(item.id) && item is! ConnectorItem) item.id,
+        };
         _replaceItems({
           for (final item in selectedItems)
             if (!isLocked(item.id)) item.id: item.translated(worldDelta),
+          // A bent line whose two ends move together keeps its shape.
+          for (final c in _items.whereType<ConnectorItem>())
+            if (c.bends.isNotEmpty &&
+                moved.contains(c.fromId) &&
+                moved.contains(c.toId))
+              c.id: c.bendsShifted(worldDelta),
         });
+      case _Drag.bend:
+        _dragBend(world);
       case _Drag.resize:
         final original = _resizeOriginal;
         final bounds = _resizeBounds;
@@ -1794,6 +1923,8 @@ class CanvasController extends ChangeNotifier {
             (_lastScreen - toScreen(_dragStartWorld)).distance < 4) {
           _selection = {narrow};
         }
+        _endTransaction();
+      case _Drag.bend:
         _endTransaction();
       case _Drag.marquee:
         _marquee = null;

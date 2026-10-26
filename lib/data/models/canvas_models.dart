@@ -396,6 +396,8 @@ class ConnectorItem extends CanvasItem {
     required this.toId,
     this.fromT,
     this.toT,
+    this.color,
+    this.bends = const [],
   });
 
   final String fromId;
@@ -410,22 +412,63 @@ class ConnectorItem extends CanvasItem {
   final double? fromT;
   final double? toT;
 
+  /// The line's own color (null: the default connector color). Optional.
+  final Color? color;
+
+  /// Waypoints the line is bent through, in world coordinates, in order
+  /// from the start to the end. The line is a smooth curve through them.
+  /// Empty: a straight line. Optional and written only when set.
+  final List<Offset> bends;
+
+  ConnectorItem copyWith({
+    Color? Function()? color,
+    List<Offset>? bends,
+  }) => ConnectorItem(
+    id: id,
+    fromId: fromId,
+    toId: toId,
+    fromT: fromT,
+    toT: toT,
+    color: color != null ? color() : this.color,
+    bends: bends ?? this.bends,
+  );
+
   /// The line's real extent depends on the two items; the controller
   /// computes it (see `CanvasController.itemBounds`).
   @override
   Rect get bounds => Rect.zero;
 
-  /// Moves with its ends, not by itself.
+  /// Moves with its ends, not by itself (the controller shifts [bends]
+  /// when both ends move).
   @override
   ConnectorItem translated(Offset delta) => this;
 
+  /// The same line with its waypoints moved by [delta].
+  ConnectorItem bendsShifted(Offset delta) => bends.isEmpty
+      ? this
+      : copyWith(bends: [for (final b in bends) b + delta]);
+
   @override
-  ConnectorItem withId(String id) =>
-      ConnectorItem(id: id, fromId: fromId, toId: toId, fromT: fromT, toT: toT);
+  ConnectorItem withId(String id) => ConnectorItem(
+    id: id,
+    fromId: fromId,
+    toId: toId,
+    fromT: fromT,
+    toT: toT,
+    color: color,
+    bends: bends,
+  );
 
   /// The same connection between other items (copies keep their anchors).
-  ConnectorItem rejoined(String id, String from, String to) =>
-      ConnectorItem(id: id, fromId: from, toId: to, fromT: fromT, toT: toT);
+  ConnectorItem rejoined(String id, String from, String to) => ConnectorItem(
+    id: id,
+    fromId: from,
+    toId: to,
+    fromT: fromT,
+    toT: toT,
+    color: color,
+    bends: bends,
+  );
 
   bool touches(String itemId) => fromId == itemId || toId == itemId;
 
@@ -440,10 +483,27 @@ class ConnectorItem extends CanvasItem {
     'to': toId,
     'fromT': ?fromT,
     'toT': ?toT,
+    if (color != null) 'color': color!.toARGB32(),
+    if (bends.isNotEmpty)
+      'bends': [
+        for (final b in bends) [b.dx, b.dy],
+      ],
   };
 
   static double? _t(Object? v) =>
       v is num && v.isFinite ? v.toDouble().clamp(0.0, 1.0) : null;
+
+  static List<Offset> _bends(Object? v) {
+    if (v is! List) return const [];
+    final out = <Offset>[];
+    for (final p in v) {
+      if (p is List && p.length >= 2 && p[0] is num && p[1] is num) {
+        final x = (p[0] as num).toDouble(), y = (p[1] as num).toDouble();
+        if (x.isFinite && y.isFinite) out.add(Offset(x, y));
+      }
+    }
+    return out;
+  }
 
   factory ConnectorItem.fromJson(Map<String, dynamic> j) => ConnectorItem(
     id: j['id'] as String,
@@ -451,6 +511,8 @@ class ConnectorItem extends CanvasItem {
     toId: j['to'] as String,
     fromT: _t(j['fromT']),
     toT: _t(j['toT']),
+    color: j['color'] is int ? Color(j['color'] as int) : null,
+    bends: _bends(j['bends']),
   );
 }
 

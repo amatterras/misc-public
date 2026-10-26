@@ -417,10 +417,19 @@ class CanvasContextBar extends StatelessWidget {
           ),
           const _PanelDivider(vertical: true),
         ],
-        if (selected.any((i) => i is StrokeItem || i is TextItem))
+        if (selected.any((i) => i is ConnectorItem && i.bends.isNotEmpty))
+          ToolButton(
+            key: const ValueKey('canvas-straighten-connector'),
+            tooltip: 'Straighten the line (remove its bends)',
+            onPressed: c.straightenSelectedConnectors,
+            icon: const Icon(Icons.horizontal_rule, size: 17),
+          ),
+        if (selected.any(
+          (i) => i is StrokeItem || i is TextItem || i is ConnectorItem,
+        ))
           PopupMenuButton<Color>(
             key: const ValueKey('canvas-recolor'),
-            tooltip: 'Recolor ink and text',
+            tooltip: 'Recolor ink, text and lines',
             position: PopupMenuPosition.under,
             onOpened: c.cancelPendingLineStraightening,
             onSelected: c.recolorSelection,
