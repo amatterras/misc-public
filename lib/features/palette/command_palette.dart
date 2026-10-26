@@ -71,6 +71,12 @@ List<PaletteCommand> paletteCommands(
     ),
     PaletteCommand('Show tasks', Icons.checklist, (_) => s.goTo(AppPage.tasks)),
     PaletteCommand(
+      'Restore workspace layout',
+      Icons.dashboard_customize_outlined,
+      (_) => s.floating.restoreLayout(),
+      hint: 'floating windows',
+    ),
+    PaletteCommand(
       'Quick Add',
       Icons.add_circle_outline,
       quickAdd,

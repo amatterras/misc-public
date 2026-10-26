@@ -70,7 +70,11 @@ abstract final class ContentWindowGeometry {
 }
 
 class FloatingWindows extends ChangeNotifier {
-  FloatingWindows(this._settings);
+  FloatingWindows(this._settings) : _startOrder = _readOrder(_settings);
+
+  /// The stacking order saved by the last run (read before this run starts
+  /// saving its own).
+  final List<String> _startOrder;
 
   final SettingsRepository _settings;
   static const _key = 'floatingWindows';
@@ -89,7 +93,9 @@ class FloatingWindows extends ChangeNotifier {
   /// initial one).
   Rect rectOf(FloatingWindowSpec spec, {Size? viewport}) {
     final r = _saved[spec.id];
-    if (r is List && r.length == 4 && r.every((v) => v is num)) {
+    if (r is List &&
+        r.length == 4 &&
+        r.every((v) => v is num && v.isFinite)) {
       final v = [for (final n in r) (n as num).toDouble()];
       return Rect.fromLTWH(
         v[0],
@@ -103,10 +109,122 @@ class FloatingWindows extends ChangeNotifier {
         : spec.initialRect;
   }
 
+  /// The size of the area the windows live in (kept by the floating layer),
+  /// so commands like [restoreLayout] know it.
+  Size? area;
+
+  // ------------------------------------------------------------ z-order --
+
+  static const _zKey = 'floatingOrder';
+
+  static List<String> _readOrder(SettingsRepository settings) => [
+    for (final v in settings.get<List>(_zKey) ?? const [])
+      if (v is String) v,
+  ];
+
+  /// Remembers the stacking order. A failed save only loses the order (the
+  /// windows themselves are unaffected), so it never raises an error.
+  void _saveOrder() => unawaited(
+    _settings
+        .set(_zKey, [for (final w in _open) w.id])
+        .catchError((Object _) {}),
+  );
+
+  /// Puts the open windows back in the stacking order they had when the app
+  /// was last used (windows it has no order for stay in front).
+  void applySavedOrder() {
+    final order = _startOrder;
+    int rank(FloatingWindowSpec w) {
+      final i = order.indexOf(w.id);
+      return i < 0 ? order.length : i;
+    }
+
+    final sorted = [..._open]..sort((a, b) => rank(a).compareTo(rank(b)));
+    _open
+      ..clear()
+      ..addAll(sorted);
+    notifyListeners();
+  }
+
+  // ------------------------------------------------------------ snapping --
+
+  /// Whether a window being moved sticks to the edges of the area and to the
+  /// edges of other windows when it comes close (this device's setting).
+  bool get snapEnabled => _settings.get<bool>('floatingSnap') ?? true;
+
+  Future<void> setSnap(bool on) async {
+    await _settings.set('floatingSnap', on);
+    notifyListeners();
+  }
+
+  /// How close (logical pixels) an edge must come before it sticks.
+  static const snapDistance = 10.0;
+
+  /// [rect] nudged so that an edge lines up with the edge of [area] or of
+  /// one of [others] when within [snapDistance]; sizes never change and a
+  /// window far from everything is left exactly where it is.
+  static Rect snap(
+    Rect rect,
+    Size area,
+    Iterable<Rect> others, {
+    double distance = snapDistance,
+  }) {
+    double adjust(double lo, double hi, Iterable<double> targets) {
+      var best = double.infinity;
+      var shift = 0.0;
+      for (final t in targets) {
+        for (final d in [t - lo, t - hi]) {
+          if (d.abs() < best && d.abs() <= distance) {
+            best = d.abs();
+            shift = d;
+          }
+        }
+      }
+      return shift;
+    }
+
+    final xs = <double>[0, area.width];
+    final ys = <double>[0, area.height];
+    for (final o in others) {
+      xs
+        ..add(o.left)
+        ..add(o.right);
+      ys
+        ..add(o.top)
+        ..add(o.bottom);
+    }
+    return rect.shift(
+      Offset(adjust(rect.left, rect.right, xs), adjust(rect.top, rect.bottom, ys)),
+    );
+  }
+
   /// Opens [spec] (or brings it to the front if it is open).
   void show(FloatingWindowSpec spec) {
     _open.removeWhere((w) => w.id == spec.id);
     _open.add(spec);
+    _saveOrder();
+    notifyListeners();
+  }
+
+  /// Returns every open window to a usable arrangement: sizes and places
+  /// forgotten, small-corner states undone, windows cascaded so each title
+  /// bar can be reached. Nothing is closed and no content changes.
+  void restoreLayout([Size? size]) {
+    final box = size ?? area;
+    if (box == null || box.isEmpty) return;
+    final saved = _saved;
+    var step = 0;
+    for (final spec in _open) {
+      saved.remove('${spec.id}.compact');
+      final base = spec.initialRectFor != null
+          ? spec.initialRectFor!(box)
+          : spec.initialRect;
+      final moved = base.shift(Offset(28.0 * step, 28.0 * step));
+      final fitted = fit(moved, box, spec.minSize);
+      saved[spec.id] = [fitted.left, fitted.top, fitted.width, fitted.height];
+      step++;
+    }
+    unawaited(_settings.set(_key, saved));
     notifyListeners();
   }
 
@@ -147,13 +265,17 @@ class FloatingWindows extends ChangeNotifier {
   void close(String id) {
     final before = _open.length;
     _open.removeWhere((w) => w.id == id);
-    if (_open.length != before) notifyListeners();
+    if (_open.length != before) {
+      _saveOrder();
+      notifyListeners();
+    }
   }
 
   void toFront(String id) {
     final i = _open.indexWhere((w) => w.id == id);
     if (i < 0 || i == _open.length - 1) return;
     _open.add(_open.removeAt(i));
+    _saveOrder();
     notifyListeners();
   }
 

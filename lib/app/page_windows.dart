@@ -170,6 +170,8 @@ class PageWindows extends ChangeNotifier {
     for (final p in _all.where((p) => p.mode == PageMode.floating)) {
       _floatWindow(p);
     }
+    // ... stacked the way they were.
+    _floating.applySavedOrder();
     // The page that was in the main area comes back there.
     final last = byId(_settings.get<String>('pageActive'));
     if (last != null && last.mode == PageMode.docked) _show(last);
