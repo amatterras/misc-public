@@ -9,6 +9,7 @@ import '../../app/app_state.dart';
 import '../../app/test_environment.dart';
 import '../../app/theme.dart';
 import '../../data/integrity/integrity_check.dart';
+import '../inspector/inspector_dialog.dart';
 import '../../sync/local_hub.dart';
 import '../../sync/storage_modes.dart';
 import '../../sync/sync_client.dart';
@@ -501,6 +502,12 @@ class DataSafetySection extends StatelessWidget {
         onPressed: () => _showIntegrity(context),
         icon: const Icon(Icons.fact_check_outlined, size: 16),
         label: const Text('Check data'),
+      ),
+      OutlinedButton.icon(
+        key: const ValueKey('open-workspace-inspector'),
+        onPressed: () => showWorkspaceInspector(context, state),
+        icon: const Icon(Icons.health_and_safety_outlined, size: 16),
+        label: const Text('Workspace health'),
       ),
       OutlinedButton.icon(
         key: const ValueKey('recently-deleted-records'),
