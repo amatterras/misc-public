@@ -235,6 +235,10 @@ class AppState extends ChangeNotifier {
   final ValueNotifier<String?> toast = ValueNotifier(null);
   final ValueNotifier<String> themeModePreference = ValueNotifier('dark');
 
+  /// The note being edited right now (set by the note editor), so Quick
+  /// Capture can offer to refer to it.
+  final ValueNotifier<String?> activeNoteId = ValueNotifier(null);
+
   /// The places the user followed workspace links from, newest last (see
   /// smart_links.dart); the bar above the app offers 'Back'.
   final ValueNotifier<List<ReturnPoint>> linkReturn = ValueNotifier(const []);

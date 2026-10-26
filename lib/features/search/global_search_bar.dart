@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../smartlinks/smart_links_ui.dart' show LinkBackButton;
+import '../capture/quick_capture.dart';
 import 'search_dialog.dart';
 
 /// Height of the strip on every layout.
@@ -68,11 +69,21 @@ class GlobalSearchHost extends StatelessWidget {
     if (context != null) showSearchDialog(context, state);
   }
 
+  void _capture() {
+    final context = navigatorKey.currentContext;
+    if (context != null) showQuickCapture(context, state);
+  }
+
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): _open,
+        const SingleActivator(
+          LogicalKeyboardKey.space,
+          control: true,
+          shift: true,
+        ): _capture,
       },
       child: Column(
         children: [
@@ -96,6 +107,21 @@ class GlobalSearchHost extends StatelessWidget {
                         Expanded(
                           child: GlobalSearchBar(state: state, onOpen: _open),
                         ),
+                        // (no tooltip: this strip sits above the app's Overlay)
+                        Semantics(
+                          button: true,
+                          label: 'Quick capture (Ctrl+Shift+Space)',
+                          child: IconButton(
+                            key: const ValueKey('quick-capture-button'),
+                            icon: const Icon(Icons.bolt, size: 22),
+                            constraints: const BoxConstraints(
+                              minWidth: 44,
+                              minHeight: 44,
+                            ),
+                            onPressed: _capture,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
                       ],
                     ),
                   ),

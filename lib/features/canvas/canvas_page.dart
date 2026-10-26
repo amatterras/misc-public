@@ -336,6 +336,11 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.space) {
+      // Ctrl+Shift+Space is Quick Capture (handled above this page).
+      if (HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isMetaPressed) {
+        return KeyEventResult.ignored;
+      }
       if (event is KeyDownEvent) c.spaceHeld = true;
       if (event is KeyUpEvent) c.spaceHeld = false;
       setState(() {});

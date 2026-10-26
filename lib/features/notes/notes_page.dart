@@ -684,6 +684,7 @@ class _NoteEditorState extends State<NoteEditor> {
     super.initState();
     _body.addListener(_onSelection);
     s.workspace.notes.addListener(_onNoteChanged);
+    s.activeNoteId.value = widget.noteId;
   }
 
   /// Shows changes made elsewhere (a move of selected text, Undo of a drop,
@@ -721,6 +722,7 @@ class _NoteEditorState extends State<NoteEditor> {
 
   @override
   void dispose() {
+    if (s.activeNoteId.value == widget.noteId) s.activeNoteId.value = null;
     _body.removeListener(_onSelection);
     s.workspace.notes.removeListener(_onNoteChanged);
     _title.dispose();

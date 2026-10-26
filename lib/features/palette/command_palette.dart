@@ -15,6 +15,7 @@ import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import '../../platform/platform.dart' as native;
 import '../calendar/ics.dart';
+import '../capture/quick_capture.dart';
 import '../export/exports.dart';
 import '../links/archive_library_page.dart';
 import '../sharing/share_dialog.dart';
@@ -70,6 +71,12 @@ List<PaletteCommand> paletteCommands(
       (_) => s.goTo(AppPage.home),
     ),
     PaletteCommand('Show tasks', Icons.checklist, (_) => s.goTo(AppPage.tasks)),
+    PaletteCommand(
+      'Quick capture',
+      Icons.bolt,
+      (context) => showQuickCapture(context, s),
+      hint: touchFirst ? '' : 'Ctrl+Shift+Space',
+    ),
     PaletteCommand(
       'Restore workspace layout',
       Icons.dashboard_customize_outlined,
