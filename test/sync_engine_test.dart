@@ -89,6 +89,19 @@ void main() {
     } catch (_) {}
   });
 
+  test('pendingCounts reports unsent records by kind, then none', () async {
+    final pc = await device('pc');
+    expect(await pc.engine.pendingCounts(), isEmpty);
+    pc.ws.createNote(title: 'Secret title', body: 'secret body');
+    pc.ws.createTask('Revise');
+    final before = await pc.engine.pendingCounts();
+    expect(before['notes'], 1);
+    expect(before['tasks'], 1);
+    expect(before.keys.join(), isNot(contains('Secret')));
+    await pc.sync();
+    expect(await pc.engine.pendingCounts(), isEmpty);
+  });
+
   test(
     'everything arrives on the other device, with valid links and files',
     () async {

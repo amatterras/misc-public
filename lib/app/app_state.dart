@@ -42,6 +42,7 @@ import '../sync/record_merge.dart';
 import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
+import '../sync/sync_health.dart';
 import '../sync/sync_scheduler.dart';
 import '../sync/storage_modes.dart';
 import '../data/integrity/integrity_check.dart';
@@ -579,6 +580,19 @@ class AppState extends ChangeNotifier {
   );
 
   bool get syncPaired => _sync != null;
+
+  /// The last few sync attempts (newest last), for the Sync Health center.
+  /// Plain words only: no addresses, keys or note text.
+  final List<SyncAttempt> syncHistory = [];
+
+  void _noteSyncAttempt(bool ok, String text) {
+    syncHistory.add(SyncAttempt(DateTime.now(), ok, scrubDiagnostic(text)));
+    if (syncHistory.length > 20) syncHistory.removeAt(0);
+  }
+
+  /// Local records still waiting for the hub, by kind (counts only).
+  Future<Map<String, int>> syncPendingCounts() async =>
+      await _sync?.pendingCounts() ?? const {};
 
   /// The hub rejected this device's token; automatic sync is stopped until
   /// the device is paired again.
@@ -1269,6 +1283,7 @@ class AppState extends ChangeNotifier {
       if (report.problems.isNotEmpty) {
         _lastResult += ' (${report.problems.first})';
       }
+      _noteSyncAttempt(true, _lastResult);
       await _refreshList();
     } on SyncFailure catch (e) {
       if (e.code == 'unauthorized') {
@@ -1282,13 +1297,16 @@ class AppState extends ChangeNotifier {
             'hub was reset). Your data here is safe. Disconnect, then pair '
             'again with a new code.';
         AppLog.warn('Sync stopped: device not accepted by the hub');
+        _noteSyncAttempt(false, 'The hub no longer accepts this device.');
       } else {
         _lastResult = e.retryable ? '${e.message} Will retry.' : e.message;
+        _noteSyncAttempt(false, _lastResult);
         if (!e.retryable) AppLog.warn('Sync stopped: ${e.code}');
       }
       rethrow;
     } catch (e, s) {
       _lastResult = 'Sync hit an unexpected error (see log).';
+      _noteSyncAttempt(false, _lastResult);
       AppLog.error('Sync error', e, s);
       rethrow;
     } finally {

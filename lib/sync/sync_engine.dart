@@ -192,6 +192,22 @@ class SyncEngine {
   Future<SyncState> loadState() async =>
       SyncState.fromJson(await workspace.store.read('sync', 'client_state'));
 
+  /// How many local records still wait to reach the hub, by collection name
+  /// (counts only: nothing about what they contain). Same test as the push.
+  Future<Map<String, int>> pendingCounts() async {
+    final state = await loadState();
+    final out = <String, int>{};
+    for (final MapEntry(key: name, value: collection)
+        in workspace.syncCollections.entries) {
+      for (final v in collection.versions()) {
+        if (state.base['$name/${v.id}'] == v.rev) continue;
+        if (!v.deleted && collection[v.id] == null) continue;
+        out[name] = (out[name] ?? 0) + 1;
+      }
+    }
+    return out;
+  }
+
   Future<void> _saveState(SyncState s) =>
       workspace.store.write('sync', 'client_state', s.toJson());
 

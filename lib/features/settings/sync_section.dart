@@ -10,6 +10,7 @@ import '../../hub/hub_host.dart';
 import '../../sync/local_hub.dart';
 import '../../sync/sync_client.dart';
 import '../../sync/storage_modes.dart';
+import '../sync_health/sync_health_center.dart';
 import 'storage_section.dart';
 
 /// Address pre-filled in the pairing form: the hub this device used before
@@ -105,6 +106,16 @@ class _SyncSectionState extends State<SyncSection> {
                   child: Text(
                     s.syncStatus,
                     style: TextStyle(fontSize: 13, color: AppColors.danger),
+                  ),
+                ),
+              if (s.syncNeedsPairing)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: const ValueKey('open-sync-health'),
+                    onPressed: () => showSyncHealthCenter(context, s),
+                    icon: const Icon(Icons.health_and_safety_outlined, size: 16),
+                    label: const Text('Sync health'),
                   ),
                 ),
               _ConnectGuide(mobile: mobile),
@@ -262,6 +273,12 @@ class _SyncSectionState extends State<SyncSection> {
                   onPressed: s.syncing ? null : s.syncNow,
                   icon: const Icon(Icons.sync, size: 16),
                   label: const Text('Sync now'),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey('open-sync-health'),
+                  onPressed: () => showSyncHealthCenter(context, s),
+                  icon: const Icon(Icons.health_and_safety_outlined, size: 16),
+                  label: const Text('Sync health'),
                 ),
                 if (conflicts > 0)
                   OutlinedButton.icon(
