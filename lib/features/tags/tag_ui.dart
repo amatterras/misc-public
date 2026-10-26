@@ -9,11 +9,13 @@ import '../../app/theme.dart';
 import '../../data/models/tag_models.dart';
 import '../../widgets/common.dart';
 
-/// Text on a tag colour: dark on light colours, light on dark ones.
-Color tagForeground(Color background) => background.computeLuminance() > 0.45
-    ? const Color(0xFF1B1F27)
-    : const Color(0xFFFFFFFF);
-
+/// Text on a tag colour: black or white, whichever reads better (at least
+/// 4.5:1 for every colour), on the dark and the light theme alike.
+Color tagForeground(Color background) {
+  final l = background.computeLuminance() + 0.05;
+  final black = l / 0.05, white = 1.05 / l;
+  return black >= white ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
+}
 class TagChip extends StatelessWidget {
   const TagChip(this.tag, {super.key, this.onDeleted, this.small = false});
 
@@ -103,7 +105,13 @@ class _TagPickerState extends State<_TagPicker> {
       setState(() => _problem = problem);
       return;
     }
-    final r = s.workspace.createTag(_name.text, _color);
+    final ({CustomTag tag, bool existed}) r;
+    try {
+      r = s.workspace.createTag(_name.text, _color);
+    } on TagLimitReached catch (e) {
+      setState(() => _problem = e.message);
+      return;
+    }
     setState(() {
       _chosen.add(r.tag.id);
       _problem = r.existed
@@ -148,12 +156,14 @@ class _TagPickerState extends State<_TagPicker> {
         if (color != null) s.workspace.recolorTag(tag.id, color);
         setState(() {});
       case 'delete':
+        final uses = s.workspace.archiveUsesOfTag(tag.id);
         final ok = await confirm(
           context,
           title: 'Delete the tag “${tag.name}”?',
           message:
-              'It is taken off everything that has it. The resources and '
-              'items themselves are kept.',
+              '${uses == 0 ? 'No Archive item has it' : uses == 1 ? 'It is on 1 Archive item' : 'It is on $uses Archive items'}'
+              ' (and maybe on mindmap objects). It is taken off everything '
+              'that has it; the items themselves are kept.',
         );
         if (!ok) return;
         s.workspace.deleteTag(tag.id);
@@ -218,10 +228,12 @@ class _TagPickerState extends State<_TagPicker> {
                 key: const ValueKey('tag-new-name'),
                 controller: _name,
                 maxLength: CustomTag.maxNameLength,
-                decoration: const InputDecoration(
-                  labelText: 'New tag',
+                decoration: InputDecoration(
+                  labelText:
+                      'New tag (${s.workspace.customTags.all.length}/${CustomTag.maxTags})',
                   hintText: 'Type a name',
                 ),
+                onChanged: (_) => setState(() => _problem = null),
                 onSubmitted: (_) => _create(),
               ),
               _Palette(
@@ -233,11 +245,17 @@ class _TagPickerState extends State<_TagPicker> {
                 alignment: Alignment.centerRight,
                 child: OutlinedButton.icon(
                   key: const ValueKey('tag-create'),
-                  onPressed: _create,
+                  onPressed: s.workspace.tagLimitReached ? null : _create,
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Make tag'),
                 ),
               ),
+              if (s.workspace.tagLimitReached)
+                Text(
+                  const TagLimitReached().message,
+                  key: const ValueKey('tag-limit'),
+                  style: TextStyle(fontSize: 12, color: AppColors.warm),
+                ),
               if (_problem != null)
                 Text(
                   _problem!,
@@ -266,35 +284,92 @@ class _TagPickerState extends State<_TagPicker> {
   }
 }
 
-class _Palette extends StatelessWidget {
+class _Palette extends StatefulWidget {
   const _Palette({required this.value, required this.onPick});
 
   final int value;
   final ValueChanged<int> onPick;
 
   @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: 6,
-    runSpacing: 6,
+  State<_Palette> createState() => _PaletteState();
+}
+
+class _PaletteState extends State<_Palette> {
+  late final _hex = TextEditingController(text: hexOf(Color(widget.value)));
+  bool _badHex = false;
+
+  @override
+  void dispose() {
+    _hex.dispose();
+    super.dispose();
+  }
+
+  void _typed(String text) {
+    final c = parseHexColor(text);
+    setState(() => _badHex = c == null);
+    if (c != null) widget.onPick(c.toARGB32() | 0xFF000000);
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
     children: [
-      for (final c in tagPalette)
-        GestureDetector(
-          onTap: () => onPick(c.toARGB32()),
-          child: Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              color: c,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: c.toARGB32() == value
-                    ? AppColors.accent
-                    : AppColors.border,
-                width: c.toARGB32() == value ? 2.5 : 1,
+      Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final swatch in InkColors.library)
+            Tooltip(
+              message: '${swatch.name}  ${hexOf(swatch.color)}',
+              child: GestureDetector(
+                key: ValueKey('tag-color-${swatch.id}'),
+                onTap: () {
+                  _hex.text = hexOf(swatch.color);
+                  setState(() => _badHex = false);
+                  widget.onPick(swatch.color.toARGB32());
+                },
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: swatch.color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: swatch.color.toARGB32() == widget.value
+                          ? AppColors.accent
+                          : AppColors.border,
+                      width: swatch.color.toARGB32() == widget.value ? 2.5 : 1,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      SizedBox(
+        width: 150,
+        child: TextField(
+          key: const ValueKey('tag-hex'),
+          controller: _hex,
+          maxLength: 9,
+          decoration: InputDecoration(
+            labelText: 'HEX colour',
+            counterText: '',
+            isDense: true,
+            errorText: _badHex ? 'Like #FF6A00' : null,
+            prefixIcon: Padding(
+              padding: const EdgeInsets.all(8),
+              child: CircleAvatar(
+                radius: 6,
+                backgroundColor: Color(widget.value),
               ),
             ),
           ),
+          onChanged: _typed,
         ),
+      ),
     ],
   );
 }

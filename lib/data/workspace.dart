@@ -616,13 +616,25 @@ class Workspace {
     return null;
   }
 
+  /// Whether no more tags can be made (the limit is shared by the Archive
+  /// and the Mindmap).
+  bool get tagLimitReached => customTags.all.length >= CustomTag.maxTags;
+
+  /// How many Archive resources carry tag [id].
+  int archiveUsesOfTag(String id) {
+    final ref = CustomTag.assetRef(id);
+    return assets.all.where((a) => a.linkTags.contains(ref)).length;
+  }
+
   /// Creates a tag; a tag with the same name is reused instead of making
-  /// a second one. Throws [ArgumentError] for an empty or too long name.
+  /// a second one. Throws [ArgumentError] for an empty or too long name and
+  /// [TagLimitReached] when [CustomTag.maxTags] tags exist already.
   ({CustomTag tag, bool existed}) createTag(String name, int color) {
     final problem = CustomTag.problemWith(name);
     if (problem != null) throw ArgumentError(problem);
     final existing = tagNamed(name);
     if (existing != null) return (tag: existing, existed: true);
+    if (tagLimitReached) throw const TagLimitReached();
     final now = DateTime.now();
     final tag = CustomTag(
       id: newId(),

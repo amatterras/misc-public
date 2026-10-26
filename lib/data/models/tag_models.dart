@@ -7,6 +7,16 @@
 // deleted tag is simply no longer shown (its id is never reused).
 import 'record.dart';
 
+/// Thrown when a 16th tag would be made.
+class TagLimitReached implements Exception {
+  const TagLimitReached();
+  String get message =>
+      'You already have ${CustomTag.maxTags} tags, the most there can be. '
+      'Delete one to make room for a new one.';
+  @override
+  String toString() => message;
+}
+
 class CustomTag implements Record {
   const CustomTag({
     required this.id,
@@ -27,6 +37,9 @@ class CustomTag implements Record {
   final DateTime updatedAt;
 
   static const maxNameLength = 40;
+
+  /// The most tags the shared registry (Archive and Mindmap together) holds.
+  static const maxTags = 15;
 
   /// How a tag id is written into an Archive resource's `linkTags`.
   static String assetRef(String id) => 'tag:$id';
