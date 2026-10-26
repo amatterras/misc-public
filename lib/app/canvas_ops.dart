@@ -1,11 +1,14 @@
 // Mindmap operations that reach beyond one canvas: links to other
 // mindmaps, reusable components, named version snapshots, and copying or
 // moving a selection into a note or another mindmap.
+import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import '../data/models/canvas_models.dart';
 import '../data/models/record.dart';
 import '../features/canvas/canvas_controller.dart';
+import '../features/canvas/canvas_export.dart' show renderItemsPng;
 import 'app_state.dart';
 
 /// Links to another mindmap are link cards with this address.
@@ -26,13 +29,77 @@ class CanvasComponent {
   final Map<String, Map<String, dynamic>> marks;
 }
 
-/// A named version of a canvas, kept on this device.
+/// A version of a canvas, kept on this device.
 class CanvasSnapshot {
-  const CanvasSnapshot(this.key, this.name, this.savedAt, this.itemCount);
+  const CanvasSnapshot(
+    this.key,
+    this.name,
+    this.savedAt,
+    this.itemCount, {
+    this.auto = false,
+    this.summary = '',
+    this.damaged = false,
+  });
   final String key;
   final String name;
   final DateTime savedAt;
   final int itemCount;
+
+  /// Made by the app (not named by the user).
+  final bool auto;
+
+  /// What changed since the version before, in words.
+  final String summary;
+
+  /// Could not be read completely: listed, but never restorable.
+  final bool damaged;
+}
+
+/// Rules and helpers of the Time Machine.
+abstract final class TimeMachine {
+  /// At most one automatic version per this long, per mindmap.
+  static const autoInterval = Duration(minutes: 15);
+
+  /// Automatic versions kept per mindmap (the newest).
+  static int maxAuto = 40;
+
+  /// Named versions kept per mindmap (the newest).
+  static int maxNamed = 60;
+
+  /// A number that changes when anything on the canvas changes.
+  static int fingerprint(CanvasDocument doc) => Object.hashAll([
+    for (final i in doc.items) jsonEncode(i.toJson()),
+  ]);
+
+  /// "Added 3, removed 1, changed 2" comparing [before] to [after].
+  static String describe(
+    CanvasDocument? before,
+    CanvasDocument after, {
+    String verb = '',
+  }) {
+    if (before == null) {
+      return after.items.isEmpty ? 'Empty' : '${after.items.length} items';
+    }
+    final old = {for (final i in before.items) i.id: jsonEncode(i.toJson())};
+    final now = {for (final i in after.items) i.id: jsonEncode(i.toJson())};
+    final added = now.keys.where((k) => !old.containsKey(k)).length;
+    final removed = old.keys.where((k) => !now.containsKey(k)).length;
+    final changed = now.keys
+        .where((k) => old.containsKey(k) && old[k] != now[k])
+        .length;
+    final parts = [
+      if (added > 0) 'added $added',
+      if (removed > 0) 'removed $removed',
+      if (changed > 0) 'changed $changed',
+    ];
+    if (parts.isEmpty) {
+      return verb.isEmpty ? 'No changes' : '$verb changes nothing';
+    }
+    final text = parts.join(', ');
+    return verb.isEmpty
+        ? '${text[0].toUpperCase()}${text.substring(1)}'
+        : '$verb: $text';
+  }
 }
 
 extension CanvasOps on AppState {
@@ -166,23 +233,125 @@ extension CanvasOps on AppState {
   }
 
   // -------------------------------------------------------- snapshots --
+  //
+  // The Time Machine for mindmaps (and note handwriting): versions kept on
+  // THIS device only (never synced, so a bad sync cannot spoil them).
+  //   - automatic: after meaningful changes, at most one per 15 minutes;
+  //   - named: made by the user ("Save a version…");
+  //   - a safety copy of the current state before every restore.
+  // Retention (see TimeMachine): newest 40 automatic and 60 named versions
+  // per mindmap; older ones go to the trash folder. A version only counts
+  // once it has been written completely and read back.
 
   /// Keeps the current state of [c] as a named version (on this device).
   Future<CanvasSnapshot> saveSnapshot(CanvasController c, String name) async {
     await c.flush();
-    final now = DateTime.now();
-    final key = '${c.id}~${now.microsecondsSinceEpoch}';
-    final doc = c.document;
-    await workspace.store.write(_snapshots, key, {
-      'canvasId': c.id,
-      'name': name,
-      'savedAt': utcIso(now),
-      'document': doc.toJson(),
-    });
-    return CanvasSnapshot(key, name, now, doc.items.length);
+    return _writeSnapshot(c.document, name);
   }
 
-  /// The versions kept of canvas [canvasId], newest first.
+  /// Writes [doc] as a version and checks it by reading it back. Throws if
+  /// it cannot be written completely; nothing is pruned in that case.
+  Future<CanvasSnapshot> _writeSnapshot(
+    CanvasDocument doc,
+    String name, {
+    bool auto = false,
+    String? summary,
+  }) async {
+    final now = DateTime.now();
+    final key = '${doc.id}~${now.microsecondsSinceEpoch}';
+    final previous = (await snapshotsOf(doc.id)).where((v) => !v.damaged).firstOrNull;
+    final before = previous == null ? null : await _snapshotDocument(previous.key);
+    final text = summary ?? TimeMachine.describe(before, doc);
+    await workspace.store.write(_snapshots, key, {
+      'canvasId': doc.id,
+      'name': name,
+      'savedAt': utcIso(now),
+      'auto': auto,
+      'summary': text,
+      'itemCount': doc.items.length,
+      'document': doc.toJson(),
+    });
+    await workspace.store.flush();
+    final back = await _snapshotDocument(key);
+    if (back == null || back.items.length != doc.items.length) {
+      throw StateError('The version could not be written completely.');
+    }
+    snapshotState[doc.id] = (
+      at: now,
+      fingerprint: TimeMachine.fingerprint(doc),
+    );
+    await _pruneSnapshots(doc.id);
+    return CanvasSnapshot(
+      key,
+      name,
+      now,
+      doc.items.length,
+      auto: auto,
+      summary: text,
+    );
+  }
+
+  /// Version [key] as a document, or null when it is missing or damaged.
+  Future<CanvasDocument?> _snapshotDocument(String key) async {
+    try {
+      final json = await workspace.store.read(_snapshots, key);
+      final raw = json?['document'];
+      if (raw is! Map) return null;
+      final doc = CanvasDocument.fromJson(raw.cast<String, dynamic>());
+      final count = json?['itemCount'];
+      if (count is int && count != doc.items.length) return null;
+      return doc;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Keeps the newest [TimeMachine.maxAuto] automatic and
+  /// [TimeMachine.maxNamed] named versions of [canvasId]; the rest move to
+  /// the trash folder.
+  Future<void> _pruneSnapshots(String canvasId) async {
+    final all = await snapshotsOf(canvasId);
+    var auto = 0, named = 0;
+    for (final v in all) {
+      final keep = v.auto
+          ? ++auto <= TimeMachine.maxAuto
+          : ++named <= TimeMachine.maxNamed;
+      if (!keep) {
+        try {
+          await workspace.store.moveToTrash(_snapshots, v.key);
+        } catch (_) {
+          // Left in place; the next save tries again.
+        }
+      }
+    }
+  }
+
+  /// Makes an automatic version after meaningful changes (called after a
+  /// mindmap was saved). Quiet: a failure only means no version this time.
+  Future<void> autoSnapshot(CanvasDocument doc) async {
+    if (doc.items.isEmpty) return;
+    final fp = TimeMachine.fingerprint(doc);
+    var state = snapshotState[doc.id];
+    if (state == null) {
+      final newest = (await snapshotsOf(doc.id)).where((v) => !v.damaged).firstOrNull;
+      final d = newest == null ? null : await _snapshotDocument(newest.key);
+      state = (
+        at: newest?.savedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+        fingerprint: d == null ? 0 : TimeMachine.fingerprint(d),
+      );
+      snapshotState[doc.id] = state;
+    }
+    if (state.fingerprint == fp) return;
+    if (DateTime.now().difference(state.at) < TimeMachine.autoInterval) return;
+    try {
+      await _writeSnapshot(doc, 'Automatic version', auto: true);
+    } catch (_) {
+      // No version this time.
+    }
+  }
+
+  /// The versions kept of canvas [canvasId], newest first. A version that
+  /// cannot be read completely is listed as damaged (and cannot be restored).
   Future<List<CanvasSnapshot>> snapshotsOf(String canvasId) async {
     final result = <CanvasSnapshot>[];
     for (final key in await workspace.store.list(_snapshots)) {
@@ -190,32 +359,71 @@ extension CanvasOps on AppState {
       final json = await workspace.store.read(_snapshots, key);
       if (json == null) continue;
       final items = (json['document'] as Map?)?['items'];
+      final count = json['itemCount'];
+      final ok = items is List && (count is! int || count == items.length);
       result.add(
         CanvasSnapshot(
           key,
           json['name'] as String? ?? 'Version',
           parseDate(json['savedAt']) ?? DateTime(2000),
           items is List ? items.length : 0,
+          auto: json['auto'] == true,
+          summary: json['summary'] as String? ?? '',
+          damaged: !ok,
         ),
       );
     }
     return result..sort((a, b) => b.savedAt.compareTo(a.savedAt));
   }
 
-  /// Puts version [key] back on [c]: every item, position, size, tag and
-  /// connection as it was. One undo step, saved and synced like an edit.
-  /// False if the version cannot be read (then nothing changes).
-  Future<bool> restoreSnapshot(CanvasController c, String key) async {
-    final json = await workspace.store.read(_snapshots, key);
-    final raw = json?['document'];
-    if (raw is! Map) return false;
-    final CanvasDocument doc;
+  /// A small picture of version [key] for previewing (the current mindmap
+  /// is not touched). Null if it cannot be read.
+  Future<Uint8List?> snapshotPreview(String key, {double maxSide = 420}) async {
+    final doc = await _snapshotDocument(key);
+    if (doc == null || doc.items.isEmpty) return null;
+    final c = CanvasController(
+      document: doc,
+      onSave: (_) async {},
+      resources: resources,
+    );
     try {
-      doc = CanvasDocument.fromJson(raw.cast<String, dynamic>());
+      return await renderItemsPng(c, maxSide: maxSide, margin: 16);
+    } finally {
+      c.dispose();
+    }
+  }
+
+  /// What restoring [key] onto [c] would change, in words (nothing is
+  /// changed by asking).
+  Future<String?> restoreSummary(CanvasController c, String key) async {
+    final doc = await _snapshotDocument(key);
+    if (doc == null) return null;
+    return TimeMachine.describe(c.document, doc, verb: 'Restoring');
+  }
+
+  /// Puts version [key] back on [c]: every item, position, size, tag and
+  /// connection as it was. First the current state is kept as a version
+  /// ("Before restoring…"); if that cannot be written, nothing is restored.
+  /// One undo step, saved and synced like an edit. False if the version
+  /// cannot be read or the safety copy failed (then nothing changes).
+  Future<bool> restoreSnapshot(CanvasController c, String key) async {
+    final doc = await _snapshotDocument(key);
+    if (doc == null || doc.id != c.id) return false;
+    final name = (await snapshotsOf(c.id))
+        .where((v) => v.key == key)
+        .map((v) => v.name)
+        .firstOrNull;
+    try {
+      await c.flush();
+      await _writeSnapshot(
+        c.document,
+        'Before restoring “${name ?? 'a version'}”',
+        auto: true,
+        summary: 'Safety copy made before a restore.',
+      );
     } catch (_) {
       return false;
     }
-    if (doc.id != c.id) return false;
     c.replaceAllItems(doc.items, doc.itemUnknownFields);
     return true;
   }

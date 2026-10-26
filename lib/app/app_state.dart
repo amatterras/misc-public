@@ -235,6 +235,14 @@ class AppState extends ChangeNotifier {
   final ValueNotifier<String?> toast = ValueNotifier(null);
   final ValueNotifier<String> themeModePreference = ValueNotifier('dark');
 
+  /// Per mindmap: when the last version was made and what the canvas looked
+  /// like then (for the Time Machine's automatic versions).
+  final Map<String, ({DateTime at, int fingerprint})> snapshotState = {};
+
+  /// Whether saving a mindmap may make automatic versions (tests turn it off
+  /// to control exactly which versions exist).
+  bool autoSnapshots = true;
+
   /// The note being edited right now (set by the note editor), so Quick
   /// Capture can offer to refer to it.
   final ValueNotifier<String?> activeNoteId = ValueNotifier(null);
@@ -2461,6 +2469,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> _saveCanvas(CanvasDocument doc) async {
     await canvases.save(doc);
+    if (autoSnapshots &&
+        !isLinksBoardId(doc.id) &&
+        doc.id != calendarInkId &&
+        !isComponentsId(doc.id)) {
+      unawaited(autoSnapshot(doc));
+    }
     final index = _canvasList.indexWhere((c) => c.id == doc.id);
     final text = [
       for (final i in doc.items)

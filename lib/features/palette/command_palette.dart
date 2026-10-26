@@ -15,6 +15,8 @@ import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import '../../platform/platform.dart' as native;
 import '../calendar/ics.dart';
+import '../canvas/time_machine.dart';
+import '../notes/notes_page.dart' show showNoteHistory;
 import '../capture/quick_capture.dart';
 import '../export/exports.dart';
 import '../links/archive_library_page.dart';
@@ -71,6 +73,20 @@ List<PaletteCommand> paletteCommands(
       (_) => s.goTo(AppPage.home),
     ),
     PaletteCommand('Show tasks', Icons.checklist, (_) => s.goTo(AppPage.tasks)),
+    PaletteCommand(
+      'Time Machine (earlier versions of this note or mindmap)',
+      Icons.history,
+      (context) {
+        final noteId = s.activeNoteId.value;
+        if (noteId != null && s.workspace.notes.contains(noteId)) {
+          showNoteHistory(context, s.workspace, noteId);
+        } else if (s.page == AppPage.canvas && s.canvas != null) {
+          showCanvasVersions(context, s, s.canvas!);
+        } else {
+          s.showToast('Open a note or a mindmap first.');
+        }
+      },
+    ),
     PaletteCommand(
       'Quick capture',
       Icons.bolt,

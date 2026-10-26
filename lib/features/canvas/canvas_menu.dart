@@ -14,6 +14,7 @@ import '../export/export_dialog.dart';
 import 'branch_conversion.dart';
 import 'canvas_controller.dart';
 import 'canvas_toolbar.dart' show showDotOpacityDialog;
+import 'time_machine.dart';
 import 'canvas_export.dart';
 import '../interaction/item_actions.dart';
 import '../smartlinks/smart_links.dart';
@@ -355,63 +356,6 @@ Future<void> showCanvasMenu(
     case 'dots':
       await showDotOpacityDialog(context, c, s.setDotOpacity);
   }
-}
-
-/// Lists the saved versions of [c]; restoring one is a single undo step.
-Future<void> showCanvasVersions(
-  BuildContext context,
-  AppState s,
-  CanvasController c,
-) async {
-  final list = await s.snapshotsOf(c.id);
-  if (!context.mounted) return;
-  await showDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text(
-        'Versions of this mindmap',
-        style: TextStyle(fontSize: 16),
-      ),
-      content: SizedBox(
-        width: 420,
-        child: list.isEmpty
-            ? Text(
-                'No versions saved yet. Right-click the empty canvas and '
-                'choose “Save a version…”.',
-                style: TextStyle(color: AppColors.textFaint),
-              )
-            : ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final v in list)
-                    ListTile(
-                      title: Text(v.name),
-                      subtitle: Text(
-                        '${formatShortDate(v.savedAt)} · ${v.itemCount} items',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      trailing: TextButton(
-                        onPressed: () async {
-                          final ok = await s.restoreSnapshot(c, v.key);
-                          if (context.mounted) Navigator.pop(context);
-                          s.showToast(
-                            ok ? 'Restored “${v.name}”. Undo takes it back.' : 'That version could not be read; nothing changed.',
-                          );
-                        },
-                        child: const Text('Restore'),
-                      ),
-                    ),
-                ],
-              ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
-        ),
-      ],
-    ),
-  );
 }
 
 Future<String?> _pickNote(BuildContext context, AppState s) {
