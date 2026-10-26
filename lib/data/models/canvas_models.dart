@@ -222,6 +222,103 @@ class TextItem extends BoxItem {
 
 /// A photo placed on the canvas; the file lives in the attachments folder
 /// and is described by a shared Asset record.
+/// Non-destructive edits of a photo: the file itself is never changed, the
+/// item only remembers how to show it. Everything here is reversible (reset
+/// crop / reset all) and travels with the item through save, sync and export.
+class ImageEdit {
+  const ImageEdit({this.crop, this.turns = 0, this.flip = false});
+
+  static const none = ImageEdit();
+
+  /// The part of the photo that is shown, as fractions (0..1) of the
+  /// original, before turning. Null shows all of it.
+  final Rect? crop;
+
+  /// Quarter turns clockwise (0-3), applied after the crop.
+  final int turns;
+
+  /// Mirrored left-right (before turning).
+  final bool flip;
+
+  bool get isNone => crop == null && turns == 0 && !flip;
+
+  /// The shown part's width / height for an original of [w] x [h] pixels,
+  /// after cropping and turning.
+  double aspect(double w, double h) {
+    final c = crop;
+    final cw = (c?.width ?? 1) * w, ch = (c?.height ?? 1) * h;
+    final ratio = ch <= 0 ? 1.0 : cw / ch;
+    return turns.isOdd ? 1 / ratio : ratio;
+  }
+
+  /// The shown part's size in original pixels, after turning.
+  Size shown(double w, double h) {
+    final c = crop;
+    final cw = (c?.width ?? 1) * w, ch = (c?.height ?? 1) * h;
+    return turns.isOdd ? Size(ch, cw) : Size(cw, ch);
+  }
+
+  ImageEdit copyWith({
+    Rect? Function()? crop,
+    int? turns,
+    bool? flip,
+  }) => ImageEdit(
+    crop: crop != null ? crop() : this.crop,
+    turns: turns == null ? this.turns : ((turns % 4) + 4) % 4,
+    flip: flip ?? this.flip,
+  );
+
+  /// Keeps a crop inside the photo and at least 2% wide / high.
+  static Rect? cleanCrop(Rect? r) {
+    if (r == null) return null;
+    final l = r.left.clamp(0.0, 0.98), t = r.top.clamp(0.0, 0.98);
+    final rr = r.right.clamp(l + 0.02, 1.0), bb = r.bottom.clamp(t + 0.02, 1.0);
+    final c = Rect.fromLTRB(l, t, rr, bb);
+    return c.left <= 0 && c.top <= 0 && c.right >= 1 && c.bottom >= 1
+        ? null
+        : c;
+  }
+
+  Map<String, dynamic> toJson() => {
+    if (crop != null) 'crop': [crop!.left, crop!.top, crop!.right, crop!.bottom],
+    if (turns != 0) 'turns': turns,
+    if (flip) 'flip': true,
+  };
+
+  /// Damaged values fall back to "no edit".
+  factory ImageEdit.fromJson(Object? raw) {
+    if (raw is! Map) return none;
+    Rect? crop;
+    final c = raw['crop'];
+    if (c is List && c.length == 4 && c.every((v) => v is num)) {
+      crop = cleanCrop(
+        Rect.fromLTRB(
+          (c[0] as num).toDouble(),
+          (c[1] as num).toDouble(),
+          (c[2] as num).toDouble(),
+          (c[3] as num).toDouble(),
+        ),
+      );
+    }
+    final turns = raw['turns'];
+    return ImageEdit(
+      crop: crop,
+      turns: turns is int ? ((turns % 4) + 4) % 4 : 0,
+      flip: raw['flip'] == true,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ImageEdit &&
+      other.crop == crop &&
+      other.turns == turns &&
+      other.flip == flip;
+
+  @override
+  int get hashCode => Object.hash(crop, turns, flip);
+}
+
 class ImageItem extends BoxItem {
   const ImageItem({
     required super.id,
@@ -229,9 +326,11 @@ class ImageItem extends BoxItem {
     required super.width,
     required super.minHeight,
     required this.assetId,
+    this.edit = ImageEdit.none,
   });
 
   final String assetId;
+  final ImageEdit edit;
   double get height => minHeight;
 
   @override
@@ -239,15 +338,26 @@ class ImageItem extends BoxItem {
       ImageItem(
         id: id,
         assetId: assetId,
+        edit: edit,
         position: position ?? this.position,
         width: width ?? this.width,
         minHeight: minHeight ?? this.minHeight,
       );
 
+  ImageItem withEdit(ImageEdit edit) => ImageItem(
+    id: id,
+    assetId: assetId,
+    edit: edit,
+    position: position,
+    width: width,
+    minHeight: minHeight,
+  );
+
   @override
   ImageItem withId(String id) => ImageItem(
     id: id,
     assetId: assetId,
+    edit: edit,
     position: position,
     width: width,
     minHeight: minHeight,
@@ -262,11 +372,13 @@ class ImageItem extends BoxItem {
     'y': position.dy,
     'w': width,
     'h': minHeight,
+    if (!edit.isNone) 'edit': edit.toJson(),
   };
 
   factory ImageItem.fromJson(Map<String, dynamic> j) => ImageItem(
     id: j['id'] as String,
     assetId: j['assetId'] as String,
+    edit: ImageEdit.fromJson(j['edit']),
     position: Offset((j['x'] as num).toDouble(), (j['y'] as num).toDouble()),
     width: (j['w'] as num).toDouble(),
     minHeight: (j['h'] as num).toDouble(),

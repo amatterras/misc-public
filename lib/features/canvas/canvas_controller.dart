@@ -1417,6 +1417,118 @@ class CanvasController extends ChangeNotifier {
     return item;
   }
 
+  // ------------------------------------------------------ photo editing --
+  // Non-destructive: the file never changes, the item only remembers its
+  // crop / turns / mirror. Each call is one undo step; nothing but the
+  // edited photo's own box changes, so text, drawings and other objects
+  // never move.
+
+  /// The one selected photo, if exactly one photo is selected.
+  ImageItem? get selectedImage {
+    final s = selectedItems;
+    return s.length == 1 && s.first is ImageItem ? s.first as ImageItem : null;
+  }
+
+  /// Original size of [item]'s photo in pixels, if known.
+  Size? imageSourceSize(ImageItem item) {
+    final a = resources?.asset(item.assetId);
+    final w = a?.width, h = a?.height;
+    return w == null || h == null || w <= 0 || h <= 0
+        ? null
+        : Size(w.toDouble(), h.toDouble());
+  }
+
+  /// Applies [change] to photo [id]'s edit. The picture keeps its scale; the
+  /// box follows the new shape (around its centre when the photo is turned
+  /// or mirrored, from its top-left corner otherwise).
+  void editImage(String id, ImageEdit Function(ImageEdit) change) {
+    final item = _items.whereType<ImageItem>().where((i) => i.id == id).firstOrNull;
+    if (item == null || isLocked(id)) return;
+    final next = change(item.edit);
+    if (next == item.edit) return;
+    final src = imageSourceSize(item);
+    var width = item.width, height = item.minHeight;
+    if (src != null) {
+      final old = item.edit.shown(src.width, src.height);
+      final now = next.shown(src.width, src.height);
+      final scale = item.width / math.max(1, old.width);
+      width = math.max(8.0, now.width * scale);
+      height = math.max(8.0, now.height * scale);
+    } else if (next.turns.isOdd != item.edit.turns.isOdd) {
+      width = item.minHeight;
+      height = item.width;
+    }
+    final turned = next.turns != item.edit.turns || next.flip != item.edit.flip;
+    final position = turned
+        ? item.bounds.center - Offset(width / 2, height / 2)
+        : item.position;
+    final edited = item
+        .withEdit(next)
+        .withBox(position: position, width: width, minHeight: height);
+    _commit([for (final i in _items) i.id == id ? edited : i]);
+    notifyListeners();
+  }
+
+  /// Points photo [id] at another picture of the same shown shape, with no
+  /// edits left to apply (used by "Replace with the edited copy").
+  void swapImageAsset(String id, String assetId) {
+    final item = _items.whereType<ImageItem>().where((i) => i.id == id).firstOrNull;
+    if (item == null || isLocked(id)) return;
+    final swapped = ImageItem(
+      id: id,
+      assetId: assetId,
+      position: item.position,
+      width: item.width,
+      minHeight: item.minHeight,
+    );
+    _commit([for (final i in _items) i.id == id ? swapped : i]);
+    notifyListeners();
+  }
+
+  void rotateImage(String id, {bool clockwise = true}) => editImage(
+    id,
+    (e) => e.copyWith(turns: e.turns + (clockwise ? 1 : 3)),
+  );
+
+  void flipImage(String id) => editImage(id, (e) => e.copyWith(flip: !e.flip));
+
+  /// Shows only [crop] (fractions of the original); null shows it all.
+  void cropImage(String id, Rect? crop) =>
+      editImage(id, (e) => e.copyWith(crop: () => ImageEdit.cleanCrop(crop)));
+
+  void resetImageCrop(String id) => cropImage(id, null);
+
+  /// Back to the untouched photo: no crop, turn or mirror.
+  void resetImageEdits(String id) => editImage(id, (_) => ImageEdit.none);
+
+  /// Crops (centred, within the current crop) to a shown width / height of
+  /// [ratio]; null returns to the whole photo.
+  void setImageAspect(String id, double? ratio) {
+    final item = _items.whereType<ImageItem>().where((i) => i.id == id).firstOrNull;
+    if (item == null) return;
+    if (ratio == null) return resetImageCrop(id);
+    final src = imageSourceSize(item);
+    if (src == null || ratio <= 0) return;
+    editImage(id, (e) {
+      final cur = e.crop ?? const Rect.fromLTWH(0, 0, 1, 1);
+      final cw = cur.width * src.width, ch = cur.height * src.height;
+      final q = e.turns.isOdd ? 1 / ratio : ratio; // in source space
+      var nw = cw, nh = ch;
+      if (cw / ch > q) {
+        nw = ch * q;
+      } else {
+        nh = cw / q;
+      }
+      final fw = nw / src.width, fh = nh / src.height;
+      final c = cur.center;
+      return e.copyWith(
+        crop: () => ImageEdit.cleanCrop(
+          Rect.fromCenter(center: c, width: fw, height: fh),
+        ),
+      );
+    });
+  }
+
   LinkItem insertLink(Asset asset, Offset world) {
     final item = LinkItem(
       id: newId(),

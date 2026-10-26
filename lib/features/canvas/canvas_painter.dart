@@ -318,16 +318,7 @@ class CanvasPainter extends CustomPainter {
       _paintIcon(canvas, Icons.image_outlined, bounds.center, 28);
       return;
     }
-    canvas.save();
-    canvas.clipRRect(rrect);
-    paintImage(
-      canvas: canvas,
-      rect: bounds,
-      image: image,
-      fit: BoxFit.cover,
-      filterQuality: FilterQuality.medium,
-    );
-    canvas.restore();
+    paintEditedImage(canvas, image, bounds, item.edit, rrect: rrect);
   }
 
   void _paintLink(Canvas canvas, LinkItem item, Rect bounds) {
@@ -853,4 +844,36 @@ class LiveInkPainter extends CustomPainter {
       oldDelegate.controller != controller ||
       oldDelegate.page != page ||
       oldDelegate.pageScale != pageScale;
+}
+
+/// Draws [image] into [bounds] the way [edit] says: cropped, mirrored and
+/// turned, never stretched. Transparency is kept (nothing is filled behind
+/// it). [bounds] is the final, already-turned box.
+void paintEditedImage(
+  Canvas canvas,
+  ui.Image image,
+  Rect bounds,
+  ImageEdit edit, {
+  RRect? rrect,
+}) {
+  final iw = image.width.toDouble(), ih = image.height.toDouble();
+  final c = edit.crop;
+  final src = c == null
+      ? Rect.fromLTWH(0, 0, iw, ih)
+      : Rect.fromLTRB(c.left * iw, c.top * ih, c.right * iw, c.bottom * ih);
+  canvas.save();
+  if (rrect != null) canvas.clipRRect(rrect);
+  canvas.translate(bounds.center.dx, bounds.center.dy);
+  canvas.rotate(edit.turns * math.pi / 2);
+  if (edit.flip) canvas.scale(-1, 1);
+  // In the turned frame the box is swapped for odd turns.
+  final w = edit.turns.isOdd ? bounds.height : bounds.width;
+  final h = edit.turns.isOdd ? bounds.width : bounds.height;
+  canvas.drawImageRect(
+    image,
+    src,
+    Rect.fromCenter(center: Offset.zero, width: w, height: h),
+    Paint()..filterQuality = FilterQuality.medium,
+  );
+  canvas.restore();
 }

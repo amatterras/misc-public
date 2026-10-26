@@ -9,6 +9,7 @@ import '../../platform/input_hints.dart';
 import '../ink/pen_sizes.dart';
 import 'alignment.dart';
 import 'canvas_controller.dart';
+import 'image_studio.dart';
 
 List<Color> get _canvasFormatColors => [
   AppColors.text,
@@ -489,6 +490,78 @@ class CanvasContextBar extends StatelessWidget {
             tooltip: 'Fetch title & preview again',
             onPressed: () => onRefreshLink(single),
             icon: const Icon(Icons.refresh, size: 17),
+          ),
+          const _PanelDivider(vertical: true),
+        ],
+        if (single is ImageItem) ...[
+          ToolButton(
+            key: const ValueKey('image-rotate'),
+            tooltip: 'Rotate photo 90 degrees',
+            onPressed: () => c.rotateImage(single.id),
+            icon: const Icon(Icons.rotate_right, size: 17),
+          ),
+          ToolButton(
+            key: const ValueKey('image-flip'),
+            tooltip: 'Mirror photo',
+            active: single.edit.flip,
+            onPressed: () => c.flipImage(single.id),
+            icon: const Icon(Icons.flip, size: 17),
+          ),
+          ToolButton(
+            key: const ValueKey('image-crop'),
+            tooltip: 'Crop photo',
+            active: single.edit.crop != null,
+            onPressed: () => showImageCropDialog(context, c, single),
+            icon: const Icon(Icons.crop, size: 17),
+          ),
+          PopupMenuButton<String>(
+            key: const ValueKey('image-more'),
+            tooltip: 'More photo edits',
+            position: PopupMenuPosition.under,
+            onSelected: (v) {
+              switch (v) {
+                case 'reset':
+                  c.resetImageEdits(single.id);
+                case 'copy':
+                  saveEditedImage(context, c, single, replace: false);
+                case 'replace':
+                  saveEditedImage(context, c, single, replace: true);
+                default:
+                  c.setImageAspect(single.id, aspectChoices[v]);
+              }
+            },
+            itemBuilder: (_) => [
+              for (final e in aspectChoices.entries)
+                PopupMenuItem(
+                  value: e.key,
+                  height: 30,
+                  child: Text(
+                    e.key == 'Original' ? 'Whole photo' : 'Crop to ${e.key}',
+                  ),
+                ),
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'reset',
+                height: 30,
+                enabled: !single.edit.isNone,
+                child: const Text('Reset all edits'),
+              ),
+              const PopupMenuItem(
+                value: 'copy',
+                height: 30,
+                child: Text('Save edited copy'),
+              ),
+              const PopupMenuItem(
+                value: 'replace',
+                height: 30,
+                child: Text('Replace with edited copy…'),
+              ),
+            ],
+            child: SizedBox(
+              width: 36,
+              height: 36,
+              child: Icon(Icons.tune, size: 17, color: AppColors.textMuted),
+            ),
           ),
           const _PanelDivider(vertical: true),
         ],
