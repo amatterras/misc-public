@@ -168,6 +168,8 @@ void main() {
     ]);
     hasExportDialog = true;
     String? answer;
+    final queue = <String?>[]; // answers consumed first, then [answer]
+    var asked = 0;
     askExportPath =
         ({
           required suggestedName,
@@ -176,7 +178,8 @@ void main() {
           initialDir,
         }) {
           expect(suggestedName, endsWith('.$extension'));
-          return answer;
+          asked++;
+          return queue.isNotEmpty ? queue.removeAt(0) : answer;
         };
     await exportCanvasFromMenu(s, c, web: false);
     expect(s.toast.value, 'Export cancelled. Nothing was saved.');
@@ -192,10 +195,20 @@ void main() {
     await checkPicture(await chosen.readAsBytes());
 
     // A place that cannot be written: a plain message, nothing broken.
-    answer = '${chosen.path}/inside-a-file.png';
+    // The dialog opens again so another place can be chosen.
+    final other = File('${dir.path}/other/Second try.png');
+    queue.addAll(['${chosen.path}/inside-a-file.png', other.path]);
+    asked = 0;
     await exportCanvasFromMenu(s, c, web: false);
-    expect(s.toast.value, startsWith('Could not save the export there'));
+    expect(asked, 2);
+    expect(s.toast.value, 'Saved ${other.path}');
+    expect(other.lengthSync(), greaterThan(0));
+    await checkPicture(await other.readAsBytes());
     await checkPicture(await chosen.readAsBytes());
+    // ... and cancelling after a failure stops without a success message.
+    queue.addAll(['${chosen.path}/inside-a-file.png', null]);
+    await exportCanvasFromMenu(s, c, web: false);
+    expect(s.toast.value, 'Export cancelled. Nothing was saved.');
 
     final protected = File('${dir.path}/protected.png')
       ..writeAsStringSync('keep this old export');
@@ -207,8 +220,9 @@ void main() {
         destination.path,
       );
     };
+    queue.addAll([protected.path, null]);
     await exportCanvasFromMenu(s, c, web: false);
-    expect(s.toast.value, startsWith('Could not save the export there'));
+    expect(s.toast.value, 'Export cancelled. Nothing was saved.');
     expect(protected.readAsBytesSync(), oldBytes);
     expect(File('${protected.path}.part').existsSync(), isFalse);
   });
