@@ -386,6 +386,18 @@ double distanceToSegment(Offset p, Offset a, Offset b) {
   return (p - (a + ab * t)).distance;
 }
 
+/// How a connection is drawn between its waypoints.
+enum ConnectorStyle {
+  /// A smooth curve (a straight line while it has no bends).
+  curved,
+
+  /// Straight pieces with sharp corners.
+  straight,
+
+  /// Horizontal and vertical pieces only (elbows).
+  orthogonal,
+}
+
 /// A mind-map connection between two items on the same canvas. It stores
 /// only the two item ids (never copies), so it follows them when they move;
 /// it is hidden while either end is missing.
@@ -398,6 +410,8 @@ class ConnectorItem extends CanvasItem {
     this.toT,
     this.color,
     this.bends = const [],
+    this.style = ConnectorStyle.curved,
+    this.auto = false,
   });
 
   final String fromId;
@@ -420,9 +434,18 @@ class ConnectorItem extends CanvasItem {
   /// Empty: a straight line. Optional and written only when set.
   final List<Offset> bends;
 
+  /// How the line is drawn (curved, straight or elbow).
+  final ConnectorStyle style;
+
+  /// Automatic routing: the line goes around the other objects by itself.
+  /// The manual [bends] are kept (unused) and come back when this is off.
+  final bool auto;
+
   ConnectorItem copyWith({
     Color? Function()? color,
     List<Offset>? bends,
+    ConnectorStyle? style,
+    bool? auto,
   }) => ConnectorItem(
     id: id,
     fromId: fromId,
@@ -431,6 +454,8 @@ class ConnectorItem extends CanvasItem {
     toT: toT,
     color: color != null ? color() : this.color,
     bends: bends ?? this.bends,
+    style: style ?? this.style,
+    auto: auto ?? this.auto,
   );
 
   /// The line's real extent depends on the two items; the controller
@@ -457,6 +482,8 @@ class ConnectorItem extends CanvasItem {
     toT: toT,
     color: color,
     bends: bends,
+    style: style,
+    auto: auto,
   );
 
   /// The same connection between other items (copies keep their anchors).
@@ -468,6 +495,8 @@ class ConnectorItem extends CanvasItem {
     toT: toT,
     color: color,
     bends: bends,
+    style: style,
+    auto: auto,
   );
 
   bool touches(String itemId) => fromId == itemId || toId == itemId;
@@ -488,6 +517,8 @@ class ConnectorItem extends CanvasItem {
       'bends': [
         for (final b in bends) [b.dx, b.dy],
       ],
+    if (style != ConnectorStyle.curved) 'style': style.name,
+    if (auto) 'auto': true,
   };
 
   static double? _t(Object? v) =>
@@ -513,6 +544,9 @@ class ConnectorItem extends CanvasItem {
     toT: _t(j['toT']),
     color: j['color'] is int ? Color(j['color'] as int) : null,
     bends: _bends(j['bends']),
+    style:
+        ConnectorStyle.values.asNameMap()[j['style']] ?? ConnectorStyle.curved,
+    auto: j['auto'] == true,
   );
 }
 

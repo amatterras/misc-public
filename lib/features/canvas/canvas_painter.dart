@@ -86,15 +86,16 @@ class CanvasPainter extends CustomPainter {
     // Mind-map connections first, so they run underneath the items.
     final selectedIds = controller.selection;
     for (final c in controller.items.whereType<ConnectorItem>()) {
-      final pts = controller.connectorPoints(c);
-      if (pts == null) continue;
+      final shape = controller.connectorShape(c);
+      if (shape == null) continue;
       _paintConnector(
         canvas,
-        pts,
+        shape.points,
         scale,
+        smooth: shape.smooth,
         selected: selectedIds.contains(c.id),
         color: c.color,
-        handles: selectedIds.contains(c.id) && selectedIds.length == 1
+        handles: selectedIds.contains(c.id) && selectedIds.length == 1 && !c.auto
             ? c.bends
             : const [],
       );
@@ -473,13 +474,14 @@ class CanvasPainter extends CustomPainter {
     List<Offset> pts,
     double scale, {
     required bool selected,
+    bool smooth = true,
     Color? color,
     List<Offset> handles = const [],
   }) {
     final base = color ?? AppColors.textMuted;
     if (selected) {
       canvas.drawPath(
-        connectorPath(pts),
+        connectorPath(pts, smooth: smooth),
         Paint()
           ..style = PaintingStyle.stroke
           ..color = AppColors.accent.withValues(alpha: 0.35)
@@ -492,7 +494,7 @@ class CanvasPainter extends CustomPainter {
       ..color = base
       ..strokeWidth = (selected ? 2.5 : 1.6) / scale
       ..strokeCap = StrokeCap.round;
-    canvas.drawPath(connectorPath(pts), line);
+    canvas.drawPath(connectorPath(pts, smooth: smooth), line);
     final dot = Paint()..color = base;
     canvas.drawCircle(pts.first, 3 / scale, dot);
     canvas.drawCircle(pts.last, 3 / scale, dot);

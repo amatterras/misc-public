@@ -417,6 +417,51 @@ class CanvasContextBar extends StatelessWidget {
           ),
           const _PanelDivider(vertical: true),
         ],
+        if (selected.any((i) => i is ConnectorItem)) ...[
+          PopupMenuButton<ConnectorStyle>(
+            key: const ValueKey('canvas-connector-style'),
+            tooltip: 'Line style',
+            position: PopupMenuPosition.under,
+            onSelected: c.setConnectorStyle,
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: ConnectorStyle.curved,
+                height: 30,
+                child: Text('Curved'),
+              ),
+              PopupMenuItem(
+                value: ConnectorStyle.straight,
+                height: 30,
+                child: Text('Straight'),
+              ),
+              PopupMenuItem(
+                value: ConnectorStyle.orthogonal,
+                height: 30,
+                child: Text('Elbow (right angles)'),
+              ),
+            ],
+            child: SizedBox(
+              width: 36,
+              height: 36,
+              child: Icon(
+                Icons.timeline,
+                size: 17,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+          ToolButton(
+            key: const ValueKey('canvas-connector-auto'),
+            tooltip: selected.whereType<ConnectorItem>().every((i) => i.auto)
+                ? 'Automatic routing is on - tap for manual (your bends return)'
+                : 'Route around other objects automatically',
+            active: selected.whereType<ConnectorItem>().every((i) => i.auto),
+            onPressed: () => c.setConnectorAuto(
+              !selected.whereType<ConnectorItem>().every((i) => i.auto),
+            ),
+            icon: const Icon(Icons.alt_route, size: 17),
+          ),
+        ],
         if (selected.any((i) => i is ConnectorItem && i.bends.isNotEmpty))
           ToolButton(
             key: const ValueKey('canvas-straighten-connector'),

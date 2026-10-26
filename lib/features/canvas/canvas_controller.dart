@@ -16,6 +16,7 @@ import '../../sync/protocol.dart';
 import 'canvas_resources.dart';
 import 'canvas_text.dart';
 import 'connector_geometry.dart';
+import 'connector_routing.dart';
 import '../ink/stroke_geometry.dart';
 import '../ink/partial_erase.dart';
 import '../ink/shape_recognition.dart';
@@ -703,7 +704,7 @@ class CanvasController extends ChangeNotifier {
   (ConnectorItem, int)? _bendHandleAt(Offset world) {
     if (_tool != CanvasTool.select || _selection.length != 1) return null;
     final c = itemById(_selection.first);
-    if (c is! ConnectorItem || c.bends.isEmpty) return null;
+    if (c is! ConnectorItem || c.auto || c.bends.isEmpty) return null;
     final reach = 14 / _scale;
     var best = -1;
     var bestD = reach;
@@ -720,17 +721,32 @@ class CanvasController extends ChangeNotifier {
   void _dragBend(Offset world) {
     var c = itemById(_bendId ?? '');
     if (c is! ConnectorItem) return;
-    final bends = [...c.bends];
+    var bends = [...c.bends];
+    var manual = c;
     if (_bendIndex < 0) {
       if ((world - _bendStart).distance * _scale < 4) return;
-      final pts = connectorPoints(c);
-      if (pts == null) return;
-      final near = nearestOnConnector(_bendStart, pts);
+      if (c.auto) {
+        // Grabbing an automatic line makes it manual, keeping its shape:
+        // the route's corner points become the waypoints.
+        final shape = connectorShape(c);
+        if (shape == null) return;
+        bends = shape.points.sublist(1, shape.points.length - 1);
+        manual = c.copyWith(auto: false, bends: bends);
+      }
+      final a = itemById(c.fromId), b = itemById(c.toId);
+      if (a == null || b == null) return;
+      final ends = _manualEnds(manual, a, b);
+      final control = [ends.$1, ...bends, ends.$2];
+      final near = nearestOnConnector(
+        _bendStart,
+        control,
+        smooth: c.style == ConnectorStyle.curved,
+      );
       _bendIndex = near.span.clamp(0, bends.length);
       bends.insert(_bendIndex, near.point);
     }
     bends[_bendIndex] = world;
-    _replaceItems({c.id: c.copyWith(bends: bends)});
+    _replaceItems({c.id: manual.copyWith(bends: bends)});
   }
 
   /// Removes waypoint [index] of connection [id] (one undo step).
@@ -744,6 +760,32 @@ class CanvasController extends ChangeNotifier {
         else
           i,
     ]);
+    notifyListeners();
+  }
+
+  /// Sets how the selected connections are drawn (one undo step).
+  void setConnectorStyle(ConnectorStyle style) {
+    final changes = <String, CanvasItem>{
+      for (final i in selectedItems)
+        if (i is ConnectorItem && i.style != style)
+          i.id: i.copyWith(style: style),
+    };
+    if (changes.isEmpty) return;
+    _commit([for (final i in _items) changes[i.id] ?? i]);
+    notifyListeners();
+  }
+
+  /// Switches the selected connections between automatic routing (around
+  /// the other objects) and their own waypoints, which are kept untouched
+  /// meanwhile (one undo step).
+  void setConnectorAuto(bool auto) {
+    final changes = <String, CanvasItem>{
+      for (final i in selectedItems)
+        if (i is ConnectorItem && i.auto != auto)
+          i.id: i.copyWith(auto: auto),
+    };
+    if (changes.isEmpty) return;
+    _commit([for (final i in _items) changes[i.id] ?? i]);
     notifyListeners();
   }
 
@@ -1117,32 +1159,115 @@ class CanvasController extends ChangeNotifier {
       case StrokeItem():
         return item.bounds;
       case ConnectorItem():
-        final pts = connectorPoints(item);
-        return pts == null ? Rect.zero : connectorBounds(pts);
+        final shape = connectorShape(item);
+        return shape == null
+            ? Rect.zero
+            : connectorBounds(shape.points, smooth: shape.smooth);
     }
   }
 
+
   /// Where [c]'s line starts and ends: on the edges of the two connected
-  /// items, along the line between their centres. Null while an end is
-  /// missing (deleted, or not synced yet), so the line is not drawn.
+  /// items. Null while an end is missing (deleted, or not synced yet), so
+  /// the line is not drawn.
   (Offset, Offset)? connectorEnds(ConnectorItem c) {
+    final shape = connectorShape(c);
+    return shape == null ? null : (shape.points.first, shape.points.last);
+  }
+
+  /// The points the line of [c] is drawn through (corner points for the
+  /// straight and elbow styles, curve points for the curved style).
+  List<Offset>? connectorPoints(ConnectorItem c) => connectorShape(c)?.points;
+
+  /// The line of [c] as it is drawn: its points and whether a smooth curve
+  /// is drawn through them (else straight pieces).
+  ({List<Offset> points, bool smooth})? connectorShape(ConnectorItem c) {
     final a = itemById(c.fromId), b = itemById(c.toId);
     if (!isConnectable(a) || !isConnectable(b)) return null;
-    // A stroke end is a fixed point on its ink; a box end sits on its edge
-    // facing the other end.
+    if (c.auto) return _autoShape(c, a!, b!);
+    final ends = _manualEnds(c, a!, b!);
+    final control = [ends.$1, ...c.bends, ends.$2];
+    return switch (c.style) {
+      ConnectorStyle.curved => (points: control, smooth: true),
+      ConnectorStyle.straight => (points: control, smooth: false),
+      ConnectorStyle.orthogonal => (
+        points: orthogonalize(control),
+        smooth: false,
+      ),
+    };
+  }
+
+  /// The ends of a hand-made line: a stroke end is a fixed point on its ink;
+  /// a box end sits on its edge facing the first / last waypoint (or the
+  /// other end).
+  (Offset, Offset) _manualEnds(ConnectorItem c, CanvasItem a, CanvasItem b) {
     final pa = a is StrokeItem ? strokeAnchor(a, c.fromT ?? 0) : null;
     final pb = b is StrokeItem ? strokeAnchor(b, c.toT ?? 1) : null;
-    final ra = itemBounds(a!), rb = itemBounds(b!);
-    // With waypoints the ends face the first / last waypoint.
+    final ra = itemBounds(a), rb = itemBounds(b);
     final towardsA = c.bends.isEmpty ? (pb ?? rb.center) : c.bends.first;
     final towardsB = c.bends.isEmpty ? (pa ?? ra.center) : c.bends.last;
     return (pa ?? _edgePoint(ra, towardsA), pb ?? _edgePoint(rb, towardsB));
   }
 
-  /// The points the line of [c] is drawn through: start, waypoints, end.
-  List<Offset>? connectorPoints(ConnectorItem c) {
-    final ends = connectorEnds(c);
-    return ends == null ? null : [ends.$1, ...c.bends, ends.$2];
+  final Map<String, ({String key, List<Offset> points})> _routeCache = {};
+
+  /// The automatically routed line of [c]: around every other object (not
+  /// its own two ends). The result is remembered until something that
+  /// matters moves, so dragging redraws without searching again.
+  ({List<Offset> points, bool smooth})? _autoShape(
+    ConnectorItem c,
+    CanvasItem a,
+    CanvasItem b,
+  ) {
+    final ra = itemBounds(a), rb = itemBounds(b);
+    final pa = a is StrokeItem ? strokeAnchor(a, c.fromT ?? 0) : ra.center;
+    final pb = b is StrokeItem ? strokeAnchor(b, c.toT ?? 1) : rb.center;
+    final obstacles = <Rect>[
+      for (final i in _items)
+        if (i is BoxItem && i.id != c.fromId && i.id != c.toId)
+          if (!isReference(i.id)) itemBounds(i),
+    ];
+    final orthogonal = c.style == ConnectorStyle.orthogonal;
+    final key = [
+      orthogonal,
+      pa,
+      pb,
+      a is StrokeItem ? '' : ra,
+      b is StrokeItem ? '' : rb,
+      ...obstacles,
+    ].join('|');
+    var points = _routeCache[c.id]?.key == key
+        ? _routeCache[c.id]!.points
+        : null;
+    if (points == null) {
+      var route = routeAround(pa, pb, obstacles, orthogonal: orthogonal);
+      // The line starts and ends on the edges of the objects, not inside.
+      if (a is! StrokeItem) {
+        route = trimInside(route, ra, atStart: true) ?? route;
+      }
+      if (b is! StrokeItem) {
+        route = trimInside(route, rb, atStart: false) ?? route;
+      }
+      points = route;
+      _routeCache[c.id] = (key: key, points: points);
+      if (_routeCache.length > 400) _routeCache.remove(_routeCache.keys.first);
+    }
+    // A curve through the corner points could swing into an object: curve
+    // only when the curve stays clear, else keep the straight pieces.
+    var smooth = c.style == ConnectorStyle.curved && points.length > 2;
+    if (smooth) {
+      final samples = connectorSamples(points);
+      final zones = [for (final o in obstacles) o.inflate(2)];
+      for (var i = 0; i + 1 < samples.length && smooth; i++) {
+        for (final z in zones) {
+          if (segmentCrossesRect(samples[i].$1, samples[i + 1].$1, z)) {
+            smooth = false;
+            break;
+          }
+        }
+      }
+    }
+    return (points: points, smooth: smooth);
   }
 
   /// Objects and drawn lines can be connected (not connections themselves).
@@ -1223,9 +1348,14 @@ class CanvasController extends ChangeNotifier {
       }
     }
     for (final item in _items.reversed.whereType<ConnectorItem>()) {
-      final pts = connectorPoints(item);
-      if (pts != null &&
-          nearestOnConnector(world, pts).distance <= tolerance) {
+      final shape = connectorShape(item);
+      if (shape != null &&
+          nearestOnConnector(
+                world,
+                shape.points,
+                smooth: shape.smooth,
+              ).distance <=
+              tolerance) {
         return item;
       }
     }

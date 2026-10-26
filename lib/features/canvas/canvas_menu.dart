@@ -49,6 +49,14 @@ Future<void> showCanvasMenu(
     items: hit is ConnectorItem
         ? [
             item('connColor', 'Line colorâ€¦', Icons.palette_outlined),
+            item('connCurved', 'Curved', Icons.gesture),
+            item('connStraight2', 'Straight', Icons.show_chart),
+            item('connElbow', 'Elbow (right angles)', Icons.stacked_line_chart),
+            item(
+              'connAuto',
+              hit.auto ? 'Manual routing' : 'Route around objects',
+              Icons.alt_route,
+            ),
             if (hit.bends.isNotEmpty) ...[
               item('connStraight', 'Straighten', Icons.horizontal_rule),
             ],
@@ -155,6 +163,14 @@ Future<void> showCanvasMenu(
         ],
       );
       if (color != null) c.setConnectorColor(color);
+    case 'connCurved':
+      c.setConnectorStyle(ConnectorStyle.curved);
+    case 'connStraight2':
+      c.setConnectorStyle(ConnectorStyle.straight);
+    case 'connElbow':
+      c.setConnectorStyle(ConnectorStyle.orthogonal);
+    case 'connAuto':
+      c.setConnectorAuto(!(hit! as ConnectorItem).auto);
     case 'connStraight':
       c.straightenSelectedConnectors();
     case 'open':

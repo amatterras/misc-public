@@ -20,9 +20,16 @@ List<(Offset, Offset, Offset, Offset)> connectorCubics(List<Offset> pts) {
   return out;
 }
 
-/// The curve through [pts] as a [Path].
-Path connectorPath(List<Offset> pts) {
+/// The line through [pts] as a [Path]: a smooth curve, or (not [smooth])
+/// straight pieces with sharp corners.
+Path connectorPath(List<Offset> pts, {bool smooth = true}) {
   final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+  if (!smooth) {
+    for (final p in pts.skip(1)) {
+      path.lineTo(p.dx, p.dy);
+    }
+    return path;
+  }
   for (final (_, c1, c2, end) in connectorCubics(pts)) {
     path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, end.dx, end.dy);
   }
@@ -35,8 +42,14 @@ Offset _cubicAt(Offset a, Offset b, Offset c, Offset d, double t) {
 }
 
 /// Points along the curve, with the span (0 = first segment) each lies on.
-List<(Offset, int)> connectorSamples(List<Offset> pts) {
+List<(Offset, int)> connectorSamples(List<Offset> pts, {bool smooth = true}) {
   final out = <(Offset, int)>[];
+  if (!smooth) {
+    for (var i = 0; i < pts.length; i++) {
+      out.add((pts[i], i == 0 ? 0 : i - 1));
+    }
+    return out;
+  }
   final cubics = connectorCubics(pts);
   for (var s = 0; s < cubics.length; s++) {
     final (a, b, c, d) = cubics[s];
@@ -47,44 +60,50 @@ List<(Offset, int)> connectorSamples(List<Offset> pts) {
   return out;
 }
 
-double _segDistance(Offset p, Offset a, Offset b) {
-  final ab = b - a;
-  final l2 = ab.dx * ab.dx + ab.dy * ab.dy;
-  if (l2 == 0) return (p - a).distance;
-  final t = (((p - a).dx * ab.dx + (p - a).dy * ab.dy) / l2).clamp(0.0, 1.0);
-  return (p - (a + ab * t)).distance;
+/// The pieces of the drawn line: (from, to, span).
+List<(Offset, Offset, int)> _pieces(List<Offset> pts, bool smooth) {
+  if (!smooth) {
+    return [
+      for (var i = 0; i + 1 < pts.length; i++) (pts[i], pts[i + 1], i),
+    ];
+  }
+  final s = connectorSamples(pts);
+  return [
+    for (var i = 0; i + 1 < s.length; i++)
+      if (s[i].$2 == s[i + 1].$2) (s[i].$1, s[i + 1].$1, s[i].$2),
+  ];
 }
 
-/// How far [p] is from the curve through [pts], and which span is nearest.
+/// How far [p] is from the line through [pts], which span is nearest, and
+/// the nearest point on it.
 ({double distance, int span, Offset point}) nearestOnConnector(
   Offset p,
-  List<Offset> pts,
-) {
-  final samples = connectorSamples(pts);
+  List<Offset> pts, {
+  bool smooth = true,
+}) {
   var best = double.infinity;
   var span = 0;
   var point = pts.first;
-  for (var i = 0; i + 1 < samples.length; i++) {
-    if (samples[i].$2 != samples[i + 1].$2) continue;
-    final d = _segDistance(p, samples[i].$1, samples[i + 1].$1);
+  for (final (a, b, s) in _pieces(pts, smooth)) {
+    final ab = b - a;
+    final l2 = ab.dx * ab.dx + ab.dy * ab.dy;
+    final t = l2 == 0
+        ? 0.0
+        : (((p - a).dx * ab.dx + (p - a).dy * ab.dy) / l2).clamp(0.0, 1.0);
+    final q = a + ab * t;
+    final d = (p - q).distance;
     if (d < best) {
       best = d;
-      span = samples[i].$2;
-      final a = samples[i].$1, b = samples[i + 1].$1;
-      final ab = b - a;
-      final l2 = ab.dx * ab.dx + ab.dy * ab.dy;
-      final t = l2 == 0
-          ? 0.0
-          : (((p - a).dx * ab.dx + (p - a).dy * ab.dy) / l2).clamp(0.0, 1.0);
-      point = a + ab * t;
+      span = s;
+      point = q;
     }
   }
   return (distance: best, span: span, point: point);
 }
 
 /// Bounding box of the curve through [pts].
-Rect connectorBounds(List<Offset> pts) {
-  final s = connectorSamples(pts);
+Rect connectorBounds(List<Offset> pts, {bool smooth = true}) {
+  final s = connectorSamples(pts, smooth: smooth);
   var r = Rect.fromPoints(s.first.$1, s.first.$1);
   for (final (p, _) in s) {
     r = r.expandToInclude(Rect.fromPoints(p, p));
