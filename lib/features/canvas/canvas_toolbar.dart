@@ -409,7 +409,7 @@ class CanvasContextBar extends StatelessWidget {
                     key: ValueKey('quick-tag-manage'),
                     value: '',
                     height: 34,
-                    child: Text('Make, rename, recolour, deleteâ€¦'),
+                    child: Text('Make, rename, recolour, delete…'),
                   ),
                 ];
               },

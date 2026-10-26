@@ -104,7 +104,7 @@ Offset _boxDirection(List<Offset> c) {
   var sx = 0.0, sy = 0.0;
   for (var i = 0; i < 4; i++) {
     final e = c[(i + 1) % 4] - c[i];
-    final a = math.atan2(e.dy, e.dx) * 4; // 90Â° apart edges agree
+    final a = math.atan2(e.dy, e.dx) * 4; // 90° apart edges agree
     sx += math.cos(a);
     sy += math.sin(a);
   }

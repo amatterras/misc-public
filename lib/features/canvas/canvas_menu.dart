@@ -51,7 +51,7 @@ Future<void> showCanvasMenu(
     position: RelativeRect.fromLTRB(global.dx, global.dy, global.dx, global.dy),
     items: hit is ConnectorItem
         ? [
-            item('connColor', 'Line colorâ€¦', Icons.palette_outlined),
+            item('connColor', 'Line color…', Icons.palette_outlined),
             item('connCurved', 'Curved', Icons.gesture),
             item('connStraight2', 'Straight', Icons.show_chart),
             item('connElbow', 'Elbow (right angles)', Icons.stacked_line_chart),
@@ -74,9 +74,9 @@ Future<void> showCanvasMenu(
               item('open', 'Open', Icons.open_in_new),
             item('duplicate', 'Duplicate', Icons.copy_all_outlined),
             if (hit is TextItem)
-              item('linkTo', 'Insert a linkâ€¦', Icons.add_link),
+              item('linkTo', 'Insert a link…', Icons.add_link),
             if (selected.length == 1)
-              item('smartLinks', 'Links & backlinksâ€¦', Icons.link),
+              item('smartLinks', 'Links & backlinks…', Icons.link),
             item('toNote', 'Copy to a note…', Icons.note_add_outlined),
             item(
               'moveToNote',
@@ -154,7 +154,7 @@ Future<void> showCanvasMenu(
               c.gridSnap ? 'Snap to grid: on (turn off)' : 'Snap to grid: off (turn on)',
               Icons.grid_4x4,
             ),
-            item('gridSize', 'Grid size: ${c.gridSize.round()}â€¦', Icons.grid_on),
+            item('gridSize', 'Grid size: ${c.gridSize.round()}…', Icons.grid_on),
             item('dots', 'Background dots…', Icons.grain),
           ],
   );
