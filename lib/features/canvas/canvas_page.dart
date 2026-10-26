@@ -309,7 +309,9 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
         ws.setAssetTags(id, chosen);
       }
     } else {
-      c.setCustomTags([for (final i in items) i.id], chosen.toList()..sort());
+      c.applyCustomTags({
+        for (final i in items) i.id: chosen.toList()..sort(),
+      });
     }
   }
 
@@ -857,6 +859,9 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       onEraser: s.setEraser,
                       onPenWidth: s.setCanvasPenWidth,
                       onTags: _editTags,
+                      tagChoices: c.id == linksBoardId
+                          ? null
+                          : () => s.workspace.tagsByName,
                       collapsed: s.canvasOptionsCollapsed,
                       onToggleCollapsed: () {
                         unawaited(s.toggleCanvasOptions());

@@ -477,6 +477,108 @@ class CanvasController extends ChangeNotifier {
   void setCustomTags(Iterable<String> ids, List<String> tagIds) =>
       setMark(ids, customTagsMark, tagIds.isEmpty ? null : [...tagIds]);
 
+  // ------------------------------------------------ custom tags (undo) --
+  //
+  // Tag changes are one undo step each. Marks are not part of the item
+  // history, so each state of the items remembers which tags every item had
+  // ([_tagsAt]); undo and redo put exactly those tags back and leave other
+  // marks (locks, groups) alone.
+
+  final Expando<Map<String, List<String>>> _tagsAt = Expando();
+
+  /// Puts back an earlier state of the items as it was (the same list, so
+  /// its remembered tags are found) together with its tags.
+  void _restoreItems(List<CanvasItem> state) {
+    _items = state;
+    _markDirty();
+    _restoreTags(_tagsAt[state]);
+  }
+
+  Map<String, List<String>> _tagSnapshot() => {
+    for (final i in _items)
+      if (customTagsOf(i.id).isNotEmpty) i.id: customTagsOf(i.id),
+  };
+
+  void _restoreTags(Map<String, List<String>>? snapshot) {
+    if (snapshot == null) return;
+    final ids = {
+      for (final i in _items)
+        if (customTagsOf(i.id).isNotEmpty) i.id,
+      ...snapshot.keys,
+    };
+    for (final id in ids) {
+      final want = snapshot[id] ?? const <String>[];
+      if (!listEquals(customTagsOf(id), want)) {
+        setCustomTags([id], want);
+      }
+    }
+  }
+
+  /// Gives each item in [next] exactly the listed tags, as ONE undo step.
+  /// Items that already have them are skipped; nothing else about an item
+  /// (content, place, connections, other marks) is touched.
+  void applyCustomTags(Map<String, List<String>> next) {
+    final changes = {
+      for (final e in next.entries)
+        if (itemById(e.key) != null &&
+            !listEquals(customTagsOf(e.key), e.value))
+          e.key: e.value,
+    };
+    if (changes.isEmpty) return;
+    cancelPendingLineStraightening();
+    _tagsAt[_items] = _tagSnapshot();
+    _pushUndo(_items);
+    _setItems(List.of(_items)); // a new state to come back to / return from
+    for (final e in changes.entries) {
+      setCustomTags([e.key], e.value);
+    }
+    _tagsAt[_items] = _tagSnapshot();
+    notifyListeners();
+  }
+
+  /// How many of [ids] carry tag [tagId]: all, some or none.
+  ({int with_, int total}) tagCoverage(Iterable<String> ids, String tagId) {
+    final list = ids.toList();
+    return (
+      with_: list.where((id) => customTagsOf(id).contains(tagId)).length,
+      total: list.length,
+    );
+  }
+
+  /// Quick toggle for the selection: if every item has [tagId] it is taken
+  /// off all of them, else put on all of them (one undo step).
+  void toggleCustomTag(Iterable<String> ids, String tagId) {
+    final list = ids.where((id) => itemById(id) != null).toList();
+    if (list.isEmpty) return;
+    final cov = tagCoverage(list, tagId);
+    final remove = cov.with_ == cov.total;
+    applyCustomTags({
+      for (final id in list)
+        id: remove
+            ? [
+                for (final t in customTagsOf(id))
+                  if (t != tagId) t,
+              ]
+            : [
+                ...customTagsOf(id),
+                if (!customTagsOf(id).contains(tagId)) tagId,
+              ],
+    });
+  }
+
+  /// Takes every tag in [ids]... off items: used when a tag is deleted or
+  /// no longer exists. Not an undo step (the tag itself is gone).
+  void scrubCustomTags(bool Function(String tagId) exists) {
+    for (final i in _items) {
+      final have = customTagsOf(i.id);
+      final keep = [
+        for (final t in have)
+          if (exists(t)) t,
+      ];
+      if (keep.length != have.length) setCustomTags([i.id], keep);
+    }
+  }
+
   /// The custom tags shown on [item]: its own (mindmaps) and, for a link
   /// or photo, its Archive resource's.
   List<CustomTag> shownTagsOf(CanvasItem item) {
@@ -1060,7 +1162,7 @@ class CanvasController extends ChangeNotifier {
     endEditing();
     if (_undo.isEmpty) return;
     _redo.add(_items);
-    _setItems(_undo.removeLast());
+    _restoreItems(_undo.removeLast());
     _pruneSelection();
     notifyListeners();
   }
@@ -1070,7 +1172,7 @@ class CanvasController extends ChangeNotifier {
     endEditing();
     if (_redo.isEmpty) return;
     _undo.add(_items);
-    _setItems(_redo.removeLast());
+    _restoreItems(_redo.removeLast());
     _pruneSelection();
     notifyListeners();
   }

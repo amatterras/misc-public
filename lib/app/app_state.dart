@@ -171,6 +171,16 @@ class AppState extends ChangeNotifier {
   CanvasController? _canvas;
   CanvasController? get canvas => _canvas;
 
+  /// After a tag was deleted: takes it off the objects of the open
+  /// mindmaps (the Archive items were cleaned by the workspace). Other
+  /// mindmaps just stop showing it; its id is never reused.
+  void scrubDeletedTags() {
+    bool exists(String id) => workspace.customTags[id] != null;
+    for (final c in {_canvas, ...openNotebooks}) {
+      c?.scrubCustomTags(exists);
+    }
+  }
+
   /// The handwriting of the note open in the note editor, if any (set by
   /// the editor), so sync merges remote changes into it.
   ///

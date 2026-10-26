@@ -167,6 +167,7 @@ class _TagPickerState extends State<_TagPicker> {
         );
         if (!ok) return;
         s.workspace.deleteTag(tag.id);
+        s.scrubDeletedTags();
         setState(() => _chosen.remove(tag.id));
     }
   }

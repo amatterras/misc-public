@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
+import '../../data/models/tag_models.dart';
 import '../../platform/input_hints.dart';
 import '../ink/pen_sizes.dart';
 import 'canvas_controller.dart';
@@ -182,7 +183,12 @@ class CanvasContextBar extends StatelessWidget {
     this.collapsed = false,
     this.onToggleCollapsed,
     this.onTags,
+    this.tagChoices,
   });
+
+  /// The tags to offer for one-tap apply / remove on the selection (the
+  /// Mindmap); null: only the full picker ([onTags]).
+  final List<CustomTag> Function()? tagChoices;
 
   /// Opens the tag picker for the selected items (Mindmap: the items;
   /// Archive board: their resources).
@@ -325,6 +331,65 @@ class CanvasContextBar extends StatelessWidget {
             onPressed: () => onTags!(c, selected),
             icon: const Icon(Icons.sell_outlined, size: 17),
           ),
+          if (tagChoices != null)
+            PopupMenuButton<String>(
+              key: const ValueKey('selection-tag-quick'),
+              tooltip: 'Add or remove a tag on the selected objects',
+              position: PopupMenuPosition.under,
+              icon: const Icon(Icons.label_outline, size: 17),
+              onOpened: c.cancelPendingLineStraightening,
+              onSelected: (id) {
+                if (id.isEmpty) {
+                  onTags!(c, selected);
+                } else {
+                  c.toggleCustomTag([for (final i in selected) i.id], id);
+                }
+              },
+              itemBuilder: (_) {
+                final ids = [for (final i in selected) i.id];
+                return [
+                  for (final t in tagChoices!())
+                    PopupMenuItem(
+                      key: ValueKey('quick-tag-${t.id}'),
+                      value: t.id,
+                      height: 34,
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 18,
+                            child: switch (c.tagCoverage(ids, t.id)) {
+                              (:final with_, :final total) when with_ == total =>
+                                const Icon(Icons.check, size: 16),
+                              (:final with_, total: _) when with_ > 0 =>
+                                const Icon(Icons.remove, size: 16),
+                              _ => null,
+                            },
+                          ),
+                          Container(
+                            width: 12,
+                            height: 12,
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: Color(t.color),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          Flexible(
+                            child: Text(t.name, overflow: TextOverflow.ellipsis),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    key: ValueKey('quick-tag-manage'),
+                    value: '',
+                    height: 34,
+                    child: Text('Make, rename, recolour, deleteâ€¦'),
+                  ),
+                ];
+              },
+            ),
           const _PanelDivider(vertical: true),
         ],
         if (first != null) ...[
