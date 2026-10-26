@@ -338,7 +338,8 @@ void main() {
         c.deleteSelection();
         c.addItems([text('later', Offset.zero)]);
 
-        final list = await s.snapshotsOf(c.id);
+        // (Automatic versions may exist too; the user's own one is this.)
+        final list = (await s.snapshotsOf(c.id)).where((v) => !v.auto).toList();
         expect(list.single.name, 'Draft 1');
         expect(list.single.itemCount, before + 1);
         expect(await s.restoreSnapshot(c, snap.key), isTrue);

@@ -29,6 +29,8 @@ class CanvasComponent {
   final Map<String, Map<String, dynamic>> marks;
 }
 
+int _snapshotSeq = 0;
+
 /// A version of a canvas, kept on this device.
 class CanvasSnapshot {
   const CanvasSnapshot(
@@ -258,7 +260,10 @@ extension CanvasOps on AppState {
     String? summary,
   }) async {
     final now = DateTime.now();
-    final key = '${doc.id}~${now.microsecondsSinceEpoch}';
+    // The clock can repeat a value (Windows ticks coarsely): the counter keeps
+    // every version's name its own, so one never overwrites another.
+    final key =
+        '${doc.id}~${now.microsecondsSinceEpoch}-${(_snapshotSeq++ % 1000).toString().padLeft(3, '0')}';
     final previous = (await snapshotsOf(doc.id)).where((v) => !v.damaged).firstOrNull;
     final before = previous == null ? null : await _snapshotDocument(previous.key);
     final text = summary ?? TimeMachine.describe(before, doc);
