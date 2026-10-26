@@ -49,7 +49,7 @@ void main() {
       expect(service.slots, hasLength(6));
       expect(
         service.slots.map((slot) => slot.greetings.length),
-        everyElement(101),
+        [201, 101, 201, 101, 201, 101],
       );
       expect(service.greeting, service.slots[0].greetings.first);
       service.dispose();
@@ -68,14 +68,14 @@ void main() {
     expect(quotesRaw, contains('"quote": "$mehLine"'));
     expect(RegExp(RegExp.escape('"$mehLine"')).allMatches(greetingsRaw), hasLength(6));
 
-    // Every greeting slot can show it (the last pick of each slot).
+    // Every greeting slot can show it (it is the 101st of each slot).
     for (final hour in [6, 10, 14, 19, 22, 2]) {
       final service = MotivationService(
         localTime: () => LocalTimeSnapshot(
           now: DateTime(2026, 10, 23, hour, 30),
           utcOffset: const Duration(hours: 3),
         ),
-        nextIndex: (n) => n - 1,
+        nextIndex: (n) => 100,
       );
       await service.load();
       expect(service.greeting, mehLine, reason: 'hour $hour');

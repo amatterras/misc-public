@@ -111,7 +111,7 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 ## Motivation and manual verification
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
 |---|---|---|---|---|---|
-| 600 greetings in six local-time pools; 60-second window; refresh on resume/timezone/date changes | P1 | W,i | VERIFIED by deterministic tests; no real-device test | `motivation_test`, `widget_test`; scheduling rules in `MASTER_SPEC.md` | Windows/iOS manual clock-change checks |
+| 906 greeting records in six local-time pools (201 in early morning, noon and late night; 101 in the others); 60-second window; refresh on resume/timezone/date changes | P1 | W,i | VERIFIED by deterministic tests; no real-device test | `motivation_test`, `widget_test`; scheduling rules in `MASTER_SPEC.md` | Windows/iOS manual clock-change checks |
 | 1,000 quotes rotate hourly using local time and appear in main bars | P1 | W,i | VERIFIED by injected-clock and widget tests | `motivation_test`, `widget_test` | physical-device check |
 | Canonical color migration and the four independent semantic palettes | P1 | W,i | VERIFIED by synthetic tests and analyzer | `canonical_color_migration_test`; `MASTER_SPEC.md` | project colors pending palette decision |
 | Windows manual checks for colors, greeting/quote behavior, restart and sync | P1 | W | NOT RUN | perform only with a disposable profile/data directory | no manual run recorded |
@@ -130,7 +130,7 @@ iPad (see the manual checklist in `MANUAL_CHECKLIST.md`).
 | Windows/iPhone: tap types, Draw must be chosen; iPad: choose Type or Draw | VERIFIED (rule) | `notebookStartsWithPen` | real iPad not run |
 | Reusable floating windows (drag, resize, stay inside, remembered per device) | VERIFIED | `app/floating_windows.dart`, `widgets/floating_layer.dart` | |
 | Always on top (Windows; iPhone/iPad explained as unsupported) | IMPLEMENTED, setting VERIFIED; real window NOT VERIFIED | `setMainWindowTopmost` (SetWindowPos) | check by hand |
-| Greeting 600/6 pools, 60 s upper-left window; quotes in bars | VERIFIED (earlier) | `motivation_test` | |
+| Greeting 906/6 pools (201/101/201/101/201/101), 60 s upper-left window; quotes in bars | VERIFIED (earlier) | `motivation_test` | |
 | Per-device layout preferences | VERIFIED by design | settings are not synced (`syncCollections`) | |
 | Conflict review UI, item-level tag/PDF-page merges | VERIFIED (earlier) | `sync_risks_test`, Settings → Sync conflicts | |
 
