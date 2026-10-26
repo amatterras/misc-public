@@ -97,7 +97,7 @@ class _NotePageState extends State<NotePage> {
     _horizontalScroll.addListener(_onNotebookScroll);
     final savedZoom = s.settings.get<num>(_zoomSetting)?.toDouble();
     _zoom = savedZoom != null && savedZoom.isFinite
-        ? savedZoom.clamp(0.4, 3.0)
+        ? NotebookZoom.clampZoom(savedZoom)
         : 1;
     _fingerDraws = s.settings.get<bool>('notebookFingerDraws') ?? false;
     unawaited(_open());
@@ -118,7 +118,7 @@ class _NotePageState extends State<NotePage> {
   void _onNotebookScroll() => _c?.cancelPendingLineStraightening();
 
   void _setZoom(double value) {
-    final zoom = value.clamp(0.4, 3.0);
+    final zoom = NotebookZoom.clampZoom(value);
     if (_zoom == zoom) return;
     setState(() => _zoom = zoom);
     unawaited(s.settings.set(_zoomSetting, zoom));
@@ -156,15 +156,14 @@ class _NotePageState extends State<NotePage> {
     final distance = (points[0] - points[1]).distance;
     if (_pinchStartDistance! < 10) return;
     final focal = (points[0] + points[1]) / 2;
-    final nextZoom = (_pinchStartZoom! * distance / _pinchStartDistance!).clamp(
-      0.4,
-      3.0,
+    final nextZoom = NotebookZoom.clampZoom(
+      _pinchStartZoom! * distance / _pinchStartDistance!,
     );
-    if ((_zoom - nextZoom).abs() < 0.001) return;
+    if ((_zoom - nextZoom).abs() < _zoom * 1e-4) return;
     setState(() => _zoom = nextZoom);
     final anchor = _pinchDocumentAnchor;
     final prefix = _pinchPrefix;
-    final nextScale = (_fitScale * nextZoom).clamp(0.2, 4.0);
+    final nextScale = NotebookZoom.clampScale(_fitScale * nextZoom);
     // The note header is fixed size; page coordinates alone scale. Use the
     // measured page origin to compensate both axes around the pinch centroid.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -578,7 +577,7 @@ class _NotePageState extends State<NotePage> {
     return LayoutBuilder(
       builder: (context, box) {
         final fit = (box.maxWidth - 80) / NotebookLayout.pageWidth;
-        final scale = (fit * _zoom).clamp(0.2, 4.0);
+        final scale = NotebookZoom.clampScale(fit * _zoom);
         _currentLayout = layout;
         _fitScale = fit;
         c?.setView(Offset.zero, scale);
@@ -801,7 +800,8 @@ class _NotePageState extends State<NotePage> {
             GhostIconButton(
               icon: Icons.zoom_out,
               tooltip: 'Smaller pages',
-              onTap: () => _setZoom(_zoom / 1.25),
+              onTap: () =>
+                  _setZoom(NotebookZoom.step(_zoom, inward: false)),
             ),
             GhostIconButton(
               icon: Icons.fit_screen_outlined,
@@ -809,11 +809,12 @@ class _NotePageState extends State<NotePage> {
               onTap: () => _setZoom(1),
             ),
             Tooltip(
-              message: 'Page zoom ${(_zoom * 100).round()}% relative to fit',
+              message:
+                  'Page zoom ${NotebookZoom.label(_zoom)} relative to fit',
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: Space.sm),
                 child: Text(
-                  '${(_zoom * 100).round()}%',
+                  NotebookZoom.label(_zoom),
                   key: const ValueKey('note-zoom-value'),
                   style: TextStyle(
                     fontSize: 12,
@@ -826,7 +827,8 @@ class _NotePageState extends State<NotePage> {
             GhostIconButton(
               icon: Icons.zoom_in,
               tooltip: 'Larger pages',
-              onTap: () => _setZoom(_zoom * 1.25),
+              onTap: () =>
+                  _setZoom(NotebookZoom.step(_zoom, inward: true)),
             ),
             const SizedBox(width: Space.sm),
             PopupMenuButton<String>(
