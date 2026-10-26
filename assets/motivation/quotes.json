@@ -10998,5 +10998,16 @@
     "id": "q1000",
     "order": 1000,
     "word_count": 14
+  },
+  {
+    "collection": "original other",
+    "quote": "meh. -sesil melek merev",
+    "author": "",
+    "display_attribution": "",
+    "source_url": "",
+    "source_note": "originally written for THEapp",
+    "id": "q1001",
+    "order": 1001,
+    "word_count": 4
   }
 ]

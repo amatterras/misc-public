@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,18 +29,18 @@ void main() {
       );
       await service.load();
 
-      expect(service.quotes, hasLength(1000));
+      expect(service.quotes, hasLength(1001));
       expect(service.quotes.first.id, 'q0001');
       expect(service.quotes.first.order, 1);
-      expect(service.quotes.last.id, 'q1000');
-      expect(service.quotes.last.order, 1000);
+      expect(service.quotes.last.id, 'q1001');
+      expect(service.quotes.last.order, 1001);
       expect(
         service.quotes.where((quote) => quote.attribution.isNotEmpty),
         hasLength(400),
       );
       expect(
         service.quotes.where((quote) => quote.attribution.isEmpty),
-        hasLength(600),
+        hasLength(601),
       );
       expect(
         service.quotes.map((quote) => quote.collection).toSet(),
@@ -47,12 +49,58 @@ void main() {
       expect(service.slots, hasLength(6));
       expect(
         service.slots.map((slot) => slot.greetings.length),
-        everyElement(100),
+        everyElement(101),
       );
       expect(service.greeting, service.slots[0].greetings.first);
       service.dispose();
     },
   );
+
+  const mehLine = 'meh. -sesil melek merev';
+
+  test('the meh. line is in every greeting pool and in the quote pool, '
+      'exactly, and can be selected', () async {
+    // Exact text in the files themselves.
+    final quotesRaw = File('assets/motivation/quotes.json').readAsStringSync();
+    final greetingsRaw = File(
+      'assets/motivation/greetings.json',
+    ).readAsStringSync();
+    expect(quotesRaw, contains('"quote": "$mehLine"'));
+    expect(RegExp(RegExp.escape('"$mehLine"')).allMatches(greetingsRaw), hasLength(6));
+
+    // Every greeting slot can show it (the last pick of each slot).
+    for (final hour in [6, 10, 14, 19, 22, 2]) {
+      final service = MotivationService(
+        localTime: () => LocalTimeSnapshot(
+          now: DateTime(2026, 10, 23, hour, 30),
+          utcOffset: const Duration(hours: 3),
+        ),
+        nextIndex: (n) => n - 1,
+      );
+      await service.load();
+      expect(service.greeting, mehLine, reason: 'hour $hour');
+      service.dispose();
+    }
+
+    // The quote comes up when the hourly quote rolls through the deck.
+    var now = DateTime(2026, 10, 23, 0, 30);
+    final service = MotivationService(
+      localTime: () =>
+          LocalTimeSnapshot(now: now, utcOffset: const Duration(hours: 3)),
+      nextIndex: (n) => n ~/ 2,
+    );
+    await service.load();
+    final seen = <String>{service.quote!.text};
+    for (var i = 0; i < 1001 && !seen.contains(mehLine); i++) {
+      now = now.add(const Duration(hours: 1));
+      service.refresh();
+      seen.add(service.quote!.text);
+    }
+    expect(seen, contains(mehLine));
+    expect(service.quotes.last.text, mehLine);
+    expect(service.quotes.last.attribution, '');
+    service.dispose();
+  });
 
   test('greeting time slots use local clock boundaries', () {
     expect(MotivationService.greetingSlotIndex(4), 5);
