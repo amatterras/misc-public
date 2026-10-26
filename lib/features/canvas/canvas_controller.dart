@@ -25,7 +25,7 @@ export 'canvas_text.dart' show kTextPadding, canvasTextStyle;
 enum CanvasTool { select, lasso, pan, pen, highlighter, eraser, text, connect }
 
 /// What the eraser removes (see [CanvasController.eraserMode]).
-enum EraserMode { stroke, partial }
+enum EraserMode { stroke, partial, precision }
 
 enum SaveState { saved, pending, saving, failed }
 
@@ -309,8 +309,24 @@ class CanvasController extends ChangeNotifier {
   double eraserSize = 16;
   static const eraserSizes = (min: 4.0, max: 80.0);
 
-  void setEraser({EraserMode? mode, double? size}) {
+  /// When on, the eraser only touches highlighter strokes (see-through
+  /// ink); ordinary pen strokes under it stay.
+  bool eraserHighlighterOnly = false;
+
+  /// The precision eraser is a much smaller disc than the chosen size.
+  static const precisionFactor = 0.3;
+
+  /// The diameter (screen pixels) the eraser really has in its current mode.
+  double get effectiveEraserSize => eraserMode == EraserMode.precision
+      ? math.max(2.0, eraserSize * precisionFactor)
+      : eraserSize;
+
+  /// Highlighter ink is the see-through kind.
+  static bool isHighlighter(StrokeItem s) => s.color.a < 0.99;
+
+  void setEraser({EraserMode? mode, double? size, bool? highlighterOnly}) {
     eraserMode = mode ?? eraserMode;
+    eraserHighlighterOnly = highlighterOnly ?? eraserHighlighterOnly;
     eraserSize = (size ?? eraserSize).clamp(eraserSizes.min, eraserSizes.max);
     notifyListeners();
   }
@@ -2098,8 +2114,8 @@ class CanvasController extends ChangeNotifier {
   /// Erases along the segment [from]→[to]: whole strokes it touches, or
   /// (partial mode) only the parts under the eraser.
   void _eraseAt(Offset from, Offset to) {
-    final tolerance = eraserSize / 2 / _scale;
-    if (eraserMode == EraserMode.partial) {
+    final tolerance = effectiveEraserSize / 2 / _scale;
+    if (eraserMode != EraserMode.stroke) {
       _erasePartAt(from, to, tolerance);
       return;
     }
@@ -2111,6 +2127,7 @@ class CanvasController extends ChangeNotifier {
       for (final item in _items)
         if (item is StrokeItem &&
             !isLocked(item.id) &&
+            _erasable(item) &&
             samples.any((p) => item.hitTest(p, tolerance)))
           item.id,
     };
@@ -2125,6 +2142,16 @@ class CanvasController extends ChangeNotifier {
     ]);
   }
 
+  bool _erasable(StrokeItem s) => !eraserHighlighterOnly || isHighlighter(s);
+
+  static double _polylineLength(List<StrokePoint> p) {
+    var sum = 0.0;
+    for (var i = 0; i + 1 < p.length; i++) {
+      sum += (p[i + 1].offset - p[i].offset).distance;
+    }
+    return sum;
+  }
+
   /// Cuts the parts of strokes within [radius] of [from]→[to] out; what is
   /// left of a stroke stays (the first piece keeps the stroke's id, others
   /// get new ones), with its colour, width and pressure. One undo step per
@@ -2137,6 +2164,7 @@ class CanvasController extends ChangeNotifier {
     for (final item in _items) {
       if (item is! StrokeItem ||
           isLocked(item.id) ||
+          !_erasable(item) ||
           !item.bounds.overlaps(swept)) {
         next.add(item);
         continue;
@@ -2144,11 +2172,21 @@ class CanvasController extends ChangeNotifier {
       // Touching the visible ink erases it: the centre line is cut within
       // the eraser plus half the line's width (more for pressure lines).
       final half = item.strokeWidth * (item.pressureWidth ? 0.8 : 0.5);
-      final pieces = erasePolyline(item.points, from, to, radius + half);
-      if (pieces == null) {
+      final cut = erasePolyline(item.points, from, to, radius + half);
+      if (cut == null) {
         next.add(item);
         continue;
       }
+      // No specks: pieces shorter than the line is wide (or a couple of
+      // pixels) are what a careless sweep leaves behind. The precision
+      // eraser keeps even tiny pieces.
+      final speck = eraserMode == EraserMode.precision
+          ? 0.5 / _scale
+          : math.max(half, 2 / _scale);
+      final pieces = [
+        for (final p in cut)
+          if (p.length >= 2 && _polylineLength(p) >= speck) p,
+      ];
       changed = true;
       if (pieces.isEmpty) removed.add(item.id);
       for (var i = 0; i < pieces.length; i++) {

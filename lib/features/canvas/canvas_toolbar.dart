@@ -848,6 +848,7 @@ typedef EraserChange = Future<void> Function(
   CanvasController c, {
   EraserMode? mode,
   double? size,
+  bool? highlighterOnly,
 });
 
 /// The eraser's options: whole strokes or only the part under the eraser,
@@ -860,12 +861,21 @@ class EraserPanel extends StatelessWidget {
 
   static const sizes = [8.0, 16.0, 32.0, 56.0];
 
-  void _set({EraserMode? mode, double? size}) {
+  void _set({EraserMode? mode, double? size, bool? highlighterOnly}) {
     final save = onChange;
     if (save != null) {
-      save(controller, mode: mode, size: size);
+      save(
+        controller,
+        mode: mode,
+        size: size,
+        highlighterOnly: highlighterOnly,
+      );
     } else {
-      controller.setEraser(mode: mode, size: size);
+      controller.setEraser(
+        mode: mode,
+        size: size,
+        highlighterOnly: highlighterOnly,
+      );
     }
   }
 
@@ -889,6 +899,22 @@ class EraserPanel extends StatelessWidget {
           active: c.eraserMode == EraserMode.partial,
           onPressed: () => _set(mode: EraserMode.partial),
           icon: const Icon(Icons.content_cut, size: 18),
+        ),
+        ToolButton(
+          key: const ValueKey('eraser-mode-precision'),
+          tooltip: 'Precision eraser (small, for fine details)',
+          active: c.eraserMode == EraserMode.precision,
+          onPressed: () => _set(mode: EraserMode.precision),
+          icon: const Icon(Icons.adjust, size: 18),
+        ),
+        ToolButton(
+          key: const ValueKey('eraser-highlighter-only'),
+          tooltip: c.eraserHighlighterOnly
+              ? 'Erasing highlighter only (pen strokes stay) - tap for all ink'
+              : 'Erase all ink - tap to erase highlighter only',
+          active: c.eraserHighlighterOnly,
+          onPressed: () => _set(highlighterOnly: !c.eraserHighlighterOnly),
+          icon: const Icon(Icons.border_color, size: 18),
         ),
         const _PanelDivider(vertical: true),
         for (final size in sizes)

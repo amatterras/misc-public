@@ -2417,7 +2417,11 @@ class AppState extends ChangeNotifier {
               onActivate: _activateCanvasItem,
               clock: workspace.clock,
             )
-            ..setEraser(mode: eraserMode, size: eraserSize)
+            ..setEraser(
+              mode: eraserMode,
+              size: eraserSize,
+              highlighterOnly: eraserHighlighterOnly,
+            )
             ..setPen(width: canvasPenWidth)
             ..setDotOpacity(dotOpacityFor(DotSurface.mindmap)));
       await settings.set('lastCanvasId', id);
@@ -2490,7 +2494,11 @@ class AppState extends ChangeNotifier {
                 onActivate: _activateCanvasItem,
                 clock: workspace.clock,
               )
-              ..setEraser(mode: eraserMode, size: eraserSize)
+              ..setEraser(
+                mode: eraserMode,
+                size: eraserSize,
+                highlighterOnly: eraserHighlighterOnly,
+              )
               ..setPen(width: canvasPenWidth)
               ..setDotOpacity(dotOpacityFor(DotSurface.mindmap)));
     }
@@ -2594,7 +2602,11 @@ class AppState extends ChangeNotifier {
       c.tool = CanvasTool.pen;
     }
     c.setPen(width: calendarPenWidth);
-    c.setEraser(mode: eraserMode, size: eraserSize);
+    c.setEraser(
+      mode: eraserMode,
+      size: eraserSize,
+      highlighterOnly: eraserHighlighterOnly,
+    );
     return c;
   }
 
@@ -2663,6 +2675,9 @@ class AppState extends ChangeNotifier {
       EraserMode.values.asNameMap()[settings.get<String>('eraserMode')] ??
       EraserMode.stroke;
 
+  bool get eraserHighlighterOnly =>
+      settings.get<bool>('eraserHighlighterOnly') ?? false;
+
   double get eraserSize =>
       (settings.get<num>('eraserSize')?.toDouble() ?? 16).clamp(
         CanvasController.eraserSizes.min,
@@ -2675,15 +2690,21 @@ class AppState extends ChangeNotifier {
     CanvasController c, {
     EraserMode? mode,
     double? size,
+    bool? highlighterOnly,
   }) async {
-    c.setEraser(mode: mode, size: size);
+    c.setEraser(mode: mode, size: size, highlighterOnly: highlighterOnly);
     for (final other in {_canvas, calendarInk}) {
       if (other != null && other != c) {
-        other.setEraser(mode: c.eraserMode, size: c.eraserSize);
+        other.setEraser(
+          mode: c.eraserMode,
+          size: c.eraserSize,
+          highlighterOnly: c.eraserHighlighterOnly,
+        );
       }
     }
     await settings.set('eraserMode', c.eraserMode.name);
     await settings.set('eraserSize', c.eraserSize);
+    await settings.set('eraserHighlighterOnly', c.eraserHighlighterOnly);
   }
 
   /// Thinnest and thickest Calendar pen (world units: 1 = one point at

@@ -165,6 +165,7 @@ class CanvasPainter extends CustomPainter {
     }
     _paintMarks(canvas, scale, visible);
     _paintSelection(canvas, scale);
+    _paintEraserRing(canvas, scale);
     canvas.restore();
   }
 
@@ -506,6 +507,22 @@ class CanvasPainter extends CustomPainter {
           ..strokeWidth = 2 / scale,
       );
     }
+  }
+
+  /// The eraser's footprint under the pointer: a ring of its real size.
+  void _paintEraserRing(Canvas canvas, double scale) {
+    final at = controller.hoverPosition;
+    if (controller.tool != CanvasTool.eraser || at == null) return;
+    final center = controller.toWorld(at);
+    final r = controller.effectiveEraserSize / 2 / scale;
+    canvas.drawCircle(
+      center,
+      r,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..color = AppColors.text.withValues(alpha: 0.7)
+        ..strokeWidth = 1.2 / scale,
+    );
   }
 
   void _paintSelection(Canvas canvas, double scale) {
