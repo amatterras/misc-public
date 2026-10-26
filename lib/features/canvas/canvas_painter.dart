@@ -166,6 +166,7 @@ class CanvasPainter extends CustomPainter {
     }
     _paintMarks(canvas, scale, visible);
     _paintSelection(canvas, scale);
+    _paintAlignOverlay(canvas, scale, visible);
     _paintEraserRing(canvas, scale);
     canvas.restore();
   }
@@ -508,6 +509,73 @@ class CanvasPainter extends CustomPainter {
           ..color = AppColors.accent
           ..strokeWidth = 2 / scale,
       );
+    }
+  }
+
+  /// Guides, gaps and (with grid snapping) the grid, while objects are moved.
+  void _paintAlignOverlay(Canvas canvas, double scale, Rect visible) {
+    if (!controller.showingAlignOverlay) return;
+    const guideColor = Color(0xFFE56BDA);
+    if (controller.gridSnap) {
+      final step = controller.gridSize;
+      // Skip a grid too fine to see (closer than 6 screen pixels).
+      if (step * scale >= 6) {
+        final paint = Paint()
+          ..color = AppColors.textFaint.withValues(alpha: 0.18)
+          ..strokeWidth = 1 / scale;
+        final startX = (visible.left / step).floor() * step;
+        final startY = (visible.top / step).floor() * step;
+        for (var x = startX; x <= visible.right; x += step) {
+          canvas.drawLine(Offset(x, visible.top), Offset(x, visible.bottom), paint);
+        }
+        for (var y = startY; y <= visible.bottom; y += step) {
+          canvas.drawLine(Offset(visible.left, y), Offset(visible.right, y), paint);
+        }
+      }
+    }
+    final line = Paint()
+      ..color = guideColor
+      ..strokeWidth = 1 / scale;
+    for (final g in controller.activeGuides) {
+      if (g.vertical) {
+        canvas.drawLine(Offset(g.at, g.from), Offset(g.at, g.to), line);
+      } else {
+        canvas.drawLine(Offset(g.from, g.at), Offset(g.to, g.at), line);
+      }
+    }
+    for (final m in controller.activeSpacing) {
+      if (m.distance <= 0) continue;
+      canvas.drawLine(m.a, m.b, line);
+      final tick = 4 / scale;
+      final horizontal = (m.a.dy - m.b.dy).abs() < 1e-6;
+      for (final p in [m.a, m.b]) {
+        horizontal
+            ? canvas.drawLine(p - Offset(0, tick), p + Offset(0, tick), line)
+            : canvas.drawLine(p - Offset(tick, 0), p + Offset(tick, 0), line);
+      }
+      final text = TextPainter(
+        text: TextSpan(
+          text: m.distance.round().toString(),
+          style: TextStyle(
+            fontSize: 11 / scale,
+            color: const Color(0xFFFFFFFF),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final mid = Offset.lerp(m.a, m.b, 0.5)!;
+      final box = Rect.fromCenter(
+        center: mid,
+        width: text.width + 8 / scale,
+        height: text.height + 4 / scale,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(box, Radius.circular(4 / scale)),
+        Paint()..color = guideColor,
+      );
+      text.paint(canvas, box.topLeft + Offset(4 / scale, 2 / scale));
+      text.dispose();
     }
   }
 

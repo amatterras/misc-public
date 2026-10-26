@@ -7,6 +7,7 @@ import '../../data/models/canvas_models.dart';
 import '../../data/models/tag_models.dart';
 import '../../platform/input_hints.dart';
 import '../ink/pen_sizes.dart';
+import 'alignment.dart';
 import 'canvas_controller.dart';
 
 List<Color> get _canvasFormatColors => [
@@ -184,7 +185,16 @@ class CanvasContextBar extends StatelessWidget {
     this.onToggleCollapsed,
     this.onTags,
     this.tagChoices,
+    this.onArrange,
+    this.onAlignment,
   });
+
+  /// Aligns / distributes the selection (shows the app's note if any).
+  final void Function(CanvasController c, AlignAction action)? onArrange;
+
+  /// Turns alignment guides / grid snapping on or off (kept per device).
+  final Future<void> Function(CanvasController c, {bool? guides, bool? grid})?
+  onAlignment;
 
   /// The tags to offer for one-tap apply / remove on the selection (the
   /// Mindmap); null: only the full picker ([onTags]).
@@ -596,6 +606,46 @@ class CanvasContextBar extends StatelessWidget {
             ),
           ),
         ),
+        if (onArrange != null)
+          PopupMenuButton<Object>(
+            key: const ValueKey('canvas-arrange'),
+            tooltip: 'Arrange: align, space evenly, guides and grid',
+            position: PopupMenuPosition.under,
+            icon: const Icon(Icons.align_horizontal_left, size: 17),
+            onOpened: c.cancelPendingLineStraightening,
+            onSelected: (v) {
+              if (v is AlignAction) {
+                onArrange!(c, v);
+              } else if (v == 'guides') {
+                onAlignment?.call(c, guides: !c.alignGuides);
+              } else if (v == 'grid') {
+                onAlignment?.call(c, grid: !c.gridSnap);
+              }
+            },
+            itemBuilder: (_) => [
+              for (final a in AlignAction.values)
+                PopupMenuItem<Object>(
+                  key: ValueKey('arrange-${a.name}'),
+                  value: a,
+                  height: 32,
+                  enabled: c.selectionUnits.length >= a.minimum,
+                  child: Text(a.label),
+                ),
+              const PopupMenuDivider(),
+              CheckedPopupMenuItem<Object>(
+                key: const ValueKey('arrange-guides'),
+                value: 'guides',
+                checked: c.alignGuides,
+                child: const Text('Alignment guides while moving'),
+              ),
+              CheckedPopupMenuItem<Object>(
+                key: const ValueKey('arrange-grid'),
+                value: 'grid',
+                checked: c.gridSnap,
+                child: Text('Snap to grid (${c.gridSize.round()})'),
+              ),
+            ],
+          ),
         ToolButton(
           key: const ValueKey('canvas-lock'),
           tooltip: selected.every((i) => c.isLocked(i.id))

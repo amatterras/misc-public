@@ -864,6 +864,12 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       onEraser: s.setEraser,
                       onPenWidth: s.setCanvasPenWidth,
                       onTags: _editTags,
+                      onArrange: (c, action) {
+                        final note = c.alignSelection(action);
+                        if (note != null) s.showToast(note);
+                      },
+                      onAlignment: (c, {guides, grid}) =>
+                          s.setAlignment(c, guides: guides, grid: grid),
                       tagChoices: c.id == linksBoardId
                           ? null
                           : () => s.workspace.tagsByName,

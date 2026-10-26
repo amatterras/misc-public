@@ -2456,6 +2456,11 @@ class AppState extends ChangeNotifier {
               highlighterOnly: eraserHighlighterOnly,
             )
             ..setPen(width: canvasPenWidth)
+            ..setAlignment(
+              guides: alignGuidesPref,
+              grid: gridSnapPref,
+              size: gridSizePref,
+            )
             ..setDotOpacity(dotOpacityFor(DotSurface.mindmap)));
       await settings.set('lastCanvasId', id);
     }
@@ -2539,6 +2544,11 @@ class AppState extends ChangeNotifier {
                 highlighterOnly: eraserHighlighterOnly,
               )
               ..setPen(width: canvasPenWidth)
+              ..setAlignment(
+                guides: alignGuidesPref,
+                grid: gridSnapPref,
+                size: gridSizePref,
+              )
               ..setDotOpacity(dotOpacityFor(DotSurface.mindmap)));
     }
     _canvasRefs[id] = (c!, 1);
@@ -2722,6 +2732,29 @@ class AppState extends ChangeNotifier {
         CanvasController.eraserSizes.min,
         CanvasController.eraserSizes.max,
       );
+
+  // ---------------------------------------------- alignment preferences --
+
+  bool get alignGuidesPref => settings.get<bool>('alignGuides') ?? false;
+  bool get gridSnapPref => settings.get<bool>('gridSnap') ?? false;
+  double get gridSizePref {
+    final v = settings.get<num>('gridSize')?.toDouble();
+    return v != null && CanvasController.gridSizes.contains(v) ? v : 24;
+  }
+
+  /// Turns guides / grid snapping on or off, or changes the grid size, on
+  /// [c] and keeps it for next time (this device).
+  Future<void> setAlignment(
+    CanvasController c, {
+    bool? guides,
+    bool? grid,
+    double? size,
+  }) async {
+    c.setAlignment(guides: guides, grid: grid, size: size);
+    await settings.set('alignGuides', c.alignGuides);
+    await settings.set('gridSnap', c.gridSnap);
+    await settings.set('gridSize', c.gridSize);
+  }
 
   /// Changes the eraser on [c] and on the other open drawings, and keeps
   /// it for next time.

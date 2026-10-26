@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart' show HardwareKeyboard;
 
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
@@ -15,6 +16,7 @@ import '../../sync/canvas_merge.dart';
 import '../../sync/protocol.dart';
 import 'canvas_resources.dart';
 import 'canvas_text.dart';
+import 'alignment.dart';
 import 'connector_geometry.dart';
 import 'connector_routing.dart';
 import '../ink/stroke_geometry.dart';
@@ -794,7 +796,147 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------------------------------------------------- connection editing --
+  // ------------------------------------------------- alignment studio --
+  //
+  // Optional helpers while moving (guides, spacing marks, grid snapping) and
+  // explicit commands (align, distribute). Off by default; the settings are
+  // kept per device by the app. Nothing here moves an object that is not
+  // selected, and a move only ever changes the selected objects' places.
+
+  /// Guide lines and spacing marks while dragging.
+  bool alignGuides = false;
+
+  /// Snap the moved objects' top-left corner to the grid.
+  bool gridSnap = false;
+
+  /// Grid size in canvas units.
+  double gridSize = 24;
+  static const gridSizes = [8.0, 12.0, 16.0, 24.0, 32.0, 48.0, 64.0];
+
+  /// Distance, in screen pixels, within which edges stick together.
+  static const snapReachPixels = 6.0;
+
+  /// Guides and gaps to show right now (while moving).
+  List<AlignGuide> activeGuides = const [];
+  List<SpacingMark> activeSpacing = const [];
+
+  /// Whether the move overlay (guides, grid) is being shown.
+  bool get showingAlignOverlay =>
+      _drag == _Drag.move && (alignGuides || gridSnap);
+
+  void setAlignment({bool? guides, bool? grid, double? size}) {
+    alignGuides = guides ?? alignGuides;
+    gridSnap = grid ?? gridSnap;
+    if (size != null && size.isFinite && size > 0) gridSize = size;
+    activeGuides = const [];
+    activeSpacing = const [];
+    notifyListeners();
+  }
+
+  Rect? _moveBounds0;
+  Offset _moveApplied = Offset.zero;
+
+  /// The step to move the selection by now. With guides or grid on, the
+  /// whole selection is placed where the pointer says (from where it
+  /// started) plus the small snap correction; holding Alt suspends snapping.
+  Offset _snappedStep(Offset world, Offset plainStep) {
+    if (!alignGuides && !gridSnap) return plainStep;
+    final movable = [
+      for (final item in selectedItems)
+        if (!isLocked(item.id) && item is! ConnectorItem) item,
+    ];
+    final start = _moveBounds0 ??= boundsOf(movable);
+    if (start == null) return plainStep;
+    final total = world - _dragStartWorld;
+    var adjustment = Offset.zero;
+    if (HardwareKeyboard.instance.isAltPressed) {
+      activeGuides = const [];
+      activeSpacing = const [];
+    } else {
+      final others = [
+        for (final i in _items)
+          if (i is! ConnectorItem &&
+              !_selection.contains(i.id) &&
+              !isReference(i.id))
+            itemBounds(i),
+      ];
+      final result = snapMove(
+        moving: start.shift(total),
+        others: others,
+        reach: snapReachPixels / _scale,
+        guides: alignGuides,
+        grid: gridSnap ? gridSize : null,
+      );
+      adjustment = result.adjustment;
+      activeGuides = result.guides;
+      activeSpacing = result.spacing;
+    }
+    final desired = total + adjustment;
+    final step = desired - _moveApplied;
+    _moveApplied = desired;
+    return step;
+  }
+
+  void _endMoveSnapping() {
+    _moveBounds0 = null;
+    _moveApplied = Offset.zero;
+    if (activeGuides.isNotEmpty || activeSpacing.isNotEmpty) {
+      activeGuides = const [];
+      activeSpacing = const [];
+    }
+  }
+
+  /// Aligns or distributes the selected objects (a group counts as one).
+  /// One undo step. Locked objects stay where they are. Returns a short
+  /// note when it did not (or only partly) do what was asked, else null.
+  String? alignSelection(AlignAction action) {
+    final units = <List<CanvasItem>>[];
+    var lockedUnits = 0;
+    for (final unit in selectionUnits) {
+      final free = [
+        for (final i in unit)
+          if (!isLocked(i.id)) i,
+      ];
+      if (free.isEmpty) {
+        lockedUnits++;
+      } else {
+        units.add(free);
+      }
+    }
+    if (units.length < action.minimum) {
+      return lockedUnits > 0
+          ? 'Locked objects stay where they are, so there is nothing to ${action.minimum == 3 ? 'space out' : 'align'}.'
+          : 'Select at least ${action.minimum} objects first.';
+    }
+    final rects = [for (final u in units) boundsOf(u)!];
+    final deltas = alignDeltas(action, rects);
+    if (deltas.every((d) => d.distance < 1e-9)) return 'Already like that.';
+    final byItem = <String, Offset>{};
+    for (var k = 0; k < units.length; k++) {
+      for (final i in units[k]) {
+        byItem[i.id] = deltas[k];
+      }
+    }
+    final changes = <String, CanvasItem>{
+      for (final e in byItem.entries)
+        if (e.value.distance >= 1e-9)
+          e.key: itemById(e.key)!.translated(e.value),
+    };
+    // A bent line follows when both its ends moved the same way.
+    for (final c in _items.whereType<ConnectorItem>()) {
+      final a = byItem[c.fromId], b = byItem[c.toId];
+      if (c.bends.isNotEmpty && a != null && a == b && a.distance >= 1e-9) {
+        changes[c.id] = c.bendsShifted(a);
+      }
+    }
+    _commit([for (final i in _items) changes[i.id] ?? i]);
+    notifyListeners();
+    return lockedUnits > 0
+        ? '$lockedUnits locked object${lockedUnits == 1 ? '' : 's'} stayed where ${lockedUnits == 1 ? 'it was' : 'they were'}.'
+        : null;
+  }
+
+
 
   String? _bendId;
   int _bendIndex = -1;
@@ -2060,6 +2202,8 @@ class CanvasController extends ChangeNotifier {
       if (_selection.contains(hit.id)) {
         _beginTransaction();
         _drag = _Drag.move;
+        _moveBounds0 = null;
+        _moveApplied = Offset.zero;
       }
     } else {
       _selectionAtDragStart = shift ? _selection : const {};
@@ -2085,7 +2229,7 @@ class CanvasController extends ChangeNotifier {
         _offset += delta;
         _markDirty();
       case _Drag.move:
-        final worldDelta = delta / _scale;
+        final worldDelta = _snappedStep(world, delta / _scale);
         final moved = {
           for (final item in selectedItems)
             if (!isLocked(item.id) && item is! ConnectorItem) item.id,
@@ -2205,6 +2349,7 @@ class CanvasController extends ChangeNotifier {
         }
         _endTransaction();
       case _Drag.move || _Drag.resize || _Drag.erase:
+        _endMoveSnapping();
         final narrow = _narrowTo;
         if (narrow != null &&
             (_lastScreen - toScreen(_dragStartWorld)).distance < 4) {

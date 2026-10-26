@@ -144,6 +144,17 @@ Future<void> showCanvasMenu(
                 Icons.layers_clear_outlined,
               ),
             item('selectAll', 'Select all', Icons.select_all),
+            item(
+              'alignGuides',
+              c.alignGuides ? 'Alignment guides: on (turn off)' : 'Alignment guides: off (turn on)',
+              Icons.straighten,
+            ),
+            item(
+              'gridSnap',
+              c.gridSnap ? 'Snap to grid: on (turn off)' : 'Snap to grid: off (turn on)',
+              Icons.grid_4x4,
+            ),
+            item('gridSize', 'Grid size: ${c.gridSize.round()}â€¦', Icons.grid_on),
             item('dots', 'Background dots…', Icons.grain),
           ],
   );
@@ -351,6 +362,24 @@ Future<void> showCanvasMenu(
       await showExportDialog(context, s, c, web: choice == 'exportWeb');
     case 'release':
       c.releaseReferences();
+    case 'alignGuides':
+      await s.setAlignment(c, guides: !c.alignGuides);
+    case 'gridSnap':
+      await s.setAlignment(c, grid: !c.gridSnap);
+    case 'gridSize':
+      final size = await showMenu<double>(
+        context: context,
+        position: RelativeRect.fromLTRB(global.dx, global.dy, global.dx, global.dy),
+        items: [
+          for (final g in CanvasController.gridSizes)
+            PopupMenuItem(
+              value: g,
+              height: 30,
+              child: Text('${g.round()}${g == c.gridSize ? '  (now)' : ''}'),
+            ),
+        ],
+      );
+      if (size != null) await s.setAlignment(c, size: size);
     case 'selectAll':
       c.selectAll();
     case 'dots':
