@@ -86,6 +86,15 @@ abstract final class InkColors {
   /// any IDs derived from the original swatch order remain stable.
   static const brightRed = Color(0xFFFF3B30);
 
+  /// Added after the original 19 (their order and values never change):
+  /// the bright orange, a light blue, a brown, and the neutrals and high
+  /// contrast black that work on both the dark and the light theme.
+  static const brightOrange = Color(0xFFFF6A00);
+  static const skyBlue = Color(0xFF5CC8FF);
+  static const warmBrown = Color(0xFF8B5A3C);
+  static const graphiteGray = Color(0xFF6B7078);
+  static const jetBlack = Color(0xFF111214);
+
   static const library = <InkSwatch>[
     InkSwatch('pearl', 'Pearl', pearl),
     InkSwatch('steel-blue', 'Steel Blue', steelBlue),
@@ -106,6 +115,11 @@ abstract final class InkColors {
     InkSwatch('electric-gold', 'Electric Gold', electricGold),
     InkSwatch('deep-pine', 'Deep Pine', deepPine),
     InkSwatch('bright-red', 'Bright Red', brightRed),
+    InkSwatch('bright-orange', 'Bright Orange', brightOrange),
+    InkSwatch('sky-blue', 'Sky Blue', skyBlue),
+    InkSwatch('warm-brown', 'Warm Brown', warmBrown),
+    InkSwatch('graphite-gray', 'Graphite Gray', graphiteGray),
+    InkSwatch('jet-black', 'Jet Black', jetBlack),
   ];
 
   static final List<Color> all = List.unmodifiable(
@@ -118,6 +132,21 @@ abstract final class InkColors {
     return null;
   }
 }
+
+/// A color typed as HEX: #FF6A00, FF6A00, #F60 or 80FF6A00 (alpha
+/// first). Null when it is not a valid color.
+Color? parseHexColor(String text) {
+  var t = text.trim();
+  if (t.startsWith('#')) t = t.substring(1);
+  if (t.length == 3) t = t.split('').map((c) => '$c$c').join();
+  if (t.length == 6) t = 'FF$t';
+  if (t.length != 8 || !RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(t)) return null;
+  return Color(int.parse(t, radix: 16));
+}
+
+/// #RRGGBB for [c] (alpha is not part of a tag or ink color).
+String hexOf(Color c) =>
+    '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
 class InkSwatch {
   const InkSwatch(this.id, this.name, this.color);
