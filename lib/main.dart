@@ -17,6 +17,7 @@ import 'data/storage/json_file_store.dart';
 import 'data/workspace.dart';
 import 'features/browser/webview_selftest.dart';
 import 'features/capture/send_to.dart';
+import 'features/search/global_search_bar.dart';
 import 'platform/ios_bridge.dart';
 import 'sync/secret_store.dart';
 
@@ -160,6 +161,7 @@ class TheApp extends StatefulWidget {
 
 class _TheAppState extends State<TheApp> {
   late final AppLifecycleListener _lifecycle;
+  final _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
@@ -210,6 +212,15 @@ class _TheAppState extends State<TheApp> {
           theme: buildAppTheme(brightness: Brightness.light),
           darkTheme: buildAppTheme(brightness: Brightness.dark),
           themeMode: mode,
+          navigatorKey: _navigatorKey,
+          // Search stays reachable above every page, also an open note.
+          builder: (context, child) => widget.state.dataProblem == null
+              ? GlobalSearchHost(
+                  state: widget.state,
+                  navigatorKey: _navigatorKey,
+                  child: child ?? const SizedBox.shrink(),
+                )
+              : child ?? const SizedBox.shrink(),
           home: widget.state.dataProblem == null
               ? AppShell(state: widget.state)
               : _DataProblemPage(state: widget.state),

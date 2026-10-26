@@ -281,12 +281,29 @@ String _pdfLine(AppState s) {
 }
 
 class _SearchDialogState extends State<_SearchDialog> {
-  String _query = '';
+  late String _query = widget.state.searchQuery.value;
+  late final TextEditingController _text = TextEditingController(text: _query)
+    ..selection = TextSelection(baseOffset: 0, extentOffset: _query.length);
 
   @override
   void initState() {
     super.initState();
     unawaited(widget.state.pdfTexts.indexAll());
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  /// Opens a result. The query stays (in the bar and when search opens
+  /// again); a note or page on top is closed (its work is saved as it
+  /// closes) so the result is visible.
+  void _pick(SearchResult r) {
+    final nav = Navigator.of(context);
+    nav.popUntil((route) => route.isFirst);
+    r.open();
   }
 
   /// Results of a search by meaning (local AI), until the text changes.
@@ -333,26 +350,42 @@ class _SearchDialogState extends State<_SearchDialog> {
               padding: const EdgeInsets.all(Space.lg),
               child: TextField(
                 key: const ValueKey('global-search-field'),
+                controller: _text,
                 autofocus: true,
                 style: const TextStyle(fontSize: 15),
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search, size: 18),
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          key: const ValueKey('search-field-clear'),
+                          tooltip: 'Clear the search',
+                          icon: const Icon(Icons.close, size: 20),
+                          constraints: const BoxConstraints(
+                            minWidth: 44,
+                            minHeight: 44,
+                          ),
+                          onPressed: () => setState(() {
+                            _text.clear();
+                            _query = '';
+                            _meaning = null;
+                            widget.state.searchQuery.value = '';
+                          }),
+                        ),
                   hintText: 'Search notes, canvases, links, calendar and tasks',
-                  contentPadding: EdgeInsets.symmetric(
+                  contentPadding: const EdgeInsets.symmetric(
                     horizontal: Space.md,
                     vertical: 16,
                   ),
-                  constraints: BoxConstraints(minHeight: 56),
+                  constraints: const BoxConstraints(minHeight: 56),
                 ),
                 onChanged: (v) => setState(() {
                   _query = v;
                   _meaning = null;
+                  widget.state.searchQuery.value = v;
                 }),
                 onSubmitted: (_) {
-                  if (results.isNotEmpty) {
-                    Navigator.pop(context);
-                    results.first.open();
-                  }
+                  if (results.isNotEmpty) _pick(results.first);
                 },
               ),
             ),
@@ -425,10 +458,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                               color: AppColors.textFaint,
                             ),
                           ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            r.open();
-                          },
+                          onTap: () => _pick(r),
                         );
                       },
                     ),

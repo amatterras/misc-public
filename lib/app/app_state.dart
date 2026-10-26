@@ -222,6 +222,10 @@ class AppState extends ChangeNotifier {
   final ValueNotifier<String?> toast = ValueNotifier(null);
   final ValueNotifier<String> themeModePreference = ValueNotifier('dark');
 
+  /// The text in the global search: kept while results are opened and while
+  /// the user moves around; only the search's own clear button empties it.
+  final ValueNotifier<String> searchQuery = ValueNotifier('');
+
   Future<void> setThemeMode(String mode) async {
     if (!const {'system', 'light', 'dark'}.contains(mode)) return;
     await settings.set('themeMode', mode);
