@@ -162,6 +162,7 @@ class TheApp extends StatefulWidget {
 class _TheAppState extends State<TheApp> {
   late final AppLifecycleListener _lifecycle;
   final _navigatorKey = GlobalKey<NavigatorState>();
+  final _searchRoutes = SearchRouteObserver();
 
   @override
   void initState() {
@@ -213,11 +214,13 @@ class _TheAppState extends State<TheApp> {
           darkTheme: buildAppTheme(brightness: Brightness.dark),
           themeMode: mode,
           navigatorKey: _navigatorKey,
+          navigatorObservers: [_searchRoutes],
           // Search stays reachable above every page, also an open note.
           builder: (context, child) => widget.state.dataProblem == null
               ? GlobalSearchHost(
                   state: widget.state,
                   navigatorKey: _navigatorKey,
+                  routes: _searchRoutes,
                   child: child ?? const SizedBox.shrink(),
                 )
               : child ?? const SizedBox.shrink(),

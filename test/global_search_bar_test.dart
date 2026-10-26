@@ -206,4 +206,21 @@ void main() {
     expect(tester.getSize(clear).height, greaterThanOrEqualTo(44));
     expect(tester.takeException(), isNull);
   });
-}
+
+  testWidgets('short landscape screens: no strip on the shell, but one over '
+      'an open note', (tester) async {
+    final state = await boot(tester, const Size(844, 390));
+    await settle(tester);
+    expect(bar, findsNothing, reason: 'the sidebar has its own search here');
+    final note = state.workspace.createNote(title: 'Landscape');
+    openNotePage(tester.element(find.byType(Navigator).first), state, note.id);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(NotePage), findsOneWidget);
+    expect(bar, findsOneWidget, reason: 'no sidebar over a note page');
+    // Back on the shell the strip goes away again.
+    Navigator.of(tester.element(find.byType(NotePage))).pop();
+    await tester.pumpAndSettle();
+    expect(bar, findsNothing);
+    expect(tester.takeException(), isNull);
+  });}

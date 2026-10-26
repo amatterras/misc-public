@@ -16,6 +16,37 @@ import 'search_dialog.dart';
 /// Height of the strip on every layout.
 const globalSearchBarHeight = 54.0;
 
+/// Counts the full pages on the navigator (the shell, then notes opened as
+/// their own page...). On a short screen the strip is only shown above those
+/// extra pages, where the sidebar and its search are out of reach.
+class SearchRouteObserver extends NavigatorObserver {
+  final ValueNotifier<int> depth = ValueNotifier(0);
+
+  void _set(int by) => WidgetsBinding.instance.addPostFrameCallback(
+    (_) => depth.value = (depth.value + by).clamp(0, 1000),
+  );
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) _set(1);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) _set(-1);
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) _set(-1);
+  }
+}
+
+/// Windows shorter than this (a phone held sideways) keep the strip off the
+/// main shell, which has its own search in the sidebar.
+const globalSearchShortHeight = 480.0;
+final _alwaysDeep = ValueNotifier<int>(2);
+
 /// Wraps the app's navigator ([child]) with the search strip above it.
 class GlobalSearchHost extends StatelessWidget {
   const GlobalSearchHost({
@@ -23,7 +54,10 @@ class GlobalSearchHost extends StatelessWidget {
     required this.state,
     required this.navigatorKey,
     required this.child,
+    this.routes,
   });
+
+  final SearchRouteObserver? routes;
 
   final AppState state;
   final GlobalKey<NavigatorState> navigatorKey;
@@ -42,24 +76,32 @@ class GlobalSearchHost extends StatelessWidget {
       },
       child: Column(
         children: [
-          Material(
-            color: AppColors.background,
-            // Below the status bar / notch; the page under it then does not
-            // add that space a second time.
-            child: SafeArea(
-              bottom: false,
-              child: SizedBox(
-                height: globalSearchBarHeight,
-                child: Row(
-                  children: [
-                    LinkBackButton(state: state),
-                    Expanded(
-                      child: GlobalSearchBar(state: state, onOpen: _open),
+          ValueListenableBuilder<int>(
+            valueListenable: routes?.depth ?? _alwaysDeep,
+            builder: (context, depth, _) {
+              final short =
+                  MediaQuery.sizeOf(context).height < globalSearchShortHeight;
+              if (short && depth <= 1) return const SizedBox.shrink();
+              return Material(
+                color: AppColors.background,
+                // Below the status bar / notch; the page under it then does
+                // not add that space a second time.
+                child: SafeArea(
+                  bottom: false,
+                  child: SizedBox(
+                    height: globalSearchBarHeight,
+                    child: Row(
+                      children: [
+                        LinkBackButton(state: state),
+                        Expanded(
+                          child: GlobalSearchBar(state: state, onOpen: _open),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
           Expanded(
             child: MediaQuery.removePadding(
