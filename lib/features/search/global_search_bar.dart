@@ -158,14 +158,6 @@ class GlobalSearchBar extends StatelessWidget {
                                       ),
                                     ),
                                   )
-                                else if (!compact)
-                                  Text(
-                                    'Ctrl K',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: AppColors.textFaint,
-                                    ),
-                                  ),
                               ],
                             ],
                           ),
