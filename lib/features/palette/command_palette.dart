@@ -18,6 +18,7 @@ import '../calendar/ics.dart';
 import '../canvas/time_machine.dart';
 import '../notes/notes_page.dart' show showNoteHistory;
 import '../capture/quick_capture.dart';
+import '../reading/reading_progress.dart';
 import '../pdfanchors/pdf_notes_split.dart';
 import '../../data/models/library_models.dart' show AssetKind;
 import '../export/exports.dart';
@@ -103,6 +104,23 @@ List<PaletteCommand> paletteCommands(
         final focus = s.pdfFocus.value?.assetId;
         final pick = docs.where((a) => a.id == focus).firstOrNull ?? docs.first;
         openPdfNotes(s, pick.id);
+      },
+    ),
+    PaletteCommand(
+      'Reading progress',
+      Icons.menu_book_outlined,
+      (context) => showReadingOverview(context, s),
+    ),
+    PaletteCommand(
+      'Resume reading',
+      Icons.play_arrow,
+      (context) async {
+        final a = latestReading(s.workspace);
+        if (a == null) {
+          s.showToast('Nothing is marked as reading yet.');
+          return;
+        }
+        await resumeReading(s, a.id);
       },
     ),
     PaletteCommand(

@@ -13,6 +13,7 @@ import '../../app/floating_windows.dart';
 import '../../app/theme.dart';
 import '../../data/models/library_models.dart';
 import '../smartlinks/smart_links.dart';
+import '../reading/reading_progress.dart' show noteReadPage;
 import 'pdf_anchors.dart';
 
 /// Opens the PDF-and-notes window for PDF [assetId].
@@ -94,6 +95,8 @@ class _PdfNotesSplitState extends State<PdfNotesSplit> {
       _pageField.text = '$p';
     });
     s.pdfFocus.value = (assetId: widget.assetId, page: p);
+    // The reader's place in an item they are reading follows.
+    noteReadPage(s.workspace, widget.assetId, p);
   }
 
   @override

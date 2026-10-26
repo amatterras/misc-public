@@ -251,6 +251,9 @@ class AppState extends ChangeNotifier {
   /// opens the file in this device's viewer).
   Future<bool> Function(File file, int page)? pdfOpener;
 
+  /// How a saved link is opened when reading resumes (tests replace it).
+  void Function(String url)? urlOpener;
+
   /// The PDF page last asked for by a link (a PDF window follows it).
   final ValueNotifier<({String assetId, int page})?> pdfFocus = ValueNotifier(null);
 
