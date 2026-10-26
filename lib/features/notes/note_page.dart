@@ -93,6 +93,7 @@ class _NotePageState extends State<NotePage> {
   @override
   void initState() {
     super.initState();
+    s.notebookJump.addListener(_onJump);
     _scroll.addListener(_onNotebookScroll);
     _horizontalScroll.addListener(_onNotebookScroll);
     final savedZoom = s.settings.get<num>(_zoomSetting)?.toDouble();
@@ -283,6 +284,28 @@ class _NotePageState extends State<NotePage> {
       active: () => mounted && (ModalRoute.of(context)?.isCurrent ?? true),
     );
     setState(() => _c = c);
+    _onJump(); // a link may have asked for a page of this note
+  }
+
+  /// A PDF page link asked to show a page of this note: scroll there. The
+  /// text and handwriting are not touched.
+  void _onJump() {
+    final j = s.notebookJump.value;
+    if (j == null || j.noteId != widget.noteId || _c == null) return;
+    s.notebookJump.value = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final layout = _currentLayout;
+      if (!mounted || layout == null || !_scroll.hasClients) return;
+      final page = j.page.clamp(0, layout.pageCount - 1);
+      final top = layout.pageRect(page).top * (_c?.scale ?? 1);
+      _scroll.jumpTo(top.clamp(0.0, _scroll.position.maxScrollExtent));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _pageKeys[page]?.currentContext;
+        if (mounted && ctx != null) {
+          Scrollable.ensureVisible(ctx, duration: Duration.zero);
+        }
+      });
+    });
   }
 
   void Function()? _unregisterTap;
@@ -315,6 +338,7 @@ class _NotePageState extends State<NotePage> {
 
   @override
   void dispose() {
+    s.notebookJump.removeListener(_onJump);
     _squeeze?.cancel();
     _unregisterTap?.call();
     _lifecycle?.dispose();

@@ -17,11 +17,13 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../data/models/library_models.dart' show AssetKind;
+import '../pdfanchors/pdf_anchors.dart' show openPdfAnchor;
 import '../../data/models/canvas_models.dart';
 import '../../data/models/calendar_models.dart';
 import '../../data/models/record.dart' show parseDayKey;
 
-enum RefKind { note, canvas, object, entry, asset }
+enum RefKind { note, canvas, object, entry, asset, pdf }
 
 extension RefKindInfo on RefKind {
   String get tag => switch (this) {
@@ -30,6 +32,7 @@ extension RefKindInfo on RefKind {
     RefKind.object => 'obj',
     RefKind.entry => 'entry',
     RefKind.asset => 'asset',
+    RefKind.pdf => 'pdf',
   };
 
   String get noun => switch (this) {
@@ -38,7 +41,11 @@ extension RefKindInfo on RefKind {
     RefKind.object => 'Mindmap object',
     RefKind.entry => 'Calendar',
     RefKind.asset => 'Archive',
+    RefKind.pdf => 'PDF page',
   };
+
+  /// Whether this kind of link carries a second part after the #.
+  bool get hasItem => this == RefKind.object || this == RefKind.pdf;
 
   IconData get icon => switch (this) {
     RefKind.note => Icons.description_outlined,
@@ -46,6 +53,7 @@ extension RefKindInfo on RefKind {
     RefKind.object => Icons.crop_square,
     RefKind.entry => Icons.calendar_today_outlined,
     RefKind.asset => Icons.bookmarks_outlined,
+    RefKind.pdf => Icons.picture_as_pdf_outlined,
   };
 }
 
@@ -57,8 +65,12 @@ class WorkspaceRef {
   final RefKind kind;
   final String id;
 
-  /// The object's id on mindmap [id] (kind [RefKind.object] only).
+  /// The object's id on mindmap [id] (kind [RefKind.object]) or the page
+  /// number, counted from 1 (kind [RefKind.pdf]).
   final String? item;
+
+  /// The page of a PDF link (from 1), or null.
+  int? get page => kind == RefKind.pdf ? int.tryParse(item ?? '') : null;
 
   @override
   bool operator ==(Object other) =>
@@ -96,7 +108,7 @@ class LinkToken {
 }
 
 final _tokenPattern = RegExp(
-  r'\[\[theapp:(note|canvas|obj|entry|asset)/([A-Za-z0-9_-]+)(?:#([A-Za-z0-9_-]+))?(?:\|([^\]\r\n]*))?\]\]',
+  r'\[\[theapp:(note|canvas|obj|entry|asset|pdf)/([A-Za-z0-9_-]+)(?:#([A-Za-z0-9_-]+))?(?:\|([^\]\r\n]*))?\]\]',
 );
 
 RefKind? _kindOf(String tag) {
@@ -114,7 +126,8 @@ List<LinkToken> findLinks(String text) {
     final kind = _kindOf(m.group(1)!);
     if (kind == null) continue;
     final item = m.group(3);
-    if ((kind == RefKind.object) != (item != null)) continue;
+    if (kind.hasItem != (item != null)) continue;
+    if (kind == RefKind.pdf && (int.tryParse(item!) ?? 0) < 1) continue;
     out.add(
       LinkToken(
         WorkspaceRef(kind, m.group(2)!, item),
@@ -160,6 +173,10 @@ enum LinkHealth {
   /// The target is gone (deleted). The link stays, marked, and works again
   /// if the target is restored: its id is never reused for anything else.
   deleted,
+
+  /// The target is there but cannot be opened right now (a PDF whose file
+  /// is missing from this device).
+  unavailable,
 }
 
 /// How a link looks today.
@@ -180,7 +197,8 @@ class ResolvedRef {
   /// A line or two of what the target holds, for a hover or a preview.
   final String preview;
 
-  bool get opens => health != LinkHealth.deleted;
+  bool get opens =>
+      health != LinkHealth.deleted && health != LinkHealth.unavailable;
 }
 
 String _short(String text, [int max = 160]) {
@@ -248,6 +266,34 @@ ResolvedRef resolveRef(AppState s, WorkspaceRef ref, {String? fallbackLabel}) {
         health: LinkHealth.ok,
         title: a.label,
         preview: _short(a.description ?? a.url ?? ''),
+      );
+    case RefKind.pdf:
+      final a = ws.assets[ref.id];
+      if (a == null || a.kind != AssetKind.document) {
+        return gone(fallbackLabel);
+      }
+      final page = ref.page ?? 1;
+      final file = ws.documentFile(a);
+      final title = '${a.label} · page $page';
+      if (file == null || !file.existsSync()) {
+        return ResolvedRef(
+          ref: ref,
+          health: LinkHealth.unavailable,
+          title: title,
+          preview:
+              'The file of this PDF is not on this device, so the page cannot be opened.',
+        );
+      }
+      // A file whose size is not the one that was imported was changed or
+      // replaced outside THEapp; the link is kept but says so.
+      final replaced = a.fileSize != null && file.lengthSync() != a.fileSize;
+      return ResolvedRef(
+        ref: ref,
+        health: LinkHealth.ok,
+        title: title,
+        preview: replaced
+            ? 'This PDF file was changed since it was added, so page $page may not be the same page.'
+            : 'Page $page of “${a.label}”.',
       );
   }
 }
@@ -395,6 +441,8 @@ Future<bool> openWorkspaceRef(
         s.showToast('That Archive item is not on the board.');
         return false;
       }
+    case RefKind.pdf:
+      if (!await openPdfAnchor(s, target)) return false;
   }
   final stack = s.linkReturn.value;
   if (back != null && (stack.isEmpty || stack.last.label != back.label)) {
@@ -425,6 +473,8 @@ ReturnPoint? _returnPoint(AppState s, WorkspaceRef? from) {
             if (e != null) s.openCalendarDay(entryDay(e));
           case RefKind.asset:
             await s.openLinkCard(from.id);
+          case RefKind.pdf:
+            await openPdfAnchor(s, from);
         }
       },
     );

@@ -404,6 +404,9 @@ class Workspace {
       kind: AssetKind.document,
       file: name,
       title: file.uri.pathSegments.last,
+      // The size when it was added: a later difference means the file was
+      // changed outside THEapp (page links then say so).
+      fileSize: await attachments.fileFor(name).length(),
       createdAt: now,
       updatedAt: now,
     );

@@ -18,6 +18,8 @@ import '../calendar/ics.dart';
 import '../canvas/time_machine.dart';
 import '../notes/notes_page.dart' show showNoteHistory;
 import '../capture/quick_capture.dart';
+import '../pdfanchors/pdf_notes_split.dart';
+import '../../data/models/library_models.dart' show AssetKind;
 import '../export/exports.dart';
 import '../links/archive_library_page.dart';
 import '../sharing/share_dialog.dart';
@@ -85,6 +87,22 @@ List<PaletteCommand> paletteCommands(
         } else {
           s.showToast('Open a note or a mindmap first.');
         }
+      },
+    ),
+    PaletteCommand(
+      'PDF and its notes, side by side',
+      Icons.vertical_split_outlined,
+      (context) async {
+        final docs = s.workspace.assets.all
+            .where((a) => a.kind == AssetKind.document)
+            .toList();
+        if (docs.isEmpty) {
+          s.showToast('No PDFs in the Archive yet.');
+          return;
+        }
+        final focus = s.pdfFocus.value?.assetId;
+        final pick = docs.where((a) => a.id == focus).firstOrNull ?? docs.first;
+        openPdfNotes(s, pick.id);
       },
     ),
     PaletteCommand(

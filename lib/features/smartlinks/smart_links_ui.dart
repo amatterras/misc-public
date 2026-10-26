@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
+import '../../data/models/library_models.dart' show Asset, AssetKind;
+import '../../widgets/common.dart' show promptText;
+import '../pdfanchors/pdf_anchors.dart';
 import 'smart_links.dart';
 
 class _Candidate {
@@ -126,6 +129,49 @@ class _LinkPickerState extends State<_LinkPicker> {
     );
   }
 
+  /// Choose a PDF in the Archive and a page: a link to that page.
+  Future<void> _pickPdf() async {
+    final s = widget.state;
+    final docs = s.workspace.assets.all
+        .where((a) => a.kind == AssetKind.document)
+        .toList()
+      ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+    final asset = await showDialog<Asset>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Which PDF?', style: TextStyle(fontSize: 16)),
+        content: SizedBox(
+          width: 420,
+          height: 320,
+          child: docs.isEmpty
+              ? const Center(child: Text('No PDFs in the Archive yet.'))
+              : ListView(
+                  children: [
+                    for (final a in docs)
+                      ListTile(
+                        key: ValueKey('pdf-pick-${a.id}'),
+                        dense: true,
+                        leading: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                        title: Text(a.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        onTap: () => Navigator.pop(context, a),
+                      ),
+                  ],
+                ),
+        ),
+      ),
+    );
+    if (asset == null || !mounted) return;
+    final text = await promptText(
+      context,
+      title: 'Which page of “${asset.label}”?',
+      hint: 'A page number, from 1',
+      action: 'Link',
+    );
+    final page = int.tryParse((text ?? '').trim());
+    if (page == null || page < 1 || !mounted) return;
+    Navigator.pop(context, pdfAnchorToken(asset, page));
+  }
+
   @override
   Widget build(BuildContext context) {
     final list = _candidates(widget.state, _query, widget.exclude);
@@ -145,7 +191,15 @@ class _LinkPickerState extends State<_LinkPicker> {
               ),
               onChanged: (v) => setState(() => _query = v),
             ),
-            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const ValueKey('link-pick-pdf'),
+                onPressed: _pickPdf,
+                icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                label: const Text('A page of a PDF…'),
+              ),
+            ),
             Expanded(
               child: list.isEmpty
                   ? const Center(child: Text('Nothing found.'))
@@ -357,10 +411,12 @@ class _LinkChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final r = resolved;
-    final deleted = r.health == LinkHealth.deleted;
+    final deleted =
+        r.health == LinkHealth.deleted || r.health == LinkHealth.unavailable;
     final suffix = switch (r.health) {
       LinkHealth.archived => '  (archived)',
       LinkHealth.deleted => '  (deleted)',
+      LinkHealth.unavailable => '  (file missing)',
       LinkHealth.ok => '',
     };
     return Tooltip(

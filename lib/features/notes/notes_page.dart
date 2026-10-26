@@ -15,6 +15,7 @@ import '../ai/ai_session.dart';
 import '../ai/similarity.dart';
 import '../import/import_dialog.dart';
 import 'conversion.dart';
+import '../pdfanchors/pdf_notes_split.dart';
 import '../smartlinks/smart_links.dart';
 import '../smartlinks/smart_links_ui.dart';
 import 'note_connections.dart';
@@ -1145,6 +1146,9 @@ class _NoteEditorState extends State<NoteEditor> {
               child: AssetChip(
                 workspace: ws,
                 asset: a,
+                onPdfNotes: a.kind == AssetKind.document
+                    ? () => openPdfNotes(s, a.id)
+                    : null,
                 onRemove: () => _update(
                   (x) => x.copyWith(assetIds: [...x.assetIds]..remove(a.id)),
                 ),

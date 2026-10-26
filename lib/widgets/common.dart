@@ -272,7 +272,11 @@ class AssetChip extends StatelessWidget {
     required this.asset,
     this.onRemove,
     this.onOpenPdfEditor,
+    this.onPdfNotes,
   });
+
+  /// Opens the PDF with the notes that point at its pages (documents only).
+  final VoidCallback? onPdfNotes;
 
   final Workspace workspace;
   final Asset asset;
@@ -334,6 +338,15 @@ class AssetChip extends StatelessWidget {
                   style: const TextStyle(fontSize: 12),
                 ),
               ),
+              if (isDocument && onPdfNotes != null)
+                IconButton(
+                  key: ValueKey('pdf-notes-${asset.id}'),
+                  tooltip: 'Notes on this PDF, page by page',
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                  onPressed: onPdfNotes,
+                  icon: const Icon(Icons.vertical_split_outlined, size: 16),
+                ),
               if (isDocument && onOpenPdfEditor != null)
                 IconButton(
                   tooltip: 'Open in PDF editor',

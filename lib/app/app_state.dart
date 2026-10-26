@@ -247,6 +247,16 @@ class AppState extends ChangeNotifier {
   /// Capture can offer to refer to it.
   final ValueNotifier<String?> activeNoteId = ValueNotifier(null);
 
+  /// How a PDF is opened for a page link (tests replace it; the default
+  /// opens the file in this device's viewer).
+  Future<bool> Function(File file, int page)? pdfOpener;
+
+  /// The PDF page last asked for by a link (a PDF window follows it).
+  final ValueNotifier<({String assetId, int page})?> pdfFocus = ValueNotifier(null);
+
+  /// A note page a link asks to scroll to (the note's page view follows it).
+  final ValueNotifier<({String noteId, int page})?> notebookJump = ValueNotifier(null);
+
   /// The places the user followed workspace links from, newest last (see
   /// smart_links.dart); the bar above the app offers 'Back'.
   final ValueNotifier<List<ReturnPoint>> linkReturn = ValueNotifier(const []);
