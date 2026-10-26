@@ -159,7 +159,8 @@ void main() {
     final state = await boot(tester, const Size(390, 800));
     expect(bar, findsOneWidget);
     expect(tester.getSize(bar).width, lessThan(60));
-    expect(tester.getSize(bar).height, greaterThanOrEqualTo(40));
+    expect(tester.getSize(bar).width, greaterThanOrEqualTo(44), reason: 'tap target');
+    expect(tester.getSize(bar).height, greaterThanOrEqualTo(44));
     state.searchQuery.value = 'long query that is shown in the bar';
     await tester.pump();
     expect(tester.getSize(bar).width, greaterThan(100));
@@ -172,11 +173,37 @@ void main() {
   ) async {
     await boot(tester, const Size(1000, 800));
     final w1 = tester.getSize(bar);
-    expect(w1.height, greaterThanOrEqualTo(40));
-    expect(w1.width, greaterThanOrEqualTo(340));
+    expect(w1.height, greaterThanOrEqualTo(44));
+    expect(w1.width, greaterThanOrEqualTo(380));
     tester.view.physicalSize = const Size(1800, 900);
     await tester.pump();
     expect(tester.getSize(bar).width, greaterThan(w1.width));
-    expect(tester.getSize(bar).width, lessThanOrEqualTo(520));
+    expect(tester.getSize(bar).width, lessThanOrEqualTo(600));
+  });
+
+  testWidgets('the search field is roomy, fits a phone and a wide window', (
+    tester,
+  ) async {
+    await boot(tester, const Size(390, 800));
+    await tester.tap(bar);
+    await tester.pumpAndSettle();
+    final field = find.byKey(const ValueKey('global-search-field'));
+    expect(tester.getSize(field).height, greaterThanOrEqualTo(62));
+    expect(tester.getRect(field).right, lessThanOrEqualTo(390));
+    expect(tester.getRect(field).left, greaterThanOrEqualTo(0));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(1500, 900);
+    await tester.pump();
+    await tester.tap(bar);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(field).width, inInclusiveRange(500, 724));
+    final clear = find.byKey(const ValueKey('search-field-clear'));
+    expect(clear, findsNothing);
+    await tester.enterText(field, 'abc');
+    await tester.pump();
+    expect(tester.getSize(clear).width, greaterThanOrEqualTo(44));
+    expect(tester.getSize(clear).height, greaterThanOrEqualTo(44));
+    expect(tester.takeException(), isNull);
   });
 }

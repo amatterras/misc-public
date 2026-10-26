@@ -13,7 +13,7 @@ import '../../app/theme.dart';
 import 'search_dialog.dart';
 
 /// Height of the strip on every layout.
-const globalSearchBarHeight = 48.0;
+const globalSearchBarHeight = 54.0;
 
 /// Wraps the app's navigator ([child]) with the search strip above it.
 class GlobalSearchHost extends StatelessWidget {
@@ -82,7 +82,7 @@ class GlobalSearchBar extends StatelessWidget {
         final compact = box.maxWidth < 640;
         final fieldWidth = compact
             ? (box.maxWidth - 24).clamp(44.0, 220.0)
-            : (box.maxWidth * 0.34).clamp(340.0, 520.0);
+            : (box.maxWidth * 0.36).clamp(380.0, 600.0);
         return Align(
           alignment: Alignment.centerRight,
           child: Padding(
@@ -94,9 +94,9 @@ class GlobalSearchBar extends StatelessWidget {
                 final iconOnly = compact && !hasQuery;
                 return ConstrainedBox(
                   constraints: BoxConstraints(
-                    minWidth: iconOnly ? 44 : fieldWidth,
-                    maxWidth: iconOnly ? 44 : fieldWidth,
-                    minHeight: 40,
+                    minWidth: iconOnly ? 48 : fieldWidth,
+                    maxWidth: iconOnly ? 48 : fieldWidth,
+                    minHeight: 44,
                   ),
                   child: Semantics(
                     button: true,
@@ -109,9 +109,9 @@ class GlobalSearchBar extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                         onTap: onOpen,
                         child: Container(
-                          height: 40,
+                          height: 44,
                           padding: EdgeInsets.symmetric(
-                            horizontal: iconOnly ? 0 : 12,
+                            horizontal: iconOnly ? 0 : 14,
                           ),
                           decoration: BoxDecoration(
                             color: AppColors.cardRaised,
@@ -125,11 +125,11 @@ class GlobalSearchBar extends StatelessWidget {
                             children: [
                               Icon(
                                 Icons.search,
-                                size: 20,
+                                size: 22,
                                 color: AppColors.textMuted,
                               ),
                               if (!iconOnly) ...[
-                                const SizedBox(width: 10),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     hasQuery ? query : 'Search everything',
@@ -137,7 +137,7 @@ class GlobalSearchBar extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      fontSize: 14.5,
+                                      fontSize: 15.5,
                                       color: hasQuery
                                           ? AppColors.text
                                           : AppColors.textFaint,
@@ -147,13 +147,13 @@ class GlobalSearchBar extends StatelessWidget {
                                 if (hasQuery)
                                   InkResponse(
                                     key: const ValueKey('global-search-clear'),
-                                    radius: 18,
+                                    radius: 20,
                                     onTap: () => state.searchQuery.value = '',
                                     child: Padding(
-                                      padding: const EdgeInsets.all(6),
+                                      padding: const EdgeInsets.all(8),
                                       child: Icon(
                                         Icons.close,
-                                        size: 18,
+                                        size: 20,
                                         color: AppColors.textMuted,
                                       ),
                                     ),

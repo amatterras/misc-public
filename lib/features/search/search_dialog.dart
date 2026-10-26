@@ -335,12 +335,12 @@ class _SearchDialogState extends State<_SearchDialog> {
   Widget build(BuildContext context) {
     final results = _meaning ?? searchEverything(widget.state, _query);
     final viewport = MediaQuery.sizeOf(context);
-    final dialogWidth = (viewport.width - 24).clamp(0.0, 620.0).toDouble();
-    final dialogHeight = (viewport.height - 24).clamp(180.0, 460.0).toDouble();
+    final dialogWidth = (viewport.width - 24).clamp(0.0, 720.0).toDouble();
+    final dialogHeight = (viewport.height - 24).clamp(180.0, 520.0).toDouble();
     return Dialog(
       alignment: const Alignment(0, -0.5),
       insetPadding: const EdgeInsets.all(12),
-      constraints: const BoxConstraints(minWidth: 0, maxWidth: 620),
+      constraints: const BoxConstraints(minWidth: 0, maxWidth: 720),
       child: SizedBox(
         width: dialogWidth,
         height: dialogHeight,
@@ -352,9 +352,12 @@ class _SearchDialogState extends State<_SearchDialog> {
                 key: const ValueKey('global-search-field'),
                 controller: _text,
                 autofocus: true,
-                style: const TextStyle(fontSize: 15),
+                style: const TextStyle(fontSize: 16.5),
                 decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search, size: 18),
+                  prefixIcon: const Padding(
+                    padding: EdgeInsets.only(left: 6, right: 4),
+                    child: Icon(Icons.search, size: 22),
+                  ),
                   suffixIcon: _query.isEmpty
                       ? null
                       : IconButton(
@@ -375,9 +378,9 @@ class _SearchDialogState extends State<_SearchDialog> {
                   hintText: 'Search notes, canvases, links, calendar and tasks',
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: Space.md,
-                    vertical: 16,
+                    vertical: 18,
                   ),
-                  constraints: const BoxConstraints(minHeight: 56),
+                  constraints: const BoxConstraints(minHeight: 62),
                 ),
                 onChanged: (v) => setState(() {
                   _query = v;
@@ -435,7 +438,8 @@ class _SearchDialogState extends State<_SearchDialog> {
                       itemBuilder: (context, i) {
                         final r = results[i];
                         return ListTile(
-                          dense: true,
+                          dense: false,
+                          minVerticalPadding: 6,
                           leading: Icon(
                             r.icon,
                             size: 18,
