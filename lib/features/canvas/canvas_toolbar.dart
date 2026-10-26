@@ -239,13 +239,10 @@ class CanvasContextBar extends StatelessWidget {
       return ToolPanel(
         horizontal: true,
         children: [
-          for (final swatch in InkColors.library)
-            _Swatch(
-              color: swatch.color,
-              label: swatch.name,
-              active: c.penColor == swatch.color,
-              onTap: () => c.setPen(color: swatch.color),
-            ),
+          _SwatchGrid(
+            active: (color) => c.penColor == color,
+            onPick: (color) => c.setPen(color: color),
+          ),
           const _PanelDivider(vertical: true),
           for (final width in penSizes)
             ToolButton(
@@ -284,13 +281,10 @@ class CanvasContextBar extends StatelessWidget {
       return ToolPanel(
         horizontal: true,
         children: [
-          for (final swatch in InkColors.library)
-            _Swatch(
-              color: swatch.color,
-              label: swatch.name,
-              active: c.highlighterColor == swatch.color,
-              onTap: () => c.setHighlighter(color: swatch.color),
-            ),
+          _SwatchGrid(
+            active: (color) => c.highlighterColor == color,
+            onPick: (color) => c.setHighlighter(color: color),
+          ),
           const _PanelDivider(vertical: true),
           for (final width in _highlighterWidths)
             ToolButton(
@@ -793,6 +787,31 @@ class ToolButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The shared color library as a grid of 12 per row, so the library can
+/// grow without the strip growing wider than the window.
+class _SwatchGrid extends StatelessWidget {
+  const _SwatchGrid({required this.active, required this.onPick});
+
+  final bool Function(Color color) active;
+  final ValueChanged<Color> onPick;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 12 * 28.0,
+    child: Wrap(
+      children: [
+        for (final swatch in InkColors.library)
+          _Swatch(
+            color: swatch.color,
+            label: swatch.name,
+            active: active(swatch.color),
+            onTap: () => onPick(swatch.color),
+          ),
+      ],
+    ),
+  );
 }
 
 class _Swatch extends StatelessWidget {
