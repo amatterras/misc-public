@@ -1533,8 +1533,10 @@ class CanvasController extends ChangeNotifier {
     return _livePoints.last.offset + ahead;
   }
 
-  /// A completed line-like stroke is straightened after a two-second dwell.
-  static Duration holdToStraighten = const Duration(seconds: 2);
+  /// A completed line-like stroke is straightened after 1.5 seconds without
+  /// further input. Only pen strokes: highlighter strokes are never
+  /// straightened.
+  static Duration holdToStraighten = const Duration(milliseconds: 1500);
   Timer? _holdTimer;
   StrokeItem? _pendingStraighten;
   CanvasTool? _pendingStraightenTool;
@@ -1568,7 +1570,9 @@ class CanvasController extends ChangeNotifier {
     _holdTimer?.cancel();
     _holdTimer = null;
     _liveLinePreview = null;
-    if (_livePoints.length < 2 || !looksLikeLine(_livePoints, _scale)) {
+    if (_tool == CanvasTool.highlighter ||
+        _livePoints.length < 2 ||
+        !looksLikeLine(_livePoints, _scale)) {
       (liveInk as _Ping).ping();
       return;
     }
@@ -1607,7 +1611,8 @@ class CanvasController extends ChangeNotifier {
   }
 
   void _scheduleLineStraightening(StrokeItem stroke) {
-    if (!looksLikeLine(stroke.points, _scale)) {
+    if (_tool == CanvasTool.highlighter ||
+        !looksLikeLine(stroke.points, _scale)) {
       cancelPendingLineStraightening();
       return;
     }
