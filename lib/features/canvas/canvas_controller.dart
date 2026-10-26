@@ -1560,19 +1560,45 @@ class CanvasController extends ChangeNotifier {
     final hadPreview = _liveLinePreview != null;
     _holdTimer?.cancel();
     _holdTimer = null;
+    _holdAnchor = null;
     _pendingStraighten = null;
     _pendingStraightenTool = null;
     _liveLinePreview = null;
     if (hadPreview && !_disposed) (liveInk as _Ping).ping();
   }
 
+  /// A pen jitter smaller than this (screen pixels) is still 'holding'.
+  static const holdJitter = 3.0;
+
+  Offset? _holdAnchor;
+
+  /// The clean circle / ellipse / rectangle for the stroke being drawn, or
+  /// null (open curves, handwriting, scribbles, triangles and lines are not
+  /// turned into shapes by holding).
+  List<StrokePoint>? _holdShape(List<StrokePoint> points) {
+    if (_tool == CanvasTool.highlighter || points.length < 8) return null;
+    final match = recognizeShape(points);
+    if (match == null) return null;
+    return switch (match.shape) {
+      RecognizedShape.ellipse || RecognizedShape.rectangle => match.points,
+      _ => null,
+    };
+  }
+
   void _restartLineHold() {
+    // Still holding: the pen only jitters a little around where it stopped.
+    final anchor = _holdAnchor;
+    if ((_holdTimer != null || _liveLinePreview != null) &&
+        anchor != null &&
+        _livePoints.isNotEmpty &&
+        (_livePoints.last.offset - anchor).distance * _scale < holdJitter) {
+      return;
+    }
     _holdTimer?.cancel();
     _holdTimer = null;
     _liveLinePreview = null;
-    if (_tool == CanvasTool.highlighter ||
-        _livePoints.length < 2 ||
-        !looksLikeLine(_livePoints, _scale)) {
+    _holdAnchor = _livePoints.isEmpty ? null : _livePoints.last.offset;
+    if (_tool == CanvasTool.highlighter || _livePoints.length < 2) {
       (liveInk as _Ping).ping();
       return;
     }
@@ -1584,11 +1610,19 @@ class CanvasController extends ChangeNotifier {
         return;
       }
       if (_drag == _Drag.draw) {
-        if (!looksLikeLine(_livePoints, _scale)) return;
-        _liveLinePreview = straightened(_livePoints);
+        if (looksLikeLine(_livePoints, _scale)) {
+          _liveLinePreview = straightened(_livePoints);
+          (liveInk as _Ping).ping();
+          return;
+        }
+        // A circle or rectangle drawn and held at its end.
+        final shape = _holdShape(_livePoints);
+        if (shape == null) return;
+        _liveLinePreview = shape;
         (liveInk as _Ping).ping();
         return;
       }
+
       final original = _pendingStraighten;
       _pendingStraighten = null;
       _pendingStraightenTool = null;

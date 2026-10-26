@@ -53,40 +53,100 @@ ShapeMatch? recognizeShape(List<StrokePoint> points) {
     );
   }
   if (corners.length == 4 && _rightAngled(corners)) {
+    // Turned the way the corners are (not just the bounding box), sized to
+    // hold the whole drawing.
+    final u = _boxDirection(corners);
+    final v = Offset(-u.dy, u.dx);
+    final frame = _extentsIn(pts, u, v);
+    Offset at(double a, double b) => u * a + v * b;
+    final c0 = at(frame.minU, frame.minV), c1 = at(frame.maxU, frame.minV);
+    final c2 = at(frame.maxU, frame.maxV), c3 = at(frame.minU, frame.maxV);
     return ShapeMatch(
       RecognizedShape.rectangle,
-      _densify([
-        bounds.topLeft,
-        bounds.topRight,
-        bounds.bottomRight,
-        bounds.bottomLeft,
-        bounds.topLeft,
-      ], pressure),
+      _densify([c0, c1, c2, c3, c0], pressure),
     );
   }
 
-  // An ellipse: points stay close to the ellipse fitting the bounds.
-  final c = bounds.center;
-  final rx = bounds.width / 2, ry = bounds.height / 2;
+  // An ellipse: points stay close to the ellipse that fits them, turned
+  // along their main direction.
+  final u = _mainDirection(pts);
+  final v = Offset(-u.dy, u.dx);
+  final f = _extentsIn(pts, u, v);
+  final cu = (f.minU + f.maxU) / 2, cv = (f.minV + f.maxV) / 2;
+  final rx = (f.maxU - f.minU) / 2, ry = (f.maxV - f.minV) / 2;
   if (rx < 8 || ry < 8) return null;
   var error = 0.0;
   for (final p in pts) {
-    final d = math.sqrt(
-      math.pow((p.dx - c.dx) / rx, 2) + math.pow((p.dy - c.dy) / ry, 2),
-    );
-    error += (d - 1).abs();
+    final a = p.dx * u.dx + p.dy * u.dy - cu;
+    final b = p.dx * v.dx + p.dy * v.dy - cv;
+    error += (math.sqrt(math.pow(a / rx, 2) + math.pow(b / ry, 2)) - 1).abs();
   }
   if (error / pts.length < 0.12 && corners.length > 4) {
     return ShapeMatch(RecognizedShape.ellipse, [
       for (var i = 0; i <= 64; i++)
         StrokePoint(
-          c.dx + rx * math.cos(i / 64 * 2 * math.pi),
-          c.dy + ry * math.sin(i / 64 * 2 * math.pi),
+          (u * (cu + rx * math.cos(i / 64 * 2 * math.pi)) +
+                  v * (cv + ry * math.sin(i / 64 * 2 * math.pi)))
+              .dx,
+          (u * (cu + rx * math.cos(i / 64 * 2 * math.pi)) +
+                  v * (cv + ry * math.sin(i / 64 * 2 * math.pi)))
+              .dy,
           pressure,
         ),
     ]);
   }
   return null;
+}
+
+/// The direction (unit vector) a rectangle with these four corners is
+/// turned: the average of its edge angles, folded to a quarter turn.
+Offset _boxDirection(List<Offset> c) {
+  var sx = 0.0, sy = 0.0;
+  for (var i = 0; i < 4; i++) {
+    final e = c[(i + 1) % 4] - c[i];
+    final a = math.atan2(e.dy, e.dx) * 4; // 90Â° apart edges agree
+    sx += math.cos(a);
+    sy += math.sin(a);
+  }
+  final angle = math.atan2(sy, sx) / 4;
+  return Offset(math.cos(angle), math.sin(angle));
+}
+
+/// The main direction of a point cloud (its longest spread).
+Offset _mainDirection(List<Offset> pts) {
+  var mx = 0.0, my = 0.0;
+  for (final p in pts) {
+    mx += p.dx;
+    my += p.dy;
+  }
+  mx /= pts.length;
+  my /= pts.length;
+  var sxx = 0.0, syy = 0.0, sxy = 0.0;
+  for (final p in pts) {
+    sxx += (p.dx - mx) * (p.dx - mx);
+    syy += (p.dy - my) * (p.dy - my);
+    sxy += (p.dx - mx) * (p.dy - my);
+  }
+  final angle = 0.5 * math.atan2(2 * sxy, sxx - syy);
+  return Offset(math.cos(angle), math.sin(angle));
+}
+
+({double minU, double maxU, double minV, double maxV}) _extentsIn(
+  List<Offset> pts,
+  Offset u,
+  Offset v,
+) {
+  var minU = double.infinity, maxU = -double.infinity;
+  var minV = double.infinity, maxV = -double.infinity;
+  for (final p in pts) {
+    final a = p.dx * u.dx + p.dy * u.dy;
+    final b = p.dx * v.dx + p.dy * v.dy;
+    minU = math.min(minU, a);
+    maxU = math.max(maxU, a);
+    minV = math.min(minV, b);
+    maxV = math.max(maxV, b);
+  }
+  return (minU: minU, maxU: maxU, minV: minV, maxV: maxV);
 }
 
 Rect _bounds(List<Offset> pts) {
