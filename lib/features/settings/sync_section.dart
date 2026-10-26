@@ -265,6 +265,25 @@ class _SyncSectionState extends State<SyncSection> {
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
               ),
+            SwitchListTile(
+              key: const ValueKey('handoff-enabled'),
+              contentPadding: EdgeInsets.zero,
+              value: s.handoff.enabled,
+              onChanged: (on) async {
+                await s.handoff.setEnabled(on);
+                if (mounted) setState(() {});
+              },
+              title: const Text(
+                'Let my other devices resume where I am',
+                style: TextStyle(fontSize: 14),
+              ),
+              subtitle: Text(
+                'Records which page, note or mindmap is open here (ids '
+                'only, no text) so another device can offer to continue. '
+                'Nothing opens by itself.',
+                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+              ),
+            ),
             const SizedBox(height: Space.sm),
             Wrap(
               spacing: Space.sm,

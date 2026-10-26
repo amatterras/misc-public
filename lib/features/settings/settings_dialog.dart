@@ -224,7 +224,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   style: TextStyle(fontSize: 14),
                 ),
                 subtitle: Text(
-                  '${s.workspace.shares.all.where((l) => l.activeAt(DateTime.now())).length} '
+                  '${s.workspace.shares.all.where((l) => l.kind != 'handoff' && l.activeAt(DateTime.now())).length} '
                   'active. Read-only links served by your own hub; revoke '
                   'them here.',
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),

@@ -12,6 +12,7 @@ import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../smartlinks/smart_links_ui.dart' show LinkBackButton;
 import '../capture/quick_capture.dart';
+import '../handoff/handoff_dialog.dart';
 import 'search_dialog.dart';
 
 /// Height of the strip on every layout.
@@ -69,6 +70,11 @@ class GlobalSearchHost extends StatelessWidget {
     if (context != null) showSearchDialog(context, state);
   }
 
+  void _continue() {
+    final context = navigatorKey.currentContext;
+    if (context != null) showContinueDialog(context, state);
+  }
+
   void _capture() {
     final context = navigatorKey.currentContext;
     if (context != null) showQuickCapture(context, state);
@@ -121,6 +127,20 @@ class GlobalSearchHost extends StatelessWidget {
                             onPressed: _capture,
                           ),
                         ),
+                        if (state.syncPaired)
+                          Semantics(
+                            button: true,
+                            label: 'Continue on this device',
+                            child: IconButton(
+                              key: const ValueKey('continue-button'),
+                              icon: const Icon(Icons.devices_other, size: 22),
+                              constraints: const BoxConstraints(
+                                minWidth: 44,
+                                minHeight: 44,
+                              ),
+                              onPressed: _continue,
+                            ),
+                          ),
                         const SizedBox(width: 4),
                       ],
                     ),

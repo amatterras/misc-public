@@ -46,6 +46,7 @@ import '../sync/sync_health.dart';
 import '../sync/sync_scheduler.dart';
 import '../sync/storage_modes.dart';
 import '../data/integrity/integrity_check.dart';
+import '../features/handoff/handoff.dart';
 import '../hub/hub_host.dart';
 import 'maintenance.dart';
 import '../sync/local_hub.dart';
@@ -413,6 +414,7 @@ class AppState extends ChangeNotifier {
     await _startHubHost(step);
     step('Starting sync');
     await _startSyncIfPaired();
+    handoff.start();
     // Replies that were being written when the app closed are marked
     // interrupted (never shown as finished).
     for (final c in workspace.aiConversations.all.toList()) {
@@ -581,6 +583,10 @@ class AppState extends ChangeNotifier {
 
   bool get syncPaired => _sync != null;
 
+  /// Cross-device handoff: this device's place, and the others' (see
+  /// handoff.dart). Only ids and numbers are recorded.
+  late final HandoffService handoff = HandoffService(this);
+
   /// The last few sync attempts (newest last), for the Sync Health center.
   /// Plain words only: no addresses, keys or note text.
   final List<SyncAttempt> syncHistory = [];
@@ -589,6 +595,10 @@ class AppState extends ChangeNotifier {
     syncHistory.add(SyncAttempt(DateTime.now(), ok, scrubDiagnostic(text)));
     if (syncHistory.length > 20) syncHistory.removeAt(0);
   }
+
+  /// Whether a local change to one record has not reached the hub yet.
+  Future<bool> syncRecordPending(String collection, String id) async =>
+      await _sync?.isPending(collection, id) ?? false;
 
   /// Local records still waiting for the hub, by kind (counts only).
   Future<Map<String, int>> syncPendingCounts() async =>
@@ -3048,6 +3058,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    handoff.stop();
     _scheduler?.stop();
     unawaited(maintenance?.stop(wait: Duration.zero));
     unawaited(hubHost?.stop());
