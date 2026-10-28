@@ -58,7 +58,7 @@ Future<List<String>> leaks(Directory dir, Iterable<String> needles) async {
   if (!await dir.exists()) return out;
   await for (final e in dir.list(recursive: true)) {
     if (e is! File) continue;
-    final bytes = await e.readAsBytes();
+    final bytes = await readSafe(e);
     for (final n in needles) {
       if (has(bytes, n)) out.add('${e.path.substring(dir.path.length)}: $n');
     }

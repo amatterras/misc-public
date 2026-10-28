@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import 'log_sanitizer.dart';
+
 /// A small local log at `<data>\logs\app.log` (never sent anywhere), so
 /// errors and recoveries leave a trace that can be looked at later.
 abstract final class AppLog {
@@ -47,14 +49,17 @@ abstract final class AppLog {
       'ERROR',
       [
         message,
-        ?error?.toString(),
+        // The type (and a safe detail), never the exception's own message:
+        // it can quote the text of the file or request that failed.
+        if (error != null) describeError(error),
         if (stack != null) stack.toString().split('\n').take(12).join('\n'),
       ].join('\n'),
     );
   }
 
   static void _write(String level, String message) {
-    final line = '${DateTime.now().toIso8601String()} $level $message';
+    final line =
+        '${DateTime.now().toIso8601String()} $level ${sanitizeLog(message)}';
     session.add(line);
     if (session.length > 200) session.removeAt(0);
     debugPrint(line);

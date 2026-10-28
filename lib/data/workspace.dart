@@ -109,6 +109,7 @@ class Workspace {
     projects = _c('projects', Project.fromJson);
     conflicts = _c('conflicts', SyncConflict.fromJson);
     clipboard = _c('clipboard', ClipboardClip.fromJson);
+    purges = _c('purges', PurgeMark.fromJson);
     archiveFolders = _c('archive_folders', Folder.fromJson);
     shares = _c('shares', ShareLink.fromJson);
     customTags = _c('custom_tags', CustomTag.fromJson);
@@ -162,6 +163,10 @@ class Workspace {
   /// [shareClipboard] is on).
   late final RecordCollection<ClipboardClip> clipboard;
   late final RecordCollection<AiConversation> aiConversations;
+
+  /// Records deleted for good (see PurgeMark): they sync, and an old copy or
+  /// backup cannot bring them back.
+  late final RecordCollection<PurgeMark> purges;
   late final RecordCollection<Bookmark> bookmarks;
   late final RecordCollection<HistoryEntry> history;
   late final RecordCollection<SitePermission> sitePermissions;
@@ -199,6 +204,7 @@ class Workspace {
     'tasks': tasks,
     'projects': projects,
     'conflicts': conflicts,
+    'purges': purges,
     'archive_folders': archiveFolders,
     'shares': shares,
     'custom_tags': customTags,
@@ -291,6 +297,205 @@ class Workspace {
     await purgeExpiredArchivedEntries();
     await _purgeExpiredEntriesFromBackups();
     _scheduleArchivePurge();
+    _wirePurges();
+    _enforcePurges();
+    await _purgePurgedFromBackups();
+  }
+
+  // ----------------------------------------------------------- purges --
+  //
+  // Deleting for good (as opposed to an ordinary, undoable deletion): the
+  // record leaves active storage and "recently deleted", the links that shared
+  // it stop and are blanked, its attachment files (if nothing else uses them)
+  // and every copy in the app's own backups go, and a permanent mark travels
+  // to the other devices and the hub, which also drops the record's old
+  // versions from its journal and its backups and refuses to take the record
+  // back. That is the logical removal of every copy THEapp manages. It is
+  // not forensic erasure: a disk or operating system may keep traces, and
+  // copies made outside THEapp (exports, shares already read, copies on a
+  // device that is switched off) are out of its reach.
+
+  bool _purgesWired = false;
+  final Set<String> _pendingPurgeBackups = {};
+
+  void _wirePurges() {
+    if (_purgesWired) return;
+    _purgesWired = true;
+    for (final c in _all) {
+      if (c == purges) continue;
+      c.isPurged = (id) => purges.contains('${c.name}.$id');
+    }
+    purges.addListener(() {
+      _enforcePurges();
+      unawaited(_purgePurgedFromBackups());
+    });
+  }
+
+  /// Deletes [id] of [collection] for good.
+  Future<void> purgeRecord(String collection, String id) async {
+    final c = allCollections[collection];
+    if (c == null || collection == 'purges') {
+      throw ArgumentError('Cannot purge from "$collection"');
+    }
+    _wirePurges();
+    final blobs = <String>[];
+    if (collection == 'assets') {
+      // The sealed copies of its files on the hub (named in the sync table,
+      // or in the record when it came from another device).
+      final table =
+          ((await store.read('sync', 'blobs'))?['blobs'] as Map?) ?? const {};
+      final a = assets[id];
+      final json = c.jsonOf(id);
+      for (final (sha, key) in [
+        (a?.fileSha256, 'fileBlob'),
+        (a?.previewSha256, 'previewBlob'),
+      ]) {
+        final b = (sha == null ? null : table[sha]) ?? json?[key];
+        if (b is String) blobs.add(b);
+      }
+    }
+    purges.put(
+      PurgeMark(
+        collection: collection,
+        recordId: id,
+        at: _now().toUtc(),
+        blobs: blobs,
+      ),
+    );
+    _enforcePurges();
+    await _flushRetentionState();
+    await purges.flush();
+    await _purgePurgedFromBackups();
+  }
+
+  /// What deleting [mark]'s record for good takes with it besides the record:
+  /// (collection, id) pairs of records that exist only because of it.
+  List<(String, String)> _dependentsOf(PurgeMark mark) => [
+    if (mark.collection == 'notes')
+      // The note's saved earlier versions are its content too.
+      for (final v in noteVersions.all)
+        if (v.noteId == mark.recordId) ('note_versions', v.id),
+  ];
+
+  void _enforcePurges() {
+    for (final mark in purges.all.toList()) {
+      final c = allCollections[mark.collection];
+      if (c == null) continue;
+      final files = <String>[];
+      if (mark.collection == 'assets') {
+        final a = assets[mark.recordId];
+        if (a != null) {
+          files.addAll([?a.file, ?a.previewFile]);
+        }
+      }
+      if (c.contains(mark.recordId)) {
+        c.remove(mark.recordId, recoverable: false);
+      }
+      c.forgetDeleted(mark.recordId);
+      for (final (collection, id) in _dependentsOf(mark)) {
+        final d = allCollections[collection];
+        if (d == null) continue;
+        if (d.contains(id)) d.remove(id, recoverable: false);
+        d.forgetDeleted(id);
+        _purgedDependents.putIfAbsent(collection, () => {}).add(id);
+      }
+      for (final link in shares.all.toList()) {
+        if (link.sourceId == mark.recordId && link.title.isNotEmpty) {
+          shares.put(link.scrubbed());
+        }
+      }
+      // Attachment files nothing else points at.
+      for (final name in files) {
+        final used = assets.all.any(
+          (x) => x.file == name || x.previewFile == name,
+        );
+        if (!used) {
+          try {
+            final f = attachments.fileFor(name);
+            if (f.existsSync()) f.deleteSync();
+          } on FileSystemException {
+            // Left over: removed with the next purge pass.
+          }
+          _purgedAttachmentFiles.add(name);
+        }
+      }
+      _pendingPurgeBackups.add(mark.id);
+    }
+  }
+
+  final Set<String> _purgedAttachmentFiles = {};
+  final Map<String, Set<String>> _purgedDependents = {};
+
+  Future<void>? _purgeRunning;
+
+  /// One pass at a time: the listener and an explicit purge can ask together,
+  /// and two passes rewriting the same backup files would corrupt them.
+  /// (No future is made ahead of time: one made in another zone, e.g. a test's
+  /// fake clock, could never be waited for from here.)
+  Future<void> _purgePurgedFromBackups() async {
+    while (_purgeRunning != null) {
+      await _purgeRunning;
+    }
+    final run = _purgeRunning = _purgeBackupsNow();
+    try {
+      await run;
+    } finally {
+      _purgeRunning = null;
+    }
+  }
+
+  Future<void> _purgeBackupsNow() async {
+    if (_pendingPurgeBackups.isEmpty) return;
+    final records = <String, Map<String, String>>{};
+    for (final markId in _pendingPurgeBackups.toList()) {
+      final mark = purges[markId];
+      if (mark == null) {
+        _pendingPurgeBackups.remove(markId);
+        continue;
+      }
+      final c = allCollections[mark.collection];
+      var rev = c?.tombstones[mark.recordId];
+      if (c != null && rev == null) {
+        rev = clock.now();
+        c.applyRemote(mark.recordId, rev, null);
+      }
+      (records[mark.collection] ??= {})[mark.recordId] = rev ?? clock.now();
+      // The links that shared it: their snapshot of its text is in the
+      // backups too (the live links are already revoked and blanked).
+      for (final link in shares.all) {
+        if (link.sourceId == mark.recordId) {
+          (records['shares'] ??= {})[link.id] = clock.now();
+        }
+      }
+    }
+    for (final MapEntry(key: collection, value: ids)
+        in _purgedDependents.entries) {
+      final c = allCollections[collection];
+      for (final id in ids) {
+        (records[collection] ??= {})[id] = c?.tombstones[id] ?? clock.now();
+      }
+    }
+    if (records.isEmpty) return;
+    // The previous-version copies (.bak) of the live files lose it too.
+    final touched = {for (final r in records.keys) r, 'shares'};
+    for (final name in touched) {
+      await allCollections[name]?.refreshBackup();
+    }
+    try {
+      await backups.purgeRecords(
+        records: records,
+        attachmentFiles: _purgedAttachmentFiles.toList(),
+      );
+      _pendingPurgeBackups.clear();
+    } catch (error, stack) {
+      // The mark still prevents a restore; the backups are cleaned on the
+      // next start.
+      AppLog.error(
+        'Removing a purged record from backups failed',
+        error,
+        stack,
+      );
+    }
   }
 
   /// Remembers that a canvas was deleted on this device.

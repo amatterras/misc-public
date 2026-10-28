@@ -49,6 +49,20 @@ class ShareLink implements Record {
   bool activeAt(DateTime now) =>
       !revoked && (expiresAt == null || now.isBefore(expiresAt!));
 
+  /// A revoked link with its snapshot erased from this device's record too
+  /// (used when the shared item is deleted for good).
+  ShareLink scrubbed() => ShareLink(
+    id: id,
+    kind: kind,
+    sourceId: sourceId,
+    title: '',
+    body: '',
+    createdAt: createdAt,
+    updatedAt: DateTime.now(),
+    expiresAt: expiresAt,
+    revoked: true,
+  );
+
   ShareLink revoke() => ShareLink(
     id: id,
     kind: kind,

@@ -7,6 +7,7 @@
 // * The admin token (used by the `thehub` command to stop the service,
 //   create pairing codes, etc.) is stored encrypted with Windows DPAPI.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -24,6 +25,9 @@ class HubDevice {
     required this.createdAt,
     this.revoked = false,
     this.readOnly = false,
+    this.lastSeen,
+    this.publicKey,
+    this.endorsement,
   });
 
   final String id;
@@ -31,6 +35,15 @@ class HubDevice {
   final String tokenHash;
   final DateTime createdAt;
   final bool revoked;
+
+  /// The last request this device made (updated at most once a minute).
+  DateTime? lastSeen;
+
+  /// The device's public key (base64) and the endorsement that shows a holder
+  /// of the workspace key vouches for it (see device_keys.dart). The hub only
+  /// stores them; it cannot make a valid endorsement.
+  String? publicKey;
+  String? endorsement;
 
   /// May only read (a mirror): pushes and uploads are refused by the hub.
   final bool readOnly;
@@ -42,6 +55,9 @@ class HubDevice {
     'createdAt': createdAt.toUtc().toIso8601String(),
     'revoked': revoked,
     if (readOnly) 'readOnly': true,
+    if (lastSeen != null) 'lastSeen': lastSeen!.toUtc().toIso8601String(),
+    'publicKey': ?publicKey,
+    'endorsement': ?endorsement,
   };
 
   factory HubDevice.fromJson(Map<String, dynamic> j) => HubDevice(
@@ -52,6 +68,9 @@ class HubDevice {
     revoked: j['revoked'] as bool? ?? false,
     // Mirrors paired before this flag existed have ids starting "mirror".
     readOnly: j['readOnly'] == true || (j['id'] as String).startsWith('mirror'),
+    lastSeen: DateTime.tryParse('${j['lastSeen'] ?? ''}'),
+    publicKey: j['publicKey'] as String?,
+    endorsement: j['endorsement'] as String?,
   );
 }
 
@@ -144,9 +163,38 @@ class HubAuth {
   HubDevice? authenticate(String token) {
     final h = hash(token);
     for (final d in _devices.values) {
-      if (!d.revoked && _same(d.tokenHash, h)) return d;
+      if (!d.revoked && _same(d.tokenHash, h)) {
+        _seen(d);
+        return d;
+      }
     }
     return null;
+  }
+
+  /// Remembers that [d] was just heard from (and saves, at most a minute
+  /// apart, so reading the list never needs a disk write per request).
+  void _seen(HubDevice d) {
+    final now = DateTime.now();
+    final last = d.lastSeen;
+    if (last != null && now.difference(last) < const Duration(minutes: 1)) {
+      return;
+    }
+    d.lastSeen = now;
+    unawaited(_save().catchError((_) {}));
+  }
+
+  /// Stores a device's public key and its endorsement (see device_keys.dart).
+  Future<bool> setDeviceKey(
+    String deviceId,
+    String publicKey,
+    String endorsement,
+  ) async {
+    final d = _devices[deviceId];
+    if (d == null || d.revoked) return false;
+    d.publicKey = publicKey;
+    d.endorsement = endorsement;
+    await _save();
+    return true;
   }
 
   /// A new one-time pairing code, shown to the user on the PC.
@@ -281,7 +329,8 @@ class HubAuth {
       createdAt: d.createdAt,
       revoked: true,
       readOnly: d.readOnly,
-    );
+      lastSeen: d.lastSeen,
+    ); // (its public key is dropped: nothing is wrapped for it any more)
     await _save();
     return true;
   }

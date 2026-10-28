@@ -12,6 +12,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import '../data/storage/log_sanitizer.dart';
 import '../sync/protocol.dart';
 import 'hub_auth.dart';
 import 'hub_backup.dart';
@@ -154,8 +155,9 @@ class HubServer {
     server._paused = await server._pausedFile.exists();
     try {
       await server._purgeExpiredArchives();
+      await server._purgePurged();
     } catch (error) {
-      server._log('Calendar retention cleanup FAILED: ${error.runtimeType}');
+      server._log('Retention cleanup FAILED: ${error.runtimeType}');
     }
     for (final http in servers) {
       server._serve(http);
@@ -180,6 +182,18 @@ class HubServer {
     } catch (e) {
       _log('Backup FAILED: ${e.runtimeType}');
     }
+  }
+
+  /// Records deleted for good: their old versions leave the journal and every
+  /// backup (only the tombstone stays, which is also what refuses a revival).
+  Future<void> _purgePurged() async {
+    final keys = await store.purgedKeys();
+    if (keys.isEmpty) return;
+    await store.compact();
+    for (final (collection, id) in keys) {
+      await backups.purgeRecord(collection, id);
+    }
+    _log('Records deleted for good were removed from the journal and backups');
   }
 
   Future<void> _purgeExpiredArchives() async {
@@ -519,6 +533,9 @@ class HubServer {
           )) {
             await _purgeExpiredArchives();
           }
+          if (changes.any((c) => c.collection == 'purges' && !c.deleted)) {
+            await _purgePurged();
+          }
           await _send(r, 200, {
             'results': [for (final x in results) x.toJson()],
             'lastSeq': store.lastSeq,
@@ -549,6 +566,9 @@ class HubServer {
           } else {
             lastSeq = await store.waitForChange(since, limit);
           }
+          // A device removed while this was waiting gets "unauthorized", not
+          // the news (and a removal ends every held wait at once).
+          _device(r);
           await _send(r, 200, {'lastSeq': lastSeq, 'hubId': store.hubId});
         case ('GET', '/v1/changes'):
           _checkProtocol(r);
@@ -677,7 +697,105 @@ class HubServer {
           await _send(r, 200, {
             'required': store.e2eeRequired,
             'plaintextRecords': await store.countPlaintext(),
+            'keyEpoch': store.keyEpoch,
           });
+        // Devices: who is paired, when last seen, who can write, and each
+        // device's public key with its endorsement (for key changes).
+        case ('GET', '/v1/devices'):
+          _checkProtocol(r);
+          final me = _device(r);
+          who = me.id;
+          await _send(r, 200, {
+            'self': me.id,
+            'keyEpoch': store.keyEpoch,
+            'devices': [
+              for (final d in auth.devices)
+                {
+                  'id': d.id,
+                  'name': d.name,
+                  'createdAt': d.createdAt.toUtc().toIso8601String(),
+                  if (d.lastSeen != null)
+                    'lastSeen': d.lastSeen!.toUtc().toIso8601String(),
+                  'readOnly': d.readOnly,
+                  'revoked': d.revoked,
+                  'publicKey': ?d.publicKey,
+                  'endorsement': ?d.endorsement,
+                },
+            ],
+          });
+        case ('POST', '/v1/device-key'):
+          _checkProtocol(r);
+          final self = _device(r);
+          who = self.id;
+          final body = await _json(r);
+          final pub = body['publicKey'], endorsement = body['endorsement'];
+          if (pub is! String ||
+              endorsement is! String ||
+              !RegExp(r'^[A-Za-z0-9+/]{80,100}={0,2}$').hasMatch(pub) ||
+              !RegExp(r'^[0-9a-f]{64}$').hasMatch(endorsement)) {
+            throw const ProtocolException('bad_request', 'Invalid device key.');
+          }
+          await auth.setDeviceKey(self.id, pub, endorsement);
+          await _send(r, 200, {'ok': true});
+        // Removes a device. Takes effect on the next request of that device
+        // and ends its held connections; it only ever removes, never changes
+        // who may write (a read-only mirror stays read-only).
+        // Removes sealed attachment copies of a record deleted for good.
+        case ('POST', '/v1/purge-blobs'):
+          _checkProtocol(r);
+          who = _syncDevice(r, write: true).id;
+          final ids = (await _json(r))['ids'];
+          final removed = ids is List && ids.length <= 20
+              ? await store.deleteAttachments(ids.whereType<String>())
+              : 0;
+          await _send(r, 200, {'removed': removed});
+        case ('POST', '/v1/devices/revoke'):
+          _checkProtocol(r);
+          who = _syncDevice(r, write: true).id;
+          final target = (await _json(r))['deviceId'];
+          final done = target is String && await auth.revoke(target);
+          if (done) {
+            store.wakeWaiters();
+            _log('Device removed');
+          }
+          await _send(r, 200, {'revoked': done});
+        case ('GET', '/v1/keys'):
+          _checkProtocol(r);
+          final self = _device(r);
+          who = self.id;
+          final since =
+              int.tryParse(r.uri.queryParameters['since'] ?? '0') ?? 0;
+          await _send(r, 200, {
+            'epoch': store.keyEpoch,
+            'wraps': [
+              for (final w in store.wrapsFor(self.id, since))
+                {'epoch': w.epoch, 'wrapped': w.wrapped},
+            ],
+          });
+        case ('POST', '/v1/keys'):
+          _checkProtocol(r);
+          who = _syncDevice(r, write: true).id;
+          final body = await _json(r);
+          final epoch = body['epoch'], wraps = body['wraps'];
+          if (epoch is! int || wraps is! Map || wraps.length > 100) {
+            throw const ProtocolException('bad_request', 'Invalid key change.');
+          }
+          final live = {
+            for (final d in auth.devices)
+              if (!d.revoked) d.id,
+          };
+          final clean = <String, String>{};
+          for (final e in wraps.entries) {
+            if (e.key is String &&
+                e.value is String &&
+                live.contains(e.key) &&
+                (e.value as String).length < 4096) {
+              clean[e.key as String] = e.value as String;
+            }
+          }
+          await store.rotateKeys(epoch, clean);
+          _log('Workspace key changed');
+          await _send(r, 200, {'epoch': store.keyEpoch});
         // Switches the hub to end-to-end encrypted only, once a device has
         // re-sent everything encrypted and read it back. Refused (and
         // nothing changed) while any plain record is left.
@@ -703,9 +821,9 @@ class HubServer {
           _admin(r);
           who = 'admin';
           final id = (await _json(r))['deviceId'];
-          await _send(r, 200, {
-            'revoked': id is String && await auth.revoke(id),
-          });
+          final done = id is String && await auth.revoke(id);
+          if (done) store.wakeWaiters();
+          await _send(r, 200, {'revoked': done});
         case ('POST', '/v1/admin/pause'):
           _admin(r);
           who = 'admin';
@@ -766,7 +884,10 @@ class HubServer {
       final shortWho = who.length > 4 ? '${who.substring(0, 4)}…' : who;
       // Successful long-polls are routine heartbeats: not logged.
       if (!(route == '/v1/wait' && status == 200)) {
-        _log('${r.method} $route -> $status ${ms}ms by $shortWho');
+        final shown = sanitizeLog(
+          route.length > 60 ? route.substring(0, 60) : route,
+        );
+        _log('${r.method} $shown -> $status ${ms}ms by $shortWho');
       }
     }
   }

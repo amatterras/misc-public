@@ -46,6 +46,7 @@ const syncedCollections = {
   'external_events', // Google / Outlook events (read-only mirrors)
   'calendar_links', // THEapp entries exported to Google / Outlook
   'custom_tags', // the user's own Archive / Mindmap tags (name, colour)
+  'purges', // permanent deletions (id = "<collection>.<record id>")
 };
 
 /// Kinds an older hub may not know yet; they are pushed last, on their own.
@@ -60,6 +61,7 @@ const newerCollections = {
   'external_events',
   'calendar_links',
   'custom_tags',
+  'purges',
 };
 
 /// `0001792610475963-0000-a1b2c3d4`: see SyncClock.

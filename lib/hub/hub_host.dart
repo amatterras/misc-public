@@ -150,7 +150,10 @@ class HubHost {
     events.listen((message) {
       // onError sends [error, stack] (strings); onExit sends null.
       if (message is List) {
-        _log('Hub: uncaught error in the hub (${message.firstOrNull})');
+        _log(
+          'Hub: uncaught error in the hub '
+          '(${'${message.firstOrNull}'.split(':').first})',
+        );
         return;
       }
       if (message == null) {

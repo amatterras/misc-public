@@ -611,18 +611,42 @@ class DataSafetySection extends StatelessWidget {
                             '${(kept['at'] as String? ?? '').split('T').first}',
                             style: const TextStyle(fontSize: 11),
                           ),
-                          trailing: TextButton(
-                            onPressed: () {
-                              final ok = state.restoreDeletedRecord(
-                                collection,
-                                id,
-                              );
-                              state.showToast(
-                                ok ? 'Restored.' : 'It could not be restored.',
-                              );
-                              setState(() {});
-                            },
-                            child: const Text('Restore'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextButton(
+                                onPressed: () {
+                                  final ok = state.restoreDeletedRecord(
+                                    collection,
+                                    id,
+                                  );
+                                  state.showToast(
+                                    ok
+                                        ? 'Restored.'
+                                        : 'It could not be restored.',
+                                  );
+                                  setState(() {});
+                                },
+                                child: const Text('Restore'),
+                              ),
+                              TextButton(
+                                key: ValueKey('purge-$collection-$id'),
+                                onPressed: () async {
+                                  final yes = await _confirmPurge(context);
+                                  if (yes != true) return;
+                                  await state.workspace.purgeRecord(
+                                    collection,
+                                    id,
+                                  );
+                                  state.showToast(
+                                    'Deleted for good from this device, its '
+                                    'backups and (when synced) the hub.',
+                                  );
+                                  setState(() {});
+                                },
+                                child: const Text('Delete for good'),
+                              ),
+                            ],
                           ),
                         ),
                     ],
@@ -636,6 +660,33 @@ class DataSafetySection extends StatelessWidget {
           ],
         );
       },
+    ),
+  );
+
+  /// Says what "for good" does and does not mean, in plain words.
+  Future<bool?> _confirmPurge(BuildContext context) => showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Delete for good?', style: TextStyle(fontSize: 16)),
+      content: const Text(
+        'This cannot be undone. It is removed from this device, from the '
+        'backups THEapp keeps, and from the hub; your other devices are told '
+        'and an old copy cannot bring it back. Links that shared it stop.\n\n'
+        'It does not promise that no trace is left anywhere: disks and '
+        'operating systems can keep traces, and anything you exported, '
+        'copied or shared stays where it went.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const ValueKey('confirm-purge'),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Delete for good'),
+        ),
+      ],
     ),
   );
 

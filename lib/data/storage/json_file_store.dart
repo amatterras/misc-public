@@ -165,6 +165,24 @@ class JsonFileStore {
     await FileProtection.protect([file.path, bak.path]);
   }
 
+  /// Makes the previous-version copy (`.bak`) equal to the file as it is now,
+  /// and removes damaged-file leftovers of this document. After something was
+  /// deleted for good this stops the old content living on in `.bak`.
+  Future<void> refreshBackup(String collection, String id) async {
+    final file = _file(collection, id);
+    if (await _tryRead(file) == null) return;
+    final bak = File('${file.path}.bak');
+    final tmp = File('${file.path}.bak.tmp');
+    await _copy(file, tmp);
+    await _retry(() => tmp.rename(bak.path));
+    final name = file.uri.pathSegments.last;
+    await for (final e in file.parent.list()) {
+      if (e is File && e.uri.pathSegments.last.startsWith('$name.corrupt-')) {
+        await e.delete();
+      }
+    }
+  }
+
   /// Copies [from] to [to]; a copy of an older plain file is made encrypted
   /// (when encryption is on), so no plain-text copy is ever created here.
   Future<void> _copy(File from, File to) async {

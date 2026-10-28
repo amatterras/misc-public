@@ -45,7 +45,12 @@ bool isEnvelope(Map<String, dynamic>? data) =>
 /// needs to serve the page. Nothing else (so no stray plain field).
 bool envelopeShapeOk(String collection, Map<String, dynamic> data) {
   if (!isEnvelope(data)) return false;
-  final allowed = collection == 'shares' ? {'e2ee', 'c', 'pub'} : {'e2ee', 'c'};
+  final allowed = collection == 'shares'
+      ? {'e2ee', 'c', 'k', 'pub'}
+      : {'e2ee', 'c', 'k'};
+  if (data['k'] != null && (data['k'] is! int || (data['k'] as int) < 1)) {
+    return false;
+  }
   if (!data.keys.every(allowed.contains)) return false;
   if ((data['c'] as String).length > maxRecordBytes * 2) return false;
   final pub = data['pub'];
@@ -58,28 +63,75 @@ bool envelopeShapeOk(String collection, Map<String, dynamic> data) {
   return true;
 }
 
+/// A record sealed under a key epoch this device does not hold yet (the
+/// workspace key was changed after a device was removed). The key is fetched
+/// from the hub (wrapped for this device) and the sync retried.
+class MissingEpochKey implements Exception {
+  const MissingEpochKey(this.epoch);
+  final int epoch;
+  @override
+  String toString() => 'MissingEpochKey: $epoch';
+}
+
 class SyncCrypto {
   SyncCrypto(Uint8List workspaceKey)
-    : _key = Uint8List.fromList(workspaceKey),
-      _cipher = FileCipher(workspaceKey);
+    : this.epochs({1: workspaceKey}, current: 1);
+
+  /// Keys by epoch. Records are sealed under the [current] epoch and opened
+  /// under whichever epoch they name (older ones stay readable).
+  SyncCrypto.epochs(Map<int, Uint8List> keys, {required this.current})
+    : _keys = {
+        for (final e in keys.entries) e.key: Uint8List.fromList(e.value),
+      },
+      _ciphers = {for (final e in keys.entries) e.key: FileCipher(e.value)} {
+    if (!_keys.containsKey(current)) {
+      throw ArgumentError('No key for the current epoch');
+    }
+  }
 
   factory SyncCrypto.generate() => SyncCrypto(FileCipher.generateKey());
 
-  final Uint8List _key;
-  final FileCipher _cipher;
+  final Map<int, Uint8List> _keys;
+  final Map<int, FileCipher> _ciphers;
 
-  /// A copy of the key, only for wrapping it for another device or storing
-  /// it in OS-protected storage.
-  Uint8List exportKey() => Uint8List.fromList(_key);
+  /// The epoch new records are sealed under (1 until a device is removed).
+  int current;
 
-  /// Overwrites the key in memory (best effort).
-  void dispose() {
-    _key.fillRange(0, _key.length, 0);
-    _cipher.dispose();
+  /// The newest epoch's key, only for storing in OS-protected storage.
+  Uint8List exportKey() => Uint8List.fromList(_keys[current]!);
+
+  /// Every epoch's key (to store, or to wrap for another device).
+  Map<int, Uint8List> exportKeys() => {
+    for (final e in _keys.entries) e.key: Uint8List.fromList(e.value),
+  };
+
+  Iterable<int> get epochs => _keys.keys;
+
+  /// Takes a newer key in, and seals under it from now on.
+  void addEpoch(int epoch, Uint8List key) {
+    _keys[epoch] = Uint8List.fromList(key);
+    _ciphers[epoch] = FileCipher(key);
+    if (epoch > current) current = epoch;
   }
 
-  static List<int> _context(String collection, String id, String rev) =>
-      utf8.encode('theapp-sync-v1|$collection|$id|$rev');
+  /// Overwrites the keys in memory (best effort).
+  void dispose() {
+    for (final k in _keys.values) {
+      k.fillRange(0, k.length, 0);
+    }
+    for (final c in _ciphers.values) {
+      c.dispose();
+    }
+  }
+
+  static List<int> _context(
+    String collection,
+    String id,
+    String rev,
+    int epoch,
+  ) => utf8.encode(
+    'theapp-sync-v1|$collection|$id|$rev${epoch > 1 ? '|e$epoch' : ''}',
+  );
 
   /// The sealed form of a record's JSON.
   Map<String, dynamic> seal(
@@ -88,13 +140,14 @@ class SyncCrypto {
     String rev,
     Map<String, dynamic> data,
   ) {
-    final sealed = _cipher.encrypt(
+    final sealed = _ciphers[current]!.encrypt(
       utf8.encode(jsonEncode(data)),
-      context: _context(collection, id, rev),
+      context: _context(collection, id, rev, current),
     );
     return {
       'e2ee': envelopeVersion,
       'c': base64Encode(sealed),
+      if (current > 1) 'k': current,
       if (collection == 'shares') 'pub': _sharePublicPart(data),
     };
   }
@@ -109,17 +162,26 @@ class SyncCrypto {
       'ct': data['sealed'],
   };
 
+  /// The key epoch a sealed record names (1 when it names none).
+  static int epochOf(Map<String, dynamic> envelope) =>
+      envelope['k'] is int ? envelope['k'] as int : 1;
+
   /// Opens a sealed record. Throws [DecryptionFailure] if it was changed,
-  /// moved to another record or sealed with another key.
+  /// moved to another record or sealed with another key, and
+  /// [MissingEpochKey] if it was sealed under a newer key than this device
+  /// holds.
   Map<String, dynamic> open(
     String collection,
     String id,
     String rev,
     Map<String, dynamic> envelope,
   ) {
-    final bytes = _cipher.decrypt(
+    final epoch = epochOf(envelope);
+    final cipher = _ciphers[epoch];
+    if (cipher == null) throw MissingEpochKey(epoch);
+    final bytes = cipher.decrypt(
       base64Decode(envelope['c'] as String),
-      context: _context(collection, id, rev),
+      context: _context(collection, id, rev, epoch),
     );
     return jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
   }
@@ -181,12 +243,22 @@ class SyncCrypto {
   /// (SHA-256 of the sealed bytes: the hub cannot tell what is inside, and
   /// the same file sealed twice has different ids).
   ({Uint8List bytes, String id}) sealBlob(Uint8List plain) {
-    final sealed = _cipher.encrypt(plain, context: _blobContext);
+    final sealed = _ciphers[current]!.encrypt(plain, context: _blobContext);
     return (bytes: sealed, id: sha256.convert(sealed).toString());
   }
 
-  Uint8List openBlob(Uint8List sealed) =>
-      _cipher.decrypt(sealed, context: _blobContext);
+  /// Opens a sealed attachment: the newest key first, then older ones.
+  Uint8List openBlob(Uint8List sealed) {
+    final epochs = _ciphers.keys.toList()..sort((a, b) => b.compareTo(a));
+    for (final e in epochs) {
+      try {
+        return _ciphers[e]!.decrypt(sealed, context: _blobContext);
+      } on DecryptionFailure {
+        continue;
+      }
+    }
+    throw const DecryptionFailure('Authentication failed (wrong key)');
+  }
 }
 
 // ------------------------------------------------------------------ pairing --
@@ -268,6 +340,51 @@ class PairingSecret {
   /// The workspace key, wrapped for the new device.
   String wrap(Uint8List workspaceKey) =>
       base64Encode(_wrapCipher.encrypt(workspaceKey, context: _wrapContext));
+
+  /// Every key epoch of [crypto], wrapped for the new device (so it can read
+  /// older records as well as new ones).
+  String wrapCrypto(SyncCrypto crypto) => base64Encode(
+    _wrapCipher.encrypt(
+      utf8.encode(
+        jsonEncode({
+          'v': 1,
+          'current': crypto.current,
+          'keys': {
+            for (final e in crypto.exportKeys().entries)
+              '${e.key}': base64Encode(e.value),
+          },
+        }),
+      ),
+      context: _wrapContext,
+    ),
+  );
+
+  /// The keys from [wrapped] (a bundle, or one bare key from an older app),
+  /// or null if the code is not the one it was wrapped with.
+  SyncCrypto? unwrapCrypto(String wrapped) {
+    try {
+      final plain = _wrapCipher.decrypt(
+        base64Decode(wrapped),
+        context: _wrapContext,
+      );
+      if (plain.length == FileCipher.keyLength) return SyncCrypto(plain);
+      final json = jsonDecode(utf8.decode(plain)) as Map<String, dynamic>;
+      final keys = {
+        for (final e in (json['keys'] as Map<String, dynamic>).entries)
+          int.parse(e.key): base64Decode(e.value as String),
+      };
+      if (keys.values.any((k) => k.length != FileCipher.keyLength)) return null;
+      return SyncCrypto.epochs(keys, current: json['current'] as int);
+    } on DecryptionFailure {
+      return null;
+    } on FormatException {
+      return null;
+    } on ArgumentError {
+      return null;
+    } on TypeError {
+      return null;
+    }
+  }
 
   /// The workspace key from [wrapped], or null if the code is not the one it
   /// was wrapped with (or the hub changed it).

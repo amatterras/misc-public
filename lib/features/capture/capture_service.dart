@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/storage/log_sanitizer.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/storage/attachment_store.dart';
@@ -144,7 +145,9 @@ class CaptureService {
         ),
       );
     } catch (e) {
-      debugPrint('Preview failed for ${asset?.url}: $e');
+      debugPrint(
+        'Preview failed for ${hostOnly(asset?.url)}: ${describeError(e)}',
+      );
     } finally {
       _fetching.remove(assetId);
     }

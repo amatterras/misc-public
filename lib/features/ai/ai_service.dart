@@ -342,6 +342,60 @@ abstract class AiClient {
 }
 
 /// The user stopped the request.
+/// The last gate before a request leaves the app. Whatever built the
+/// request (the AI window, a tool, a test), nothing is sent unless AI is on,
+/// pictures only when allowed, and never anything that holds text from the
+/// open private vault. The interface also hides these choices, but the rule
+/// is kept here, where it cannot be skipped by a screen that forgets it.
+class GuardedAiClient extends AiClient {
+  GuardedAiClient(this._inner, this.settings, {this.vaultCheck})
+    : super(retry: _inner.retry);
+
+  final AiClient _inner;
+  final AiSettings settings;
+
+  /// True when a text contains private vault content.
+  final bool Function(String text)? vaultCheck;
+
+  List<AiMessage> _checked(List<AiMessage> messages) {
+    if (!settings.enabled) {
+      throw const AiFailure(
+        'AI is switched off in Settings. Nothing was sent.',
+        kind: AiErrorKind.settings,
+      );
+    }
+    if (!settings.allowImages && messages.any((m) => m.images.isNotEmpty)) {
+      throw const AiFailure(
+        'Pictures are not allowed in Settings → AI. Nothing was sent.',
+        kind: AiErrorKind.settings,
+      );
+    }
+    final check = vaultCheck;
+    if (check != null && messages.any((m) => check(m.content))) {
+      throw const AiFailure(
+        'Private vault content can never be sent to AI. Nothing was sent.',
+        kind: AiErrorKind.rejected,
+      );
+    }
+    return messages;
+  }
+
+  @override
+  Future<String> complete(List<AiMessage> messages) async =>
+      _inner.complete(_checked(messages));
+
+  @override
+  Stream<String> stream(List<AiMessage> messages) async* {
+    yield* _inner.stream(_checked(messages));
+  }
+
+  @override
+  Future<List<String>> listModels() => _inner.listModels();
+
+  @override
+  void cancel() => _inner.cancel();
+}
+
 class AiCancelled extends AiFailure {
   const AiCancelled() : super('Stopped.', kind: AiErrorKind.cancelled);
 }

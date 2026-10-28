@@ -804,3 +804,23 @@ and [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md)):
 - If a record cannot be migrated the upgrade stops, is reported in the sync status, and no end-to-end claim is made; the next sync tries again.
 - **Not controllable:** copies outside the hub's own folders (a Raspberry Pi mirror's earlier copy, disk snapshots, file-system journals, the device's own older backups) are not touched; erasing them is not guaranteed.
 - Order matters with several devices: update one device (the PC) first; other devices must be paired again with a new code to get the key. Until then they fail with `e2ee_unreadable` / `plaintext_rejected` instead of using or exposing data.
+
+---
+
+# Devices, key changes and deleting for good (§17, added 2026-10-28)
+
+## 17.1 Devices
+- **Settings → Sync → Devices** lists every paired device: name, "this device", **can read and write** or **read-only** (a mirror), whether it was removed, and when it was **last seen** (updated at most once a minute). `GET /v1/devices`.
+- **Removing a device is done by the hub**, not by the screen. `POST /v1/devices/revoke` (a writable device) marks it removed; from its very next request every endpoint answers `unauthorized`, and any long-poll it was holding ends at once (a removal wakes the hub's waiters and each wait re-checks the device before answering). The PC's admin `revoke` does the same.
+- **Roles cannot be changed by any request.** A read-only device cannot remove devices, change keys, commit, or offer pairings (`read_only`, 403); nothing makes a read-only device writable.
+
+## 17.2 A new workspace key when a device is removed
+- Every device has a P-256 key pair; the private half is in OS-protected storage, the public half is on the hub with an **endorsement**: an HMAC under the first workspace key over the device id and public key. Only a holder of the workspace key can make one, so the hub cannot add a device of its own.
+- After a removal the removing device makes the **next key epoch** and wraps it separately for each endorsed, non-removed, non-read-only device (including itself): ECDH with a fresh key, HKDF, AES-256-GCM. Each wrapped key also carries an HMAC under the first workspace key, so a device accepts a new key only from a holder of the old one, never from the hub. Nobody types anything. `POST /v1/keys`, `GET /v1/keys?since=N`.
+- From then on records and attachments are sealed under the new epoch (`k` in the sealed record; the epoch is part of what is authenticated). The hub refuses records sealed under an older epoch (`stale_key`, 409, retryable) so a device that missed the change cannot write something the removed device could read. Devices fetch the key at the start of each sync. Older records stay readable with the older keys, which every device keeps.
+- **Limits:** the removed device keeps what it already downloaded and the old keys, so it can still read records it has (and older ones it could fetch before removal). Devices that never published a public key (an old app) are named after the change and must be paired again. Existing records are not re-sealed under the new key.
+
+## 17.3 Deleting for good (permanent purge)
+- An ordinary deletion is unchanged: undoable from "recently deleted", and an old copy can still bring the record back. **Delete for good** (Settings → Storage → Recently deleted) is different: the record leaves active storage and "recently deleted" (and, for a note, its saved versions); links that shared it are revoked and blanked; attachment files nothing else uses are deleted; every copy in the app's backups and saved copies is removed (with a tombstone in its place; manifests rewritten, retention untouched); the previous-version copies (`.bak`) of the live files are refreshed.
+- A permanent **purge mark** (`purges/<collection>.<id>`, sealed like any record) syncs to every device and the hub. The hub **refuses any later write of that record from any device, whatever its revision**, refuses to undo the mark, adds its own tombstone, rewrites its journal without the record's old versions, removes them from every hub backup, and removes the sealed attachment copies the record alone used. Another device that still has the record loses it when the mark arrives; a restored backup or an old copy cannot bring it back because the mark and the hub's lock outlive them.
+- **What this is not:** forensic erasure. Disks, wear levelling, journaling and the operating system may keep traces; a copy the user exported or made outside THEapp, a link someone already read, and a device that is switched off are out of reach until it syncs. AI chats that quoted the item are not edited. The words in the app say so.

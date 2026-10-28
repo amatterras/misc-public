@@ -321,17 +321,17 @@ class StorageSwitch {
             deviceName,
           );
           _token = r.token;
-          final key = r.wrappedKey == null
+          final keys = r.wrappedKey == null
               ? null
-              : secret.unwrap(r.wrappedKey!);
-          if (key == null) {
+              : secret.unwrapCrypto(r.wrappedKey!);
+          if (keys == null) {
             throw const SyncFailure(
               'pairing_key',
               'The hub did not deliver a workspace key that matches your '
                   'code. Nothing was changed; make a new code and try again.',
             );
           }
-          crypto = SyncCrypto(key);
+          crypto = keys;
           keyFromPairing = true;
           client.token = _token;
         } else {
@@ -349,15 +349,15 @@ class StorageSwitch {
         // on a device that already has it (the service never sees either).
         if (secret != null) {
           final wrapped = await client.redeemPairing(secret.registerCode);
-          final key = secret.unwrap(wrapped);
-          if (key == null) {
+          final keys = secret.unwrapCrypto(wrapped);
+          if (keys == null) {
             throw const SyncFailure(
               'pairing_key',
               'The service did not deliver a workspace key that matches your '
                   'code. Nothing was changed.',
             );
           }
-          crypto = SyncCrypto(key);
+          crypto = keys;
           keyFromPairing = true;
         }
       } else {

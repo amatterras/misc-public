@@ -199,7 +199,13 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
       ? AppLockController(authenticator: platformAuthenticator())
       : null;
   runApp(TheApp(state: state, appLock: lock));
-  if (lock != null) unawaited(lock.start());
+  if (lock != null) {
+    unawaited(
+      lock.start().then(
+        (_) => state.setAppLockActive(lock.state != AppLockState.disabled),
+      ),
+    );
+  }
   // Unattended check of the Windows browser engine (test data mode only).
   const selfTest = '--webview-selftest=';
   final check = args.where((a) => a.startsWith(selfTest)).firstOrNull;

@@ -106,7 +106,11 @@ class _VaultPageState extends State<VaultPage> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Clipboard.setData(ClipboardData(text: code)),
+          onPressed: () {
+            // Copying the code must not feed the shared clipboard.
+            widget.state.suppressClipboardShare(code);
+            Clipboard.setData(ClipboardData(text: code));
+          },
           child: const Text('Copy'),
         ),
         TextButton(

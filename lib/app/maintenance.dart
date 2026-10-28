@@ -7,6 +7,8 @@
 // however many ticks were missed): nothing overlaps, nothing is lost.
 // Each job's outcome is its own: a backup's success says nothing about
 // sync, and the other way round.
+import '../data/storage/log_sanitizer.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -131,8 +133,7 @@ class MaintenanceScheduler extends ChangeNotifier {
   }
 
   static String _plain(Object e) {
-    final text = '$e';
-    return text.length > 200 ? '${text.substring(0, 200)}…' : text;
+    return plainError(e);
   }
 
   /// Stops the timer and waits (up to [wait]) for jobs still running, so

@@ -29,6 +29,7 @@ import '../features/ai/ai_session.dart';
 import '../features/ai/similarity.dart';
 import '../features/canvas/canvas_resources.dart';
 import '../features/capture/capture_service.dart';
+import '../features/capture/clipboard_guard.dart';
 import '../features/capture/file_drop.dart';
 import '../features/capture/send_to.dart';
 import '../features/tasks/completion_messages.dart';
@@ -37,6 +38,7 @@ import '../platform/ios_bridge.dart';
 import '../platform/input_hints.dart';
 import '../platform/platform.dart' as native;
 import '../widgets/date_prefs.dart';
+import '../sync/device_keys.dart' show DeviceKeyPair;
 import '../sync/e2ee.dart';
 import '../sync/protocol.dart';
 import '../sync/record_merge.dart';
@@ -536,8 +538,59 @@ class AppState extends ChangeNotifier {
 
   bool get syncPaired => _sync != null;
 
+  /// The sync connection, for the privacy summary (null when not syncing).
+  SyncClient? get syncClientForSummary => _sync?.client;
+
+  /// Face ID / Touch ID covers the app (set by the app at start-up).
+  bool appLockActive = false;
+
+  void setAppLockActive(bool on) {
+    if (appLockActive == on) return;
+    appLockActive = on;
+    notifyListeners();
+  }
+
   /// The workspace key for end-to-end encrypted sync (OS-protected storage).
   SyncKeyStore get syncKeys => SyncKeyStore(workspace.root);
+
+  // ------------------------------------------------------------- devices --
+
+  /// The devices paired with the hub (including removed ones), or null when
+  /// not paired or the hub cannot be reached.
+  Future<({String self, List<HubDeviceInfo> devices})?> hubDevices() async {
+    final engine = _sync;
+    if (engine == null) return null;
+    try {
+      final info = await engine.client.devices();
+      return (self: info.self, devices: info.devices);
+    } on SyncFailure {
+      return null;
+    }
+  }
+
+  /// Removes a device from the hub: it stops being answered at once, and the
+  /// workspace key is changed for the devices that remain (no secret to type).
+  /// Returns a message for the user.
+  Future<String> removeHubDevice(String deviceId) async {
+    final engine = _sync;
+    if (engine == null) return 'This device is not paired with a hub.';
+    try {
+      if (!await engine.client.revokeDevice(deviceId)) {
+        return 'That device was not found.';
+      }
+      final r = await engine.rotateKey();
+      notifyListeners();
+      return r.notUpdated.isEmpty
+          ? 'Device removed. It can no longer reach the hub, and new notes '
+                'are sealed with a new key it does not have.'
+          : 'Device removed, and the key was changed. These devices have no '
+                'key to receive it and must be paired again: '
+                '${r.notUpdated.join(', ')}.';
+    } on SyncFailure catch (e) {
+      return 'The device was removed, but the key could not be changed yet '
+          '(${e.message}). Try again.';
+    }
+  }
 
   /// A code to type on another device (or on this PC, to pair it with its
   /// own hub). It carries a key only the two devices know: the hub is given a
@@ -556,7 +609,7 @@ class AppState extends ChangeNotifier {
     final secret = PairingSecret.generate();
     final r = await localPairingOffer(
       registerCode: secret.registerCode,
-      wrappedKey: secret.wrap(crypto.exportKey()),
+      wrappedKey: secret.wrapCrypto(crypto),
       readOnly: readOnly,
     );
     // A hub serving a home network over HTTPS names its certificate; the
@@ -803,30 +856,41 @@ class AppState extends ChangeNotifier {
       // A device paired before sync was end-to-end encrypted has no key yet:
       // it makes one now (the hub is switched over on its next sync).
       final crypto = await syncKeys.loadOrCreate();
-      _startSync(Uri.parse(url), token, crypto: crypto, pin: pin);
+      await _startSync(Uri.parse(url), token, crypto: crypto, pin: pin);
     } on SyncFailure catch (e) {
       syncStatus = e.message;
     }
   }
 
-  void _startSync(
+  Future<void> _startSync(
     Uri url,
     String token, {
     required SyncCrypto crypto,
     String? pin,
-  }) {
+  }) async {
     _scheduler?.stop();
-    final engine = _sync = SyncEngine(
-      workspace: workspace,
-      canvases: canvases,
-      client: SyncClient(
-        url,
-        token: token,
-        crypto: crypto,
-        pinnedCertSha256: pin,
-      ),
-      openCanvas: _SyncBridge(this),
-    );
+    DeviceKeyPair? deviceKey;
+    try {
+      deviceKey = await syncKeys.loadOrCreateDeviceKey();
+    } catch (e, s) {
+      AppLog.error('Could not load the device key', e, s);
+    }
+    final engine = _sync =
+        SyncEngine(
+            workspace: workspace,
+            canvases: canvases,
+            client: SyncClient(
+              url,
+              token: token,
+              crypto: crypto,
+              pinnedCertSha256: pin,
+            ),
+            openCanvas: _SyncBridge(this),
+          )
+          ..deviceKey = deviceKey
+          ..saveKeys = (c) async {
+            await syncKeys.saveCrypto(c);
+          };
     hubUrl = url.toString();
     syncNeedsPairing = false;
     syncStatus = 'Waiting for first sync';
@@ -953,12 +1017,14 @@ class AppState extends ChangeNotifier {
           await _deviceLabel(device.name),
         );
         token = r.token;
-        final key = r.wrappedKey == null ? null : secret.unwrap(r.wrappedKey!);
-        if (key == null) {
+        final keys = r.wrappedKey == null
+            ? null
+            : secret.unwrapCrypto(r.wrappedKey!);
+        if (keys == null) {
           return 'The hub did not deliver a workspace key that matches your '
               'code. Nothing was changed; make a new code and try again.';
         }
-        crypto = SyncCrypto(key);
+        crypto = keys;
       } else {
         token = await client.register(
           code,
@@ -968,7 +1034,7 @@ class AppState extends ChangeNotifier {
         crypto = ownKey!;
       }
       try {
-        if (secret != null) await syncKeys.save(crypto.exportKey());
+        if (secret != null) await syncKeys.saveCrypto(crypto);
         await writeSecret(_hubTokenFile, token);
       } catch (e, s) {
         // Keychain / DPAPI refused: nothing is stored, nothing is synced.
@@ -987,7 +1053,7 @@ class AppState extends ChangeNotifier {
             ? 'Paired with a hub (this PC, Tailscale or HTTPS)'
             : 'Paired with a hub',
       );
-      _startSync(uri, token, crypto: crypto, pin: pin);
+      await _startSync(uri, token, crypto: crypto, pin: pin);
       notifyListeners();
       return null;
     } on SyncFailure catch (e) {
@@ -1044,7 +1110,7 @@ class AppState extends ChangeNotifier {
       });
       hubHosted = true;
       AppLog.info('Signed in to a hosted sync service');
-      _startSync(uri, token, crypto: await syncKeys.loadOrCreate());
+      await _startSync(uri, token, crypto: await syncKeys.loadOrCreate());
       notifyListeners();
       return null;
     } on SyncFailure catch (e) {
@@ -1176,7 +1242,7 @@ class AppState extends ChangeNotifier {
     final crypto = change.crypto;
     if (crypto == null) throw StateError('No workspace key for this switch');
     // A key delivered by a pairing code replaces this device's own.
-    if (change.keyFromPairing) await syncKeys.save(crypto.exportKey());
+    if (change.keyFromPairing) await syncKeys.saveCrypto(crypto);
     await writeSecret(_hubTokenFile, change.token!);
     await workspace.store.write('sync', 'hub', {
       'url': uri.toString(),
@@ -1196,7 +1262,12 @@ class AppState extends ChangeNotifier {
     hubHosted = to is HostedProvider;
     await settings.set('storageMode', to.mode.name);
     AppLog.info('Storage mode: ${to.mode.name} (copy verified)');
-    _startSync(uri, change.token!, crypto: crypto, pin: change.pinnedCert);
+    await _startSync(
+      uri,
+      change.token!,
+      crypto: crypto,
+      pin: change.pinnedCert,
+    );
     notifyListeners();
   }
 
@@ -1867,6 +1938,7 @@ class AppState extends ChangeNotifier {
     settings: ai,
     client: () => aiClient(),
     store: workspace.aiConversations,
+    vaultCheck: (text) => vault.containsPlaintext(text),
   );
 
   /// Embeddings from the local model; replaceable in tests.
@@ -1904,6 +1976,10 @@ class AppState extends ChangeNotifier {
       showToast(
         '${context.source.label} may not be sent to AI (Settings → AI).',
       );
+      return false;
+    }
+    if (vault.containsPlaintext(context.text)) {
+      showToast('Private vault content can never be sent to AI.');
       return false;
     }
     aiSession.attach(context);
@@ -1952,6 +2028,7 @@ class AppState extends ChangeNotifier {
         settings: ai,
         client: () => aiClient(),
         store: workspace.aiConversations,
+        vaultCheck: (text) => vault.containsPlaintext(text),
       );
       final ref = p.refId!;
       if (!ref.startsWith('new')) session.openConversation(ref);
@@ -2147,10 +2224,25 @@ class AppState extends ChangeNotifier {
   }
 
   /// The private vault (locked until the user opens it).
-  late final VaultService vault = VaultService(
-    meta: workspace.vaultMeta,
-    items: workspace.vaultItems,
-  );
+  late final VaultService vault = _newVault();
+
+  VaultService _newVault() {
+    final limiter = UnlockLimiter();
+    final v = VaultService(
+      meta: workspace.vaultMeta,
+      items: workspace.vaultItems,
+      limiter: limiter,
+      // Wrong tries are remembered on this device only (never synced), so
+      // closing the app does not give a fresh set of guesses.
+      saveAttempts: (state) =>
+          workspace.store.write('local', 'vault_attempts', state),
+    );
+    // The state is read right away; the first unlock waits for it.
+    unawaited(
+      workspace.store.read('local', 'vault_attempts').then(limiter.load),
+    );
+    return v;
+  }
 
   /// Opens the relationship graph in a floating window.
   void openGraph() => floating.show(graphWindow(this));
@@ -2220,6 +2312,18 @@ class AppState extends ChangeNotifier {
   String? _lastClipText;
   String? _appliedClipId;
 
+  /// Text THEapp itself just put on the clipboard for the user to paste
+  /// somewhere else (a code, a link): never shared, whatever it looks like.
+  String? _noShareClipText;
+
+  /// Marks [text] as something not to share (a recovery code the user copies).
+  void suppressClipboardShare(String text) => _noShareClipText = text;
+
+  /// Whether [text] may be synced: not vault text, not a secret.
+  bool _clipShareable(String text) =>
+      text != _noShareClipText &&
+      clipboardBlockReason(text, vaultCheck: vault.containsPlaintext) == null;
+
   Future<void> setShareClipboard(bool on) async {
     await settings.set('shareClipboard', on);
     _applyClipboardSetting();
@@ -2259,6 +2363,10 @@ class AppState extends ChangeNotifier {
     }
     _lastClipText = text;
     if (text.length > maxClipLength) return null;
+    // Secrets, codes and vault text never leave this device. (This only
+    // reads the clipboard; nothing here ever clears or replaces what another
+    // app put on it.)
+    if (!_clipShareable(text)) return null;
     final newest = _newestClip;
     if (newest != null && newest.text == text) return null; // came from sync
     final clip = ClipboardClip(
@@ -2292,6 +2400,7 @@ class AppState extends ChangeNotifier {
     _appliedClipId = newest.id;
     if (newest.text == _lastClipText) return;
     _lastClipText = newest.text;
+    if (!_clipShareable(newest.text)) return; // not even put on this clipboard
     unawaited(writeClipboardText(newest.text));
   }
 

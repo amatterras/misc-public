@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'privacy_summary.dart';
 import '../../app/app_state.dart';
 import '../../app/build_info.dart';
 import '../../app/test_environment.dart';
@@ -159,6 +160,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   if (mounted) setState(() {});
                 },
               ),
+              const _Heading('Privacy'),
+              PrivacySummary(state: s),
               const _Heading('Your data'),
               Text(
                 'Everything is stored only on $thisDevice, in:\n$dataPath',

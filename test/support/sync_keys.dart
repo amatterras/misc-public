@@ -1,6 +1,7 @@
 // Tests with several simulated devices: every device of a test uses this one
 // workspace key, as devices that were paired with an end-to-end pairing code
 // do. (Each real device would otherwise make its own random key.)
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_application_1/app/app_state.dart';
@@ -30,4 +31,14 @@ String keyedPairingCode(HubAuth auth) {
     wrappedKey: secret.wrap(testSyncKey),
   );
   return secret.display;
+}
+
+/// A file's bytes, or nothing if it vanished meanwhile (the hub rewrites small
+/// files such as the device list while a test scans its folder).
+Future<List<int>> readSafe(File f) async {
+  try {
+    return await f.readAsBytes();
+  } on FileSystemException {
+    return const [];
+  }
 }

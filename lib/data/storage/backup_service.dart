@@ -532,6 +532,107 @@ class BackupService {
     await _replace(staging, target);
   }
 
+  /// Removes records that were deleted for good from every backup THEapp
+  /// manages (the data folder's backups and the saved copies): their content,
+  /// their "recently deleted" copy, damaged-file leftovers, and the
+  /// attachment files named in [attachmentFiles]. [records] is
+  /// collection -> {id: tombstone revision}. A tombstone takes each record's
+  /// place, so a restore of the backup cannot bring it back. Backups that were
+  /// intact get a new manifest; the retention policy (which backups exist and
+  /// how many) is untouched. A backup made under another key cannot be opened
+  /// here and is left alone.
+  Future<void> purgeRecords({
+    required Map<String, Map<String, String>> records,
+    List<String> attachmentFiles = const [],
+  }) async {
+    for (final backup in await list()) {
+      final writes = <File, String>{};
+      final deletes = <File>[];
+      try {
+        for (final MapEntry(key: collection, value: ids) in records.entries) {
+          final base = File('${backup.path}$_sep$dataDir$_sep$collection.json');
+          for (final suffix in ['', '.bak']) {
+            final file = File('${base.path}$suffix');
+            if (!await file.exists()) continue;
+            final json = jsonDecode(
+              await StorageEncryption.readText(file, _cipher),
+            );
+            if (json is! Map<String, dynamic>) continue;
+            final all = (json['records'] as List? ?? const []);
+            final records = all
+                .where((raw) => raw is! Map || !ids.containsKey(raw['id']))
+                .toList();
+            final revs = Map<String, dynamic>.of(
+              (json['revs'] as Map?)?.cast<String, dynamic>() ?? const {},
+            );
+            final tombstones = Map<String, dynamic>.of(
+              (json['tombstones'] as Map?)?.cast<String, dynamic>() ?? const {},
+            );
+            final recentlyDeleted = Map<String, dynamic>.of(
+              (json['recentlyDeleted'] as Map?)?.cast<String, dynamic>() ??
+                  const {},
+            );
+            var changed = records.length != all.length;
+            for (final MapEntry(key: id, value: rev) in ids.entries) {
+              if (revs.remove(id) != null) changed = true;
+              if (recentlyDeleted.remove(id) != null) changed = true;
+              if (tombstones[id] != rev) {
+                tombstones[id] = rev;
+                changed = true;
+              }
+            }
+            if (!changed) continue;
+            final purged = {
+              ...json,
+              'records': records,
+              'revs': revs,
+              'tombstones': tombstones,
+            }..remove('recentlyDeleted');
+            if (recentlyDeleted.isNotEmpty) {
+              purged['recentlyDeleted'] = recentlyDeleted;
+            }
+            writes[file] = const JsonEncoder.withIndent(' ').convert(purged);
+          }
+          final dataFolder = Directory('${backup.path}$_sep$dataDir');
+          if (await dataFolder.exists()) {
+            await for (final f in dataFolder.list()) {
+              if (f is File &&
+                  f.uri.pathSegments.last.startsWith(
+                    '$collection.json.corrupt-',
+                  )) {
+                deletes.add(f);
+              }
+            }
+          }
+        }
+      } on DecryptionFailure {
+        continue; // another device's backup: not ours to change
+      } on StorageLockedException {
+        continue;
+      }
+      for (final name in attachmentFiles) {
+        final f = File('${backup.path}$_sep$_attachments$_sep$name');
+        if (await f.exists()) deletes.add(f);
+      }
+      if (writes.isEmpty && deletes.isEmpty) continue;
+      final manifest = await readManifest(backup);
+      final intact = manifest != null && (await checkManifest(backup)).isEmpty;
+      for (final MapEntry(key: file, value: text) in writes.entries) {
+        await _atomicWrite(file, text);
+      }
+      for (final f in deletes) {
+        await f.delete();
+      }
+      if (intact) {
+        await writeManifest(
+          backup,
+          reason: manifest['reason'] as String? ?? 'unknown',
+          includesAttachments: manifest['includesAttachments'] as bool?,
+        );
+      }
+    }
+  }
+
   /// A restore replaces live data, so first make sure this device's key
   /// opens the backup. A backup made under another key (another device, or a
   /// lost key) is left untouched and nothing is changed; no key is invented.

@@ -153,11 +153,43 @@ class HubBackups {
     }
   }
 
+  /// Removes a record deleted for good from every hub backup, leaving only
+  /// its tombstone (so restoring a backup cannot bring it back). The journal
+  /// lines are identified by collection and id; nothing is read of their
+  /// (sealed) content.
+  Future<void> purgeRecord(String collection, String id) async {
+    final current = await store.currentJournalLine(collection, id);
+    if (current == null || current['del'] != true) return;
+    for (final backup in [...await list(), ...await listLive()]) {
+      await _rewriteWithoutExpiredEntry(backup, id, current, collection);
+    }
+  }
+
   Future<void> _rewriteWithoutExpiredEntry(
     Directory backup,
     String id,
-    Map<String, dynamic> tombstone,
-  ) async {
+    Map<String, dynamic> tombstone, [
+    String collection = 'calendar_entries',
+  ]) async {
+    // Already clean (only the tombstone is left)? Then nothing to do.
+    var versions = 0;
+    var onlyTombstone = true;
+    await for (final raw in File(
+      '${backup.path}${_sep}journal.jsonl',
+    ).openRead().transform(utf8.decoder).transform(const LineSplitter())) {
+      if (raw.isEmpty || !raw.contains('"$id"')) continue;
+      try {
+        final line = jsonDecode(raw) as Map<String, dynamic>;
+        if (line['t'] == 'v' && line['c'] == collection && line['id'] == id) {
+          versions++;
+          if (line['del'] != true) onlyTombstone = false;
+        }
+      } catch (_) {
+        // A damaged line: rewrite to be sure.
+        onlyTombstone = false;
+      }
+    }
+    if (versions == 1 && onlyTombstone) return;
     final manifest = jsonDecode(
       await _manifest(backup).readAsString(),
     ) as Map<String, dynamic>;
@@ -180,9 +212,7 @@ class HubBackups {
         if (raw.isEmpty) continue;
         final line = jsonDecode(raw) as Map<String, dynamic>;
         if (line['t'] == 'c') continue;
-        if (line['t'] == 'v' &&
-            line['c'] == 'calendar_entries' &&
-            line['id'] == id) {
+        if (line['t'] == 'v' && line['c'] == collection && line['id'] == id) {
           continue;
         }
         sink.writeln(raw);
@@ -199,7 +229,7 @@ class HubBackups {
       if (tombstoneSeq is int && tombstoneSeq > lastSeq) {
         lastSeq = tombstoneSeq;
       }
-      recordKeys.add('calendar_entries/$id');
+      recordKeys.add('$collection/$id');
       sink.writeln(jsonEncode({'t': 'c', 'n': lineCount}));
       await sink.flush();
     } finally {

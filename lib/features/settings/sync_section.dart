@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'devices_section.dart';
 import '../../app/app_state.dart';
 import '../../app/maintenance.dart';
 import '../../app/test_environment.dart';
@@ -249,6 +250,8 @@ class _SyncSectionState extends State<SyncSection> {
                   style: TextStyle(fontSize: 12, color: AppColors.textFaint),
                 ),
               ),
+            const SizedBox(height: Space.sm),
+            DevicesSection(state: s),
             const SizedBox(height: Space.sm),
             Wrap(
               spacing: Space.sm,

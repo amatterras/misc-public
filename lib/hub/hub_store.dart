@@ -142,6 +142,61 @@ class HubStore {
   /// [commitEncryption] after a device has re-sent everything encrypted.
   bool e2eeRequired = false;
 
+  /// The workspace key epoch the hub requires new records to be sealed
+  /// under (1 until a device is removed and the key changed).
+  int keyEpoch = 1;
+
+  /// Wrapped keys for the remaining devices, by epoch then device id (the
+  /// hub only stores them: it cannot open them).
+  final Map<int, Map<String, String>> _wraps = {};
+
+  File get _keysFile => File('${dir.path}${_sep}keys.json');
+
+  Future<void> _loadKeys() async {
+    if (!await _keysFile.exists()) return;
+    final json =
+        jsonDecode(await _keysFile.readAsString()) as Map<String, dynamic>;
+    keyEpoch = json['epoch'] as int? ?? 1;
+    for (final e
+        in (json['wraps'] as Map<String, dynamic>? ?? const {}).entries) {
+      _wraps[int.parse(e.key)] = (e.value as Map).cast<String, String>();
+    }
+  }
+
+  /// Stores the wrapped keys of a new epoch. Only the next epoch is
+  /// accepted; from then on records sealed under an older one are refused
+  /// (`stale_key`), so a device that missed the change cannot write data the
+  /// removed device could read.
+  Future<void> rotateKeys(int epoch, Map<String, String> wraps) =>
+      _locked(() async {
+        if (epoch != keyEpoch + 1) {
+          throw const ProtocolException(
+            'bad_request',
+            'Only the next key epoch can be stored.',
+            status: 409,
+          );
+        }
+        _wraps[epoch] = wraps;
+        keyEpoch = epoch;
+        final tmp = File('${_keysFile.path}.tmp');
+        await tmp.writeAsString(
+          jsonEncode({
+            'epoch': keyEpoch,
+            'wraps': {for (final e in _wraps.entries) '${e.key}': e.value},
+          }),
+          flush: true,
+        );
+        await tmp.rename(_keysFile.path);
+        wakeWaiters(); // devices hear about the new key at once
+      });
+
+  /// The wrapped keys for [deviceId] of epochs newer than [since].
+  List<({int epoch, String wrapped})> wrapsFor(String deviceId, int since) => [
+    for (final e in _wraps.entries)
+      if (e.key > since && e.value[deviceId] != null)
+        (epoch: e.key, wrapped: e.value[deviceId]!),
+  ];
+
   File get _e2eeFile => File('${dir.path}${_sep}e2ee.json');
 
   /// Current records that are not end-to-end encrypted (hub-made conflict
@@ -251,6 +306,7 @@ class HubStore {
       await idFile.writeAsString(store.hubId, flush: true);
     }
     store.e2eeRequired = await store._e2eeFile.exists();
+    await store._loadKeys();
     await store._load();
     return store;
   }
@@ -382,6 +438,35 @@ class HubStore {
     return entry == null ? null : _readLine(entry);
   });
 
+  /// Records deleted for good, as (collection, id).
+  Future<List<(String, String)>> purgedKeys() => _locked(() async {
+    const prefix = 'purges/';
+    return [
+      for (final key in _latest.keys)
+        if (key.startsWith(prefix) && !_latest[key]!.deleted)
+          if (key.indexOf('.', prefix.length) > 0)
+            (
+              key.substring(prefix.length, key.indexOf('.', prefix.length)),
+              key.substring(key.indexOf('.', prefix.length) + 1),
+            ),
+    ];
+  });
+
+  /// Removes sealed attachment copies the owner no longer needs (a purged
+  /// record's files). Returns how many existed.
+  Future<int> deleteAttachments(Iterable<String> ids) async {
+    var n = 0;
+    for (final id in ids) {
+      if (!sha256Pattern.hasMatch(id)) continue;
+      final f = attachmentFile(id);
+      if (await f.exists()) {
+        await f.delete();
+        n++;
+      }
+    }
+    return n;
+  }
+
   /// IDs with an irreversible archive-expiration lock.
   Future<List<String>> expiredCalendarEntryIds() => _locked(() async {
     const prefix = 'calendar_entry_expirations/';
@@ -413,6 +498,16 @@ class HubStore {
           'plaintext_rejected',
           'This hub only accepts end-to-end encrypted records. Update the '
               'app and pair again.',
+        );
+      }
+      if (e2eeRequired &&
+          c.data != null &&
+          SyncCrypto.epochOf(c.data!) != keyEpoch) {
+        throw const ProtocolException(
+          'stale_key',
+          'The workspace key was changed; this device must update its key '
+              'first.',
+          status: 409,
         );
       }
       // A device may only send its own new edits. The exception is a record
@@ -566,7 +661,17 @@ class HubStore {
       final expirationLock = c.collection == 'calendar_entries'
           ? latest(expirationKey)
           : null;
-      if (c.collection == 'calendar_entry_expirations' && c.deleted) {
+      // A record deleted for good ("purges/<collection>.<id>") can never be
+      // written again, by any device, whatever its revision.
+      final purgeLock = c.collection == 'purges'
+          ? null
+          : latest('purges/${c.collection}.${c.id}');
+      if (c.collection == 'purges' && c.deleted) {
+        // Purge marks are permanent too.
+        status = PushStatus.keptServer;
+      } else if (purgeLock != null && !purgeLock.deleted && !c.deleted) {
+        status = PushStatus.keptServer;
+      } else if (c.collection == 'calendar_entry_expirations' && c.deleted) {
         // Expiration markers are permanent. No device can remove the lock.
         status = PushStatus.keptServer;
       } else if (expirationLock != null &&
@@ -652,6 +757,29 @@ class HubStore {
         }
       }
 
+      if (c.collection == 'purges' && !c.deleted) {
+        // The hub's own tombstone for the purged record, in the same durable
+        // batch (covers a device that purged but never pushed its deletion).
+        final dot = c.id.indexOf('.');
+        if (dot > 0) {
+          final target = c.id.substring(0, dot);
+          final targetId = c.id.substring(dot + 1);
+          final row = latest('$target/$targetId');
+          if (syncedCollections.contains(target) &&
+              idPattern.hasMatch(targetId) &&
+              (row == null || !row.deleted)) {
+            stage(
+              SyncChange(
+                collection: target,
+                id: targetId,
+                rev: _clock.now(),
+                deleted: true,
+              ),
+              'hub',
+            );
+          }
+        }
+      }
       if (c.collection == 'calendar_entry_expirations' && !c.deleted) {
         // Record a hub-side calendar tombstone in the same durable push batch
         // as the lock. This covers a race where a stale client writes first.

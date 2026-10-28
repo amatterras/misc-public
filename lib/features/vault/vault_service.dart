@@ -4,7 +4,15 @@
 // what is stored on disk, in backups and on the hub; it cannot protect
 // against malware on an unlocked device. Vault items never go to search,
 // AI, sharing or exports. It locks after [idleLimit] and when the app goes
-// to the background.
+// to the background. Wrong passwords (and wrong recovery codes) are slowed
+// down: after a few tries each failure makes the next wait longer, and the
+// wait survives closing the app (see [UnlockLimiter]).
+//
+// Limits of key hygiene: the vault key and every decrypted byte buffer are
+// overwritten as soon as they are not needed (lock, failed or finished
+// decryption). Dart strings (the typed password, the text of an open item)
+// are immutable and cannot be overwritten; they stay until garbage collection.
+// Malware on an unlocked device can read them.
 import 'dart:async';
 import 'dart:convert';
 
@@ -18,12 +26,103 @@ import 'vault_crypto.dart';
 /// A decrypted vault item (only in memory while unlocked).
 typedef VaultEntry = ({String id, String title, String text, DateTime at});
 
+/// Slows down guessing: the first [freeTries] wrong tries cost nothing, then
+/// each failure makes the next attempt wait longer (5 s, 15 s, 30 s, 1 min,
+/// 5 min, then 15 min), and a right password starts over. The count and the
+/// end of the wait are kept (on this device only), so closing and reopening
+/// the app does not reset them.
+class UnlockLimiter {
+  UnlockLimiter({this.freeTries = 3, DateTime Function()? now})
+    : _now = now ?? DateTime.now;
+
+  final int freeTries;
+  final DateTime Function() _now;
+  int failures = 0;
+  DateTime? lockedUntil;
+
+  static const delays = [
+    Duration(seconds: 5),
+    Duration(seconds: 15),
+    Duration(seconds: 30),
+    Duration(minutes: 1),
+    Duration(minutes: 5),
+    Duration(minutes: 15),
+  ];
+
+  /// How long to wait before trying again, or null.
+  Duration? get wait {
+    final until = lockedUntil;
+    if (until == null) return null;
+    final left = until.difference(_now());
+    return left > Duration.zero ? left : null;
+  }
+
+  void failed() {
+    failures++;
+    final over = failures - freeTries;
+    if (over > 0) {
+      lockedUntil = _now().add(delays[(over - 1).clamp(0, delays.length - 1)]);
+    }
+  }
+
+  void succeeded() {
+    failures = 0;
+    lockedUntil = null;
+  }
+
+  Map<String, dynamic> toJson() => {
+    'failures': failures,
+    if (lockedUntil != null)
+      'lockedUntil': lockedUntil!.toUtc().toIso8601String(),
+  };
+
+  void load(Map<String, dynamic>? json) {
+    failures = (json?['failures'] as num?)?.toInt() ?? 0;
+    lockedUntil = DateTime.tryParse('${json?['lockedUntil'] ?? ''}');
+  }
+}
+
+/// Too many wrong tries: nothing was tried (no key work was done).
+class VaultLockedOut extends VaultCryptoException {
+  VaultLockedOut(this.waitFor)
+    : super(
+        'Too many wrong tries. Wait ${waitFor.inSeconds < 90 ? '${waitFor.inSeconds} seconds' : '${waitFor.inMinutes} minutes'} '
+        'and try again.',
+      );
+
+  final Duration waitFor;
+}
+
 class VaultService extends ChangeNotifier {
   VaultService({
     required this.meta,
     required this.items,
     this.kdf = const KdfParams(),
-  });
+    UnlockLimiter? limiter,
+    this.saveAttempts,
+  }) : limiter = limiter ?? UnlockLimiter();
+
+  /// Slows down wrong passwords (kept on this device only).
+  final UnlockLimiter limiter;
+
+  /// Keeps [limiter]'s state (null: only for this run).
+  final Future<void> Function(Map<String, dynamic> state)? saveAttempts;
+
+  void _checkAllowed() {
+    final wait = limiter.wait;
+    if (wait != null) throw VaultLockedOut(wait);
+  }
+
+  Future<void> _wrong() async {
+    limiter.failed();
+    await saveAttempts?.call(limiter.toJson());
+  }
+
+  Future<void> _right() async {
+    if (limiter.failures == 0 && limiter.lockedUntil == null) return;
+    limiter.succeeded();
+    await saveAttempts?.call(limiter.toJson());
+  }
 
   final RecordCollection<VaultMeta> meta;
   final RecordCollection<VaultItem> items;
@@ -108,12 +207,17 @@ class VaultService extends ChangeNotifier {
     if (p == null) {
       throw const VaultCryptoException('The vault key record is damaged.');
     }
+    _checkAllowed();
     final pk = await deriveKey(password, _unb64(m.salt), p);
     try {
       _key = open(pk, _unb64(m.wrapNonce), _unb64(m.wrapped), 'vault-key');
+    } on VaultCryptoException {
+      await _wrong();
+      rethrow;
     } finally {
       wipe(pk);
     }
+    await _right();
     _touch();
     notifyListeners();
   }
@@ -131,6 +235,7 @@ class VaultService extends ChangeNotifier {
     if (p == null) {
       throw const VaultCryptoException('The vault key record is damaged.');
     }
+    _checkAllowed();
     final rk = await deriveKey(
       normalizeRecoveryCode(code),
       _unb64(m.recoverySalt),
@@ -145,10 +250,12 @@ class VaultService extends ChangeNotifier {
         'vault-recovery',
       );
     } on VaultCryptoException {
+      await _wrong();
       throw const VaultCryptoException('That recovery code is not right.');
     } finally {
       wipe(rk);
     }
+    await _right();
     meta.put(await _wrap(dataKey, newPassword, '', keepRecoveryFrom: m));
     _key = dataKey;
     _touch();
@@ -192,7 +299,12 @@ class VaultService extends ChangeNotifier {
           _unb64(i.data),
           'item:${i.id}',
         );
-        final j = jsonDecode(utf8.decode(plain)) as Map<String, dynamic>;
+        final Map<String, dynamic> j;
+        try {
+          j = jsonDecode(utf8.decode(plain)) as Map<String, dynamic>;
+        } finally {
+          wipe(plain); // the decrypted bytes are not kept
+        }
         out.add((
           id: i.id,
           title: '${j['title'] ?? ''}',
@@ -235,6 +347,22 @@ class VaultService extends ChangeNotifier {
     _touch();
     notifyListeners();
     return itemId;
+  }
+
+  /// Whether [text] holds something from an open vault item (a title or
+  /// text of at least [minLength] characters). Used to keep vault content out
+  /// of AI requests and the shared clipboard even if it was copied.
+  bool containsPlaintext(String text, {int minLength = 8}) {
+    if (_key == null || text.length < minLength) return false;
+    for (final e in entries()) {
+      for (final part in [e.title, e.text]) {
+        if (part.length >= minLength &&
+            (text.contains(part) || part.contains(text))) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   void delete(String id) {

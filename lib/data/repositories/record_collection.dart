@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/record.dart';
 import '../models/unknown_fields.dart';
+import '../storage/log_sanitizer.dart';
 import '../storage/app_log.dart';
 import '../storage/json_file_store.dart';
 import '../sync/sync_clock.dart';
@@ -84,6 +85,9 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
   T? operator [](String? id) => id == null ? null : _records[id];
   bool contains(String id) => _records.containsKey(id);
 
+  /// Whether [id] was deleted for good (set by the workspace; see PurgeMark).
+  bool Function(String id)? isPurged;
+
   /// Records kept aside because this version could not read them.
   int get unreadableCount => _unreadable.length;
 
@@ -125,7 +129,9 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
             savedRevs[record.id] ?? clock.stampAt(record.updatedAt);
       } catch (e) {
         // One damaged record must not take the rest down with it.
-        AppLog.warn('Keeping unreadable $name record aside: $e');
+        AppLog.warn(
+          'Keeping unreadable $name record aside: ${describeError(e)}',
+        );
         if (raw is Map<String, dynamic>) _unreadable.add(raw);
       }
     }
@@ -282,6 +288,8 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
   /// `data == null` means the record was deleted.
   void applyRemote(String id, String rev, Map<String, dynamic>? data) {
     clock.observe(rev);
+    // A record deleted for good never comes back from sync or a restore.
+    if (data != null && (isPurged?.call(id) ?? false)) return;
     if (data == null) {
       // Deleted on another device: also recoverable here.
       final json = jsonOf(id);
@@ -309,6 +317,13 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     // A failure is logged and retried inside flush().
     _timer = Timer(saveDelay, () => unawaited(flush().catchError((_) {})));
     notifyListeners();
+  }
+
+  /// After a permanent deletion: brings the previous-version copy of this
+  /// collection's file up to date so it no longer holds the deleted record.
+  Future<void> refreshBackup() async {
+    await flush();
+    await store.refreshBackup(_folder, name);
   }
 
   Future<void> flush() async {

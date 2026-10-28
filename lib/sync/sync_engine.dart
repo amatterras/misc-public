@@ -17,9 +17,12 @@ import '../data/models/canvas_models.dart';
 import '../data/models/library_models.dart';
 import '../data/repositories/canvas_repository.dart';
 import '../data/storage/app_log.dart';
-import '../data/storage/storage_encryption.dart' show DecryptionFailure;
+import '../data/storage/storage_encryption.dart'
+    show DecryptionFailure, FileCipher;
 import '../data/workspace.dart';
 import 'canvas_merge.dart';
+import 'device_keys.dart';
+import 'e2ee.dart';
 import 'record_merge.dart';
 import 'protocol.dart';
 import 'sync_client.dart';
@@ -216,9 +219,11 @@ class SyncEngine {
     try {
       await openCanvas?.flushOpenCanvas();
       await workspace.flush();
+      await _syncKeys(report);
       final state = await loadState();
       await _fillAttachmentHashes();
       await _push(state, report);
+      await _purgeHubBlobs();
       await _pull(state, report);
       await _downloadMissingAttachments(report);
       await _ensureHubSealed(state, report);
@@ -607,6 +612,147 @@ class SyncEngine {
         ),
         report,
       );
+    }
+  }
+
+  /// This device's key pair, and where a changed workspace key is stored
+  /// (set by the app). Without them a key change cannot be received.
+  DeviceKeyPair? deviceKey;
+  Future<void> Function(SyncCrypto)? saveKeys;
+  bool _deviceKeyPublished = false;
+
+  /// Once per session tells the hub this device's public key (endorsed by
+  /// the workspace key); every cycle takes in a key change made by another
+  /// device (wrapped for this one, and authenticated by the old key).
+  Future<void> _syncKeys(SyncReport report) async {
+    final crypto = client.crypto;
+    final dk = deviceKey;
+    if (crypto == null || dk == null) return;
+    final first = crypto.exportKeys()[1];
+    try {
+      if (!_deviceKeyPublished && first != null) {
+        final info = await client.devices();
+        final mine = info.devices.where((d) => d.id == info.self).firstOrNull;
+        if (mine?.publicKey != dk.publicBase64) {
+          await client.publishDeviceKey(
+            dk.publicBase64,
+            endorseDeviceKey(first, info.self, dk.publicBase64),
+          );
+        }
+        _deviceKeyPublished = true;
+      }
+      final found = await client.keysSince(crypto.current);
+      if (found.epoch <= crypto.current || first == null) return;
+      var changed = false;
+      for (final w in [
+        ...found.wraps,
+      ]..sort((a, b) => a.epoch.compareTo(b.epoch))) {
+        final key = unwrapRotatedKey(
+          device: dk,
+          epoch: w.epoch,
+          deviceId: workspace.device!.id,
+          wrapped: w.wrapped,
+          firstWorkspaceKey: first,
+        );
+        if (key == null) {
+          report.problems.add(
+            'A change of the workspace key could not be verified, so it was '
+            'not used. This device may need to be paired again.',
+          );
+          continue;
+        }
+        crypto.addEpoch(w.epoch, key);
+        changed = true;
+      }
+      if (changed) await saveKeys?.call(crypto);
+    } on SyncFailure catch (e) {
+      if (e.code != 'not_found') rethrow; // an older hub: nothing to do
+    }
+  }
+
+  /// A device was removed: makes the next workspace key and wraps it for
+  /// every remaining device that has an endorsed public key (including this
+  /// one, so a crash cannot lose it). The removed device, and the hub, get
+  /// nothing; records written from now on are sealed under the new key.
+  /// [notUpdated] names devices without a usable key (they must be paired
+  /// again to read new records).
+  Future<({int epoch, List<String> notUpdated})> rotateKey() async {
+    final crypto = client.crypto;
+    if (crypto == null) {
+      throw const SyncFailure('no_key', 'This device has no workspace key.');
+    }
+    final first = crypto.exportKeys()[1];
+    if (first == null) {
+      throw const SyncFailure('no_key', 'The first workspace key is missing.');
+    }
+    final info = await client.devices();
+    final epoch = crypto.current + 1;
+    final newKey = FileCipher.randomBytes(32);
+    final wraps = <String, String>{};
+    final notUpdated = <String>[];
+    for (final d in info.devices) {
+      if (d.revoked || d.readOnly) continue;
+      final pub = d.publicKey, end = d.endorsement;
+      if (pub == null ||
+          end == null ||
+          !verifyDeviceKey(first, d.id, pub, end)) {
+        notUpdated.add(d.name);
+        continue;
+      }
+      wraps[d.id] = wrapRotatedKey(
+        recipientPublic: base64Decode(pub),
+        epoch: epoch,
+        deviceId: d.id,
+        newKey: newKey,
+        firstWorkspaceKey: first,
+      );
+    }
+    await client.rotateKeys(epoch, wraps);
+    crypto.addEpoch(epoch, newKey);
+    await saveKeys?.call(crypto);
+    AppLog.info('Sync: workspace key changed to epoch $epoch');
+    return (epoch: epoch, notUpdated: notUpdated);
+  }
+
+  /// Once per purge: asks the hub to delete the sealed attachment copies of a
+  /// record deleted for good (only those no remaining asset still uses).
+  Future<void> _purgeHubBlobs() async {
+    final done = await workspace.store.read('sync', 'purged_blobs');
+    final handled = {...((done?['done'] as List?)?.whereType<String>() ?? [])};
+    final table = await _blobTable();
+    var changed = false;
+    for (final mark in workspace.purges.all.toList()) {
+      if (handled.contains(mark.id) || mark.blobs.isEmpty) continue;
+      final stillUsed = {
+        for (final a in workspace.assets.all)
+          for (final k in ['fileBlob', 'previewBlob'])
+            ?workspace.assets.jsonOf(a.id)?[k] as String?,
+        ...table.values.where(
+          (id) => workspace.assets.all.any(
+            (a) => table[a.fileSha256] == id || table[a.previewSha256] == id,
+          ),
+        ),
+      };
+      final ids = [
+        for (final b in mark.blobs)
+          if (!stillUsed.contains(b)) b,
+      ];
+      if (ids.isNotEmpty) {
+        try {
+          await client.purgeBlobs(ids);
+        } on SyncFailure catch (e) {
+          if (e.code != 'not_found') rethrow; // an older hub: nothing to do
+        }
+      }
+      table.removeWhere((_, id) => ids.contains(id));
+      handled.add(mark.id);
+      changed = true;
+    }
+    if (changed) {
+      await workspace.store.write('sync', 'purged_blobs', {
+        'done': handled.toList(),
+      });
+      await workspace.store.write('sync', 'blobs', {'blobs': table});
     }
   }
 

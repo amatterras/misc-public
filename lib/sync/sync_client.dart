@@ -96,6 +96,42 @@ bool isEncryptedHubRoute(Uri url) {
       b[5] == 0xe0;
 }
 
+/// One paired device as the hub lists it.
+class HubDeviceInfo {
+  const HubDeviceInfo({
+    required this.id,
+    required this.name,
+    required this.readOnly,
+    required this.revoked,
+    this.createdAt,
+    this.lastSeen,
+    this.publicKey,
+    this.endorsement,
+  });
+
+  final String id;
+  final String name;
+
+  /// May only read (a mirror).
+  final bool readOnly;
+  final bool revoked;
+  final DateTime? createdAt;
+  final DateTime? lastSeen;
+  final String? publicKey;
+  final String? endorsement;
+
+  factory HubDeviceInfo.fromJson(Map<String, dynamic> j) => HubDeviceInfo(
+    id: j['id'] as String,
+    name: j['name'] as String? ?? '',
+    readOnly: j['readOnly'] == true,
+    revoked: j['revoked'] == true,
+    createdAt: DateTime.tryParse('${j['createdAt'] ?? ''}'),
+    lastSeen: DateTime.tryParse('${j['lastSeen'] ?? ''}'),
+    publicKey: j['publicKey'] as String?,
+    endorsement: j['endorsement'] as String?,
+  );
+}
+
 /// Learns the SHA-256 of the certificate an HTTPS hub presents, for pinning,
 /// but only if it starts with [prefix] (the fingerprint prefix that came with
 /// the pairing code, i.e. over a channel the network cannot change). Nothing
@@ -274,7 +310,10 @@ class SyncClient {
         throw SyncFailure(
           json['error'] as String? ?? 'error',
           json['message'] as String? ?? 'Hub error ${res.statusCode}.',
-          retryable: res.statusCode >= 500 || res.statusCode == 429,
+          retryable:
+              res.statusCode >= 500 ||
+              res.statusCode == 429 ||
+              json['error'] == 'stale_key',
         );
       }
       return json;
@@ -440,6 +479,72 @@ class SyncClient {
     );
   }
 
+  /// Asks the hub to delete sealed attachment copies of a purged record.
+  Future<int> purgeBlobs(List<String> ids) async {
+    final json = await _json(await _open('POST', '/v1/purge-blobs'), {
+      'ids': ids,
+    });
+    return (json['removed'] as num?)?.toInt() ?? 0;
+  }
+
+  /// The paired devices (including removed ones), with when each was last
+  /// heard from and whether it may only read.
+  Future<({String self, int keyEpoch, List<HubDeviceInfo> devices})>
+  devices() async {
+    final json = await _json(await _open('GET', '/v1/devices'));
+    return (
+      self: json['self'] as String,
+      keyEpoch: (json['keyEpoch'] as num?)?.toInt() ?? 1,
+      devices: [
+        for (final d in json['devices'] as List)
+          HubDeviceInfo.fromJson(d as Map<String, dynamic>),
+      ],
+    );
+  }
+
+  /// Removes a device: the hub stops answering it at once.
+  Future<bool> revokeDevice(String deviceId) async {
+    final json = await _json(await _open('POST', '/v1/devices/revoke'), {
+      'deviceId': deviceId,
+    });
+    return json['revoked'] == true;
+  }
+
+  /// Tells the hub this device's public key and its endorsement.
+  Future<void> publishDeviceKey(String publicKey, String endorsement) async {
+    await _json(await _open('POST', '/v1/device-key'), {
+      'publicKey': publicKey,
+      'endorsement': endorsement,
+    });
+  }
+
+  /// This device's wrapped keys of epochs newer than [since].
+  Future<({int epoch, List<({int epoch, String wrapped})> wraps})> keysSince(
+    int since,
+  ) async {
+    final json = await _json(
+      await _open('GET', '/v1/keys', {'since': '$since'}),
+    );
+    return (
+      epoch: (json['epoch'] as num).toInt(),
+      wraps: [
+        for (final w in json['wraps'] as List)
+          (
+            epoch: ((w as Map)['epoch'] as num).toInt(),
+            wrapped: w['wrapped'] as String,
+          ),
+      ],
+    );
+  }
+
+  /// Stores the wrapped keys of the next epoch (one per remaining device).
+  Future<void> rotateKeys(int epoch, Map<String, String> wraps) async {
+    await _json(await _open('POST', '/v1/keys'), {
+      'epoch': epoch,
+      'wraps': wraps,
+    });
+  }
+
   /// Switches the hub to encrypted-only. Refused (`plaintext_remaining`)
   /// while it still holds a plain record.
   Future<Map<String, dynamic>> commitEncryption() async =>
@@ -489,6 +594,13 @@ class SyncClient {
     }
     try {
       return crypto.openChange(c);
+    } on MissingEpochKey {
+      throw const SyncFailure(
+        'e2ee_key_missing',
+        'A device was removed and the workspace key changed; this device is '
+            'fetching the new key.',
+        retryable: true,
+      );
     } on DecryptionFailure {
       throw SyncFailure(
         'e2ee_unreadable',

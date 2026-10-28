@@ -108,9 +108,17 @@ List<AiProposal> validProposals(
 }
 
 class AiSession extends ChangeNotifier {
-  AiSession({required this.settings, required this.client, this.store});
+  AiSession({
+    required this.settings,
+    required this.client,
+    this.store,
+    this.vaultCheck,
+  });
 
   final AiSettings settings;
+
+  /// True when a text holds private vault content (never sent).
+  final bool Function(String text)? vaultCheck;
 
   /// Makes the client when a request is sent (so settings changes apply).
   final Future<AiClient> Function() client;
@@ -321,7 +329,12 @@ class AiSession extends ChangeNotifier {
     var status = AiMessageStatus.complete;
     String? failure;
     try {
-      final c = _active = await client();
+      // Every client goes through the same gate, whoever made it.
+      final c = _active = GuardedAiClient(
+        await client(),
+        settings,
+        vaultCheck: vaultCheck,
+      );
       var lastSave = DateTime.now();
       final prompt = preview(tool, question, noteTitles: noteTitles);
       await settings.logSend(
