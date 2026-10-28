@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app/theme.dart';
 import '../data/models/library_models.dart';
 import '../data/models/calendar_models.dart';
+import '../data/storage/attachment_image.dart';
 import '../data/workspace.dart';
 import '../platform/platform.dart' as native;
 import 'date_prefs.dart';
@@ -293,12 +294,14 @@ class AssetChip extends StatelessWidget {
     } else {
       leading = ClipRRect(
         borderRadius: BorderRadius.circular(4),
-        child: Image.file(
-          workspace.attachments.fileFor(asset.file!),
+        child: Image(
+          image: ResizeImage(
+            AttachmentImageProvider(workspace.attachments, asset.file!),
+            width: 120,
+          ),
           width: 40,
           height: 32,
           fit: BoxFit.cover,
-          cacheWidth: 120,
           errorBuilder: (_, _, _) =>
               const Icon(Icons.broken_image_outlined, size: 16),
         ),
@@ -336,7 +339,10 @@ class AssetChip extends StatelessWidget {
                 IconButton(
                   tooltip: 'Open in PDF editor',
                   visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
                   onPressed: onOpenPdfEditor,
                   icon: const Icon(Icons.edit_document, size: 16),
                 ),
@@ -367,7 +373,9 @@ Future<void> showImageViewer(BuildContext context, Workspace ws, Asset asset) {
       child: GestureDetector(
         onTap: () => Navigator.pop(context),
         child: InteractiveViewer(
-          child: Image.file(ws.attachments.fileFor(asset.file!)),
+          child: Image(
+            image: AttachmentImageProvider(ws.attachments, asset.file!),
+          ),
         ),
       ),
     ),

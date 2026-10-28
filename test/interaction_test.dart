@@ -347,7 +347,7 @@ void main() {
       await h.boot();
       await h.nav('Canvas');
       await tester.tap(find.byTooltip('Add photos from this PC'));
-      await h.settle(rounds: 15);
+      await h.settle(rounds: 60);
       final c = h.s.canvas!;
       final image = c.items.whereType<ImageItem>().single;
       final asset = h.s.workspace.assets[image.assetId]!;

@@ -422,8 +422,9 @@ class Workspace {
     if (!documentExtensions.contains(AttachmentStore.extensionOf(name))) {
       return null;
     }
-    final f = attachments.fileFor(name);
-    return f.existsSync() ? f : null;
+    // A readable copy for the native viewer (a decrypted view copy when the
+    // stored file is encrypted).
+    return attachments.viewFile(name);
   }
 
   Future<Asset> imageAssetFromBytes(Uint8List bytes, String extension) async {
@@ -432,7 +433,7 @@ class Workspace {
   }
 
   Future<Asset> _imageAsset(String fileName) async {
-    final size = await imageSize(attachments.fileFor(fileName));
+    final size = await imageSizeOfBytes(await attachments.readBytes(fileName));
     final now = DateTime.now();
     final asset = Asset(
       id: newId(),
@@ -451,9 +452,15 @@ class Workspace {
   /// Reads an image's pixel size without fully decoding it.
   static Future<ui.Size?> imageSize(File file) async {
     try {
-      final buffer = await ui.ImmutableBuffer.fromUint8List(
-        await file.readAsBytes(),
-      );
+      return await imageSizeOfBytes(await file.readAsBytes());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<ui.Size?> imageSizeOfBytes(Uint8List bytes) async {
+    try {
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
       final descriptor = await ui.ImageDescriptor.encoded(buffer);
       final size = ui.Size(
         descriptor.width.toDouble(),

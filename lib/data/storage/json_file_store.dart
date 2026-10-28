@@ -4,6 +4,7 @@ import 'dart:io';
 
 import '../../platform/file_protection.dart';
 import 'app_log.dart';
+import 'storage_encryption.dart';
 
 /// Returns the folder where the app keeps its data.
 ///
@@ -71,9 +72,18 @@ String iosFolder(
 /// file itself) is kept as `<name>.bak` and used automatically if
 /// the main file is ever unreadable.
 class JsonFileStore {
-  JsonFileStore(this.root);
+  /// [cipher]: encrypts every file written here (AES-256-GCM, see
+  /// storage_encryption.dart). Without one the app-wide
+  /// [StorageEncryption.active] is used, and without that, files stay plain
+  /// text as before. Older plain files are still read, and are encrypted the
+  /// next time they are saved (or by the one-time upgrade).
+  // ignore: prefer_initializing_formals
+  JsonFileStore(this.root, {FileCipher? cipher}) : _cipher = cipher;
 
   final Directory root;
+  final FileCipher? _cipher;
+
+  FileCipher? get cipher => _cipher ?? StorageEncryption.active;
 
   File _file(String collection, String id) => File(
     '${root.path}${Platform.pathSeparator}$collection'
@@ -133,13 +143,13 @@ class JsonFileStore {
     await file.parent.create(recursive: true);
     final tmp = File('${file.path}.tmp');
     final bak = File('${file.path}.bak');
-    await tmp.writeAsString(text, flush: true);
+    await StorageEncryption.writeText(tmp, text, cipher);
     // Only a readable previous version may become the backup: a file
     // damaged on disk is moved aside (kept), never copied over a good .bak.
     var backupIsGood = false;
     if (await file.exists()) {
       if (await _tryRead(file) != null) {
-        await _retry(() => file.copy(bak.path));
+        await _retry(() => _copy(file, bak));
         backupIsGood = true;
       } else {
         await _quarantine(file);
@@ -150,9 +160,24 @@ class JsonFileStore {
     // written, so a file is never without a readable backup.
     if (!backupIsGood && await _tryRead(bak) == null) {
       if (await bak.exists()) await _quarantine(bak);
-      await _retry(() => file.copy(bak.path));
+      await _retry(() => _copy(file, bak));
     }
     await FileProtection.protect([file.path, bak.path]);
+  }
+
+  /// Copies [from] to [to]; a copy of an older plain file is made encrypted
+  /// (when encryption is on), so no plain-text copy is ever created here.
+  Future<void> _copy(File from, File to) async {
+    final c = cipher;
+    if (c == null) {
+      await from.copy(to.path);
+      return;
+    }
+    final bytes = await from.readAsBytes();
+    await to.writeAsBytes(
+      FileCipher.isEncrypted(bytes) ? bytes : c.encrypt(bytes),
+      flush: true,
+    );
   }
 
   /// Antivirus or search indexing can briefly lock a file on Windows;
@@ -200,7 +225,7 @@ class JsonFileStore {
         recoveries.add(message);
         AppLog.warn(message);
         // Put the good copy back as the main file straight away.
-        await _retry(() => bak.copy(file.path));
+        await _retry(() => _copy(bak, file));
       }
       return backup;
     }
@@ -218,11 +243,18 @@ class JsonFileStore {
   Future<Map<String, dynamic>?> _tryRead(File file) async {
     try {
       if (!await file.exists()) return null;
-      final decoded = jsonDecode(await file.readAsString());
+      final decoded = jsonDecode(
+        await StorageEncryption.readText(file, cipher),
+      );
       return decoded is Map<String, dynamic> ? decoded : null;
     } on FormatException {
       return null;
     } on FileSystemException {
+      return null;
+    } on DecryptionFailure {
+      // Changed or damaged ciphertext is handled like a damaged file: kept
+      // aside, the previous version (.bak) is used. (A missing key is a
+      // StorageLockedException and is NOT caught: nothing may be touched.)
       return null;
     }
   }
@@ -268,9 +300,13 @@ class JsonFileStore {
     }
     if (newest == null) return null;
     try {
-      final decoded = jsonDecode(await newest.readAsString());
+      final decoded = jsonDecode(
+        await StorageEncryption.readText(newest, cipher),
+      );
       return decoded is Map<String, dynamic> ? decoded : null;
     } on FormatException {
+      return null;
+    } on DecryptionFailure {
       return null;
     }
   }

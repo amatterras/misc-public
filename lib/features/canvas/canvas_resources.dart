@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -75,8 +74,7 @@ class WorkspaceCanvasResources extends ChangeNotifier
 
   Future<void> _load(String fileName) async {
     try {
-      final File file = workspace.attachments.fileFor(fileName);
-      final bytes = await file.readAsBytes();
+      final bytes = await workspace.attachments.readBytes(fileName);
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
       final descriptor = await ui.ImageDescriptor.encoded(buffer);
       final w = descriptor.width, h = descriptor.height;

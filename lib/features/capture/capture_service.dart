@@ -124,9 +124,7 @@ class CaptureService {
             image.$1,
             image.$2,
           );
-          final size = await Workspace.imageSize(
-            workspace.attachments.fileFor(previewFile),
-          );
+          final size = await Workspace.imageSizeOfBytes(image.$1);
           w = size?.width.round();
           h = size?.height.round();
           if (size == null) previewFile = null;

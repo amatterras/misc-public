@@ -20,8 +20,7 @@ File? _managedFile(AppState s, Asset asset) {
       name.contains('..')) {
     return null;
   }
-  final file = s.workspace.attachments.fileFor(name);
-  return file.existsSync() ? file : null;
+  return s.workspace.attachments.viewFile(name);
 }
 
 sealed class ActionItem {

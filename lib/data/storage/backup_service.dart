@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 
 import '../../platform/file_protection.dart';
 import '../../platform/windows_native.dart' as win;
+import 'storage_encryption.dart';
 
 /// Point-in-time copies of all records under
 /// `<data>\backups\<timestamp>-<reason>`.
@@ -17,6 +18,11 @@ class BackupService {
   BackupService(this.root);
 
   final Directory root;
+
+  /// The workspace key (null: files are plain, see storage_encryption.dart).
+  /// Backups are byte copies of the live files, so they hold ciphertext when
+  /// the live files do; the manifest is encrypted too.
+  FileCipher? get _cipher => StorageEncryption.active;
 
   /// Folders that hold records.
   static const _sources = [
@@ -248,18 +254,21 @@ class BackupService {
       });
       if (rel.startsWith('data/') && rel.endsWith('.json')) {
         try {
-          final json = jsonDecode(await e.readAsString());
+          final json = jsonDecode(await StorageEncryption.readText(e, _cipher));
           final records = json is Map ? json['records'] : null;
           if (records is List) {
             counts[rel.substring(5, rel.length - 5)] = records.length;
           }
         } on FormatException {
           // Reported as unreadable by checkManifest.
+        } on DecryptionFailure {
+          // Reported as unreadable by checkManifest.
         }
       }
     }
     final manifest = File('${backup.path}$_sep$manifestFile');
-    await manifest.writeAsString(
+    await StorageEncryption.writeText(
+      manifest,
       const JsonEncoder.withIndent(' ').convert({
         'format': manifestFormat,
         'formatVersion': manifestFormatVersion,
@@ -273,7 +282,7 @@ class BackupService {
         'recordCounts': counts,
         'files': files,
       }),
-      flush: true,
+      _cipher,
     );
     return manifest;
   }
@@ -288,7 +297,9 @@ class BackupService {
     if (!await manifest.exists()) return ['No manifest (older backup).'];
     Map<String, dynamic> json;
     try {
-      json = jsonDecode(await manifest.readAsString()) as Map<String, dynamic>;
+      json = jsonDecode(
+        await StorageEncryption.readText(manifest, _cipher),
+      ) as Map<String, dynamic>;
     } catch (_) {
       return ['The manifest is damaged.'];
     }
@@ -311,9 +322,13 @@ class BackupService {
       }
       if (rel.endsWith('.json') && !rel.startsWith('attachments/')) {
         try {
-          jsonDecode(await file.readAsString());
+          jsonDecode(await StorageEncryption.readText(file, _cipher));
         } on FormatException {
           problems.add('Unreadable: $rel');
+        } on DecryptionFailure {
+          problems.add('Unreadable (wrong key or changed data): $rel');
+        } on StorageLockedException {
+          problems.add('Encrypted, and this device has no key: $rel');
         }
       }
     }
@@ -325,7 +340,8 @@ class BackupService {
     try {
       final f = File('${backup.path}$_sep$manifestFile');
       if (!await f.exists()) return null;
-      return jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+      return jsonDecode(await StorageEncryption.readText(f, _cipher))
+          as Map<String, dynamic>;
     } catch (_) {
       return null;
     }
@@ -405,7 +421,7 @@ class BackupService {
       for (final suffix in ['', '.bak']) {
         final file = File('${collectionFile.path}$suffix');
         if (!await file.exists()) continue;
-        final text = await file.readAsString();
+        final text = await StorageEncryption.readText(file, _cipher);
         final json = jsonDecode(text);
         if (json is! Map<String, dynamic>) {
           throw FormatException('Invalid calendar collection in $file');
@@ -465,8 +481,7 @@ class BackupService {
         final source = File('${root.path}$_sep$rel');
         if (!await source.exists()) continue;
         final target = File('${backup.path}$_sep$rel');
-        if (await target.exists() &&
-            await target.readAsString() == await source.readAsString()) {
+        if (await target.exists() && await _sameContent(target, source)) {
           continue;
         }
         copies[target] = source;
@@ -500,11 +515,44 @@ class BackupService {
     }
   }
 
+  /// Whether two stored files hold the same content (each encryption of the
+  /// same content differs, so ciphertext is never compared).
+  Future<bool> _sameContent(File a, File b) async {
+    try {
+      return await StorageEncryption.readText(a, _cipher) ==
+          await StorageEncryption.readText(b, _cipher);
+    } on DecryptionFailure {
+      return false;
+    }
+  }
+
   Future<void> _atomicWrite(File target, String content) async {
     final staging = File('${target.path}.purge.tmp');
-    await staging.writeAsString(content, flush: true);
+    await StorageEncryption.writeText(staging, content, _cipher);
     await _replace(staging, target);
   }
+
+  /// A restore replaces live data, so first make sure this device's key
+  /// opens the backup. A backup made under another key (another device, or a
+  /// lost key) is left untouched and nothing is changed; no key is invented.
+  Future<void> _requireReadable(Directory backup) async {
+    await for (final (_, file) in _files(backup, attachments: false)) {
+      if (!await FileCipher.fileIsEncrypted(file)) continue;
+      try {
+        await StorageEncryption.readBytes(file, _cipher);
+      } on DecryptionFailure {
+        throw FileSystemException(_wrongKeyMessage, backup.path);
+      } on StorageLockedException {
+        throw FileSystemException(_wrongKeyMessage, backup.path);
+      }
+    }
+  }
+
+  static const _wrongKeyMessage =
+      'This backup is encrypted with a key this device does not have (it '
+      'was made on another device, or the key was lost). The backup was '
+      'kept untouched and nothing was changed. Backups can only be opened '
+      'with the key of the device that made them.';
 
   Future<void> _replace(File source, File target) async {
     if (Platform.isWindows) {
@@ -560,7 +608,11 @@ class BackupService {
 
   /// Backups that are never removed automatically, by reason (the end of the
   /// folder name): the state before the first sync with a hub.
-  static const protectedReasons = {'before-first-sync', 'pre-migration'};
+  static const protectedReasons = {
+    'before-first-sync',
+    'pre-migration',
+    'pre-encryption',
+  };
 
   static const dataDir = 'data';
   static const calendarEntriesFile = 'calendar_entries.json';
@@ -643,6 +695,7 @@ class BackupService {
         );
       }
     }
+    await _requireReadable(backup);
     await snapshot('before-restore');
     final staging = Directory(
       '${root.path}$_sep.restore-${DateTime.now().millisecondsSinceEpoch}',

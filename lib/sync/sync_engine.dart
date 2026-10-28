@@ -611,8 +611,10 @@ class SyncEngine {
       if (name == null || sha == null || !_safeFileName.hasMatch(name)) {
         continue;
       }
-      final file = workspace.attachments.fileFor(name);
-      if (!await file.exists()) continue;
+      // The hub and other devices get the content, never this device's
+      // ciphertext: a decrypted view copy is uploaded.
+      final file = workspace.attachments.viewFile(name);
+      if (file == null) continue;
       if (await client.hasAttachment(sha)) continue;
       await client.upload(sha, file);
       report.uploaded++;
@@ -812,10 +814,12 @@ class SyncEngine {
           );
           continue;
         }
-        final target = workspace.attachments.fileFor(name);
-        if (await target.exists()) continue;
+        if (await workspace.attachments.fileFor(name).exists()) continue;
+        // Downloaded plain into a staging file, then stored encrypted.
+        final staged = workspace.attachments.stagingFile(name);
         try {
-          await client.download(sha, size, target);
+          await client.download(sha, size, staged);
+          await workspace.attachments.adopt(name, staged);
           report.downloaded++;
         } on SyncFailure catch (e) {
           if (!e.retryable && e.code != 'not_found') rethrow;
@@ -840,17 +844,15 @@ Future<void> fillAttachmentHashes(Workspace workspace) async {
     String? fileSha = a.fileSha256, previewSha = a.previewSha256;
     int? fileSize = a.fileSize, previewSize = a.previewSize;
     if (a.file != null && fileSha == null) {
-      final f = workspace.attachments.fileFor(a.file!);
-      if (await f.exists()) {
-        fileSha = await fileSha256(f);
-        fileSize = await f.length();
+      if (await workspace.attachments.fileFor(a.file!).exists()) {
+        (fileSha, fileSize) = await workspace.attachments.contentInfo(a.file!);
       }
     }
     if (a.previewFile != null && previewSha == null) {
-      final f = workspace.attachments.fileFor(a.previewFile!);
-      if (await f.exists()) {
-        previewSha = await fileSha256(f);
-        previewSize = await f.length();
+      if (await workspace.attachments.fileFor(a.previewFile!).exists()) {
+        (previewSha, previewSize) = await workspace.attachments.contentInfo(
+          a.previewFile!,
+        );
       }
     }
     if (fileSha != a.fileSha256 || previewSha != a.previewSha256) {

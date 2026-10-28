@@ -312,7 +312,7 @@ Future<ExportResult> exportNoteWebPage(
         try {
           bytes = a.file == null
               ? null
-              : await ws.attachments.fileFor(a.file!).readAsBytes();
+              : await ws.attachments.readBytes(a.file!);
         } on FileSystemException {
           bytes = null;
         }

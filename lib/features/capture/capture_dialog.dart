@@ -8,6 +8,7 @@ import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
+import '../../data/storage/attachment_image.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import '../links/link_tags.dart';
@@ -527,8 +528,8 @@ class _CaptureDialogState extends State<CaptureDialog> {
     if (img.path != null) return Image.file(File(img.path!), fit: BoxFit.cover);
     final file = img.asset?.file;
     if (file != null) {
-      return Image.file(
-        s.workspace.attachments.fileFor(file),
+      return Image(
+        image: AttachmentImageProvider(s.workspace.attachments, file),
         fit: BoxFit.cover,
       );
     }

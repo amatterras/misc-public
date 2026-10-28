@@ -13,6 +13,10 @@ import 'app/startup.dart';
 import 'app/theme.dart';
 import 'data/repositories/canvas_repository.dart';
 import 'data/storage/app_log.dart';
+import 'data/storage/attachment_store.dart';
+import 'data/storage/backup_service.dart';
+import 'data/storage/encryption_migration.dart';
+import 'data/storage/storage_encryption.dart';
 import 'data/storage/json_file_store.dart';
 import 'data/workspace.dart';
 import 'features/browser/webview_selftest.dart';
@@ -144,8 +148,45 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
     '${TestEnvironment.active ? ' in TEST DATA mode' : ''}',
   );
 
+  // Encryption at rest (data/storage/storage_encryption.dart). Without the
+  // key of already-encrypted data nothing is opened, changed or replaced.
+  progress.to('Opening the encryption key');
+  final encryption = await StorageEncryption.open(root);
+  if (encryption.status == EncryptionStatus.keyMissing) {
+    AppLog.error('Encrypted data found but no key: ${encryption.message}');
+    runApp(
+      MaterialApp(
+        theme: buildAppTheme(),
+        home: _DataProblemPage(message: encryption.message),
+      ),
+    );
+    return;
+  }
+  StorageEncryption.active = encryption.cipher;
+  AttachmentStore.clearViewCopies(); // decrypted view copies never outlive a run
+  String? encryptionNotice;
+  if (encryption.cipher == null) {
+    AppLog.warn(encryption.message);
+  } else {
+    progress.to('Encrypting your data');
+    final upgrade = await migrateToEncrypted(
+      root,
+      encryption.cipher!,
+      backups: BackupService(root),
+      extraBackupRoots: [?AppState.backupCopiesFolder()],
+    );
+    if (!upgrade.complete) {
+      encryptionNotice =
+          'Encrypting your existing data is not finished: '
+          '${upgrade.problems.first} Nothing was lost; it will be tried again.';
+    }
+  }
+
   progress.to('Opening the data folder');
   final workspace = Workspace(root);
+  if (encryptionNotice != null) {
+    workspace.store.recoveries.add(encryptionNotice);
+  }
   final state = AppState(
     canvases: FileCanvasRepository(workspace.store),
     settings: SettingsRepository(workspace.store),
@@ -191,6 +232,7 @@ class _TheAppState extends State<TheApp> {
         try {
           // Lets a running backup or sync finish, saves, stops the hub.
           await widget.state.shutdown();
+          AttachmentStore.clearViewCopies();
           AppLog.info('Window closed; all changes saved');
         } catch (e, s) {
           AppLog.error('Saving on exit failed', e, s);
@@ -207,11 +249,13 @@ class _TheAppState extends State<TheApp> {
       onHide: () {
         widget.appLock?.lifecycleChanged(AppLifecycleState.hidden);
         widget.state.vault.lock(); // the private vault never stays open hidden
+        AttachmentStore.clearViewCopies();
         unawaited(widget.state.flush());
       },
       onPause: () {
         widget.appLock?.lifecycleChanged(AppLifecycleState.paused);
         widget.state.vault.lock();
+        AttachmentStore.clearViewCopies();
         widget.state.syncPaused();
       },
       // Back in front: pick up items shared while away (iPhone/iPad) and

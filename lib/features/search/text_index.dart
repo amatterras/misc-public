@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../../data/models/library_models.dart';
+import '../../data/storage/storage_encryption.dart';
 import '../../data/workspace.dart';
 import 'pdf_ocr.dart' show ocrVersion;
 import 'pdf_text.dart';
@@ -87,15 +88,17 @@ class PdfTextCache extends ChangeNotifier {
         try {
           final cached = _cacheFile(a);
           final file = ws.attachments.fileFor(a.file!);
+          final cipher = ws.attachments.cipher;
           if (await cached.exists()) {
-            _text[a.id] = await cached.readAsString();
+            _text[a.id] = await StorageEncryption.readText(cached, cipher);
           } else {
             if (await file.exists() && await file.length() <= maxPdfBytes) {
-              final path = file.path;
-              final text = await compute(_pdfFileText, path);
+              final bytes = await ws.attachments.readBytes(a.file!);
+              final text = await compute(pdfText, bytes);
               _text[a.id] = text;
               await dir.create(recursive: true);
-              await cached.writeAsString(text);
+              // Cached private content is encrypted like everything else.
+              await StorageEncryption.writeText(cached, text, cipher);
             } else {
               _text[a.id] = '';
             }
@@ -118,18 +121,27 @@ class PdfTextCache extends ChangeNotifier {
   Future<void> _readScanned(Asset a, File file) async {
     final f = _ocrFile(a);
     if (await f.exists()) {
-      final raw = jsonDecode(await f.readAsString());
+      final raw = jsonDecode(
+        await StorageEncryption.readText(f, ws.attachments.cipher),
+      );
       if (raw is List) _ocrPages[a.id] = [for (final p in raw) '$p'];
       return;
     }
     final run = ocr;
     if (run == null || !(ocrEnabled?.call() ?? true)) return;
     if (!await file.exists() || await file.length() > maxPdfBytes) return;
-    final pages = await run(file.path);
+    // The recogniser needs a real file: a decrypted view copy.
+    final view = ws.attachments.viewFile(a.file!);
+    if (view == null) return;
+    final pages = await run(view.path);
     if (pages == null) return; // not available: try again another time
     _ocrPages[a.id] = pages;
     await dir.create(recursive: true);
-    await f.writeAsString(jsonEncode(pages));
+    await StorageEncryption.writeText(
+      f,
+      jsonEncode(pages),
+      ws.attachments.cipher,
+    );
   }
 
   /// Forgets the cache (Settings → clear search cache).
@@ -179,5 +191,3 @@ String excerpt(String text, List<String> terms, {int width = 140}) {
   return '${start > 0 ? '…' : ''}${flat.substring(start, end)}'
       '${end < flat.length ? '…' : ''}';
 }
-
-String _pdfFileText(String path) => pdfText(File(path).readAsBytesSync());

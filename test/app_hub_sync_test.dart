@@ -123,14 +123,19 @@ void main() {
     expect(Directory('${hubDir.path}/backups/live').listSync(), isNotEmpty);
 
     // The hub stops answering (its listeners close; the isolate lives).
-    final syncedBefore = m.job('sync').lastSuccess;
     await host.debugCloseListeners();
     final n2 = ws.createNote(title: 'Written during the outage');
-    await until(
-      () => m.job('sync').lastError != null,
-      what: 'sync reported as failed',
-    );
-    // A failure is never shown as a sync.
+    // A sync already running when the listeners closed may still finish, so
+    // the last success is read at the moment the failure first shows (the
+    // earlier comparison against a value read before the outage was racy).
+    DateTime? syncedBefore;
+    await until(() {
+      final failed = m.job('sync').lastError != null;
+      if (failed) syncedBefore = m.job('sync').lastSuccess;
+      return failed;
+    }, what: 'sync reported as failed');
+    // A failure is never shown as a sync: the last success does not move
+    // while the failure is what is reported.
     expect(m.job('sync').lastSuccess, syncedBefore);
     // Noticed by the health check, restarted, and the edit catches up.
     final took = await until(
