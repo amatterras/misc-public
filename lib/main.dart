@@ -17,6 +17,8 @@ import 'data/storage/json_file_store.dart';
 import 'data/workspace.dart';
 import 'features/browser/webview_selftest.dart';
 import 'features/capture/send_to.dart';
+import 'platform/app_lock.dart';
+import 'platform/file_protection.dart';
 import 'platform/ios_bridge.dart';
 import 'sync/secret_store.dart';
 
@@ -89,6 +91,17 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
         'Full log on the iPad: Files → On My iPad → THEapp → THEapp-log.txt';
   }
   AppLog.init(root, copy: logCopy);
+  if (Platform.isIOS) {
+    // Everything private is NSFileProtectionComplete, including files made
+    // by earlier versions and the temporary folder.
+    FileProtection.backend = IosBridge.instance;
+    await FileProtection.start();
+    await FileProtection.protect([
+      root.path,
+      ?logCopy?.parent.path,
+      Directory.systemTemp.path,
+    ], tree: true);
+  }
 
   // Release builds: a part of the screen that fails to build says why,
   // instead of showing a plain grey box.
@@ -140,7 +153,12 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
     enableSendTo: Platform.isWindows,
   );
   await state.init(onStep: progress.to);
-  runApp(TheApp(state: state));
+  // Face ID / Touch ID lock (iPhone/iPad only; see platform/app_lock.dart).
+  final lock = Platform.isIOS
+      ? AppLockController(authenticator: platformAuthenticator())
+      : null;
+  runApp(TheApp(state: state, appLock: lock));
+  if (lock != null) unawaited(lock.start());
   // Unattended check of the Windows browser engine (test data mode only).
   const selfTest = '--webview-selftest=';
   final check = args.where((a) => a.startsWith(selfTest)).firstOrNull;
@@ -150,9 +168,12 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
 }
 
 class TheApp extends StatefulWidget {
-  const TheApp({super.key, required this.state});
+  const TheApp({super.key, required this.state, this.appLock});
 
   final AppState state;
+
+  /// Covers the workspace until Face ID / Touch ID succeeds (null: no lock).
+  final AppLockController? appLock;
 
   @override
   State<TheApp> createState() => _TheAppState();
@@ -176,18 +197,29 @@ class _TheAppState extends State<TheApp> {
         }
         return AppExitResponse.exit;
       },
-      onInactive: () => unawaited(widget.state.flush()),
+      // Covering first, saving second: the screen is hidden before anything
+      // slow happens. Pending edits are written either way (the cover only
+      // hides the app, it never stops it).
+      onInactive: () {
+        widget.appLock?.lifecycleChanged(AppLifecycleState.inactive);
+        unawaited(widget.state.flush());
+      },
       onHide: () {
+        widget.appLock?.lifecycleChanged(AppLifecycleState.hidden);
         widget.state.vault.lock(); // the private vault never stays open hidden
         unawaited(widget.state.flush());
       },
       onPause: () {
+        widget.appLock?.lifecycleChanged(AppLifecycleState.paused);
         widget.state.vault.lock();
         widget.state.syncPaused();
       },
       // Back in front: pick up items shared while away (iPhone/iPad) and
       // sync if the last sync is not recent (timers stop in the background).
-      onResume: () => unawaited(widget.state.appResumed()),
+      onResume: () {
+        widget.appLock?.lifecycleChanged(AppLifecycleState.resumed);
+        unawaited(widget.state.appResumed());
+      },
     );
   }
 
@@ -210,6 +242,10 @@ class _TheAppState extends State<TheApp> {
           theme: buildAppTheme(brightness: Brightness.light),
           darkTheme: buildAppTheme(brightness: Brightness.dark),
           themeMode: mode,
+          builder: widget.appLock == null
+              ? null
+              : (context, child) =>
+                    AppLockGate(controller: widget.appLock!, child: child!),
           home: widget.state.dataProblem == null
               ? AppShell(state: widget.state)
               : _DataProblemPage(state: widget.state),

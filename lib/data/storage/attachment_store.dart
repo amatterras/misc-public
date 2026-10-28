@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../../platform/file_protection.dart';
 import '../models/canvas_models.dart' show newId;
 
 /// Keeps copies of imported files (photos, link previews) inside the app's
@@ -29,7 +30,8 @@ class AttachmentStore {
     await dir.create(recursive: true);
     final ext = extensionOf(source.path);
     final name = '${newId()}${ext.isEmpty ? '' : '.$ext'}';
-    await source.copy(fileFor(name).path);
+    await FileProtection.whenUnlocked(() => source.copy(fileFor(name).path));
+    await FileProtection.protect([fileFor(name).path]);
     return name;
   }
 
@@ -37,8 +39,11 @@ class AttachmentStore {
     await dir.create(recursive: true);
     final name = '${newId()}.$extension';
     final tmp = File('${fileFor(name).path}.tmp');
-    await tmp.writeAsBytes(bytes, flush: true);
-    await tmp.rename(fileFor(name).path);
+    await FileProtection.whenUnlocked(() async {
+      await tmp.writeAsBytes(bytes, flush: true);
+      await tmp.rename(fileFor(name).path);
+    });
+    await FileProtection.protect([fileFor(name).path]);
     return name;
   }
 }

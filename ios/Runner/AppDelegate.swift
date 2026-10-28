@@ -1,4 +1,5 @@
 import Flutter
+import LocalAuthentication
 import PDFKit
 import PhotosUI
 import QuickLook
@@ -61,6 +62,16 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       self?.handle(call, result)
     }
     self.channel = channel
+    // Tell Dart when protected (NSFileProtectionComplete) files become
+    // readable or unreadable, so writes wait instead of being weakened.
+    let center = NotificationCenter.default
+    center.addObserver(
+      forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: .main
+    ) { [weak self] _ in self?.channel?.invokeMethod("protectedData", arguments: true) }
+    center.addObserver(
+      forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil,
+      queue: .main
+    ) { [weak self] _ in self?.channel?.invokeMethod("protectedData", arguments: false) }
   }
 
   /// Called by SceneDelegate. Links are held until Dart is listening, so
@@ -135,6 +146,16 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       openDocument(call.arguments as? String, result)
     case "pickImages":
       pickImages(result)
+    case "protectedDataAvailable":
+      result(UIApplication.shared.isProtectedDataAvailable)
+    case "protectPaths":
+      result(Self.protect(call.arguments as? [String] ?? [], recursive: false))
+    case "protectTree":
+      result(Self.protect(call.arguments as? [String] ?? [], recursive: true))
+    case "biometricAvailable":
+      result(LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil))
+    case "biometricAuthenticate":
+      biometricAuthenticate(call.arguments as? String ?? "Unlock THEapp", result)
     case "keychainRead":
       result(keychainRead(call.arguments as? String ?? ""))
     case "keychainWrite":
@@ -145,6 +166,64 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  // MARK: Biometric app lock (Face ID / Touch ID only; never the passcode)
+
+  private func biometricAuthenticate(_ reason: String, _ result: @escaping FlutterResult) {
+    let context = LAContext()
+    context.localizedFallbackTitle = ""  // hides "Enter Passcode"
+    guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) else {
+      result("unavailable")
+      return
+    }
+    context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) {
+      ok, error in
+      DispatchQueue.main.async {
+        if ok {
+          result("success")
+          return
+        }
+        switch (error as? LAError)?.code {
+        case .some(.userCancel), .some(.appCancel), .some(.systemCancel), .some(.userFallback):
+          result("cancelled")
+        case .some(.biometryNotAvailable), .some(.biometryNotEnrolled), .some(.biometryLockout):
+          result("unavailable")
+        default:
+          result("failed")
+        }
+      }
+    }
+  }
+
+  // MARK: File protection (NSFileProtectionComplete)
+
+  /// Marks each path (and, when `recursive`, everything below it) complete-
+  /// protected. False if any item failed, e.g. the device is locked or the
+  /// path is missing; Dart then retries after unlock.
+  static func protect(_ paths: [String], recursive: Bool) -> Bool {
+    let fm = FileManager.default
+    var ok = true
+    func apply(_ path: String) {
+      do {
+        try fm.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: path)
+      } catch {
+        ok = false
+      }
+    }
+    for path in paths {
+      guard fm.fileExists(atPath: path) else {
+        ok = false
+        continue
+      }
+      apply(path)
+      if recursive, let items = fm.enumerator(atPath: path) {
+        for case let relative as String in items {
+          apply((path as NSString).appendingPathComponent(relative))
+        }
+      }
+    }
+    return ok
   }
 
   // MARK: Keychain (token for the sync hub; this device only)
@@ -332,6 +411,7 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
           }
         }
       }
+      _ = Self.protect([target], recursive: false)
       result(true)
     } catch {
       NSLog("THEapp: PDF export failed: \(error)")
@@ -552,7 +632,7 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
         else { return }
         let url = FileManager.default.temporaryDirectory
           .appendingPathComponent("\(UUID().uuidString).jpg")
-        guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+        guard (try? data.write(to: url, options: [.atomic, .completeFileProtection])) != nil else { return }
         lock.lock()
         paths[index] = url.path
         lock.unlock()
@@ -869,6 +949,7 @@ final class TheAppWebView: NSObject, FlutterPlatformView, WKNavigationDelegate, 
       download.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
         DispatchQueue.main.async { self?.sendDownload(download, progress: progress.fractionCompleted) }
       })
+    _ = TheAppIosBridge.protect([folder.path], recursive: false)
     completionHandler(target)
     sendDownload(download, progress: 0)
   }

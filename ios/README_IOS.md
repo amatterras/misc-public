@@ -142,3 +142,9 @@ ID; steps 3 and 4 below then need the iPad instead of the Simulator. With a Mac:
 - STATUS: Dart side tested on Windows (snapshot, deep links, simulated
   channel). The Swift compiles in the cloud build. Nothing has been seen on a
   device.
+- Face ID lock, privacy cover and file protection (`AppDelegate.swift`,
+  `SceneDelegate.swift`, `Runner.entitlements`): Dart side tested with
+  simulated channels. The Swift has NOT been compiled or run, and whether a
+  free Apple ID signs the `default-data-protection` entitlement is NOT
+  verified. If signing refuses it, remove that key; the explicit
+  `protectPaths`/`protectTree` calls still apply the protection.

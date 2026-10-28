@@ -11,6 +11,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../sync/secret_store.dart';
+import 'file_protection.dart';
 
 /// A task reminder to show at [at] (local time).
 class ScheduledReminder {
@@ -20,7 +21,7 @@ class ScheduledReminder {
   final DateTime at;
 }
 
-class IosBridge implements KeychainBackend {
+class IosBridge implements KeychainBackend, ProtectionBackend {
   IosBridge([MethodChannel? channel])
     : _channel = channel ?? const MethodChannel(channelName);
 
@@ -60,6 +61,8 @@ class IosBridge implements KeychainBackend {
           if (uri != null) await _onLink?.call(uri);
         case 'pencilSqueeze' when call.arguments is String:
           _squeeze.add(call.arguments as String);
+        case 'protectedData' when call.arguments is bool:
+          _protectedData.add(call.arguments as bool);
         case 'pencilDoubleTap':
           _doubleTap.add(
             call.arguments is String ? call.arguments as String : 'other',
@@ -78,6 +81,36 @@ class IosBridge implements KeychainBackend {
   /// Reported once [enablePencilSqueeze] installed the Pencil interaction.
   Stream<String> get pencilDoubleTap => _doubleTap.stream;
   final _doubleTap = StreamController<String>.broadcast();
+
+  final _protectedData = StreamController<bool>.broadcast();
+
+  @override
+  Stream<bool> get availability {
+    _ensureHandler();
+    return _protectedData.stream;
+  }
+
+  @override
+  Future<bool> dataAvailable() async =>
+      await _invoke<bool>('protectedDataAvailable') ?? true;
+
+  /// NSFileProtectionComplete on [paths] (and, with [tree], everything below).
+  @override
+  Future<bool> protect(List<String> paths, {bool tree = false}) async {
+    if (tree) return await _invoke<bool>('protectTree', paths) ?? false;
+    return await _invoke<bool>('protectPaths', paths) ?? false;
+  }
+
+  /// Whether Face ID / Touch ID can verify the user right now (biometrics
+  /// only: the device passcode is never accepted as a substitute).
+  Future<bool> biometricsAvailable() async =>
+      await _invoke<bool>('biometricAvailable') ?? false;
+
+  /// Asks for Face ID / Touch ID, with no passcode fallback. One of
+  /// "success", "failed", "cancelled" or "unavailable".
+  Future<String> authenticateBiometric(String reason) async =>
+      await _invoke<String>('biometricAuthenticate', reason, true) ??
+      'unavailable';
 
   /// Asks iOS to report Pencil squeezes. False if not possible yet.
   Future<bool> enablePencilSqueeze() async {

@@ -84,6 +84,8 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>THEapp uses Face ID to keep your workspace private when the app opens or returns from the background.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>THEapp syncs with the THEapp hub on your own PC.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

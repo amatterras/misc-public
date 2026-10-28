@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../../platform/file_protection.dart';
 import 'app_log.dart';
 
 /// Returns the folder where the app keeps its data.
@@ -95,7 +96,11 @@ class JsonFileStore {
     // Encode now so later changes to [json] can't affect this write.
     final text = const JsonEncoder.withIndent(' ').convert(json);
     final previous = _pending[file.path] ?? Future<void>.value();
-    final next = previous.catchError((_) {}).then((_) => _writeNow(file, text));
+    final next = previous
+        .catchError((_) {})
+        // On a locked iPhone/iPad the write waits (still in order, still
+        // once) instead of being made less protected.
+        .then((_) => FileProtection.whenUnlocked(() => _writeNow(file, text)));
     _pending[file.path] = next;
     return next.whenComplete(() {
       if (identical(_pending[file.path], next)) _pending.remove(file.path);
@@ -147,6 +152,7 @@ class JsonFileStore {
       if (await bak.exists()) await _quarantine(bak);
       await _retry(() => file.copy(bak.path));
     }
+    await FileProtection.protect([file.path, bak.path]);
   }
 
   /// Antivirus or search indexing can briefly lock a file on Windows;

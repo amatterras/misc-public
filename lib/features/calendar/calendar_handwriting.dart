@@ -8,6 +8,7 @@ import '../../data/models/canvas_models.dart';
 import '../../data/models/record.dart';
 import '../../features/canvas/canvas_controller.dart';
 import '../../features/canvas/canvas_painter.dart';
+import '../../platform/file_protection.dart';
 import '../../platform/ios_bridge.dart';
 import 'calendar_ink.dart';
 import 'windows_ink_ocr.dart';
@@ -99,6 +100,7 @@ Future<String?> recognizeCalendarInk({
   try {
     final image = File('${dir.path}${Platform.pathSeparator}ink.png');
     await image.writeAsBytes(bytes, flush: true);
+    await FileProtection.protect([image.path]);
     if (ios != null) return await ios.ocrImage(image.path);
     return await imageRecognizer!(image.path);
   } finally {

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../../platform/file_protection.dart';
 import '../../platform/windows_native.dart' as win;
 
 /// Point-in-time copies of all records under
@@ -74,6 +75,7 @@ class BackupService {
         target = Directory('${backupsDir.path}$_sep$name-$n');
       }
       final done = await partial.rename(target.path);
+      await FileProtection.protect([done.path], tree: true);
       await _prune();
       return done;
     } catch (_) {
@@ -193,6 +195,7 @@ class BackupService {
         includesAttachments: includeAttachments,
       );
       await partial.rename(target.path);
+      await FileProtection.protect([target.path], tree: true);
     } catch (_) {
       if (await partial.exists()) await partial.delete(recursive: true);
       rethrow;
@@ -547,7 +550,9 @@ class BackupService {
     }
     await staging.create(recursive: true);
     // Only a complete copy gets its final name.
-    return staging.rename(target.path);
+    final done = await staging.rename(target.path);
+    await FileProtection.protect([done.path], tree: true);
+    return done;
   }
 
   String _name(Directory d) =>
@@ -617,6 +622,7 @@ class BackupService {
       await dest.parent.create(recursive: true);
       await file.copy(dest.path);
     }
+    await FileProtection.protect([target.path], tree: true);
   }
 
   /// Replaces current records with those in [backup].
@@ -681,6 +687,8 @@ class BackupService {
       }
     }
     await staging.delete(recursive: true);
+    // Restored files are protected like any other (also on the iPad).
+    await FileProtection.protect([root.path], tree: true);
   }
 
   /// Moves credential files ([isSecret]) from [from] into the same place
