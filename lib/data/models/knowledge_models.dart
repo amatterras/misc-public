@@ -18,6 +18,7 @@ class ShareLink implements Record {
     required this.updatedAt,
     this.expiresAt,
     this.revoked = false,
+    this.sealed,
   });
 
   /// SHA-256 hex of the secret token.
@@ -37,6 +38,12 @@ class ShareLink implements Record {
   final DateTime? expiresAt;
   final bool revoked;
 
+  /// The snapshot (title and text) sealed with a key that only the link's
+  /// `#fragment` holds (see ShareSeal): the hub serves this and cannot read
+  /// it. Null for a link made before sharing was end-to-end encrypted, which
+  /// therefore cannot be opened any more.
+  final String? sealed;
+
   static const maxBodyChars = 200000;
 
   bool activeAt(DateTime now) =>
@@ -52,6 +59,7 @@ class ShareLink implements Record {
     updatedAt: DateTime.now(),
     expiresAt: expiresAt,
     revoked: true,
+    // A revoked link keeps no ciphertext on the hub.
   );
 
   @override
@@ -65,6 +73,7 @@ class ShareLink implements Record {
     'updatedAt': utcIso(updatedAt),
     'expiresAt': expiresAt == null ? null : utcIso(expiresAt!),
     'revoked': revoked,
+    if (sealed != null) 'sealed': sealed,
   };
 
   factory ShareLink.fromJson(Map<String, dynamic> j) => ShareLink(
@@ -77,6 +86,7 @@ class ShareLink implements Record {
     updatedAt: parseDate(j['updatedAt']) ?? DateTime.now(),
     expiresAt: parseDate(j['expiresAt']),
     revoked: j['revoked'] == true,
+    sealed: j['sealed'] as String?,
   );
 }
 

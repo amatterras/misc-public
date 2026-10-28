@@ -19,6 +19,24 @@ import 'hub_store.dart';
 
 const defaultHubPort = 47710;
 
+/// Whether plain HTTP is acceptable on [a]: this PC itself, or a Tailscale
+/// address (WireGuard encrypts that network). Any other network, including
+/// an ordinary home LAN, needs HTTPS (see [HubServer.start] `tls`).
+bool isPlainHttpAddress(InternetAddress a) {
+  if (a.isLoopback) return true;
+  if (a.type == InternetAddressType.IPv4) {
+    final b = a.rawAddress;
+    return b[0] == 100 && b[1] >= 64 && b[1] <= 127; // 100.64.0.0/10
+  }
+  final b = a.rawAddress;
+  return b[0] == 0xfd &&
+      b[1] == 0x7a &&
+      b[2] == 0x11 &&
+      b[3] == 0x5c &&
+      b[4] == 0xa1 &&
+      b[5] == 0xe0; // fd7a:115c:a1e0::/48
+}
+
 /// Addresses the hub may listen on: this PC only, or a private network
 /// (home LAN, or the Tailscale range 100.64.0.0/10). Never "all
 /// interfaces" and never a public address.
@@ -57,6 +75,9 @@ class HubServer {
     void Function(String line)? log,
   }) async {
     final store = await HubStore.open(dir);
+    // (Hosted devices sign in with a password and are all writable; a hosted
+    // device without the key cannot write anything readable anyway: the
+    // account's hub accepts only sealed records once it is switched over.)
     final auth = await HubAuth.open(dir);
     return HubServer._(
       store,
@@ -104,17 +125,19 @@ class HubServer {
     String? privateHost,
     void Function(String line)? log,
     bool dailyBackups = true,
+    SecurityContext? tls,
+    String? tlsCertSha256,
   }) async {
     final extra = privateHost == null
         ? null
-        : await _checkPrivateHost(privateHost);
+        : await _checkPrivateHost(privateHost, tls: tls);
     final store = await HubStore.open(dir);
     final auth = await HubAuth.open(dir);
     final servers = <HttpServer>[];
     try {
       servers.add(await HttpServer.bind(InternetAddress.loopbackIPv4, port));
       if (extra != null) {
-        servers.add(await HttpServer.bind(extra, servers.first.port));
+        servers.add(await _bindPrivate(extra, servers.first.port, tls));
       }
     } catch (_) {
       for (final s in servers) {
@@ -123,13 +146,11 @@ class HubServer {
       await store.close();
       rethrow;
     }
-    final server = HubServer._(
-      store,
-      auth,
-      HubBackups(store),
-      servers,
-      log ?? (_) {},
-    );
+    final server =
+        HubServer._(store, auth, HubBackups(store), servers, log ?? (_) {})
+          .._tls = tls
+          .._certSha256 = tlsCertSha256;
+    auth.keylessDevicesReadOnly = store.e2eeRequired;
     server._paused = await server._pausedFile.exists();
     try {
       await server._purgeExpiredArchives();
@@ -174,12 +195,22 @@ class HubServer {
 
   /// The private/Tailscale address [privateHost] as an address this hub
   /// may listen on; throws [ArgumentError] otherwise.
-  static Future<InternetAddress> _checkPrivateHost(String privateHost) async {
+  static Future<InternetAddress> _checkPrivateHost(
+    String privateHost, {
+    SecurityContext? tls,
+  }) async {
     final extra = InternetAddress.tryParse(privateHost);
     if (extra == null || extra.isLoopback || !isAllowedBindAddress(extra)) {
       throw ArgumentError(
         'Refusing to listen on "$privateHost": only a private or Tailscale '
         'address of this computer is allowed (never 0.0.0.0 or a public IP).',
+      );
+    }
+    if (tls == null && !isPlainHttpAddress(extra)) {
+      throw ArgumentError(
+        'Refusing to listen on "$privateHost" without HTTPS: plain HTTP is '
+        'only allowed on this PC and on Tailscale. Give the hub a TLS '
+        'certificate (--tls-cert / --tls-key) to serve a home network.',
       );
     }
     final mine = [
@@ -214,6 +245,34 @@ class HubServer {
     );
   }
 
+  /// HTTPS context for the non-loopback listener (null: plain HTTP is only
+  /// possible on Tailscale).
+  SecurityContext? _tls;
+  String? _certSha256;
+
+  /// SHA-256 (hex) of the DER certificate in a PEM file, for pairing codes
+  /// (a device pins the certificate the code names).
+  static String certSha256OfPem(String pem) => sha256
+      .convert(
+        base64Decode(
+          pem
+              .replaceAll(RegExp(r'-----[A-Z ]+-----'), '')
+              .replaceAll(RegExp(r'\s'), ''),
+        ),
+      )
+      .toString();
+
+  static Future<HttpServer> _bindPrivate(
+    InternetAddress address,
+    int port,
+    SecurityContext? tls,
+  ) => tls != null && !isPlainHttpAddress(address)
+      ? HttpServer.bindSecure(address, port, tls)
+      : tls != null
+      // Tailscale with a certificate (tailscale cert): HTTPS there too.
+      ? HttpServer.bindSecure(address, port, tls)
+      : HttpServer.bind(address, port);
+
   bool _stopping = false;
 
   /// A listener closed by itself (see [_serve]); the host checks this and
@@ -234,14 +293,16 @@ class HubServer {
   /// listener and every device's connection there are not touched; the
   /// same port is kept, so paired devices need nothing new.
   Future<void> setPrivateHost(String? host) async {
-    final address = host == null ? null : await _checkPrivateHost(host);
+    final address = host == null
+        ? null
+        : await _checkPrivateHost(host, tls: _tls);
     for (final s in [..._servers]) {
       if (s.address.isLoopback) continue;
       _servers.remove(s);
       await s.close(force: true);
     }
     if (address != null) {
-      final http = await HttpServer.bind(address, port);
+      final http = await _bindPrivate(address, port, _tls);
       _servers.add(http);
       _serve(http);
     }
@@ -433,6 +494,7 @@ class HubServer {
             'hubId': store.hubId,
             'protocol': syncProtocolVersion,
             'paused': _paused,
+            'certSha256': ?_certSha256,
           });
         case ('POST', '/v1/register') when tenantId == null:
           _checkProtocol(r);
@@ -561,9 +623,81 @@ class HubServer {
         case ('POST', '/v1/admin/pair'):
           _admin(r);
           who = 'admin';
+          // With an offer ({registerCode, wrappedKey}) the code is made by
+          // the app and the hub never sees it; without, an ordinary code
+          // (for read-only devices such as the mirror).
+          final offer = r.contentLength > 0 ? await _json(r) : const {};
+          if (offer['registerCode'] is String) {
+            auth.createPairingOffer(
+              registerCode: offer['registerCode'] as String,
+              wrappedKey: '${offer['wrappedKey']}',
+              readOnly: offer['readOnly'] == true,
+            );
+            await _send(r, 200, {
+              'expiresInMinutes': HubAuth.pairingLifetime.inMinutes,
+            });
+          } else {
+            await _send(r, 200, {
+              'code': auth.createPairingCode(),
+              'expiresInMinutes': HubAuth.pairingLifetime.inMinutes,
+            });
+          }
+        // A paired, writable device offers another device the workspace key
+        // (wrapped under the pairing code): used for hosted accounts and by
+        // iPhone/iPad to add devices.
+        case ('POST', '/v1/pairing'):
+          _checkProtocol(r);
+          who = _syncDevice(r, write: true).id;
+          final offer = await _json(r);
+          auth.createPairingOffer(
+            registerCode: '${offer['registerCode']}',
+            wrappedKey: '${offer['wrappedKey']}',
+            readOnly: offer['readOnly'] == true,
+          );
           await _send(r, 200, {
-            'code': auth.createPairingCode(),
             'expiresInMinutes': HubAuth.pairingLifetime.inMinutes,
+          });
+        case ('POST', '/v1/pairing/redeem'):
+          _checkProtocol(r);
+          who = _device(r).id;
+          final wrapped = auth.redeemPairingOffer(
+            '${(await _json(r))['registerCode']}',
+          );
+          if (wrapped == null) {
+            throw const ProtocolException(
+              'pairing_failed',
+              'The pairing code is wrong or has expired.',
+              status: 401,
+            );
+          }
+          await _send(r, 200, {'wrappedKey': wrapped});
+        case ('GET', '/v1/e2ee'):
+          _checkProtocol(r);
+          who = _device(r).id;
+          await _send(r, 200, {
+            'required': store.e2eeRequired,
+            'plaintextRecords': await store.countPlaintext(),
+          });
+        // Switches the hub to end-to-end encrypted only, once a device has
+        // re-sent everything encrypted and read it back. Refused (and
+        // nothing changed) while any plain record is left.
+        case ('POST', '/v1/e2ee/commit'):
+          _checkProtocol(r);
+          who = _syncDevice(r, write: true).id;
+          final fresh = store.e2eeRequired
+              ? null
+              : await store.commitEncryption();
+          // (The PC hub: ordinary codes then give read-only devices. A hosted
+          // account's devices sign in with a password and stay writable.)
+          if (tenantId == null) auth.keylessDevicesReadOnly = true;
+          // A new backup (of ciphertext) first, then the old, plain ones go.
+          final keepBackup = await backups.create();
+          final purged = await backups.removeAllExcept(keepBackup);
+          await backups.createLive(); // the frequent-backup set starts again
+          await _send(r, 200, {
+            'required': true,
+            'removedPlainAttachments': fresh ?? 0,
+            'removedOldBackups': purged,
           });
         case ('POST', '/v1/admin/revoke'):
           _admin(r);
@@ -640,6 +774,10 @@ class HubServer {
   /// A read-only share page (see ShareLink): no device token, only the
   /// link's secret. Unknown, revoked and expired links all get the same
   /// "not available" answer.
+  ///
+  /// The shared text is ciphertext the hub cannot read. It is put in the
+  /// page, and a small script in the recipient's browser opens it with the
+  /// key from the link's `#fragment` (never sent to this server).
   Future<int> _serveShare(HttpRequest r, String token) async {
     Map<String, dynamic>? data;
     if (_shareToken.hasMatch(token)) {
@@ -647,16 +785,17 @@ class HubServer {
       final c = await store.current('shares', id);
       data = c == null || c.deleted ? null : c.data;
     }
-    final expires = DateTime.tryParse('${data?['expiresAt'] ?? ''}');
+    // Sealed share: {e2ee, c, pub: {expiresAt, revoked, ct}}. (A plain share
+    // from before encryption was required is not served any more.)
+    final pub = data?['pub'];
+    final meta = pub is Map<String, dynamic> ? pub : null;
+    final expires = DateTime.tryParse('${meta?['expiresAt'] ?? ''}');
+    final ct = meta?['ct'];
     final ok =
-        data != null &&
-        data['revoked'] != true &&
+        meta != null &&
+        ct is String &&
+        meta['revoked'] != true &&
         (expires == null || DateTime.now().toUtc().isBefore(expires.toUtc()));
-    final title = ok ? '${data['title'] ?? ''}' : 'Not available';
-    final body = ok
-        ? '${data['body'] ?? ''}'
-        : 'This link does not exist, was revoked or has expired.';
-    const esc = HtmlEscape();
     final status = ok ? 200 : 404;
     r.response
       ..statusCode = status
@@ -667,22 +806,65 @@ class HubServer {
       ..headers.set('x-frame-options', 'DENY')
       ..headers.set(
         'content-security-policy',
-        "default-src 'none'; style-src 'unsafe-inline'",
+        ok
+            ? "default-src 'none'; style-src 'unsafe-inline'; "
+                  "script-src 'sha256-$_shareScriptHash'"
+            : "default-src 'none'; style-src 'unsafe-inline'",
       )
-      ..write(
-        '<!doctype html><html><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<meta name="robots" content="noindex">'
-        '<title>${esc.convert(title)}</title><style>body{font:16px/1.5 '
-        'system-ui,sans-serif;max-width:720px;margin:2em auto;padding:0 16px;'
-        'color:#222;background:#fafafa}pre{white-space:pre-wrap;font:inherit}'
-        '</style></head><body><h1>${esc.convert(title)}</h1><pre>'
-        '${esc.convert(body)}</pre><p style="color:#888;font-size:12px">'
-        'Shared read-only from THEapp.</p></body></html>',
-      );
+      ..write(ok ? _sealedSharePage(ct) : _unavailableSharePage);
     await r.response.close();
     return status;
   }
+
+  static const _pageHead =
+      '<!doctype html><html><head><meta charset="utf-8">'
+      '<meta name="viewport" content="width=device-width,initial-scale=1">'
+      '<meta name="robots" content="noindex"><meta name="referrer" '
+      'content="no-referrer">';
+  static const _pageStyle =
+      '<style>body{font:16px/1.5 system-ui,sans-serif;max-width:720px;'
+      'margin:2em auto;padding:0 16px;color:#222;background:#fafafa}'
+      'pre{white-space:pre-wrap;font:inherit}</style>';
+
+  static const _unavailableSharePage =
+      '$_pageHead<title>Not available</title>$_pageStyle</head><body>'
+      '<h1>Not available</h1><pre>This link does not exist, was revoked or '
+      'has expired.</pre><p style="color:#888;font-size:12px">Shared '
+      'read-only from THEapp.</p></body></html>';
+
+  /// Opens the sealed text with WebCrypto (AES-256-GCM): the key is in
+  /// `location.hash` (`#k=...`), the ciphertext in the `d` element.
+  static const _shareScript = r'''
+(async()=>{
+const out=document.getElementById('b'),h=document.getElementById('h');
+const fail=m=>{h.textContent='Not available';out.textContent=m;};
+try{
+if(!(window.crypto&&crypto.subtle)){fail('Open this link over HTTPS to read it.');return;}
+const u=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';
+return Uint8Array.from(atob(s),c=>c.charCodeAt(0));};
+const m=/^#k=([A-Za-z0-9_-]{43})$/.exec(location.hash);
+if(!m){fail('This link is missing its key.');return;}
+const data=u(document.getElementById('d').textContent.trim());
+const key=await crypto.subtle.importKey('raw',u(m[1]),'AES-GCM',false,['decrypt']);
+const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:data.slice(0,12),
+additionalData:new TextEncoder().encode('theapp-share-v1')},key,data.slice(12));
+const j=JSON.parse(new TextDecoder().decode(plain));
+document.title=j.t;h.textContent=j.t;out.textContent=j.b;
+}catch(e){fail('This link could not be opened.');}
+})();
+''';
+
+  static final String _shareScriptHash = base64Encode(
+    sha256.convert(utf8.encode(_shareScript)).bytes,
+  );
+
+  static String _sealedSharePage(String ct) =>
+      '$_pageHead<title>Shared note</title>$_pageStyle</head><body>'
+      '<h1 id="h">Opening…</h1><pre id="b"></pre>'
+      '<script id="d" type="application/octet-stream">$ct</script>'
+      '<p style="color:#888;font-size:12px">Shared read-only from THEapp. '
+      'End-to-end encrypted: the server cannot read this.</p>'
+      '<script>$_shareScript</script></body></html>';
 
   static final _shareToken = RegExp(r'^[A-Za-z0-9_-]{20,100}$');
 
@@ -723,7 +905,8 @@ class HubServer {
       );
     }
     try {
-      final token = await auth.register(
+      auth.keylessDevicesReadOnly = store.e2eeRequired;
+      final result = await auth.registerWithKey(
         code,
         id,
         name,
@@ -731,10 +914,12 @@ class HubServer {
       );
       _failedPairing.remove(remote);
       await _send(r, 200, {
-        'token': token,
+        'token': result.token,
         'protocol': syncProtocolVersion,
         'lastSeq': store.lastSeq,
         'hubId': store.hubId,
+        'e2ee': store.e2eeRequired,
+        'wrappedKey': ?result.wrappedKey,
       });
     } on ProtocolException {
       _failedPairing[remote] = recent..add(now);

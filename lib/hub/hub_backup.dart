@@ -38,6 +38,19 @@ class HubBackups {
     return _completeIn(dir);
   }
 
+  /// Removes every backup (daily and live) except [keep]: used once the hub
+  /// switches to end-to-end encryption, because older backups hold the
+  /// records in plain text. Returns how many were removed.
+  Future<int> removeAllExcept(Directory keep) async {
+    var n = 0;
+    for (final b in [...await list(), ...await listLive()]) {
+      if (b.path == keep.path) continue;
+      await b.delete(recursive: true);
+      n++;
+    }
+    return n;
+  }
+
   /// Complete frequent ("live") backups, newest first.
   Future<List<Directory>> listLive() async {
     await _recoverInterruptedPurges(liveDir);

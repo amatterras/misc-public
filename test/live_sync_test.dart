@@ -18,6 +18,8 @@ import 'package:flutter_application_1/sync/sync_engine.dart';
 import 'package:flutter_application_1/sync/sync_scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/sync_keys.dart';
+
 class LiveDevice {
   LiveDevice(this.ws, this.engine, this.scheduler, this.errors);
   final Workspace ws;
@@ -367,6 +369,7 @@ void main() {
         workspace: ws,
         enableSendTo: false,
       );
+      await shareSyncKey(app);
       app.capture.fetchPreviews = false;
       app.pauseLocalHub = (paused) async {
         await hub.setPaused(paused);
@@ -376,7 +379,7 @@ void main() {
       expect(
         await app.pairWithHub(
           'http://127.0.0.1:$port',
-          hub.auth.createPairingCode(),
+          keyedPairingCode(hub.auth),
         ),
         isNull,
       );
@@ -390,7 +393,7 @@ void main() {
       expect(await app.setSyncEnabled(true), isNull);
       expect(hub.paused, isFalse);
       expect(
-        (await hub.store.current('notes', n.id))?.data?['title'],
+        openedData(await hub.store.current('notes', n.id))?['title'],
         'Offline by choice',
       );
       expect(app.syncStatus, startsWith('Synced'));

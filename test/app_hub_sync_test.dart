@@ -120,7 +120,14 @@ void main() {
           .any((d) => d.path.endsWith('-live')),
       isTrue,
     );
-    expect(Directory('${hubDir.path}/backups/live').listSync(), isNotEmpty);
+    // (The switch-over to encrypted-only removed the older, plain backups;
+    // new live backups follow within seconds.)
+    await until(
+      () =>
+          Directory('${hubDir.path}/backups/live').existsSync() &&
+          Directory('${hubDir.path}/backups/live').listSync().isNotEmpty,
+      what: 'a live backup after the switch-over',
+    );
 
     // The hub stops answering (its listeners close; the isolate lives).
     await host.debugCloseListeners();

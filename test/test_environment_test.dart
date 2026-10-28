@@ -112,7 +112,7 @@ void main() {
     for (final other in [
       'http://127.0.0.1:47800',
       'http://100.64.0.1:47710',
-      'http://192.168.1.20:47799',
+      'https://192.168.1.20:47799',
     ]) {
       expect(
         await state.pairWithHub(other, 'ABCD1234'),
@@ -120,6 +120,11 @@ void main() {
         reason: other,
       );
     }
+    // Plain http over a home network is refused before anything else.
+    expect(
+      await state.pairWithHub('http://192.168.1.20:47799', 'ABCD1234'),
+      contains('https://'),
+    );
     expect(
       File('${testDir.path}${sep}sync${sep}hub.token').existsSync(),
       isFalse,

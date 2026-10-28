@@ -9,19 +9,26 @@ import 'package:flutter_application_1/sync/sync_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('devices accept only this PC, private networks and Tailscale', () {
+  test('devices accept only this PC, private networks and Tailscale; plain '
+      'http only on this PC and Tailscale', () {
     for (final ok in [
       'http://127.0.0.1:47710',
       'http://localhost:47710',
-      'http://192.168.1.20:47710',
-      'http://10.0.0.5:47710',
-      'http://172.16.4.2:47710',
       'http://100.101.102.103:47710', // Tailscale range 100.64.0.0/10
       'http://my-pc.tail1234.ts.net:47710', // Tailscale MagicDNS name
+      // A home network needs HTTPS:
+      'https://192.168.1.20:47710',
+      'https://10.0.0.5:47710',
+      'https://172.16.4.2:47710',
     ]) {
       expect(isAllowedHubUrl(Uri.parse(ok)), isTrue, reason: ok);
     }
     for (final bad in [
+      // Plain http over an ordinary network: refused (fail closed).
+      'http://192.168.1.20:47710',
+      'http://10.0.0.5:47710',
+      'http://172.16.4.2:47710',
+      'http://[fd12::1]:47710',
       'http://8.8.8.8:47710', // public address
       'http://203.0.113.9:47710',
       'http://100.128.0.1:47710', // just outside the Tailscale range
@@ -53,6 +60,31 @@ void main() {
       'http://[fd12::1]:47710',
     ]) {
       expect(isEncryptedHubRoute(Uri.parse(no)), isFalse, reason: no);
+    }
+  });
+
+  test('a client is never created for plain http over a network', () {
+    for (final url in ['http://192.168.1.20:47710', 'http://10.0.0.5:47710']) {
+      expect(isInsecureHubUrl(Uri.parse(url)), isTrue, reason: url);
+      expect(
+        () => SyncClient(Uri.parse(url), token: 'secret-token'),
+        throwsA(
+          isA<SyncFailure>().having(
+            (e) => e.code,
+            'code',
+            'insecure_transport',
+          ),
+        ),
+        reason: url,
+      );
+    }
+    for (final url in [
+      'http://127.0.0.1:47710',
+      'http://100.64.0.1:47710',
+      'https://192.168.1.20:47710',
+    ]) {
+      expect(isInsecureHubUrl(Uri.parse(url)), isFalse, reason: url);
+      SyncClient(Uri.parse(url)).close();
     }
   });
 

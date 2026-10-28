@@ -19,6 +19,8 @@ import 'package:flutter_application_1/platform/ios_bridge.dart';
 import 'package:flutter_application_1/sync/secret_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/sync_keys.dart';
+
 final sep = Platform.pathSeparator;
 
 class FakeKeychain implements KeychainBackend {
@@ -177,7 +179,7 @@ void main() {
       secretKeychain = keychain;
       var s = await app();
       expect(
-        await s.pairWithHub(url.toString(), hub.auth.createPairingCode()),
+        await s.pairWithHub(url.toString(), keyedPairingCode(hub.auth)),
         isNull,
       );
       await s.syncNow();
@@ -195,7 +197,7 @@ void main() {
       expect(s.hubUrl, url.toString());
 
       expect(
-        await s.pairWithHub(url.toString(), hub.auth.createPairingCode()),
+        await s.pairWithHub(url.toString(), keyedPairingCode(hub.auth)),
         isNull,
       );
       expect(s.syncNeedsPairing, isFalse);
@@ -209,7 +211,7 @@ void main() {
         'not recent', () async {
       final s = await app();
       expect(
-        await s.pairWithHub(url.toString(), hub.auth.createPairingCode()),
+        await s.pairWithHub(url.toString(), keyedPairingCode(hub.auth)),
         isNull,
       );
       await s.syncNow();
@@ -222,7 +224,7 @@ void main() {
       await s.appResumed();
       expect(s.lastSynced!.isAfter(first), isTrue);
       expect(
-        (await hub.store.current('notes', note.id))?.data?['title'],
+        openedData(await hub.store.current('notes', note.id))?['title'],
         'Written before sleep',
       );
       await s.flush();

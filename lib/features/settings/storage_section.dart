@@ -238,7 +238,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
 
   Future<void> _codeFromThisPc() => _guard(() async {
     try {
-      final r = await localPairingCode();
+      final r = await widget.state.newPairingCode();
       _code.text = r.code;
       _address.text = 'http://127.0.0.1:${r.port}';
     } on LocalHubException catch (e) {
@@ -392,12 +392,12 @@ class _SwitchDialogState extends State<_SwitchDialog> {
         valueListenable: _address,
         builder: (context, value, _) {
           final uri = Uri.tryParse(value.text.trim());
-          final unencrypted =
-              uri != null && isAllowedHubUrl(uri) && !isEncryptedHubRoute(uri);
+          final unencrypted = uri != null && isInsecureHubUrl(uri);
           if (!unencrypted) return const SizedBox.shrink();
           return Text(
-            'Home-network address: this connection is not encrypted. Prefer '
-            '127.0.0.1 or a Tailscale address (100.x.y.z).',
+            'This address is refused: plain http:// over a network is not '
+            'encrypted. Use https://, 127.0.0.1 or a Tailscale address '
+            '(100.x.y.z).',
             key: ValueKey('switch-unencrypted-warning'),
             style: TextStyle(fontSize: 12, color: AppColors.danger),
           );

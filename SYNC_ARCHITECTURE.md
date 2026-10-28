@@ -766,3 +766,41 @@ and [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md)):
 - Deletions received from another device are kept locally in "recently
   deleted" (30 days); a restore is a new edit that wins over the deletion
   on every device without bringing back anything else.
+
+---
+
+# End-to-end encryption and secure transport (§16, protocol 1, added 2026-10-28)
+
+## 16.1 Transport rules (enforced before anything is sent)
+- **Plain `http://` is only used for this PC (127.0.0.1, `localhost`) and for Tailscale** (100.64.0.0/10, `fd7a:115c:a1e0::/48`, and `*.ts.net` names that resolve into those ranges; WireGuard encrypts that network).
+- **Every other network address needs `https://`**: a home network (192.168.x.x, 10.x.x.x, 172.16-31.x.x) or a hosted service. `SyncClient` refuses a plain-http address with `insecure_transport` *in its constructor*, so no pairing code, device token or record is ever sent, and there is no silent fallback to http.
+- **Certificates are validated.** HTTPS uses the system trust store. A hub with its own certificate (home network) is reached only by **pinning**: the pairing code carries the first 16 hex digits of the certificate's SHA-256 (`<26 characters>.<fingerprint prefix>`); the app connects once, sends nothing, checks the certificate matches the prefix, and pins the full fingerprint. Any other untrusted certificate is refused (`certificate_rejected`, not retryable). `badCertificateCallback` accepts only the pinned certificate for that host and port.
+- **The hub** listens plainly only on 127.0.0.1 and Tailscale. A home-network address needs `thehub serve --private-host <ip> --tls-cert cert.pem --tls-key key.pem`; without them the hub refuses to listen there. (Making the certificate is up to the user: `mkcert`, `tailscale cert`, or `openssl`. THEapp does not generate one.)
+
+## 16.2 What the hub can and cannot see
+- Records and attachments are **sealed on the device** (AES-256-GCM, a per-message key from HKDF, a random nonce; `lib/sync/e2ee.dart`) with one random 256-bit **workspace key** shared by the user's devices. The hub (and anyone with its disk, backups or database) holds ciphertext only.
+- Each sealed record is bound to its place: collection, id and revision are authenticated, so a hub that moves a ciphertext to another record is detected (`e2ee_unreadable`) rather than believed.
+- **Visible to the hub, because it needs it:** the collection name, the record id (random), the revision stamp (device id and time), the deleted flag, the ciphertext size, attachment ids (SHA-256 of the *sealed* bytes) and sizes, and for share links the expiry and revoked flags. Titles, text, URLs, file names, tags and every other field are inside the ciphertext. The size of a record or file is visible.
+- **Conflicts** are still resolved by the hub from revisions alone; the loser is kept as a conflict record whose preserved version is sealed too and is opened on the device.
+- **Attachments** are sealed in full; the id the hub stores them under is the SHA-256 of the sealed bytes (so it cannot confirm that a known file is present). The sealed copy's id travels inside the sealed asset record (`fileBlob` / `previewBlob`).
+
+## 16.3 The workspace key and pairing
+- The key lives only in OS-protected storage (Windows DPAPI, the iOS Keychain; `lib/sync/sync_key_store.dart`), never in a backup, and a platform without that storage does not sync at all.
+- **Pairing a new device** uses a longer code made on a device that has the key: 26 characters (130 random bits). The hub is given only `registerCode` (a one-way function of the code) and the workspace key *wrapped* under another one-way function of it (AES-GCM). The code never leaves the two devices; the hub cannot unwrap the key, and a hub that substitutes its own wrapped key fails the GCM check. Endpoints: `POST /v1/admin/pair` with `{registerCode, wrappedKey}` (this PC), `POST /v1/pairing` and `POST /v1/pairing/redeem` (signed-in devices, for hosted accounts). `POST /v1/register` returns `wrappedKey`.
+- An **ordinary short code** (`thehub pair`) carries no key. After the hub is switched to encrypted-only such a device can only read: this is how a Raspberry Pi mirror stays a read-only copy of ciphertext.
+- Key transfer is the only way to open data on a second device. There is **no recovery**: if every device loses the key, the hub's data cannot be read.
+
+## 16.4 Share links
+- A share snapshot (title and text) is sealed on the device with a fresh key that is **only in the link's `#fragment`** (`https://hub/s/<token>#k=<key>`). Browsers never send the fragment, so the key is not in requests, hub logs, analytics or referrers (`Referrer-Policy: no-referrer`). The hub stores and serves the ciphertext in a page whose small inline script (pinned by a CSP hash) opens it with WebCrypto.
+- Expiry, revocation, read-only access and the identical "not available" answer for unknown, revoked and expired links are unchanged; a revoked link keeps no ciphertext. WebCrypto needs a secure context, so a link opened over plain http (e.g. Tailscale without a certificate) shows "open this link over HTTPS".
+- Only notes, links, calendar entries, canvases and thought experiments can be shared; the private vault is not shareable.
+- Links made before this change have no key in their address and cannot be sealed for the same URL: during the upgrade they are retired (revoked). Make a new link.
+
+## 16.5 Upgrading a hub that holds plain data (once, by the first updated device)
+1. The device asks the hub (`GET /v1/e2ee`) whether it requires encryption and how many plain records it holds.
+2. If it holds any, the device **re-offers every record sealed**. A sealed copy replaces the hub's plain copy of the same revision.
+3. The hub is asked again and must report **0 plain records**; the device reads **every record back**, opens it and compares it with its own copy.
+4. Only then `POST /v1/e2ee/commit`: the hub refuses (`plaintext_remaining`, nothing changed) if any plain record is left; otherwise it switches to encrypted-only (plain pushes and uploads are refused with `plaintext_rejected`), rewrites its journal without superseded versions, **deletes its plain attachment files**, makes a new backup of ciphertext and **removes every older backup**.
+- If a record cannot be migrated the upgrade stops, is reported in the sync status, and no end-to-end claim is made; the next sync tries again.
+- **Not controllable:** copies outside the hub's own folders (a Raspberry Pi mirror's earlier copy, disk snapshots, file-system journals, the device's own older backups) are not touched; erasing them is not guaranteed.
+- Order matters with several devices: update one device (the PC) first; other devices must be paired again with a new code to get the key. Until then they fail with `e2ee_unreadable` / `plaintext_rejected` instead of using or exposing data.

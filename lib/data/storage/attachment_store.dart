@@ -51,6 +51,9 @@ class AttachmentStore {
     return name;
   }
 
+  /// Stores [bytes] as the attachment [name] (encrypted when encryption is on).
+  Future<void> storeBytes(String name, Uint8List bytes) => _store(name, bytes);
+
   /// Takes a finished plain file (a download), stores it under [name]
   /// (encrypted) and removes the plain file.
   Future<void> adopt(String name, File plain) async {

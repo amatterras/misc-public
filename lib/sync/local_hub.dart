@@ -84,6 +84,67 @@ Future<({String code, int minutes, int port})> localPairingCode({
   }
 }
 
+/// Gives this PC's hub an end-to-end pairing offer: [registerCode] (a
+/// one-way function of the code shown to the user) and the workspace key
+/// wrapped under the code. The hub never sees the code or the key.
+Future<({int minutes, int port})> localPairingOffer({
+  required String registerCode,
+  required String wrappedKey,
+  bool readOnly = false,
+  Directory? hubDir,
+}) async {
+  if (hubDir == null &&
+      (TestEnvironment.active ||
+          Platform.environment.containsKey('FLUTTER_TEST'))) {
+    throw const LocalHubException('Not available in test mode.');
+  }
+  final dir = hubDir ?? defaultLocalHubDir();
+  final port = await localHubPort(dir);
+  if (port == null) {
+    throw const LocalHubException(
+      'The hub is not running on this PC. Start it first ("thehub serve", '
+      'or make it start with Windows with "thehub startup enable").',
+    );
+  }
+  final token = await readSecret(HubAuth.adminTokenFile(dir));
+  if (token == null) {
+    throw const LocalHubException(
+      'This Windows user cannot manage the hub (it was started by another '
+      'user).',
+    );
+  }
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+  try {
+    final req = await client.postUrl(
+      Uri.parse('http://127.0.0.1:$port/v1/admin/pair'),
+    );
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+    req.headers.contentType = ContentType.json;
+    req.write(
+      jsonEncode({
+        'registerCode': registerCode,
+        'wrappedKey': wrappedKey,
+        if (readOnly) 'readOnly': true,
+      }),
+    );
+    final res = await req.close();
+    final body = jsonDecode(await utf8.decodeStream(res));
+    if (res.statusCode != 200 || body is! Map) {
+      throw LocalHubException(
+        'The hub refused: ${body is Map ? body['message'] : res.statusCode}',
+      );
+    }
+    return (
+      minutes: (body['expiresInMinutes'] as num?)?.toInt() ?? 10,
+      port: port,
+    );
+  } on SocketException {
+    throw const LocalHubException('The hub on this PC did not answer.');
+  } finally {
+    client.close(force: true);
+  }
+}
+
 /// Pauses or resumes sync on the hub running on this PC (Settings → Sync
 /// switch). Returns false when no hub runs here (the app then only pauses
 /// its own sync).

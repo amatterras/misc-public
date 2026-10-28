@@ -165,9 +165,68 @@ class HubAuth {
     return code;
   }
 
+  /// When true (the hub requires end-to-end encryption), a device paired
+  /// with an ordinary code, which carries no workspace key, can only read:
+  /// it could not write valid records anyway. This keeps a Raspberry Pi
+  /// mirror read-only and never lets a mirror become writable.
+  bool keylessDevicesReadOnly = false;
+
+  /// An end-to-end pairing offer: [registerCode] is a one-way function of
+  /// the code the user types, [wrappedKey] the workspace key wrapped under
+  /// another one-way function of it (see PairingSecret). The hub learns
+  /// neither the code nor the key.
+  void createPairingOffer({
+    required String registerCode,
+    required String wrappedKey,
+    bool readOnly = false,
+  }) {
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(registerCode) ||
+        wrappedKey.isEmpty ||
+        wrappedKey.length > 4096) {
+      throw const ProtocolException('bad_request', 'Invalid pairing offer.');
+    }
+    _pairing.removeWhere(
+      (p) => DateTime.now().isAfter(p['expires'] as DateTime),
+    );
+    _pairing.add({
+      'hash': hash(registerCode.toUpperCase()),
+      'expires': DateTime.now().add(pairingLifetime),
+      'wrappedKey': wrappedKey,
+      'readOnly': readOnly,
+    });
+  }
+
+  /// For a device that is already signed in (a hosted account): the wrapped
+  /// key of a pairing offer, once. Null for a wrong or expired code.
+  String? redeemPairingOffer(String registerCode) {
+    final h = hash(registerCode.trim().toUpperCase());
+    final now = DateTime.now();
+    final match = _pairing
+        .where(
+          (p) =>
+              p['wrappedKey'] != null &&
+              _same(p['hash'] as String, h) &&
+              now.isBefore(p['expires'] as DateTime),
+        )
+        .firstOrNull;
+    if (match == null) return null;
+    _pairing.remove(match);
+    return match['wrappedKey'] as String;
+  }
+
   /// Exchanges a pairing code for a device token (returned once, never
   /// stored). Re-pairing an existing device id replaces its old token.
   Future<String> register(
+    String code,
+    String deviceId,
+    String name, {
+    bool readOnly = false,
+  }) async =>
+      (await registerWithKey(code, deviceId, name, readOnly: readOnly)).token;
+
+  /// [register], also returning the wrapped workspace key of an end-to-end
+  /// pairing offer (null for an ordinary code).
+  Future<({String token, String? wrappedKey})> registerWithKey(
     String code,
     String deviceId,
     String name, {
@@ -193,6 +252,10 @@ class HubAuth {
       );
     }
     _pairing.remove(match); // single use
+    final wrappedKey = match['wrappedKey'] as String?;
+    final forceReadOnly =
+        match['readOnly'] == true ||
+        (wrappedKey == null && keylessDevicesReadOnly);
     final token = _token();
     final cleanName = name.replaceAll(RegExp(r'[\x00-\x1f]'), '').trim();
     _devices[deviceId] = HubDevice(
@@ -202,10 +265,10 @@ class HubAuth {
           : (cleanName.length > 60 ? cleanName.substring(0, 60) : cleanName),
       tokenHash: hash(token),
       createdAt: DateTime.now(),
-      readOnly: readOnly || deviceId.startsWith('mirror'),
+      readOnly: readOnly || forceReadOnly || deviceId.startsWith('mirror'),
     );
     await _save();
-    return token;
+    return (token: token, wrappedKey: wrappedKey);
   }
 
   Future<bool> revoke(String deviceId) async {

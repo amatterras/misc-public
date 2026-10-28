@@ -28,7 +28,10 @@ import 'package:flutter_application_1/hub/hub_server.dart';
 import 'package:flutter_application_1/sync/hlc.dart';
 import 'package:flutter_application_1/sync/protocol.dart';
 import 'package:flutter_application_1/sync/sync_client.dart';
+import 'package:flutter_application_1/sync/e2ee.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/sync_keys.dart';
 
 /// A minimal one-page PDF whose content stream shows [text].
 Uint8List tinyPdf(String content, {bool flate = false}) {
@@ -346,21 +349,26 @@ void main() {
         final client = SyncClient(
           Uri.parse('http://127.0.0.1:${server.port}'),
           token: token,
+          crypto: testSyncCrypto,
         );
         addTearDown(client.close);
         final clock = SyncClock(deviceId: 'aaaa');
         final secret = base64Url.encode(List.filled(32, 7)).replaceAll('=', '');
         final id = sha256.convert(utf8.encode(secret)).toString();
+        const title = 'CANARY-SHARE-TITLE <b>';
+        const text = 'CANARY-SHARE-BODY <script>alert(1)</script>';
+        final seal = ShareSeal.seal(title, text);
         ShareLink share({bool revoked = false, DateTime? expires}) => ShareLink(
           id: id,
           kind: 'note',
           sourceId: 'n1',
-          title: 'Notes <b>',
-          body: 'Hello <script>alert(1)</script>',
+          title: title,
+          body: text,
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
           revoked: revoked,
           expiresAt: expires,
+          sealed: revoked ? null : seal.ciphertext,
         );
         Future<(int, String, HttpHeaders)> fetch(String t) async {
           final http = HttpClient();
@@ -387,21 +395,42 @@ void main() {
         await put(share());
         final (status, html, headers) = await fetch(secret);
         expect(status, 200);
-        expect(html, contains('Hello &lt;script&gt;'));
-        expect(html, isNot(contains('<script>')));
-        expect(headers.value('cache-control'), 'no-store');
+        // The hub serves ciphertext it cannot read: no title, no text.
+        expect(html, contains(seal.ciphertext));
+        expect(html, isNot(contains('CANARY')));
         expect(
-          headers.value('content-security-policy'),
-          contains("default-src 'none'"),
+          html,
+          isNot(contains(seal.key)),
+          reason: 'the key is never here',
+        );
+        expect(headers.value('cache-control'), 'no-store');
+        expect(headers.value('referrer-policy'), 'no-referrer');
+        final csp = headers.value('content-security-policy')!;
+        expect(csp, contains("default-src 'none'"));
+        expect(csp, contains("script-src 'sha256-"));
+        // The recipient's browser (here: the same code) opens it with the
+        // key from the link's #fragment.
+        final opened = ShareSeal.open(seal.key, seal.ciphertext)!;
+        expect((opened.title, opened.body), (title, text));
+        expect(ShareSeal.open('${seal.key}x', seal.ciphertext), isNull);
+        expect(
+          ShareSeal.open(ShareSeal.seal('a', 'b').key, seal.ciphertext),
+          isNull,
         );
 
-        expect((await fetch('${secret}x')).$1, 404);
+        // Unknown, expired and revoked links all give the same answer.
+        final unknown = await fetch('${secret}x');
         await put(share(expires: DateTime(2020)));
-        expect((await fetch(secret)).$1, 404);
+        final expired = await fetch(secret);
         await put(share(revoked: true));
-        final (gone, body, _) = await fetch(secret);
-        expect(gone, 404);
-        expect(body, isNot(contains('Hello')));
+        final revoked = await fetch(secret);
+        for (final r in [unknown, expired, revoked]) {
+          expect(r.$1, 404);
+          expect(r.$2, isNot(contains(seal.ciphertext)));
+          expect(r.$2, isNot(contains('CANARY')));
+        }
+        expect(expired.$2, unknown.$2);
+        expect(revoked.$2, unknown.$2);
       },
     );
 

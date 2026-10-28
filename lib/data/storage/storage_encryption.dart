@@ -102,7 +102,10 @@ final class FileCipher {
     return Uint8List.fromList(okm);
   }
 
-  Uint8List encrypt(List<int> plain) {
+  /// [context]: extra data that is authenticated but not stored (e.g. which
+  /// record this is), so a ciphertext cannot be moved to another place and
+  /// still open. The same [context] must be given to [decrypt].
+  Uint8List encrypt(List<int> plain, {List<int> context = const []}) {
     final salt = randomBytes(_saltLength);
     final nonce = randomBytes(_nonceLength);
     final header = Uint8List.fromList([
@@ -119,7 +122,7 @@ final class FileCipher {
           KeyParameter(_fileKey(salt)),
           _tagLength * 8,
           nonce,
-          header,
+          Uint8List.fromList([...header, ...context]),
         ),
       );
     final body = gcm.process(Uint8List.fromList(plain));
@@ -128,7 +131,7 @@ final class FileCipher {
 
   /// Throws [DecryptionFailure] for a wrong key, a changed byte, a
   /// truncated file or a format this version does not know.
-  Uint8List decrypt(List<int> data) {
+  Uint8List decrypt(List<int> data, {List<int> context = const []}) {
     if (!isEncrypted(data)) {
       throw const DecryptionFailure('Not an encrypted THEapp file');
     }
@@ -149,7 +152,7 @@ final class FileCipher {
           KeyParameter(_fileKey(salt)),
           _tagLength * 8,
           nonce,
-          header,
+          Uint8List.fromList([...header, ...context]),
         ),
       );
     try {

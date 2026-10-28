@@ -73,7 +73,7 @@ class _SyncSectionState extends State<SyncSection> {
       _error = null;
     });
     try {
-      final r = await localPairingCode();
+      final r = await widget.state.newPairingCode();
       _code.text = r.code;
       _url.text = 'http://127.0.0.1:${r.port}';
       _shownCode =
@@ -179,20 +179,15 @@ class _SyncSectionState extends State<SyncSection> {
                 valueListenable: _url,
                 builder: (context, value, _) {
                   final uri = Uri.tryParse(value.text.trim());
-                  final unencrypted =
-                      uri != null &&
-                      isAllowedHubUrl(uri) &&
-                      !isEncryptedHubRoute(uri);
+                  final unencrypted = uri != null && isInsecureHubUrl(uri);
                   if (!unencrypted) return const SizedBox.shrink();
                   return Padding(
                     key: ValueKey('unencrypted-warning'),
                     padding: EdgeInsets.only(top: 6),
                     child: Text(
-                      'This is a home-network address: the connection is not '
-                      'encrypted, so others on that network could read your '
-                      'notes and this device’s key. Use this PC '
-                      '(127.0.0.1) or a Tailscale address (100.x.y.z) instead '
-                      'where you can.',
+                      'This address is refused: plain http:// over a network '
+                      'could be read by others on it. Use https://, this PC '
+                      '(127.0.0.1) or a Tailscale address (100.x.y.z).',
                       style: TextStyle(fontSize: 12, color: AppColors.danger),
                     ),
                   );

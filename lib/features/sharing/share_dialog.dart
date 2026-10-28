@@ -13,8 +13,14 @@ import 'package:flutter/services.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/knowledge_models.dart';
+import '../../sync/e2ee.dart';
 
 const _tokensKey = 'shareTokens';
+const _keysKey = 'shareKeys';
+
+/// What may be shared. The private vault is not on the list, so vault
+/// content can never be put in a link, sealed or not.
+const shareableKinds = {'note', 'link', 'entry', 'canvas', 'experiment'};
 
 String _newToken() {
   final r = Random.secure();
@@ -27,12 +33,24 @@ String shareIdFor(String token) =>
     sha256.convert(utf8.encode(token)).toString();
 
 /// The link for [token] on the paired hub, or null when not paired.
+///
+/// The key that opens the snapshot is in the part after `#`, which browsers
+/// never send to the server, so the hub (and its logs) never see it. A link
+/// made before sharing was encrypted has no key and gives null.
 String? shareUrl(AppState s, String token) {
   final hub = s.hubUrl;
   if (hub == null) return null;
+  final key = _keys(s)[shareIdFor(token)];
+  if (key == null) return null;
   final base = hub.endsWith('/') ? hub.substring(0, hub.length - 1) : hub;
-  return '$base/s/$token';
+  return '$base/s/$token#k=$key';
 }
+
+Map<String, String> _keys(AppState s) => {
+  for (final MapEntry(:key, :value)
+      in (s.settings.get<Map>(_keysKey) ?? const {}).entries)
+    if (key is String && value is String) key: value,
+};
 
 Map<String, String> _tokens(AppState s) => {
   for (final MapEntry(:key, :value)
@@ -49,23 +67,34 @@ Future<String> createShare(
   required String body,
   Duration? lifetime,
 }) async {
+  if (!shareableKinds.contains(kind)) {
+    throw ArgumentError(
+      'Only notes, links, entries, canvases and thought '
+      'experiments can be shared, not "$kind".',
+    );
+  }
   final token = _newToken();
   final now = DateTime.now();
+  final text = body.length > ShareLink.maxBodyChars
+      ? body.substring(0, ShareLink.maxBodyChars)
+      : body;
+  // Sealed here, on this device: the hub only ever gets ciphertext.
+  final seal = ShareSeal.seal(title, text);
   s.workspace.shares.put(
     ShareLink(
       id: shareIdFor(token),
       kind: kind,
       sourceId: sourceId,
       title: title,
-      body: body.length > ShareLink.maxBodyChars
-          ? body.substring(0, ShareLink.maxBodyChars)
-          : body,
+      body: text,
       createdAt: now,
       updatedAt: now,
       expiresAt: lifetime == null ? null : now.add(lifetime),
+      sealed: seal.ciphertext,
     ),
   );
   await s.settings.set(_tokensKey, {..._tokens(s), shareIdFor(token): token});
+  await s.settings.set(_keysKey, {..._keys(s), shareIdFor(token): seal.key});
   return token;
 }
 

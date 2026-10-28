@@ -20,6 +20,8 @@ import 'package:flutter_application_1/sync/sync_engine.dart';
 import 'package:flutter_application_1/sync/sync_scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/sync_keys.dart';
+
 import 'support/pre_update_fixture.dart';
 
 final sep = Platform.pathSeparator;
@@ -80,6 +82,7 @@ void main() {
       enableSendTo: false,
     );
     await s.settings.load();
+    await shareSyncKey(s); // all devices of a test share one workspace key
     // As at every start-up (AppState.init runs them before anything else).
     expect(await s.runMigrations(), isTrue);
     s.capture.fetchPreviews = false;
@@ -196,9 +199,7 @@ void main() {
     Future<StorageSwitch> connected(AppState s) async {
       final sw = await s.beginStorageSwitch(PcHubProvider(hubUri()));
       await sw.plan();
-      await sw.connect(
-        ProviderCredentials.pairing(hub.auth.createPairingCode()),
-      );
+      await sw.connect(ProviderCredentials.pairing(keyedPairingCode(hub.auth)));
       return sw;
     }
 
@@ -310,7 +311,7 @@ void main() {
       );
       final sw = await connected(pc);
       final destination = await sw.connect(
-        ProviderCredentials.pairing(hub.auth.createPairingCode()),
+        ProviderCredentials.pairing(keyedPairingCode(hub.auth)),
       );
       expect(destination, greaterThan(0), reason: 'the hub already has data');
       final v = await sw.copyAndVerify();
@@ -455,9 +456,25 @@ void main() {
       pc.workspace.notes[f.linkedNoteId]!.copyWith(body: 'PC edit'),
     );
     iws.notes.put(iws.notes[f.linkedNoteId]!.copyWith(body: 'iPad edit'));
-    await pc.syncNow();
-    await ipad.syncNow();
-    await pc.syncNow();
+    // Sync until both devices hold both versions (a sync the app starts by
+    // itself right after an edit can still be running when syncNow is
+    // called; that one only queues another).
+    Set<Object?> bodiesOf(Workspace ws) => {
+      ws.notes[f.linkedNoteId]!.body,
+      for (final c in ws.conflicts.all)
+        if (c.recordId == f.linkedNoteId) c.otherData?['body'],
+    };
+    for (var round = 0; round < 15; round++) {
+      await pc.syncNow();
+      await ipad.syncNow();
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if ([
+        pc.workspace,
+        iws,
+      ].every((w) => bodiesOf(w).containsAll(['PC edit', 'iPad edit']))) {
+        break;
+      }
+    }
     for (final ws in [pc.workspace, iws]) {
       final bodies = {
         ws.notes[f.linkedNoteId]!.body,
@@ -468,7 +485,11 @@ void main() {
     }
 
     // A retried push (lost reply) is recognised, not stored twice.
-    final client = SyncClient(url, token: pcSwitch2.token);
+    final client = SyncClient(
+      url,
+      token: pcSwitch2.token,
+      crypto: testSyncCrypto,
+    );
     addTearDown(client.close);
     final change = (await SyncEngine(
       workspace: pc.workspace,

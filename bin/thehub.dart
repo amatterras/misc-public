@@ -1,6 +1,7 @@
 // THEapp sync hub: command-line control. Pure Dart, no Flutter.
 //
 //   dart run bin/thehub.dart serve [--port 47710] [--private-host 100.x.y.z] [--data DIR]
+//                                  [--tls-cert cert.pem --tls-key key.pem]
 //   dart run bin/thehub.dart status | stop | pair | devices | revoke <id>
 //   dart run bin/thehub.dart backup | compact | restore-to <backupDir> <emptyDir>
 //   dart run bin/thehub.dart startup enable|disable|status
@@ -160,8 +161,12 @@ void _usage() => stdout.writeln('''
 THEapp sync hub
 
   serve [--port N] [--private-host ADDRESS|auto] [--data DIR]
+        [--tls-cert FILE --tls-key FILE]
         Run the hub. Listens on 127.0.0.1 (this PC only). --private-host also
-        listens on that private/Tailscale address of this PC. Ctrl+C stops it.
+        listens on that private/Tailscale address of this PC. Plain http is
+        only used on this PC and on Tailscale: a home-network address needs
+        HTTPS, so give the hub a certificate (--tls-cert/--tls-key, PEM).
+        Ctrl+C stops it.
   status                 Is it running? Records, devices, memory use.
   stop                   Stop a running hub.
   pair                   Make a one-time pairing code for a new device.
@@ -223,11 +228,28 @@ Future<void> _serve(Directory dir, _Options options) async {
   final requested = auto
       ? await detectTailscaleAddress()
       : options.value('--private-host');
+  SecurityContext? tls;
+  String? certSha256;
+  final certFile = options.value('--tls-cert');
+  final keyFile = options.value('--tls-key');
+  if ((certFile == null) != (keyFile == null)) {
+    stderr.writeln('--tls-cert and --tls-key go together.');
+    exitCode = 2;
+    return;
+  }
+  if (certFile != null && keyFile != null) {
+    tls = SecurityContext()
+      ..useCertificateChain(certFile)
+      ..usePrivateKey(keyFile);
+    certSha256 = HubServer.certSha256OfPem(await File(certFile).readAsString());
+  }
   final server = await HubServer.start(
     dir: dir,
     port: port,
     privateHost: requested,
     log: log.write,
+    tls: tls,
+    tlsCertSha256: certSha256,
   );
   // Every 10 s: a listener lost to a network change is opened again.
   final watch = Timer.periodic(const Duration(seconds: 10), (_) async {

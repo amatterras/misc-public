@@ -21,6 +21,7 @@ import '../data/storage/app_log.dart';
 import '../data/storage/backup_verifier.dart';
 import '../data/workspace.dart';
 import 'protocol.dart';
+import 'e2ee.dart';
 import 'sync_client.dart';
 import 'sync_engine.dart';
 
@@ -126,7 +127,8 @@ class ProviderCredentials {
     String this.email,
     String this.password, {
     this.invite,
-  }) : pairingCode = null;
+    this.pairingCode,
+  });
 
   final String? pairingCode;
   final String? email;
@@ -199,12 +201,24 @@ class StorageSwitch {
     required this.from,
     required this.to,
     required this.deviceName,
+    this.crypto,
   });
 
   final Workspace workspace;
   final StorageProvider from;
   final StorageProvider to;
   final String deviceName;
+
+  /// This device's workspace key (end-to-end encryption). Replaced by the
+  /// key a pairing code delivers, when one is entered.
+  SyncCrypto? crypto;
+
+  /// SHA-256 of the hub's own HTTPS certificate when it was pinned at
+  /// pairing (home-network hub with its own certificate).
+  String? pinnedCert;
+
+  /// True when [crypto] came from a pairing code (the app then stores it).
+  bool keyFromPairing = false;
 
   SwitchStage stage = SwitchStage.idle;
   String? _token;
@@ -220,7 +234,12 @@ class StorageSwitch {
   SyncClient _client({String? token}) {
     final problem = to.problem;
     if (problem != null) throw SyncFailure('bad_address', problem);
-    return SyncClient(to.endpoint!, token: token);
+    return SyncClient(
+      to.endpoint!,
+      token: token,
+      crypto: crypto,
+      pinnedCertSha256: pinnedCert,
+    );
   }
 
   Future<int> _localRecordCount() async {
@@ -271,15 +290,53 @@ class StorageSwitch {
   /// Pairs / signs in. Returns how many changes the destination already
   /// holds for this account (0 = empty).
   Future<int> connect(ProviderCredentials credentials) async {
-    final client = _client();
     final device = workspace.device!;
+    // An end-to-end pairing code (26 characters) brings the workspace key;
+    // the hub gets only a one-way function of it. An ordinary short code
+    // pairs this device with the key it already has.
+    final secret = PairingSecret.parse(credentials.pairingCode ?? '');
+    final endpoint = to.endpoint;
+    if (secret?.certPrefix != null && endpoint != null) {
+      // The code carries the hub certificate's fingerprint: pin it, or stop.
+      pinnedCert = await fetchPinnedCertificate(endpoint, secret!.certPrefix!);
+      if (pinnedCert == null) {
+        throw const SyncFailure(
+          'certificate_rejected',
+          'The hub\'s certificate does not match the pairing code, so '
+              'nothing was sent.',
+        );
+      }
+    }
+    final client = _client();
     try {
       if (to is PcHubProvider) {
         final code = credentials.pairingCode?.trim() ?? '';
         if (code.isEmpty) {
           throw const SyncFailure('bad_request', 'Enter the pairing code.');
         }
-        _token = await client.register(code, device.id, deviceName);
+        if (secret != null) {
+          final r = await client.registerWithKey(
+            secret.registerCode,
+            device.id,
+            deviceName,
+          );
+          _token = r.token;
+          final key = r.wrappedKey == null
+              ? null
+              : secret.unwrap(r.wrappedKey!);
+          if (key == null) {
+            throw const SyncFailure(
+              'pairing_key',
+              'The hub did not deliver a workspace key that matches your '
+                  'code. Nothing was changed; make a new code and try again.',
+            );
+          }
+          crypto = SyncCrypto(key);
+          keyFromPairing = true;
+          client.token = _token;
+        } else {
+          _token = await client.register(code, device.id, deviceName);
+        }
       } else if (to is HostedProvider) {
         final email = credentials.email?.trim() ?? '';
         final password = credentials.password ?? '';
@@ -288,6 +345,21 @@ class StorageSwitch {
           await client.createAccount(email, password, invite);
         }
         _token = await client.signIn(email, password, device.id, deviceName);
+        // A second device: the key arrives wrapped under a pairing code made
+        // on a device that already has it (the service never sees either).
+        if (secret != null) {
+          final wrapped = await client.redeemPairing(secret.registerCode);
+          final key = secret.unwrap(wrapped);
+          if (key == null) {
+            throw const SyncFailure(
+              'pairing_key',
+              'The service did not deliver a workspace key that matches your '
+                  'code. Nothing was changed.',
+            );
+          }
+          crypto = SyncCrypto(key);
+          keyFromPairing = true;
+        }
       } else {
         throw const SyncFailure('bad_request', 'Nothing to connect to.');
       }
@@ -385,14 +457,19 @@ class StorageSwitch {
       }
       var attachments = 0;
       for (final a in copy.assets.all) {
-        for (final (name, sha) in [
-          (a.file, a.fileSha256),
-          (a.previewFile, a.previewSha256),
+        for (final (name, sha, blobKey) in [
+          (a.file, a.fileSha256, 'fileBlob'),
+          (a.previewFile, a.previewSha256, 'previewBlob'),
         ]) {
           if (name == null || sha == null) continue;
           if (!await copy.attachments.fileFor(name).exists()) continue;
           attachments++;
-          if (!await client.hasAttachment(sha)) {
+          // End-to-end: the destination holds the sealed copy, named in the
+          // (sealed) asset record it also holds.
+          final id = crypto == null
+              ? sha
+              : remote['assets/${a.id}']?.data?[blobKey] as String?;
+          if (id == null || !await client.hasAttachment(id)) {
             problems.add('Attachment not on the destination: asset ${a.id}');
           }
         }

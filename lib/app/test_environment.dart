@@ -11,7 +11,7 @@
 //   touches Explorer's user-wide "Send to" menu.
 import 'dart:io';
 
-import '../sync/sync_client.dart' show isEncryptedHubRoute;
+import '../sync/sync_client.dart' show isTailscaleAddress;
 
 class TestEnvironmentError implements Exception {
   const TestEnvironmentError(this.message);
@@ -37,7 +37,13 @@ abstract final class TestEnvironment {
       url.port == testHubPort &&
       (url.host == '127.0.0.1' ||
           url.host == 'localhost' ||
-          isEncryptedHubRoute(url));
+          url.host.toLowerCase().endsWith('.ts.net') ||
+          _isTailscaleHost(url.host));
+
+  static bool _isTailscaleHost(String host) {
+    final ip = InternetAddress.tryParse(host);
+    return ip != null && (ip.isLoopback || isTailscaleAddress(ip));
+  }
 
   static bool get active => dataDir != null;
 

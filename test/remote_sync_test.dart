@@ -9,9 +9,12 @@ import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/settings/sync_section.dart';
 import 'package:flutter_application_1/hub/hub_server.dart';
+import 'package:flutter_application_1/sync/e2ee.dart';
 import 'package:flutter_application_1/sync/protocol.dart';
 import 'package:flutter_application_1/sync/sync_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/sync_keys.dart';
 
 import 'support/both_clocks.dart';
 
@@ -49,6 +52,7 @@ void main() {
       workspace: ws,
       enableSendTo: false,
     );
+    await shareSyncKey(s);
     await s.init();
     return s;
   }
@@ -102,17 +106,20 @@ void main() {
     expect(s.workspace.notes[note.id], isNotNull, reason: 'nothing lost');
     expect(await hub.store.current('notes', note.id), isNull);
 
-    // Pair again: the queued edit goes out.
+    // Pair again (with an end-to-end code, as a real device would: an
+    // ordinary code carries no key, so the hub would let it only read).
     await s.disconnectHub();
-    expect(
-      await s.pairWithHub(url.toString(), hub.auth.createPairingCode()),
-      isNull,
+    final secret = PairingSecret.generate();
+    hub.auth.createPairingOffer(
+      registerCode: secret.registerCode,
+      wrappedKey: secret.wrap(testSyncKey),
     );
+    expect(await s.pairWithHub(url.toString(), secret.display), isNull);
     expect(s.syncNeedsPairing, isFalse);
     await s.syncNow();
     expect(s.syncStatus, startsWith('Synced'));
     expect(
-      (await hub.store.current('notes', note.id))?.data?['title'],
+      openedData(await hub.store.current('notes', note.id))?['title'],
       'Written after removal',
     );
     await s.flush();

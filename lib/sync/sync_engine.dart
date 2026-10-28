@@ -9,11 +9,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart' show sha256;
 
 import '../data/models/canvas_models.dart';
 import '../data/models/library_models.dart';
 import '../data/repositories/canvas_repository.dart';
 import '../data/storage/app_log.dart';
+import '../data/storage/storage_encryption.dart' show DecryptionFailure;
 import '../data/workspace.dart';
 import 'canvas_merge.dart';
 import 'record_merge.dart';
@@ -217,6 +221,7 @@ class SyncEngine {
       await _push(state, report);
       await _pull(state, report);
       await _downloadMissingAttachments(report);
+      await _ensureHubSealed(state, report);
       AppLog.info('Sync: $report');
       return report;
     } finally {
@@ -365,9 +370,12 @@ class SyncEngine {
             baseRev: state.base[c.key],
           ),
       ];
-      for (final c in batch) {
+      for (var i = 0; i < batch.length; i++) {
+        final c = batch[i];
         if (c.collection == 'assets' && !c.deleted) {
-          await _uploadFiles(c, report);
+          // End-to-end: the file is sealed and uploaded under its own id,
+          // and the record carries that id (inside the sealed record).
+          batch[i] = await _withBlobs(c, report);
         }
       }
       final ({List<PushResult> results, int lastSeq, String hubId}) response;
@@ -589,7 +597,7 @@ class SyncEngine {
   Future<void> _reconcileAttachments(SyncReport report) async {
     for (final a in workspace.assets.all.toList()) {
       final data = workspace.assets.jsonOf(a.id) ?? a.toJson();
-      await _uploadFiles(
+      await _withBlobs(
         SyncChange(
           collection: 'assets',
           id: a.id,
@@ -600,6 +608,182 @@ class SyncEngine {
         report,
       );
     }
+  }
+
+  bool _sealedChecked = false;
+
+  /// Makes the hub hold only end-to-end encrypted data, once: with a
+  /// workspace key, everything this device has is offered again (sealed;
+  /// a sealed copy replaces the hub's plain one of the same revision), the
+  /// hub is asked to confirm it holds no plain record, a read-back of every
+  /// record is opened and compared with what is stored here, and only then
+  /// the hub is switched to encrypted-only (which also removes its plain
+  /// attachments and old backups). Any failure stops here, is reported,
+  /// and nothing is claimed; the next sync tries again.
+  Future<void> _ensureHubSealed(SyncState state, SyncReport report) async {
+    final crypto = client.crypto;
+    if (crypto == null || _sealedChecked) return;
+    final ({bool required, int plaintextRecords}) status;
+    try {
+      status = await client.e2eeStatus();
+    } on SyncFailure catch (e) {
+      if (e.code == 'not_found') {
+        report.problems.add(
+          'This hub is too old for end-to-end encryption: restart it with '
+          'this version of THEapp.',
+        );
+        _sealedChecked = true; // nothing to retry until it is updated
+        return;
+      }
+      rethrow;
+    }
+    if (status.required) {
+      client.requireSealed = true;
+      _sealedChecked = true;
+      return;
+    }
+    if (status.plaintextRecords > 0) {
+      // Share links made before have no key in their address: they cannot
+      // be sealed for the same link, so they stop working (make a new one).
+      for (final link in workspace.shares.all.toList()) {
+        if (link.sealed == null && !link.revoked) {
+          workspace.shares.put(link.revoke());
+        }
+      }
+      state.base.clear(); // offer everything again, sealed
+      await _saveState(state);
+      await _push(state, report);
+      final after = await client.e2eeStatus();
+      if (after.plaintextRecords > 0) {
+        report.problems.add(
+          '${after.plaintextRecords} record(s) on the hub are still not '
+          'end-to-end encrypted, so it was not switched over.',
+        );
+        return;
+      }
+    }
+    if (!await _readBackMatches(report)) return;
+    await client.commitEncryption();
+    client.requireSealed = true;
+    _sealedChecked = true;
+    AppLog.info('Sync: the hub now accepts only end-to-end encrypted data');
+  }
+
+  /// Reads every record back from the hub (opening each sealed one) and
+  /// checks it against this device's copy where the revisions are the same.
+  Future<bool> _readBackMatches(SyncReport report) async {
+    final local = await localVersions();
+    var cursor = 0;
+    var checked = 0;
+    while (true) {
+      final page = await client.pull(cursor, limit: maxPullLimit);
+      for (final c in page.changes) {
+        if (c.deleted || c.data == null) continue;
+        final mine = local[c.key];
+        if (mine == null || mine.rev != c.rev || mine.data == null) continue;
+        if (_canonical(_withoutBlobIds(mine.data)) !=
+            _canonical(_withoutBlobIds(c.data))) {
+          report.problems.add(
+            'A ${c.collection} record did not read back correctly from the '
+            'hub, so it was not switched to end-to-end encryption.',
+          );
+          return false;
+        }
+        checked++;
+      }
+      if (!page.hasMore) break;
+      cursor = page.next;
+    }
+    AppLog.info('Sync: $checked record(s) read back from the hub and verified');
+    return true;
+  }
+
+  /// The sealed attachment ids are added to an asset only on its way out.
+  static Map<String, dynamic>? _withoutBlobIds(Map<String, dynamic>? data) =>
+      data == null
+      ? null
+      : (Map<String, dynamic>.of(data)
+          ..remove('fileBlob')
+          ..remove('previewBlob'));
+
+  static String _canonical(Object? v) => jsonEncode(_sorted(v));
+
+  static Object? _sorted(Object? v) => switch (v) {
+    Map() => {
+      for (final k in (v.keys.map((k) => '$k').toList()..sort()))
+        k: _sorted(v[k]),
+    },
+    List() => [for (final e in v) _sorted(e)],
+    _ => v,
+  };
+
+  Map<String, String>? _blobIds;
+
+  /// plain SHA-256 of an attachment -> id of its sealed copy on the hub.
+  Future<Map<String, String>> _blobTable() async {
+    if (_blobIds != null) return _blobIds!;
+    final saved = await workspace.store.read('sync', 'blobs');
+    return _blobIds = {
+      for (final e in ((saved?['blobs'] as Map?) ?? const {}).entries)
+        '${e.key}': '${e.value}',
+    };
+  }
+
+  /// With a workspace key: seals each file of [asset], makes sure the hub
+  /// holds it (uploading when not), and returns the asset change carrying the
+  /// sealed copy's id as `fileBlob` / `previewBlob`. Without a key (older
+  /// setups) the plain file is uploaded as before.
+  Future<SyncChange> _withBlobs(SyncChange asset, SyncReport report) async {
+    final crypto = client.crypto;
+    if (crypto == null) {
+      await _uploadFiles(asset, report);
+      return asset;
+    }
+    final data = Map<String, dynamic>.of(asset.data!);
+    final table = await _blobTable();
+    for (final (nameKey, shaKey, blobKey) in [
+      ('file', 'fileSha256', 'fileBlob'),
+      ('previewFile', 'previewSha256', 'previewBlob'),
+    ]) {
+      final name = data[nameKey] as String?;
+      final sha = data[shaKey] as String?;
+      if (name == null || sha == null || !_safeFileName.hasMatch(name)) {
+        continue;
+      }
+      var id = table[sha] ?? data[blobKey] as String?;
+      final haveLocal = await workspace.attachments.fileFor(name).exists();
+      if (haveLocal && (id == null || !await client.hasAttachment(id))) {
+        final plain = await workspace.attachments.readBytes(name);
+        if (sha256.convert(plain).toString() != sha) {
+          report.problems.add(
+            'An attachment changed on disk and was not sent.',
+          );
+          continue;
+        }
+        final sealed = crypto.sealBlob(plain);
+        final staged = workspace.attachments.stagingFile('${sealed.id}.up');
+        try {
+          await staged.writeAsBytes(sealed.bytes, flush: true);
+          await client.upload(sealed.id, staged);
+        } finally {
+          if (await staged.exists()) await staged.delete();
+        }
+        id = sealed.id;
+        table[sha] = id;
+        await workspace.store.write('sync', 'blobs', {'blobs': table});
+        report.uploaded++;
+      }
+      if (id != null) data[blobKey] = id;
+    }
+    return SyncChange(
+      collection: asset.collection,
+      id: asset.id,
+      rev: asset.rev,
+      deleted: asset.deleted,
+      data: data,
+      baseRev: asset.baseRev,
+      seq: asset.seq,
+    );
   }
 
   Future<void> _uploadFiles(SyncChange asset, SyncReport report) async {
@@ -815,11 +999,38 @@ class SyncEngine {
           continue;
         }
         if (await workspace.attachments.fileFor(name).exists()) continue;
-        // Downloaded plain into a staging file, then stored encrypted.
+        // Downloaded into a staging file, then stored encrypted here.
         final staged = workspace.attachments.stagingFile(name);
         try {
-          await client.download(sha, size, staged);
-          await workspace.attachments.adopt(name, staged);
+          final crypto = client.crypto;
+          final blob =
+              workspace.assets.jsonOf(a.id)?[name == a.file
+                      ? 'fileBlob'
+                      : 'previewBlob']
+                  as String?;
+          if (crypto != null && blob != null && sha256Pattern.hasMatch(blob)) {
+            await client.download(blob, null, staged);
+            final Uint8List plain;
+            try {
+              plain = crypto.openBlob(await staged.readAsBytes());
+            } on DecryptionFailure {
+              report.problems.add('An attachment could not be decrypted.');
+              continue;
+            } finally {
+              if (await staged.exists()) await staged.delete();
+            }
+            if (sha256.convert(plain).toString() != sha) {
+              report.problems.add('A downloaded attachment is damaged.');
+              continue;
+            }
+            await workspace.attachments.storeBytes(name, plain);
+          } else if (client.requireSealed) {
+            report.problems.add('An attachment is not available yet.');
+            continue;
+          } else {
+            await client.download(sha, size, staged);
+            await workspace.attachments.adopt(name, staged);
+          }
           report.downloaded++;
         } on SyncFailure catch (e) {
           if (!e.retryable && e.code != 'not_found') rethrow;

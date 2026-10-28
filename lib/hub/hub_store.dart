@@ -18,6 +18,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import '../platform/windows_native.dart' as win;
+import '../sync/e2ee.dart';
 import '../sync/hlc.dart';
 import '../sync/protocol.dart';
 
@@ -136,6 +137,102 @@ class HubStore {
   /// restored hub).
   late final String hubId;
 
+  /// Once true the hub accepts only end-to-end encrypted records (see
+  /// sync/e2ee.dart) and attachments; plain ones are refused. Set by
+  /// [commitEncryption] after a device has re-sent everything encrypted.
+  bool e2eeRequired = false;
+
+  File get _e2eeFile => File('${dir.path}${_sep}e2ee.json');
+
+  /// Current records that are not end-to-end encrypted (hub-made conflict
+  /// records whose preserved version is sealed or absent do not count).
+  Future<int> countPlaintext() => _locked(() async {
+    var n = 0;
+    for (final e in _latest.values) {
+      if (e.deleted) continue;
+      final line = await _readLine(e);
+      final data = line['data'] as Map<String, dynamic>?;
+      if (data == null) continue;
+      if (isEnvelope(data)) continue;
+      if (line['c'] == 'conflicts' && e.device == 'hub') {
+        final other = data['otherData'];
+        if (other == null ||
+            (other is Map<String, dynamic> && isEnvelope(other))) {
+          continue;
+        }
+      }
+      n++;
+    }
+    return n;
+  });
+
+  /// Whether the stored current version of [key] is a plain (not
+  /// encrypted) record. A version staged in the batch being built is not.
+  Future<bool> storedAsPlain(String key, Map<String, Object?> staged) async {
+    if (staged.containsKey(key)) return false;
+    final e = _latest[key];
+    if (e == null || e.deleted) return false;
+    final data = (await _readLine(e))['data'] as Map<String, dynamic>?;
+    return data != null && !isEnvelope(data);
+  }
+
+  /// Switches the hub to encrypted-only after checking that no plain record
+  /// is left, drops superseded versions from the journal, and removes plain
+  /// attachment files. The caller makes a fresh backup and removes the old
+  /// (plain) ones. Returns how many plain attachments were removed, or
+  /// throws a [ProtocolException] `plaintext_remaining` and changes nothing.
+  Future<int> commitEncryption() async {
+    final left = await countPlaintext();
+    if (left > 0) {
+      throw ProtocolException(
+        'plaintext_remaining',
+        '$left record(s) are still not end-to-end encrypted, so the hub was '
+            'not switched over.',
+        status: 409,
+      );
+    }
+    await _e2eeFile.writeAsString(
+      jsonEncode({
+        'required': true,
+        'at': DateTime.now().toUtc().toIso8601String(),
+      }),
+      flush: true,
+    );
+    e2eeRequired = true;
+    await compact(); // superseded plain versions leave the journal
+    var removed = 0;
+    if (await attachmentsDir.exists()) {
+      await for (final f in attachmentsDir.list()) {
+        if (f is! File || !sha256Pattern.hasMatch(f.uri.pathSegments.last)) {
+          continue;
+        }
+        if (!await _isSealedBlob(f)) {
+          await f.delete();
+          removed++;
+        }
+      }
+    }
+    return removed;
+  }
+
+  /// Whether an attachment file starts with the sealed-blob marker.
+  static Future<bool> _isSealedBlob(File f) async {
+    final raf = await f.open();
+    try {
+      return sealedBlobPrefix(await raf.read(4));
+    } finally {
+      await raf.close();
+    }
+  }
+
+  /// `TAEF`: the first bytes of everything sealed with FileCipher.
+  static bool sealedBlobPrefix(List<int> head) =>
+      head.length >= 4 &&
+      head[0] == 0x54 &&
+      head[1] == 0x41 &&
+      head[2] == 0x45 &&
+      head[3] == 0x46;
+
   HubStats get stats =>
       HubStats(records: _latest.length, lastSeq: _seq, journalBytes: _length);
 
@@ -153,6 +250,7 @@ class HubStore {
       ).join();
       await idFile.writeAsString(store.hubId, flush: true);
     }
+    store.e2eeRequired = await store._e2eeFile.exists();
     await store._load();
     return store;
   }
@@ -308,6 +406,15 @@ class HubStore {
       );
     }
     for (final c in changes) {
+      if (e2eeRequired &&
+          c.data != null &&
+          !envelopeShapeOk(c.collection, c.data!)) {
+        throw const ProtocolException(
+          'plaintext_rejected',
+          'This hub only accepts end-to-end encrypted records. Update the '
+              'app and pair again.',
+        );
+      }
       // A device may only send its own new edits. The exception is a record
       // it is re-offering with no base revision (after the hub was restored
       // or the device re-paired): it may hold versions made elsewhere, which
@@ -472,7 +579,18 @@ class HubStore {
         stage(c, device);
         status = PushStatus.applied;
       } else if (cur.rev == c.rev) {
-        status = PushStatus.duplicate;
+        // The same version again. If the hub still holds it in plain text
+        // and this is its end-to-end encrypted form, the encrypted copy takes
+        // its place (same revision, nothing for other devices to merge).
+        if (!c.deleted &&
+            c.data != null &&
+            isEnvelope(c.data) &&
+            await storedAsPlain(c.key, staged)) {
+          stage(c, device);
+          status = PushStatus.applied;
+        } else {
+          status = PushStatus.duplicate;
+        }
       } else if (deviceOfRev(cur.rev) == device &&
           deviceOfRev(c.rev) == device &&
           c.rev.compareTo(cur.rev) > 0) {
@@ -675,8 +793,14 @@ class HubStore {
     final hashOut = _DigestSink();
     final hasher = sha256.startChunkedConversion(hashOut);
     var received = 0;
+    var plainRefused = false;
     try {
       await for (final chunk in data) {
+        // Refused, but the body is still read to its end so the device gets
+        // a clean answer instead of a broken connection.
+        if (received == 0 && e2eeRequired && !sealedBlobPrefix(chunk)) {
+          plainRefused = true;
+        }
         received += chunk.length;
         if (received > size) {
           throw const ProtocolException(
@@ -691,6 +815,12 @@ class HubStore {
       await sink.flush();
       await sink.close();
       hasher.close();
+      if (plainRefused) {
+        throw const ProtocolException(
+          'plaintext_rejected',
+          'This hub only accepts end-to-end encrypted attachments.',
+        );
+      }
       if (received != size || hashOut.value.toString() != sha) {
         throw const ProtocolException(
           'integrity_failed',

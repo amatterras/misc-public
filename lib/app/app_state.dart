@@ -37,11 +37,13 @@ import '../platform/ios_bridge.dart';
 import '../platform/input_hints.dart';
 import '../platform/platform.dart' as native;
 import '../widgets/date_prefs.dart';
+import '../sync/e2ee.dart';
 import '../sync/protocol.dart';
 import '../sync/record_merge.dart';
 import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
+import '../sync/sync_key_store.dart';
 import '../sync/sync_scheduler.dart';
 import '../sync/storage_modes.dart';
 import '../data/integrity/integrity_check.dart';
@@ -534,6 +536,46 @@ class AppState extends ChangeNotifier {
 
   bool get syncPaired => _sync != null;
 
+  /// The workspace key for end-to-end encrypted sync (OS-protected storage).
+  SyncKeyStore get syncKeys => SyncKeyStore(workspace.root);
+
+  /// A code to type on another device (or on this PC, to pair it with its
+  /// own hub). It carries a key only the two devices know: the hub is given a
+  /// one-way function of it and the workspace key wrapped under another, so
+  /// it can read neither. Valid for a few minutes, usable once.
+  Future<({String code, int minutes, int port})> newPairingCode({
+    bool readOnly = false,
+  }) async {
+    if (!syncKeys.isSecure) {
+      throw const LocalHubException(
+        'This device cannot protect the encryption key, so it cannot add '
+        'devices.',
+      );
+    }
+    final crypto = await syncKeys.loadOrCreate();
+    final secret = PairingSecret.generate();
+    final r = await localPairingOffer(
+      registerCode: secret.registerCode,
+      wrappedKey: secret.wrap(crypto.exportKey()),
+      readOnly: readOnly,
+    );
+    // A hub serving a home network over HTTPS names its certificate; the
+    // code then carries its fingerprint so the other device can pin it.
+    var shown = secret;
+    final probe = SyncClient(Uri.parse('http://127.0.0.1:${r.port}'));
+    try {
+      final cert = (await probe.status())['certSha256'];
+      if (cert is String && cert.length == 64) {
+        shown = secret.withCertificate(cert);
+      }
+    } on SyncFailure {
+      // The code works without a pin (this PC, Tailscale).
+    } finally {
+      probe.close();
+    }
+    return (code: shown.display, minutes: r.minutes, port: r.port);
+  }
+
   /// The hub rejected this device's token; automatic sync is stopped until
   /// the device is paired again.
   bool syncNeedsPairing = false;
@@ -737,6 +779,15 @@ class AppState extends ChangeNotifier {
     hubHosted = config?['hosted'] == true;
     final token = await readSecret(_hubTokenFile);
     if (url == null) return;
+    final pin = config?['certSha256'] as String?;
+    if (!syncKeys.isSecure) {
+      hubUrl = url;
+      syncStatus =
+          'Sync is off: this platform cannot protect the encryption key, and '
+          'THEapp never syncs unencrypted.';
+      AppLog.warn('Sync not started: no protected key storage');
+      return;
+    }
     if (token == null) {
       // Paired before, but this device's key is gone, e.g. a backup restored
       // onto another iPad (the Keychain entry stays on the old device).
@@ -749,18 +800,31 @@ class AppState extends ChangeNotifier {
       return;
     }
     try {
-      _startSync(Uri.parse(url), token);
+      // A device paired before sync was end-to-end encrypted has no key yet:
+      // it makes one now (the hub is switched over on its next sync).
+      final crypto = await syncKeys.loadOrCreate();
+      _startSync(Uri.parse(url), token, crypto: crypto, pin: pin);
     } on SyncFailure catch (e) {
       syncStatus = e.message;
     }
   }
 
-  void _startSync(Uri url, String token) {
+  void _startSync(
+    Uri url,
+    String token, {
+    required SyncCrypto crypto,
+    String? pin,
+  }) {
     _scheduler?.stop();
     final engine = _sync = SyncEngine(
       workspace: workspace,
       canvases: canvases,
-      client: SyncClient(url, token: token),
+      client: SyncClient(
+        url,
+        token: token,
+        crypto: crypto,
+        pinnedCertSha256: pin,
+      ),
       openCanvas: _SyncBridge(this),
     );
     hubUrl = url.toString();
@@ -829,8 +893,13 @@ class AppState extends ChangeNotifier {
   /// error message, or null on success.
   Future<String?> pairWithHub(String url, String code) async {
     final uri = Uri.tryParse(url.trim());
+    if (uri != null && isInsecureHubUrl(uri)) {
+      return 'This address would send your data unprotected over the '
+          'network, so nothing was sent. Use https://, this PC '
+          '(http://127.0.0.1:47710) or a Tailscale address.';
+    }
     if (uri == null || !isAllowedHubUrl(uri)) {
-      return 'The hub address must be this PC (http://127.0.0.1:47710), your home network or Tailscale.';
+      return 'The hub address must be this PC (http://127.0.0.1:47710), your home network (https://) or Tailscale.';
     }
     // On iPhone/iPad, 127.0.0.1 is the iPad itself; the hub runs on the PC.
     if (ios != null && isLoopbackHubUrl(uri)) {
@@ -843,15 +912,63 @@ class AppState extends ChangeNotifier {
       return 'Test data mode: pair only with the test hub '
           '(http://127.0.0.1:${TestEnvironment.testHubPort}), never the real hub.';
     }
-    final client = SyncClient(uri);
-    try {
-      final device = workspace.device!;
-      final token = await client.register(
-        code,
-        device.id,
-        await _deviceLabel(device.name),
-      );
+    if (!syncKeys.isSecure) {
+      return 'This device cannot protect the encryption key, so it cannot '
+          'sync (THEapp never syncs unencrypted).';
+    }
+    // An end-to-end pairing code brings the workspace key; the hub only gets
+    // a one-way function of it. An ordinary short code uses this device's own
+    // key (made now if it has none).
+    final secret = PairingSecret.parse(code);
+    String? pin;
+    if (secret?.certPrefix != null) {
+      pin = await fetchPinnedCertificate(uri, secret!.certPrefix!);
+      if (pin == null) {
+        return 'The hub\'s certificate does not match the pairing code, so '
+            'nothing was sent.';
+      }
+    }
+    // Without a pairing-code key this device uses its own: made (and stored
+    // safely) before anything is sent to the hub.
+    SyncCrypto? ownKey;
+    if (secret == null) {
       try {
+        ownKey = await syncKeys.loadOrCreate();
+      } catch (e, s) {
+        AppLog.error('Could not store the sync key', e, s);
+        return 'This device could not store its key securely, so sync was '
+            'not started. Nothing was sent to the hub.';
+      }
+    }
+    SyncClient? client;
+    try {
+      client = SyncClient(uri, pinnedCertSha256: pin);
+      final device = workspace.device!;
+      SyncCrypto crypto;
+      String token;
+      if (secret != null) {
+        final r = await client.registerWithKey(
+          secret.registerCode,
+          device.id,
+          await _deviceLabel(device.name),
+        );
+        token = r.token;
+        final key = r.wrappedKey == null ? null : secret.unwrap(r.wrappedKey!);
+        if (key == null) {
+          return 'The hub did not deliver a workspace key that matches your '
+              'code. Nothing was changed; make a new code and try again.';
+        }
+        crypto = SyncCrypto(key);
+      } else {
+        token = await client.register(
+          code,
+          device.id,
+          await _deviceLabel(device.name),
+        );
+        crypto = ownKey!;
+      }
+      try {
+        if (secret != null) await syncKeys.save(crypto.exportKey());
         await writeSecret(_hubTokenFile, token);
       } catch (e, s) {
         // Keychain / DPAPI refused: nothing is stored, nothing is synced.
@@ -860,20 +977,23 @@ class AppState extends ChangeNotifier {
             'sync was not started. Try again; if it keeps failing, remove '
             'this device on the hub ("thehub revoke").';
       }
-      await workspace.store.write('sync', 'hub', {'url': uri.toString()});
+      await workspace.store.write('sync', 'hub', {
+        'url': uri.toString(),
+        'certSha256': ?pin,
+      });
       hubHosted = false;
       AppLog.info(
         isEncryptedHubRoute(uri)
-            ? 'Paired with a hub (this PC or Tailscale)'
-            : 'Paired with a hub on the home network (unencrypted)',
+            ? 'Paired with a hub (this PC, Tailscale or HTTPS)'
+            : 'Paired with a hub',
       );
-      _startSync(uri, token);
+      _startSync(uri, token, crypto: crypto, pin: pin);
       notifyListeners();
       return null;
     } on SyncFailure catch (e) {
       return e.message;
     } finally {
-      client.close();
+      client?.close();
     }
   }
 
@@ -894,6 +1014,10 @@ class AppState extends ChangeNotifier {
     }
     if (TestEnvironment.active) {
       return 'Test data mode never connects to a hosted service.';
+    }
+    if (!syncKeys.isSecure) {
+      return 'This device cannot protect the encryption key, so it cannot '
+          'sync (THEapp never syncs unencrypted).';
     }
     final client = SyncClient(uri);
     try {
@@ -920,7 +1044,7 @@ class AppState extends ChangeNotifier {
       });
       hubHosted = true;
       AppLog.info('Signed in to a hosted sync service');
-      _startSync(uri, token);
+      _startSync(uri, token, crypto: await syncKeys.loadOrCreate());
       notifyListeners();
       return null;
     } on SyncFailure catch (e) {
@@ -1019,11 +1143,19 @@ class AppState extends ChangeNotifier {
             'PC’s Tailscale address, e.g. http://100.x.y.z:47710.',
       );
     }
+    if (to is! LocalOnlyProvider && !syncKeys.isSecure) {
+      throw const SyncFailure(
+        'no_key_storage',
+        'This device cannot protect the encryption key, so it cannot sync '
+            '(THEapp never syncs unencrypted).',
+      );
+    }
     return StorageSwitch(
       workspace: workspace,
       from: storageProvider,
       to: to,
       deviceName: await _deviceLabel(workspace.device!.name),
+      crypto: to is LocalOnlyProvider ? null : await syncKeys.loadOrCreate(),
     );
   }
 
@@ -1041,10 +1173,15 @@ class AppState extends ChangeNotifier {
     _scheduler = null;
     _sync?.client.close();
     _sync = null;
+    final crypto = change.crypto;
+    if (crypto == null) throw StateError('No workspace key for this switch');
+    // A key delivered by a pairing code replaces this device's own.
+    if (change.keyFromPairing) await syncKeys.save(crypto.exportKey());
     await writeSecret(_hubTokenFile, change.token!);
     await workspace.store.write('sync', 'hub', {
       'url': uri.toString(),
       if (to is HostedProvider) 'hosted': true,
+      'certSha256': ?change.pinnedCert,
     });
     // New destination, so no bookkeeping carries over: this device offers
     // everything once (the destination already has it: duplicates), then
@@ -1059,7 +1196,7 @@ class AppState extends ChangeNotifier {
     hubHosted = to is HostedProvider;
     await settings.set('storageMode', to.mode.name);
     AppLog.info('Storage mode: ${to.mode.name} (copy verified)');
-    _startSync(uri, change.token!);
+    _startSync(uri, change.token!, crypto: crypto, pin: change.pinnedCert);
     notifyListeners();
   }
 

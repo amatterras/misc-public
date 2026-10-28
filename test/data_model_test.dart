@@ -12,6 +12,8 @@ import 'package:flutter_application_1/hub/hub_server.dart';
 import 'package:flutter_application_1/sync/hlc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/sync_keys.dart';
+
 String sep = Platform.pathSeparator;
 
 AppState appFor(Directory dir) {
@@ -354,7 +356,7 @@ void main() {
       final port = hub.port;
       final app = appFor(Directory('${dir.path}${sep}app'));
       await app.init();
-      final code = hub.auth.createPairingCode();
+      final code = keyedPairingCode(hub.auth);
       expect(await app.pairWithHub('http://127.0.0.1:$port', code), isNull);
       await app.syncNow();
       expect(app.syncStatus, startsWith('Synced'));
@@ -370,7 +372,7 @@ void main() {
       await app.syncNow();
       expect(app.syncStatus, startsWith('Synced'));
       expect(
-        (await hub.store.current('notes', n.id))!.data!['title'],
+        openedData(await hub.store.current('notes', n.id))!['title'],
         'Written while the hub is off',
       );
       await hub.stop();
