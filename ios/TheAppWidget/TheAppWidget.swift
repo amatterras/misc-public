@@ -29,6 +29,8 @@ struct SnapshotDay: Decodable, Hashable {
   let link: String
   let total: Int
   let items: [SnapshotItem]
+  /// Handwriting on that day (base64 PNG), if any.
+  let ink: String?
 }
 
 struct Snapshot: Decodable {
@@ -57,7 +59,7 @@ struct Snapshot: Decodable {
     return kept.enumerated().map { index, day in
       SnapshotDay(
         date: day.date, title: index == 0 && day.date == today ? "Today" : day.title,
-        link: day.link, total: day.total, items: day.items)
+        link: day.link, total: day.total, items: day.items, ink: day.ink)
     }
   }
 }
@@ -107,8 +109,8 @@ struct Provider: TimelineProvider {
         SnapshotItem(
           kind: "task", title: "Buy groceries", time: nil, done: false,
           color: 0xFF79_B85A, link: "theapp://open"),
-      ]),
-    SnapshotDay(date: "", title: "Tomorrow", link: "theapp://open", total: 0, items: []),
+      ], ink: nil),
+    SnapshotDay(date: "", title: "Tomorrow", link: "theapp://open", total: 0, items: [], ink: nil),
   ]
 }
 
@@ -179,6 +181,13 @@ struct DayColumn: View {
         Text("+\(more) more")
           .font(.system(size: 11, weight: .medium))
           .foregroundColor(.secondary)
+      }
+      if let ink = day.ink, let data = Data(base64Encoded: ink), let image = UIImage(data: data) {
+        // The handwriting drawn on this day in the Calendar.
+        Image(uiImage: image)
+          .resizable()
+          .scaledToFit()
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
       Spacer(minLength: 0)
     }

@@ -33,6 +33,7 @@ import '../features/capture/clipboard_guard.dart';
 import '../features/capture/file_drop.dart';
 import '../features/capture/send_to.dart';
 import '../features/tasks/completion_messages.dart';
+import '../features/widgets/widget_ink.dart';
 import '../features/widgets/widget_snapshot.dart';
 import '../platform/ios_bridge.dart';
 import '../platform/input_hints.dart';
@@ -1673,6 +1674,14 @@ class AppState extends ChangeNotifier {
       c.addListener(_scheduleWidgetUpdate);
     }
     unawaited(updateWidgets());
+    // Handwriting on the Calendar shows in the widgets too.
+    unawaited(_watchCalendarInkForWidgets());
+  }
+
+  Future<void> _watchCalendarInkForWidgets() async {
+    final c = await openCalendarInk();
+    c.addListener(_scheduleWidgetUpdate);
+    await updateWidgets();
   }
 
   void _scheduleWidgetUpdate() {
@@ -1691,7 +1700,19 @@ class AppState extends ChangeNotifier {
       addDays(dateOnly(at), 1).difference(at) + const Duration(seconds: 5),
       () => unawaited(updateWidgets()),
     );
-    final json = jsonEncode(WidgetSnapshot.build(workspace, at));
+    final snapshot = WidgetSnapshot.build(workspace, at);
+    final ink = calendarInk;
+    if (ink != null) {
+      for (final day in snapshot['days'] as List) {
+        day as Map<String, Object?>;
+        final png = await renderDayInk(
+          ink.items,
+          dateOnly(DateTime.parse(day['date'] as String)),
+        );
+        if (png != null) day['ink'] = png;
+      }
+    }
+    final json = jsonEncode(snapshot);
     // generatedAt changes every time; compare the rest.
     final key = json.replaceFirst(RegExp(r'"generatedAt":"[^"]*"'), '');
     if (key == _lastWidgetJson) return false;

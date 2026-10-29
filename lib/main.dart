@@ -195,9 +195,8 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
   );
   await state.init(onStep: progress.to);
   // Face ID / Touch ID lock (iPhone/iPad only; see platform/app_lock.dart).
-  final lock = Platform.isIOS
-      ? AppLockController(authenticator: platformAuthenticator())
-      : null;
+  // Disabled on purpose: THEapp opens without Face ID / Touch ID / passcode.
+  const AppLockController? lock = null;
   runApp(TheApp(state: state, appLock: lock));
   if (lock != null) {
     unawaited(
