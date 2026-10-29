@@ -1633,6 +1633,15 @@ class CanvasController extends ChangeNotifier {
     if (_editingId != null && hit?.id == _editingId) return;
     endEditing();
 
+    // Tapping selects only photos and links (and keeps what a lasso already
+    // selected movable); everything else is selected with the lasso tool.
+    final selectable =
+        hit != null &&
+        (hit is LinkItem || hit is ImageItem || _selection.contains(hit.id));
+    if (hit != null && !selectable) {
+      if (!shift) _selection = const {};
+      return;
+    }
     if (hit != null) {
       // A grouped item brings its whole group.
       final picked = withGroups({hit.id});
@@ -1658,10 +1667,8 @@ class CanvasController extends ChangeNotifier {
         _drag = _Drag.move;
       }
     } else {
-      _selectionAtDragStart = shift ? _selection : const {};
-      _selection = _selectionAtDragStart;
-      _drag = _Drag.marquee;
-      _marquee = Rect.fromPoints(world, world);
+      // No marquee: only the lasso tool selects areas.
+      if (!shift) _selection = const {};
     }
   }
 
