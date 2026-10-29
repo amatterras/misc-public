@@ -1338,7 +1338,7 @@ class CanvasController extends ChangeNotifier {
   _Drag _drag = _Drag.none;
   Offset _lastScreen = Offset.zero;
   Offset _dragStartWorld = Offset.zero;
-  Set<String> _selectionAtDragStart = const {};
+  final Set<String> _selectionAtDragStart = const {};
 
   /// Set by a click on an already selected group: on release without a
   /// drag, only this item stays selected.
