@@ -64,6 +64,9 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
       _folder = widget.initialFolder;
     }
     _loadRefs();
+    s.openLinksBoard().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   /// Leaves the dialog; a page stays where it is.
@@ -234,13 +237,16 @@ class _ArchiveLibraryState extends State<ArchiveLibrary> {
         s,
       ]),
       builder: (context, _) {
+        final archived = s.archiveAssetIds();
         final items =
             ws.assets.all
                 .where(
                   (a) =>
-                      _folder == null ||
-                      (a.folderId ?? '') == _folder ||
-                      (_folder == '' && ws.archiveFolders[a.folderId] == null),
+                      archived.contains(a.id) &&
+                      (_folder == null ||
+                          (a.folderId ?? '') == _folder ||
+                          (_folder == '' &&
+                              ws.archiveFolders[a.folderId] == null)),
                 )
                 .toList()
               ..sort((a, b) => b.createdAt.compareTo(a.createdAt));

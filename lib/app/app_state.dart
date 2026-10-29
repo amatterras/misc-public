@@ -2955,6 +2955,17 @@ class AppState extends ChangeNotifier {
   Future<CanvasController> openComponents() =>
       _openSpecial(componentsId, 'components', 'Components');
 
+  /// Ids of the assets explicitly added to the Archive: those with a card
+  /// or photo on the Links board, or filed in an Archive folder. Assets
+  /// that only exist for notes, tasks or other units are not included.
+  Set<String> archiveAssetIds() => {
+    for (final i in _links?.items ?? const <CanvasItem>[])
+      if (i is LinkItem) i.assetId else if (i is ImageItem) i.assetId,
+    for (final a in workspace.assets.all)
+      if (a.folderId != null && workspace.archiveFolders[a.folderId] != null)
+        a.id,
+  };
+
   /// Size of one place in the Links board's grid of new cards.
   static const linkSlot = Size(340, 380);
   static const linkColumns = 4;

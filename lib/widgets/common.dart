@@ -272,11 +272,13 @@ class AssetChip extends StatelessWidget {
     required this.workspace,
     required this.asset,
     this.onRemove,
+    this.onOpenPdfEditor,
   });
 
   final Workspace workspace;
   final Asset asset;
   final VoidCallback? onRemove;
+  final VoidCallback? onOpenPdfEditor;
 
   @override
   Widget build(BuildContext context) {

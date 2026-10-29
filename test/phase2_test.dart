@@ -175,7 +175,7 @@ void main() {
 
   group('idle line straightening', () {
     testWidgets(
-      'a line straightens exactly after two idle seconds and undoes',
+      'a line straightens exactly after 1.2 idle seconds and undoes',
       (tester) async {
         final c = make();
         c.tool = CanvasTool.pen;
@@ -184,7 +184,7 @@ void main() {
         ]);
         c.pointerUp();
         final original = c.items.single as StrokeItem;
-        await tester.pump(const Duration(milliseconds: 1999));
+        await tester.pump(const Duration(milliseconds: 1199));
         expect(identical(c.items.single, original), isTrue);
         await tester.pump(const Duration(milliseconds: 1));
         final straight = c.items.single as StrokeItem;
@@ -252,11 +252,11 @@ void main() {
       final c = make();
       c.tool = CanvasTool.pen;
       pencil(c, Offset.zero, [for (var i = 1; i <= 10; i++) Offset(i * 10, 0)]);
-      await tester.pump(const Duration(milliseconds: 1500));
+      await tester.pump(const Duration(milliseconds: 1100));
       c.pointerMove(const Offset(110, 0));
-      await tester.pump(const Duration(milliseconds: 1500));
+      await tester.pump(const Duration(milliseconds: 1100));
       expect(c.lineStraightenPreview, isNull);
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 200));
       expect(c.lineStraightenPreview, isNotNull);
       c.pointerUp();
       expect(c.lineStraightenPreview, isNull);

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../data/models/canvas_models.dart';
 import '../data/models/record.dart' show dateOnly;
-import '../features/search/search_dialog.dart';
 import '../features/settings/settings_dialog.dart';
 import '../platform/input_hints.dart';
 import '../widgets/common.dart';
@@ -120,12 +119,6 @@ class Sidebar extends StatelessWidget {
         ),
         const SizedBox(height: Space.sm),
         _IconButton(
-          icon: Icons.search,
-          tooltip: 'Search  (Ctrl+K)',
-          onTap: () => showSearchDialog(context, state),
-        ),
-        const SizedBox(height: Space.sm),
-        _IconButton(
           icon: Icons.apps,
           tooltip: 'App switcher',
           onTap: () => openAppSwitcher(context, state),
@@ -236,18 +229,6 @@ class Sidebar extends StatelessWidget {
           const SizedBox(height: Space.lg),
           _NewButton(onTap: () => openQuickAdd(context, state)),
           const SizedBox(height: Space.sm),
-          _NavItem(
-            icon: Icons.search,
-            label: 'Search',
-            trailing: touchFirst
-                ? null
-                : Text(
-                    'Ctrl K',
-                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
-                  ),
-            active: false,
-            onTap: () => showSearchDialog(context, state),
-          ),
           _NavItem(
             icon: Icons.keyboard_command_key,
             label: 'Commands',

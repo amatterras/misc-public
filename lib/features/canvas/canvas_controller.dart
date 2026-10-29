@@ -1195,8 +1195,8 @@ class CanvasController extends ChangeNotifier {
     return _livePoints.last.offset + ahead;
   }
 
-  /// A completed line-like stroke is straightened after a two-second dwell.
-  static Duration holdToStraighten = const Duration(seconds: 2);
+  /// A line-like stroke is straightened after a 1.2-second dwell.
+  static Duration holdToStraighten = const Duration(milliseconds: 1200);
   Timer? _holdTimer;
   StrokeItem? _pendingStraighten;
   CanvasTool? _pendingStraightenTool;

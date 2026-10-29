@@ -156,8 +156,6 @@ class _AppShellState extends State<AppShell> {
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
             openQuickAdd(context, state),
-        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () =>
-            showSearchDialog(context, state),
         const SingleActivator(
           LogicalKeyboardKey.keyP,
           control: true,
@@ -413,13 +411,6 @@ class _CompactTopBar extends StatelessWidget {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
             onPressed: () => state.goTo(AppPage.home),
-          ),
-          IconButton(
-            icon: Icon(Icons.search, size: 20, color: AppColors.textMuted),
-            tooltip: 'Search',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-            onPressed: () => showSearchDialog(context, state),
           ),
           IconButton(
             icon: Icon(
