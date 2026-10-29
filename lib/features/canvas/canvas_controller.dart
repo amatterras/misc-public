@@ -1198,6 +1198,7 @@ class CanvasController extends ChangeNotifier {
   /// A line-like stroke is straightened after a 1.2-second dwell.
   static Duration holdToStraighten = const Duration(milliseconds: 1200);
   Timer? _holdTimer;
+  Offset? _holdAnchor;
   StrokeItem? _pendingStraighten;
   CanvasTool? _pendingStraightenTool;
   List<StrokePoint>? _liveLinePreview;
@@ -1220,6 +1221,7 @@ class CanvasController extends ChangeNotifier {
     final hadPreview = _liveLinePreview != null;
     _holdTimer?.cancel();
     _holdTimer = null;
+    _holdAnchor = null;
     _pendingStraighten = null;
     _pendingStraightenTool = null;
     _liveLinePreview = null;
@@ -1736,7 +1738,13 @@ class CanvasController extends ChangeNotifier {
         _lastMoveTime = timeStamp ?? _lastMoveTime;
         _livePoints.add(StrokePoint(world.dx, world.dy, pressure));
         _updateLiveStroke();
-        _restartLineHold();
+        // A resting pen still jitters by a pixel or two; only real movement
+        // restarts the hold.
+        final anchor = _holdAnchor;
+        if (anchor == null || (screen - anchor).distance > 4) {
+          _holdAnchor = screen;
+          _restartLineHold();
+        }
         (liveInk as _Ping).ping();
         return;
       case _Drag.erase:

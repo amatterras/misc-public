@@ -250,10 +250,10 @@ bool looksLikeLine(List<StrokePoint> points, double scale) {
   // their travelled path is too long or turns substantially back on itself.
   final efficient = pathLength / chord;
   final backtrackRatio = backwards / chord;
-  return deviation <= math.max(8, screenLength * 0.09) &&
-      rms <= math.max(3, screenLength * 0.035) &&
-      efficient <= 1.16 &&
-      backtrackRatio <= 0.08;
+  return deviation <= math.max(10, screenLength * 0.11) &&
+      rms <= math.max(4, screenLength * 0.045) &&
+      efficient <= 1.25 &&
+      backtrackRatio <= 0.1;
 }
 
 /// Shortest straight line (screen pixels) that a hold can produce.
