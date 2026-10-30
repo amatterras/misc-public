@@ -1303,14 +1303,19 @@ class Workspace {
     saveEntry(entry.copyWith(archived: archived));
   }
 
-  void toggleHabit(String id, DateTime day) {
+  /// Toggles completion for one occurrence of any local calendar entry.
+  /// The date key keeps recurring and multi-day entries independent per day.
+  void toggleEntryCompletion(String id, DateTime day) {
     final entry = entries[id];
-    if (entry == null) return;
+    if (entry == null || entry.archived || !entry.occursOn(day)) return;
     final key = dayKey(day);
     final checks = {...entry.checkoffs};
     if (!checks.remove(key)) checks.add(key);
     entries.put(entry.copyWith(checkoffs: checks));
   }
+
+  /// Compatibility name used by older Habit controls.
+  void toggleHabit(String id, DateTime day) => toggleEntryCompletion(id, day);
 
   DayRecord dayRecord(DateTime day) =>
       days[dayKey(day)] ??

@@ -230,6 +230,29 @@ void main() {
     await h.shutDown();
   });
 
+  testWidgets(
+    'upper-left greeting swipes away and stays dismissed after restart',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      final h = Harness(tester, dir);
+      await h.boot();
+      await h.settle();
+
+      final greeting = find.byKey(const ValueKey('greeting-window'));
+      expect(greeting, findsOneWidget);
+      await tester.drag(greeting, const Offset(110, 8));
+      await tester.pumpAndSettle();
+      await h.settle();
+      expect(greeting, findsNothing);
+      expect(h.s.settings.get<bool>('welcomeGreetingDismissed'), isTrue);
+
+      await h.restart();
+      await h.settle();
+      expect(find.byKey(const ValueKey('greeting-window')), findsNothing);
+      await h.shutDown();
+    },
+  );
+
   testWidgets('canvas: drawing, moving and erasing do not interfere', (
     tester,
   ) async {

@@ -20,7 +20,8 @@ enum CalendarCategory {
 /// * other: each date in [dates];
 /// * reading: each day in [readingLog] (pages read that day);
 /// * habits: recurring from [startDate] (until [endDate]) on [weekdays]
-///   (empty = every day); [checkoffs] are the days marked done.
+///   (empty = every day); [checkoffs] are per-occurrence completion dates for
+///   every category (including each habit recurrence).
 /// A habit is one record however many days it occurs on.
 class CalendarEntry implements Record {
   CalendarEntry({

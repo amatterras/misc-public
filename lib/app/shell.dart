@@ -132,7 +132,14 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
-    _motivation = widget.motivation ?? MotivationService();
+    _motivation =
+        widget.motivation ??
+        MotivationService(
+          greetingDismissed:
+              state.settings.get<bool>('welcomeGreetingDismissed') ?? false,
+          onGreetingDismissed: () =>
+              state.settings.set('welcomeGreetingDismissed', true),
+        );
     if (widget.motivation == null) unawaited(_loadMotivation());
   }
 
@@ -580,27 +587,92 @@ class _MotivationalQuoteBar extends StatelessWidget {
   );
 }
 
-class _GreetingWindow extends StatelessWidget {
+class _GreetingWindow extends StatefulWidget {
   const _GreetingWindow({required this.service});
 
   final MotivationService service;
 
   @override
-  Widget build(BuildContext context) => Material(
+  State<_GreetingWindow> createState() => _GreetingWindowState();
+}
+
+class _GreetingWindowState extends State<_GreetingWindow> {
+  Offset _drag = Offset.zero;
+  Offset _dismissDirection = Offset.zero;
+  bool _dragging = false;
+  bool _dismissing = false;
+  Timer? _dismissTimer;
+
+  @override
+  void dispose() {
+    _dismissTimer?.cancel();
+    super.dispose();
+  }
+
+  void _dragEnd(DragEndDetails details) {
+    final travel = _drag.distance;
+    if (travel >= 48) {
+      final direction = _drag / travel;
+      setState(() {
+        _dragging = false;
+        _dismissing = true;
+        _dismissDirection = direction;
+      });
+      _dismissTimer = Timer(const Duration(milliseconds: 190), () {
+        widget.service.dismissGreeting();
+      });
+    } else {
+      setState(() {
+        _dragging = false;
+        _drag = Offset.zero;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
     key: const ValueKey('greeting-window'),
-    elevation: 12,
-    color: AppColors.cardRaised,
-    borderRadius: BorderRadius.circular(10),
-    child: Container(
-      width: 340,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Text(
-        service.greeting ?? '',
-        style: TextStyle(color: AppColors.text, fontSize: 14, height: 1.4),
+    behavior: HitTestBehavior.opaque,
+    onPanStart: (_) => setState(() => _dragging = true),
+    onPanUpdate: (details) => setState(() => _drag += details.delta),
+    onPanEnd: _dragEnd,
+    onPanCancel: () => setState(() {
+      _dragging = false;
+      _drag = Offset.zero;
+    }),
+    child: AnimatedSlide(
+      duration: _dragging ? Duration.zero : const Duration(milliseconds: 170),
+      curve: Curves.easeOutCubic,
+      offset: _dismissing
+          ? _dismissDirection * 2.5
+          : Offset(_drag.dx / 340, _drag.dy / 80),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 170),
+        opacity: _dismissing ? 0 : (1 - (_drag.distance / 280)).clamp(0.35, 1),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.grab,
+          child: Material(
+            elevation: 12,
+            color: AppColors.cardRaised,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: 340,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Text(
+                widget.service.greeting ?? '',
+                style: TextStyle(
+                  color: AppColors.text,
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     ),
   );

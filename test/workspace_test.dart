@@ -155,6 +155,52 @@ void main() {
     );
 
     test(
+      'every category stores completion independently per occurrence',
+      () async {
+        final first = DateTime(2026, 10, 20);
+        final next = DateTime(2026, 10, 21);
+        final entries = [
+          entry(
+            CalendarCategory.reading,
+            'Read',
+            start: first,
+          ).copyWith(readingLog: {dayKey(first): 10, dayKey(next): 20}),
+          entry(CalendarCategory.habits, 'Walk', start: first, end: next),
+          entry(CalendarCategory.events, 'Conference', start: first, end: next),
+          entry(
+            CalendarCategory.other,
+            'Bins',
+            dates: {dayKey(first), dayKey(next)},
+          ),
+        ];
+        for (final e in entries) {
+          ws.saveEntry(e);
+          ws.toggleEntryCompletion(e.id, first);
+        }
+
+        for (final e in entries) {
+          expect(ws.entries[e.id]!.isCheckedOn(first), isTrue, reason: e.name);
+          expect(ws.entries[e.id]!.isCheckedOn(next), isFalse, reason: e.name);
+        }
+        ws.toggleEntryCompletion(entries[2].id, next);
+        expect(ws.entries[entries[2].id]!.isCheckedOn(first), isTrue);
+        expect(ws.entries[entries[2].id]!.isCheckedOn(next), isTrue);
+
+        final again = await reopen();
+        for (final e in entries) {
+          expect(
+            again.entries[e.id]!.isCheckedOn(first),
+            isTrue,
+            reason: e.name,
+          );
+        }
+        expect(again.entries[entries[2].id]!.isCheckedOn(next), isTrue);
+        expect(again.entries.length, entries.length);
+        again.dispose();
+      },
+    );
+
+    test(
       'habit time is local wall-clock metadata and legacy null stays null',
       () {
         final untimed = entry(

@@ -71,6 +71,8 @@ class MotivationService extends ChangeNotifier with WidgetsBindingObserver {
   MotivationService({
     LocalTimeSnapshot Function()? localTime,
     int Function(int)? nextIndex,
+    this.greetingDismissed = false,
+    this.onGreetingDismissed,
   }) : _localTime = localTime ?? LocalTimeSnapshot.system,
        _nextIndex = nextIndex ?? Random().nextInt;
 
@@ -81,6 +83,7 @@ class MotivationService extends ChangeNotifier with WidgetsBindingObserver {
 
   final LocalTimeSnapshot Function() _localTime;
   final int Function(int) _nextIndex;
+  final Future<void> Function()? onGreetingDismissed;
   List<MotivationQuote> quotes = const [];
   List<GreetingSlot> slots = const [];
   MotivationQuote? quote;
@@ -88,6 +91,7 @@ class MotivationService extends ChangeNotifier with WidgetsBindingObserver {
   String? greetingSlotLabel;
   bool _loaded = false;
   bool _disposed = false;
+  bool greetingDismissed;
   (int, int, int, int, int)? _quoteHourKey;
   int? _activeGreetingSlot;
   Timer? _greetingTimer;
@@ -245,13 +249,14 @@ class MotivationService extends ChangeNotifier with WidgetsBindingObserver {
   /// The app calls this once at startup; future greeting triggers can use the
   /// same method after [refresh] has observed a clock or timezone change.
   void showGreeting() {
-    if (!_loaded || _disposed) return;
+    if (!_loaded || _disposed || greetingDismissed) return;
     _activeGreetingSlot = greetingSlotIndex(_localTime().now.hour);
     _showGreetingFromActiveSlot();
     notifyListeners();
   }
 
   void _showGreetingFromActiveSlot() {
+    if (greetingDismissed) return;
     final slot = slots[_activeGreetingSlot!];
     if (slot.greetings.isEmpty) return;
     final index = _nextIndex(slot.greetings.length)
@@ -265,6 +270,16 @@ class MotivationService extends ChangeNotifier with WidgetsBindingObserver {
       greeting = null;
       notifyListeners();
     });
+  }
+
+  /// Permanently hides this welcome greeting on this installation.
+  void dismissGreeting() {
+    if (_disposed || greetingDismissed) return;
+    greetingDismissed = true;
+    _greetingTimer?.cancel();
+    greeting = null;
+    unawaited(onGreetingDismissed?.call());
+    notifyListeners();
   }
 
   static int greetingSlotIndex(int hour) => switch (hour) {

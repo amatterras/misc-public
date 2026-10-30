@@ -18,6 +18,7 @@ import 'package:flutter_application_1/features/canvas/canvas_controller.dart';
 import 'package:flutter_application_1/features/capture/capture_dialog.dart';
 import 'package:flutter_application_1/features/motivation/motivation_service.dart';
 import 'package:flutter_application_1/features/search/search_dialog.dart';
+import 'package:flutter_application_1/widgets/common.dart' show formatLongDate;
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/sync/hlc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -412,7 +413,7 @@ void main() {
   });
 
   testWidgets(
-    'calendar chips expose habit-only check-off and exact reading page',
+    'all calendar entry categories can be checked per date in every view',
     (tester) async {
       addTearDown(tester.view.reset);
       final s = await boot(tester, dir);
@@ -428,6 +429,34 @@ void main() {
         startMinutes: 8 * 60 + 30,
       );
       s.workspace.saveEntry(habit);
+      final reading = CalendarEntry(
+        id: 'read-occurrence',
+        category: CalendarCategory.reading,
+        name: 'Read pages',
+        createdAt: day,
+        updatedAt: day,
+        readingLog: {dayKey(day): 12},
+      );
+      final event = CalendarEntry(
+        id: 'event-occurrence',
+        category: CalendarCategory.events,
+        name: 'Conference',
+        createdAt: day,
+        updatedAt: day,
+        startDate: day,
+        endDate: addDays(day, 1),
+      );
+      final other = CalendarEntry(
+        id: 'other-occurrence',
+        category: CalendarCategory.other,
+        name: 'Bins out',
+        createdAt: day,
+        updatedAt: day,
+        dates: {dayKey(day)},
+      );
+      s.workspace.saveEntry(reading);
+      s.workspace.saveEntry(event);
+      s.workspace.saveEntry(other);
       s.workspace.createTask('Ordinary task', dueDate: day);
 
       final plan = CalendarEntry(
@@ -448,15 +477,54 @@ void main() {
       s.goTo(AppPage.calendar);
       await settle(tester);
       expect(find.text('08:30'), findsOneWidget);
-      expect(
-        find.byIcon(Icons.check_box_outline_blank),
-        findsOneWidget,
-        reason: 'only the habit has a calendar-cell checkbox',
-      );
+      final expectedEntries = [habit, reading, event, other];
+      for (final view in ['Range', 'Month', 'Agenda', 'Timeline', 'Day']) {
+        await tester.tap(find.text(view).first);
+        await tester.pumpAndSettle();
+        for (final entry in expectedEntries) {
+          var check = find.byKey(
+            ValueKey('entry-check-${entry.id}-${dayKey(day)}'),
+          );
+          if (check.evaluate().isEmpty && view == 'Month') {
+            final cell = find.byKey(ValueKey('calendar-cell-${dayKey(day)}'));
+            final more = find.descendant(
+              of: cell,
+              matching: find.textContaining('more'),
+            );
+            expect(more, findsOneWidget, reason: 'overflow in $view view');
+            await tester.tap(more);
+            await tester.pumpAndSettle();
+            check = find.byKey(
+              ValueKey('overflow-entry-check-${entry.id}-${dayKey(day)}'),
+            );
+          }
+          expect(check, findsOneWidget, reason: '${entry.name} in $view view');
+          await tester.tap(check);
+          await tester.pump();
+          expect(s.workspace.entries[entry.id]!.isCheckedOn(day), isTrue);
+          if (view == 'Month' &&
+              check.evaluate().single.widget is CheckboxListTile) {
+            final more = find.descendant(
+              of: find.byKey(ValueKey('calendar-cell-${dayKey(day)}')),
+              matching: find.textContaining('more'),
+            );
+            await tester.tap(more);
+            await tester.pumpAndSettle();
+            check = find.byKey(
+              ValueKey('overflow-entry-check-${entry.id}-${dayKey(day)}'),
+            );
+          }
+          await tester.tap(check);
+          await tester.pump();
+          expect(s.workspace.entries[entry.id]!.isCheckedOn(day), isFalse);
+        }
+      }
+
       final check = find.bySemanticsLabel(
-        RegExp(r'Mark Morning walk complete on'),
+        'Mark Morning walk complete on ${formatLongDate(day)}',
       );
-      expect(check, findsOneWidget);
+      await tester.tap(find.text('Range').first);
+      await tester.pumpAndSettle();
       await tester.tap(check);
       await tester.pump();
       expect(s.workspace.entries[habit.id]!.isCheckedOn(day), isTrue);

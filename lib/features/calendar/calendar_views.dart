@@ -80,6 +80,7 @@ class CalendarGridView extends StatelessWidget {
     required this.itemsOn,
     required this.onDay,
     required this.onItem,
+    required this.onToggleEntry,
     this.overlay,
     this.dropOn,
   });
@@ -95,6 +96,7 @@ class CalendarGridView extends StatelessWidget {
   final ItemsOn itemsOn;
   final ValueChanged<DateTime> onDay;
   final void Function(DayItem item, DateTime day) onItem;
+  final void Function(CalendarEntry entry, DateTime day) onToggleEntry;
 
   Widget _wrap(DateTime day, Widget cell) => dropOn?.call(day, cell) ?? cell;
 
@@ -146,6 +148,8 @@ class CalendarGridView extends StatelessWidget {
                                       days[r * 7 + c].month != anchor.month,
                                   onTap: () => onDay(days[r * 7 + c]),
                                   onItem: (i) => onItem(i, days[r * 7 + c]),
+                                  onToggleEntry: (entry) =>
+                                      onToggleEntry(entry, days[r * 7 + c]),
                                 ),
                                 if (overlay != null) overlay!(days[r * 7 + c]),
                               ],
@@ -171,6 +175,7 @@ class _CompactDayCell extends StatelessWidget {
     required this.dimmed,
     required this.onTap,
     required this.onItem,
+    required this.onToggleEntry,
   });
 
   final DateTime day;
@@ -179,6 +184,7 @@ class _CompactDayCell extends StatelessWidget {
   final bool dimmed;
   final VoidCallback onTap;
   final ValueChanged<DayItem> onItem;
+  final ValueChanged<CalendarEntry> onToggleEntry;
 
   static const labelHeight = 18.0;
 
@@ -201,7 +207,7 @@ class _CompactDayCell extends StatelessWidget {
             final shown = items.length > fit && fit > 0
                 ? items.take(fit - 1).toList()
                 : items.take(fit).toList();
-            final more = items.length - shown.length;
+            final overflow = items.skip(shown.length).toList();
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -219,15 +225,65 @@ class _CompactDayCell extends StatelessWidget {
                 ),
                 const Spacer(),
                 for (final item in shown)
-                  _ItemLabel(item: item, onTap: () => onItem(item)),
-                if (more > 0)
-                  SizedBox(
-                    height: labelHeight,
-                    child: Text(
-                      '+$more more',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: AppColors.textFaint,
+                  _ItemLabel(
+                    item: item,
+                    day: day,
+                    onTap: () => onItem(item),
+                    onToggleEntry: onToggleEntry,
+                  ),
+                if (overflow.isNotEmpty)
+                  InkWell(
+                    onTap: () => showDialog<void>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: Text(formatLongDate(day)),
+                        content: SizedBox(
+                          width: 360,
+                          child: ListView(
+                            shrinkWrap: true,
+                            children: [
+                              for (final item in overflow)
+                                if (item case EntryOnDay(:final entry))
+                                  CheckboxListTile(
+                                    key: ValueKey(
+                                      'overflow-entry-check-${entry.id}-${dayKey(day)}',
+                                    ),
+                                    value: entry.isCheckedOn(day),
+                                    title: Text(entry.name),
+                                    controlAffinity:
+                                        ListTileControlAffinity.leading,
+                                    onChanged: (_) {
+                                      onToggleEntry(entry);
+                                      Navigator.of(dialogContext).pop();
+                                    },
+                                  )
+                                else
+                                  ListTile(
+                                    title: Text(item.label),
+                                    onTap: () {
+                                      Navigator.of(dialogContext).pop();
+                                      onItem(item);
+                                    },
+                                  ),
+                            ],
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    child: SizedBox(
+                      height: labelHeight,
+                      child: Text(
+                        '+${overflow.length} more',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: AppColors.textFaint,
+                        ),
                       ),
                     ),
                   ),
@@ -241,28 +297,60 @@ class _CompactDayCell extends StatelessWidget {
 }
 
 class _ItemLabel extends StatelessWidget {
-  const _ItemLabel({required this.item, required this.onTap});
+  const _ItemLabel({
+    required this.item,
+    required this.day,
+    required this.onTap,
+    required this.onToggleEntry,
+  });
 
   final DayItem item;
+  final DateTime day;
   final VoidCallback onTap;
+  final ValueChanged<CalendarEntry> onToggleEntry;
 
   @override
   Widget build(BuildContext context) {
-    final done = item is TaskOnDay && (item as TaskOnDay).task.done;
+    final entry = switch (item) {
+      EntryOnDay(:final entry) => entry,
+      _ => null,
+    };
+    final done = switch (item) {
+      EntryOnDay(:final entry) => entry.isCheckedOn(day),
+      TaskOnDay(:final task) => task.done,
+      ExternalOnDay() => false,
+    };
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
         height: _CompactDayCell.labelHeight,
         child: Row(
           children: [
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: dayItemColor(item),
-                shape: BoxShape.circle,
+            if (entry != null)
+              Semantics(
+                key: ValueKey('entry-check-${entry.id}-${dayKey(day)}'),
+                label: 'Mark ${entry.name} complete on ${formatLongDate(day)}',
+                button: true,
+                toggled: done,
+                child: InkResponse(
+                  radius: 14,
+                  onTap: () => onToggleEntry(entry),
+                  child: Icon(
+                    done ? Icons.check_box : Icons.check_box_outline_blank,
+                    size: 15,
+                    color: dayItemColor(item),
+                  ),
+                ),
+              )
+            else
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: dayItemColor(item),
+                  shape: BoxShape.circle,
+                ),
               ),
-            ),
             const SizedBox(width: 4),
             Expanded(
               child: Text(
@@ -299,12 +387,14 @@ class CalendarAgendaView extends StatelessWidget {
     required this.itemsOn,
     required this.onDay,
     required this.onItem,
+    required this.onToggleEntry,
   });
 
   final DateTime anchor;
   final ItemsOn itemsOn;
   final ValueChanged<DateTime> onDay;
   final void Function(DayItem item, DateTime day) onItem;
+  final void Function(CalendarEntry entry, DateTime day) onToggleEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -342,19 +432,44 @@ class CalendarAgendaView extends StatelessWidget {
           for (final item in itemsOn(d))
             ListTile(
               dense: true,
-              leading: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: dayItemColor(item),
-                  shape: BoxShape.circle,
-                ),
+              leading: SizedBox(
+                width: 42,
+                child: item is EntryOnDay
+                    ? Semantics(
+                        key: ValueKey(
+                          'entry-check-${item.entry.id}-${dayKey(d)}',
+                        ),
+                        label:
+                            'Mark ${item.entry.name} complete on ${formatLongDate(d)}',
+                        button: true,
+                        toggled: item.entry.isCheckedOn(d),
+                        child: Checkbox(
+                          value: item.entry.isCheckedOn(d),
+                          visualDensity: VisualDensity.compact,
+                          onChanged: (_) => onToggleEntry(item.entry, d),
+                        ),
+                      )
+                    : Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: dayItemColor(item),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
               ),
               title: Text(
                 item.label,
                 style: TextStyle(
-                  decoration: item is TaskOnDay && item.task.done
+                  decoration:
+                      item is EntryOnDay && item.entry.isCheckedOn(d) ||
+                          item is TaskOnDay && item.task.done
                       ? TextDecoration.lineThrough
+                      : null,
+                  color:
+                      item is EntryOnDay && item.entry.isCheckedOn(d) ||
+                          item is TaskOnDay && item.task.done
+                      ? AppColors.textFaint
                       : null,
                 ),
               ),
@@ -388,11 +503,13 @@ class CalendarTimelineView extends StatelessWidget {
     required this.anchor,
     required this.itemsOn,
     required this.onItem,
+    required this.onToggleEntry,
   });
 
   final DateTime anchor;
   final ItemsOn itemsOn;
   final void Function(DayItem item, DateTime day) onItem;
+  final void Function(CalendarEntry entry, DateTime day) onToggleEntry;
 
   static const dayWidth = 34.0;
   static const rowHeight = 28.0;
@@ -511,6 +628,38 @@ class CalendarTimelineView extends StatelessWidget {
                       ),
                     ),
                   ),
+                if (rows[r].$1 case EntryOnDay(:final entry))
+                  for (final (from, to) in rows[r].$2)
+                    for (var i = from; i <= to; i++)
+                      Positioned(
+                        left: labelWidth + i * dayWidth + 3,
+                        top: (r + 1) * rowHeight + 2,
+                        width: dayWidth - 6,
+                        height: rowHeight - 4,
+                        child: Semantics(
+                          key: ValueKey(
+                            'entry-check-${entry.id}-${dayKey(days[i])}',
+                          ),
+                          label:
+                              'Mark ${entry.name} complete on ${formatLongDate(days[i])}',
+                          button: true,
+                          toggled: entry.isCheckedOn(days[i]),
+                          child: Tooltip(
+                            message: formatLongDate(days[i]),
+                            child: InkResponse(
+                              radius: 14,
+                              onTap: () => onToggleEntry(entry, days[i]),
+                              child: Icon(
+                                entry.isCheckedOn(days[i])
+                                    ? Icons.check_box
+                                    : Icons.check_box_outline_blank,
+                                size: 15,
+                                color: dayItemColor(rows[r].$1),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
               ],
             ],
           ),

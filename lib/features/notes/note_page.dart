@@ -125,7 +125,7 @@ class _NotePageState extends State<NotePage> {
   }
 
   void _notePointerDown(PointerDownEvent e) {
-    if (e.kind != PointerDeviceKind.touch) return;
+    if (e.kind != PointerDeviceKind.touch || _stylusDown) return;
     _c?.cancelPendingLineStraightening();
     _noteTouches[e.pointer] = e.localPosition;
     if (_noteTouches.length == 2) {
@@ -357,10 +357,24 @@ class _NotePageState extends State<NotePage> {
       : 0.5;
 
   void _down(PointerDownEvent e, CanvasController c, Rect page, double sc) {
-    if (_pointer != null || !_accepts(e, c)) return;
-    if (e.kind == PointerDeviceKind.stylus ||
-        e.kind == PointerDeviceKind.invertedStylus) {
+    final isStylus =
+        e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus;
+    if ((!isStylus && _pointer != null) || !_accepts(e, c)) return;
+    if (isStylus) {
+      if (_pointer != null && !_pointerIsStylus) {
+        c.pointerCancel();
+        _pointer = null;
+        _pointerIsStylus = false;
+      }
+      _noteTouches.clear();
+      _pinchStartDistance = null;
+      _pinchStartZoom = null;
+      _pinchStartFocal = null;
+      _pinchDocumentAnchor = null;
+      _pinchPrefix = null;
       _stylusDown = true;
+      if (mounted) setState(() {});
     }
     _pointer = e.pointer;
     _pointerIsStylus =
@@ -387,7 +401,10 @@ class _NotePageState extends State<NotePage> {
     if (e.pointer != _pointer) return;
     _pointer = null;
     _pointerIsStylus = false;
-    _stylusDown = false;
+    if (_stylusDown) {
+      _stylusDown = false;
+      if (mounted) setState(() {});
+    }
     cancel ? c.pointerCancel() : c.pointerUp();
   }
 
@@ -583,35 +600,26 @@ class _NotePageState extends State<NotePage> {
         _fitScale = fit;
         c?.setView(Offset.zero, scale);
         final width = NotebookLayout.pageWidth * scale + 80;
-        Widget list = ScrollConfiguration(
-          // Fingers scroll and the Pencil (or mouse) writes; with "draw
-          // with finger" on, only the scrollbar and trackpad scroll.
-          behavior: ScrollConfiguration.of(context).copyWith(
-            dragDevices: !touchFirst && _fingerDraws
-                ? {PointerDeviceKind.trackpad}
-                : {PointerDeviceKind.touch, PointerDeviceKind.trackpad},
-          ),
-          child: Scrollbar(
-            controller: _scroll,
-            interactive: true,
-            child: WorkspaceBuilder(
+        Widget list = Scrollbar(
+          controller: _scroll,
+          interactive: true,
+          child: WorkspaceBuilder(
+            state: s,
+            builder: (context) => NoteEditor(
+              key: ValueKey('note-${widget.noteId}'),
               state: s,
-              builder: (context) => NoteEditor(
-                key: ValueKey('note-${widget.noteId}'),
-                state: s,
-                noteId: widget.noteId,
-                scrollController: _scroll,
-                onOpenNote: (id) => Navigator.of(context).pushReplacement(
-                  MaterialPageRoute<void>(
-                    builder: (_) => NotePage(state: s, noteId: id),
-                  ),
+              noteId: widget.noteId,
+              scrollController: _scroll,
+              onOpenNote: (id) => Navigator.of(context).pushReplacement(
+                MaterialPageRoute<void>(
+                  builder: (_) => NotePage(state: s, noteId: id),
                 ),
-                onDeleted: () => Navigator.of(context).maybePop(),
-                pageCount: layout?.pageCount ?? 0,
-                pageBuilder: c == null || layout == null
-                    ? null
-                    : (context, i) => _page(c, layout, i, scale),
               ),
+              onDeleted: () => Navigator.of(context).maybePop(),
+              pageCount: layout?.pageCount ?? 0,
+              pageBuilder: c == null || layout == null
+                  ? null
+                  : (context, i) => _page(c, layout, i, scale),
             ),
           ),
         );
@@ -622,14 +630,24 @@ class _NotePageState extends State<NotePage> {
             child: SizedBox(width: width, height: box.maxHeight, child: list),
           );
         }
-        return Listener(
-          key: _gestureSurfaceKey,
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: _notePointerDown,
-          onPointerMove: _notePointerMove,
-          onPointerUp: _notePointerEnd,
-          onPointerCancel: _notePointerEnd,
-          child: list,
+        return ScrollConfiguration(
+          // This configuration must wrap both axes; previously the outer
+          // horizontal scroll view used Flutter's default, which accepts a
+          // Pencil drag and steals writing input.
+          behavior: ScrollConfiguration.of(context).copyWith(
+            dragDevices: _stylusDown || (!touchFirst && _fingerDraws)
+                ? {PointerDeviceKind.trackpad}
+                : {PointerDeviceKind.touch, PointerDeviceKind.trackpad},
+          ),
+          child: Listener(
+            key: _gestureSurfaceKey,
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: _notePointerDown,
+            onPointerMove: _notePointerMove,
+            onPointerUp: _notePointerEnd,
+            onPointerCancel: _notePointerEnd,
+            child: list,
+          ),
         );
       },
     );

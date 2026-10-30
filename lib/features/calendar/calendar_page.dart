@@ -685,6 +685,8 @@ class _CalendarPageState extends State<CalendarPage> {
           itemsOn: _itemsOn,
           onDay: _openDay,
           onItem: _editItem,
+          onToggleEntry: (entry, day) =>
+              ws.toggleEntryCompletion(entry.id, day),
           overlay: _inkOn,
           dropOn: (day, cell) =>
               TransferTarget(state: s, place: DayPlace(day), child: cell),
@@ -704,12 +706,16 @@ class _CalendarPageState extends State<CalendarPage> {
           itemsOn: _itemsOn,
           onDay: _openDay,
           onItem: _editItem,
+          onToggleEntry: (entry, day) =>
+              ws.toggleEntryCompletion(entry.id, day),
         );
       case CalendarView.timeline:
         return CalendarTimelineView(
           anchor: _anchor,
           itemsOn: _itemsOn,
           onItem: _editItem,
+          onToggleEntry: (entry, day) =>
+              ws.toggleEntryCompletion(entry.id, day),
         );
       case CalendarView.range:
         return _grid();
@@ -1339,13 +1345,9 @@ class DayLabel extends StatelessWidget {
     final color = item is EntryOnDay
         ? calendarCategoryColor(item.entry.category)
         : AppColors.accent;
-    final habitEntry =
-        item is EntryOnDay && item.entry.category == CalendarCategory.habits
-        ? item.entry
-        : null;
-    final isHabit = habitEntry != null;
+    final entry = item is EntryOnDay ? item.entry : null;
     final checked =
-        (habitEntry?.isCheckedOn(day) ?? false) ||
+        (entry?.isCheckedOn(day) ?? false) ||
         (item is TaskOnDay && item.task.done);
     final time = switch (item) {
       EntryOnDay(:final entry) => entry.timeLabel,
@@ -1380,7 +1382,7 @@ class DayLabel extends StatelessWidget {
         }
 
         const padding = 10.0;
-        final controlWidth = isHabit ? 30.0 : 12.0;
+        final controlWidth = entry != null ? 30.0 : 12.0;
         final timeWidth = time == null ? 0.0 : measure(time, timeStyle, limit);
         final metadataWidth = controlWidth + (time == null ? 0 : timeWidth + 6);
         final textWidth = measure(
@@ -1402,8 +1404,9 @@ class DayLabel extends StatelessWidget {
           ),
           child: Row(
             children: [
-              if (isHabit)
+              if (entry != null)
                 Semantics(
+                  key: ValueKey('entry-check-${entry.id}-${dayKey(day)}'),
                   label:
                       'Mark ${item.label} complete on ${formatLongDate(day)}',
                   button: true,
@@ -1413,7 +1416,7 @@ class DayLabel extends StatelessWidget {
                     height: 28,
                     child: InkWell(
                       onTap: () =>
-                          state.workspace.toggleHabit(habitEntry.id, day),
+                          state.workspace.toggleEntryCompletion(entry.id, day),
                       child: Icon(
                         checked
                             ? Icons.check_box
@@ -1456,7 +1459,7 @@ class DayLabel extends StatelessWidget {
       onTap: onTap,
       child: MouseRegion(cursor: SystemMouseCursors.click, child: label),
     );
-    if (isHabit) return tappable; // Recurring: change its schedule instead.
+    if (entry?.category == CalendarCategory.habits) return tappable;
     return Draggable<Transfer>(
       data: CalendarItemTransfer(item, day),
       feedback: Material(
@@ -1750,21 +1753,25 @@ class _DayPanelState extends State<DayPanel> {
     switch (item) {
       case EntryOnDay(:final entry):
         final color = calendarCategoryColor(entry.category);
-        final isHabit = entry.category == CalendarCategory.habits;
+        final checked = entry.isCheckedOn(day);
         return ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          leading: isHabit
-              ? Checkbox(
-                  value: entry.isCheckedOn(day),
-                  activeColor: color,
-                  onChanged: (_) => ws.toggleHabit(entry.id, day),
-                )
-              : Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: ColorDot(color: calendarCategoryColor(entry.category)),
-                ),
-          title: Text(entry.name),
+          leading: Checkbox(
+            key: ValueKey('entry-check-${entry.id}-${dayKey(day)}'),
+            value: checked,
+            activeColor: color,
+            onChanged: (_) => ws.toggleEntryCompletion(entry.id, day),
+          ),
+          title: Text(
+            entry.name,
+            style: checked
+                ? TextStyle(
+                    decoration: TextDecoration.lineThrough,
+                    color: AppColors.textFaint,
+                  )
+                : null,
+          ),
           subtitle: Text(
             [
               entry.category.label,

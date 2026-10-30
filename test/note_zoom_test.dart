@@ -255,4 +255,111 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     },
   );
+
+  testWidgets(
+    'Apple Pencil writes while its stream and resting palms cannot scroll',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      tester.view.physicalSize = const Size(640, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final root = Directory.systemTemp.createTempSync('theapp_note_pencil_');
+      addTearDown(() {
+        try {
+          root.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      final ws = Workspace(Directory('${root.path}/data'));
+      final state = AppState(
+        canvases: _MemoryCanvasRepository(),
+        settings: SettingsRepository(ws.store),
+        workspace: ws,
+        enableSendTo: false,
+      );
+      addTearDown(state.dispose);
+      state.capture.fetchPreviews = false;
+      await tester.runAsync(state.init);
+      final note = state.workspace.createNote(title: 'Pencil isolation');
+      await tester.runAsync(
+        () => state.settings.set('notebookZoom.${note.id}', 2.5),
+      );
+      await tester.runAsync(state.flush);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: NotePage(state: state, noteId: note.id),
+        ),
+      );
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(seconds: 1)),
+      );
+    await tester.pumpAndSettle();
+
+    final verticalList = find.byType(ListView).last;
+    final verticalScrollable = find.descendant(
+      of: verticalList,
+      matching: find.byType(Scrollable),
+    );
+    tester
+        .state<ScrollableState>(verticalScrollable.first)
+        .position
+        .jumpTo(
+          tester
+              .state<ScrollableState>(verticalScrollable.first)
+              .position
+              .maxScrollExtent,
+        );
+    await tester.pumpAndSettle();
+    final page = tester.getRect(
+        find.byKey(const ValueKey('notebook-page-0')),
+      );
+      final visiblePage = page.intersect(Offset.zero & const Size(640, 600));
+      expect(visiblePage.isEmpty, isFalse);
+      final positions = [
+        for (final finder in [
+          find.byType(Scrollable).first,
+          find.byType(Scrollable).last,
+        ])
+          tester.state<ScrollableState>(finder).position,
+      ];
+      final beforeOffsets = positions
+          .map((position) => position.pixels)
+          .toList();
+      final controller = state.openNotebooks.single;
+      final beforeScale = controller.scale;
+      final start = visiblePage.center;
+      final pencil = await tester.createGesture(
+        kind: PointerDeviceKind.stylus,
+        pointer: 181,
+      );
+      await pencil.down(start);
+      await tester.pump();
+      final palm = await tester.createGesture(
+        kind: PointerDeviceKind.touch,
+        pointer: 182,
+      );
+      await palm.down(start + const Offset(10, 10));
+      await palm.moveTo(start + const Offset(100, 90));
+      await pencil.moveTo(start + const Offset(160, 0));
+      await tester.pump();
+      expect(positions.map((position) => position.pixels), beforeOffsets);
+      expect(controller.scale, beforeScale);
+      await palm.up();
+      await pencil.moveTo(start + const Offset(220, 10));
+      await pencil.up();
+      await tester.pump();
+
+      expect(controller.items.whereType<StrokeItem>(), hasLength(1));
+      final stroke = controller.items.whereType<StrokeItem>().single;
+      expect(stroke.points.length, greaterThanOrEqualTo(3));
+      expect(positions.map((position) => position.pixels), beforeOffsets);
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 150)),
+      );
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
 }

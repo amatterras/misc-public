@@ -86,6 +86,44 @@ void main() {
     service.dispose();
   });
 
+  test(
+    'a manually dismissed greeting remains dismissed after restart',
+    () async {
+      var persisted = false;
+      final service = MotivationService(
+        localTime: () => LocalTimeSnapshot(
+          now: DateTime(2026, 10, 23, 7, 30),
+          utcOffset: const Duration(hours: 3),
+        ),
+        nextIndex: (_) => 0,
+        onGreetingDismissed: () async {
+          persisted = true;
+        },
+      );
+      service.loadFromSources(quoteSource, greetingSource);
+      expect(service.greetingVisible, isTrue);
+      service.dismissGreeting();
+      await Future<void>.delayed(Duration.zero);
+      expect(persisted, isTrue);
+      expect(service.greetingVisible, isFalse);
+      service.dispose();
+
+      final restarted = MotivationService(
+        localTime: () => LocalTimeSnapshot(
+          now: DateTime(2026, 10, 23, 7, 30),
+          utcOffset: const Duration(hours: 3),
+        ),
+        nextIndex: (_) => 0,
+        greetingDismissed: persisted,
+      );
+      restarted.loadFromSources(quoteSource, greetingSource);
+      expect(restarted.greetingVisible, isFalse);
+      restarted.showGreeting();
+      expect(restarted.greetingVisible, isFalse);
+      restarted.dispose();
+    },
+  );
+
   testWidgets('quote changes on the next local-hour boundary', (tester) async {
     final fakeStart = tester.binding.clock.now();
     final localStart = DateTime(2026, 10, 23, 7, 59);
