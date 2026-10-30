@@ -96,6 +96,7 @@ the current state first). There is no "reset" or "clear data" path.
 |---|---|---|---|
 | `reading-legacy-payload-v1` | For Reading entries with an author, highlights or a `quotes` field (from another version), copies them into `legacyReading: {version: 1, author, highlights, quotes?}` | `legacyReading` | remove or change `author`/`highlights`/`quotes`; touch the app-wide welcome quotes |
 | `canvas-revisions-v1` | Gives canvas items and titles that have no revision stamp the stamp of the canvas's last edit (new and welcome canvases that were never edited did not sync) | `itemRevs`, `metaRev` | move, recolour or re-create items |
+| `object-library-foundation-v1` | Initializes the object library schema with a verified pre-migration backup | none; new collections are created lazily | import, rewrite, or delete legacy Archive assets, folders, tags, or attachment bytes |
 
 ### Migration path per entity for the next update
 

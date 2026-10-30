@@ -66,7 +66,7 @@ const newPageChoices = [
   (AppPage.notes, 'New note'),
   (AppPage.canvas, 'New mindmap'),
   (AppPage.calendar, 'New calendar view'),
-  (AppPage.links, 'New Archive view'),
+  (AppPage.links, 'New Library view'),
   (AppPage.browser, 'New Safari window'),
   (AppPage.ai, 'New AI chat'),
 ];

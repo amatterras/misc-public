@@ -100,6 +100,7 @@ class MigrationRunner {
   static final List<MigrationStep> registry = [
     readingLegacyPayloadV1,
     canvasRevisionsV1,
+    libraryFoundationV1,
   ];
 
   Future<Map<String, dynamic>> loadState() async =>
@@ -393,6 +394,16 @@ final canvasRevisionsV1 = MigrationStep(
             doc.items.any((i) => !doc.itemRevs.containsKey(i.id)))
           'Canvas ${doc.id} still has unstamped items',
   ],
+);
+
+/// Establishes the new object-library schema without converting or deleting
+/// legacy Archive records. Existing assets remain in place because Notes,
+/// Calendar and canvas records can still reference them.
+final libraryFoundationV1 = MigrationStep(
+  id: 'object-library-foundation-v1',
+  description: 'Initialize the object library while preserving existing assets',
+  apply: (ctx) async => 0,
+  verify: (ctx) async => const [],
 );
 
 /// The legacy Reading values of [entry] ([raw] is its stored JSON, which

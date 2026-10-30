@@ -16,6 +16,7 @@ import '../data/storage/backup_service.dart';
 import '../data/storage/backup_verifier.dart';
 import '../data/repositories/canvas_repository.dart';
 import '../data/repositories/record_collection.dart';
+import '../data/repositories/library_repository.dart';
 import '../data/storage/app_log.dart';
 import '../data/storage/json_file_store.dart' show iosDocuments, iosFolder;
 import '../data/workspace.dart';
@@ -139,6 +140,9 @@ class AppState extends ChangeNotifier {
        sendTo = SendToBridge(workspace.root),
        ios = ios ?? (Platform.isIOS ? IosBridge.instance : null) {
     resources = WorkspaceCanvasResources(workspace);
+    capture.libraryRepository = library;
+    library.onIndexDocuments = pdfTexts.indexAll;
+    library.indexedDocumentText = (assetId) => pdfTexts[assetId];
   }
 
   /// iPhone/iPad services (links opened from outside, shared items); null
@@ -153,6 +157,7 @@ class AppState extends ChangeNotifier {
   final SendToBridge sendTo;
   final bool enableSendTo;
   late final WorkspaceCanvasResources resources;
+  late final LibraryRepository library = LibraryRepository(workspace);
   final FocusTimer timer = FocusTimer();
 
   /// Floating panels (draggable, resizable; places kept on this device).
@@ -3217,6 +3222,7 @@ class AppState extends ChangeNotifier {
     workspace.tasks.removeListener(checkReminders);
     _sync?.client.close();
     sendTo.dispose();
+    library.dispose();
     themeModePreference.dispose();
     timer.dispose();
     _canvas?.dispose();

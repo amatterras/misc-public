@@ -47,6 +47,11 @@ const syncedCollections = {
   'calendar_links', // THEapp entries exported to Google / Outlook
   'custom_tags', // the user's own Archive / Mindmap tags (name, colour)
   'purges', // permanent deletions (id = "<collection>.<record id>")
+  'library_objects',
+  'library_relations',
+  'library_spaces',
+  'library_index',
+  'library_jobs',
 };
 
 /// Kinds an older hub may not know yet; they are pushed last, on their own.
@@ -62,6 +67,11 @@ const newerCollections = {
   'calendar_links',
   'custom_tags',
   'purges',
+  'library_objects',
+  'library_relations',
+  'library_spaces',
+  'library_index',
+  'library_jobs',
 };
 
 /// `0001792610475963-0000-a1b2c3d4`: see SyncClock.

@@ -155,6 +155,9 @@ audit above; the audit remains intact as a record of its earlier inspection.
 - The three storage modes (this device only, PC hub, hosted service), one
   provider abstraction and the copy-and-verify switch:
   [STORAGE_MODES.md](STORAGE_MODES.md).
+- The object-centric Library replacement, data collections, privacy boundary,
+  and remaining platform/provider requirements:
+  [LIBRARY_ARCHITECTURE.md](LIBRARY_ARCHITECTURE.md).
 - Settings now has **Storage** (mode, status, Switch…) and **Data safety**
   (Check data, Recently deleted).
 

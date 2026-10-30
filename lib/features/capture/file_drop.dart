@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import '../../app/app_state.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
+import '../../data/models/object_library_models.dart';
 import '../import/note_import.dart';
 
 const windowsChannel = MethodChannel('theapp/windows');
@@ -60,9 +61,17 @@ extension FileDrop on AppState {
       ...await capture.imagesFromFiles(images),
       ...await capture.documentsFromFiles(pdfs),
     ];
-    var onCanvas = 0, toInbox = 0;
+    var onCanvas = 0, toInbox = 0, inLibrary = 0;
     final c = canvas;
-    if (page == AppPage.canvas && c != null) {
+    if (page == AppPage.links) {
+      for (final a in assets) {
+        final info=a.file==null?null:await workspace.attachments.contentInfo(a.file!);
+        if(info!=null){workspace.assets.put(a.copyWith(fileSha256:info.$1,fileSize:info.$2));await workspace.assets.flush();}
+        await library.save(type:a.kind==AssetKind.image?LibraryObjectType.image:LibraryObjectType.document,
+          title:a.label,attachmentIds:[a.id],metadata:{'legacyAssetId':a.id});
+        inLibrary++;
+      }
+    } else if (page == AppPage.canvas && c != null) {
       var at = canvasDropPoint(c);
       for (final a in assets) {
         if (a.kind == AssetKind.image) {
@@ -117,6 +126,7 @@ extension FileDrop on AppState {
     }
     final summary = [
       if (onCanvas > 0) '$onCanvas on the mindmap',
+      if (inLibrary > 0) '$inLibrary in the library',
       if (toInbox > 0) '$toInbox in the Inbox',
       if (notes > 0) '$notes note(s)',
       if (skipped.isNotEmpty)

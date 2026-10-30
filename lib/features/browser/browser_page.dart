@@ -1,6 +1,6 @@
 // The Safari destination: tabs, address/search bar, navigation, bookmarks,
 // history, downloads, site permissions, private tabs, and sending a page
-// (or the selected text) to Archive, Notes, a mindmap or AI — only when the
+// (or the selected text) to the Library, Notes, a mindmap or AI — only when the
 // user asks. The page itself runs in the platform's engine (see
 // browser_engine.dart); where none exists the page says so.
 import 'dart:async';
@@ -12,6 +12,7 @@ import '../../app/app_state.dart';
 import '../../app/page_windows.dart' show PageMode;
 import '../../app/theme.dart';
 import '../../data/models/browser_models.dart';
+import '../../data/models/object_library_models.dart';
 import '../../platform/input_hints.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
@@ -126,10 +127,16 @@ class _BrowserPageState extends State<BrowserPage> {
     final selected = engine == null ? '' : await engine.selectedText();
     final ws = s.workspace;
     switch (where) {
-      case 'archive':
-        final a = ws.linkAsset(t.url, title: t.title.isEmpty ? null : t.title);
-        await s.addToLinks(a);
-        s.showToast('Saved to Archive.');
+      case 'library':
+        var pageText=selected;
+        if(engine!=null) {
+          try { pageText=await engine.pageText(); } catch (_) {}
+        }
+        if(pageText.length>200000) pageText=pageText.substring(0,200000);
+        await s.library.save(type:LibraryObjectType.article,sourceUrl:t.url,
+          title:t.title.isEmpty?t.url:t.title,content:pageText.isEmpty?null:pageText,
+          metadata:{'browserCapture':true});
+        s.showToast('Saved to Library.');
       case 'note':
         final a = ws.linkAsset(t.url, title: t.title.isEmpty ? null : t.title);
         final n = ws.createNote(
@@ -517,8 +524,8 @@ class _BrowserPageState extends State<BrowserPage> {
               ),
               const PopupMenuDivider(),
               const PopupMenuItem(
-                value: 'archive',
-                child: Text('Save page to Archive'),
+                value: 'library',
+                child: Text('Save page to Library'),
               ),
               const PopupMenuItem(
                 value: 'note',

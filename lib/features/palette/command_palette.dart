@@ -16,7 +16,6 @@ import '../../widgets/common.dart';
 import '../../platform/platform.dart' as native;
 import '../calendar/ics.dart';
 import '../export/exports.dart';
-import '../links/archive_library_page.dart';
 import '../sharing/share_dialog.dart';
 import '../review/review_center.dart';
 import '../templates/templates.dart';
@@ -133,11 +132,6 @@ List<PaletteCommand> paletteCommands(
       'Go to ai',
       Icons.auto_awesome_outlined,
       (_) => s.goTo(AppPage.ai),
-    ),
-    PaletteCommand(
-      'Archive library (folders, uses, link check)',
-      Icons.folder_copy_outlined,
-      (c) => showArchiveLibrary(c, s),
     ),
     PaletteCommand(
       'Export the calendar (.ics file)',

@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import '../../data/storage/log_sanitizer.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
+import '../../data/models/object_library_models.dart';
+import '../../data/repositories/library_repository.dart';
 import '../../data/storage/attachment_store.dart';
 import '../../data/workspace.dart';
 import '../../platform/platform.dart' as native;
@@ -52,6 +54,7 @@ class CaptureService {
   }) : _fetcher = fetcher ?? LinkPreviewFetcher();
 
   final Workspace workspace;
+  LibraryRepository? libraryRepository;
   bool fetchPreviews;
   final LinkPreviewFetcher _fetcher;
   final Set<String> _fetching = {};
@@ -269,6 +272,22 @@ class CaptureService {
     }
     // Text that only repeats the link adds nothing.
     if (bodyText == cleanUrl || bodyText == url?.trim()) bodyText = '';
+    final library=libraryRepository;
+    if(library!=null) {
+      final saved=<InboxItem>[];
+      if(cleanUrl!=null) await library.save(type:LibraryObjectType.website,sourceUrl:cleanUrl,title:title??Uri.parse(cleanUrl).host);
+      if(bodyText.isNotEmpty) await library.save(type:LibraryObjectType.note,title:title??'Shared note',content:bodyText);
+      if(files.isNotEmpty) {
+        final assets=<Asset>[...await imagesFromFiles(files),...await documentsFromFiles(files)];
+        for(final asset in assets) {
+          final info=asset.file==null?null:await workspace.attachments.contentInfo(asset.file!);
+          final stored=info==null?asset:asset.copyWith(fileSha256:info.$1,fileSize:info.$2);
+          workspace.assets.put(stored); await workspace.assets.flush();
+          await library.save(type:stored.kind==AssetKind.image?LibraryObjectType.image:LibraryObjectType.document,title:stored.label,attachmentIds:[stored.id],metadata:{'legacyAssetId':stored.id});
+        }
+      }
+      return saved;
+    }
     final created = <InboxItem>[];
     void add({String? text, String? assetId}) {
       final item = InboxItem(

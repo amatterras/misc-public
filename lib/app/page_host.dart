@@ -11,8 +11,7 @@ import '../features/calendar/calendar_page.dart';
 import '../features/canvas/canvas_controller.dart';
 import '../features/canvas/canvas_page.dart';
 import '../features/home/home_page.dart';
-import '../features/links/archive_library_page.dart';
-import '../features/links/links_page.dart';
+import '../features/library/library_page.dart';
 import '../features/notes/note_page.dart';
 import '../features/notes/notes_page.dart';
 import 'app_state.dart';
@@ -48,20 +47,12 @@ Widget buildPageInstance(BuildContext context, AppState s, PageInstance p) =>
         viewKey: 'calendarView.${p.id}',
       ),
       AppPage.calendar || AppPage.tasks => CalendarPage(state: s),
-      AppPage.links when p.refId != null => Material(
-        color: AppColors.background,
-        child: ArchiveLibrary(
-          state: s,
-          embedded: true,
-          initialFolder: p.refId!.startsWith('folder:')
-              ? p.refId!.substring(7)
-              : null,
-          initialSelected: p.refId!.startsWith('res:')
-              ? p.refId!.substring(4)
-              : null,
-        ),
+      AppPage.links => LibraryPage(
+        state: s,
+        initialObjectId: p.refId?.startsWith('object:') == true
+            ? p.refId!.substring(7)
+            : null,
       ),
-      AppPage.links => LinksPage(state: s),
       AppPage.home => HomePage(state: s),
     };
 

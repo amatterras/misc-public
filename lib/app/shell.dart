@@ -15,7 +15,7 @@ import '../features/home/home_page.dart';
 import '../features/notes/notes_page.dart';
 import '../features/palette/app_switcher.dart';
 import '../features/palette/command_palette.dart';
-import '../features/links/links_page.dart';
+import '../features/library/library_page.dart';
 import '../features/motivation/motivation_service.dart';
 import '../features/search/search_dialog.dart';
 import '../features/settings/settings_dialog.dart';
@@ -234,7 +234,7 @@ class _AppShellState extends State<AppShell> {
                                 ),
                                 page(
                                   AppPage.links,
-                                  () => LinksPage(state: state),
+                                  () => LibraryPage(state: state),
                                 ),
                                 page(
                                   AppPage.calendar,

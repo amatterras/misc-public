@@ -23,6 +23,7 @@ import 'models/tag_models.dart';
 import 'models/vault_models.dart';
 import 'models/template_models.dart';
 import 'models/calendar_sync_models.dart';
+import 'models/object_library_models.dart';
 
 class CalendarLimitException implements Exception {
   const CalendarLimitException(this.category);
@@ -126,6 +127,11 @@ class Workspace {
     bookmarks = _c('browser_bookmarks', Bookmark.fromJson);
     history = _c('browser_history', HistoryEntry.fromJson);
     sitePermissions = _c('browser_permissions', SitePermission.fromJson);
+    libraryObjects = _c('library_objects', LibraryObject.fromJson);
+    libraryRelations = _c('library_relations', LibraryRelation.fromJson);
+    librarySpaces = _c('library_spaces', LibrarySpace.fromJson);
+    libraryIndex = _c('library_index', LibraryIndexEntry.fromJson);
+    libraryJobs = _c('library_jobs', LibraryProcessingJob.fromJson);
     // Version history stays on this device (not in [syncCollections]).
     noteVersions = _c('note_versions', NoteVersion.fromJson);
     notes.onReplace = _keepNoteVersion;
@@ -170,6 +176,11 @@ class Workspace {
   late final RecordCollection<Bookmark> bookmarks;
   late final RecordCollection<HistoryEntry> history;
   late final RecordCollection<SitePermission> sitePermissions;
+  late final RecordCollection<LibraryObject> libraryObjects;
+  late final RecordCollection<LibraryRelation> libraryRelations;
+  late final RecordCollection<LibrarySpace> librarySpaces;
+  late final RecordCollection<LibraryIndexEntry> libraryIndex;
+  late final RecordCollection<LibraryProcessingJob> libraryJobs;
 
   /// Archive folders (separate from note folders).
   late final RecordCollection<Folder> archiveFolders;
@@ -214,6 +225,11 @@ class Workspace {
     'templates': templates,
     'external_events': externalEvents,
     'calendar_links': calendarLinks,
+    'library_objects': libraryObjects,
+    'library_relations': libraryRelations,
+    'library_spaces': librarySpaces,
+    'library_index': libraryIndex,
+    'library_jobs': libraryJobs,
     if (shareClipboard) 'clipboard': clipboard,
   };
 
