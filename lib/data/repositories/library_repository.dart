@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
 import '../models/canvas_models.dart' show newId;
 import '../models/library_models.dart' show AssetKind;
 import '../models/object_library_models.dart';
-import '../models/record.dart';
 import '../workspace.dart';
 
 /// Local-first persistence and indexed discovery for the replacement library.
@@ -38,10 +36,10 @@ class LibraryRepository {
       throw ArgumentError.value(sourceUrl, 'sourceUrl', 'Expected a public http or https URL without credentials.');
     }
     final hash = content == null ? null : sha256.convert(utf8.encode(content)).toString();
-    final uploadedHashes={
-      for(final id in attachmentIds)
-        if(workspace.assets[id]?.fileSha256 case final value?) value,
-    };
+    final uploadedHashes=attachmentIds
+        .map((id)=>workspace.assets[id]?.fileSha256)
+        .whereType<String>()
+        .toSet();
     final duplicate = objects.where((o) =>
       (canonical != null && o.canonicalUrl == canonical) ||
       (hash != null && o.contentHash == hash) ||
@@ -221,9 +219,12 @@ class LibraryRepository {
   }
   Future<void> setUserNote(String objectId,String text) async {
     final id='$objectId.note.user';
-    if(text.trim().isEmpty) workspace.libraryRelations.remove(id);
-    else workspace.libraryRelations.put(LibraryRelation(id:id,objectId:objectId,kind:'note',targetId:'user',
-      value:{'text':text},updatedAt:DateTime.now().toUtc()));
+    if(text.trim().isEmpty) {
+      workspace.libraryRelations.remove(id);
+    } else {
+      workspace.libraryRelations.put(LibraryRelation(id:id,objectId:objectId,kind:'note',targetId:'user',
+        value:{'text':text},updatedAt:DateTime.now().toUtc()));
+    }
     await workspace.libraryRelations.flush();
     final item=workspace.libraryObjects[objectId]; if(item!=null) await _writeIndex(item);
     await workspace.libraryIndex.flush();
@@ -257,7 +258,9 @@ class LibraryRepository {
         final requested=workspace.librarySpaces.all.where((sp)=>sp.id==parsed.space||sp.name.toLowerCase()==parsed.space!.toLowerCase()).firstOrNull;
         if(requested==null) continue;
         if(requested.kind==LibrarySpaceKind.regular &&
-          !workspace.libraryRelations.all.any((r)=>r.kind=='space'&&r.targetId==requested.id&&r.objectId==o.id)) continue;
+          !workspace.libraryRelations.all.any((r)=>r.kind=='space'&&r.targetId==requested.id&&r.objectId==o.id)) {
+          continue;
+        }
         if(requested.kind==LibrarySpaceKind.smart && !search(requested.query).items.any((item)=>item.id==o.id)) continue;
       }
       if(parsed.excluded.any(lower.contains)) continue;

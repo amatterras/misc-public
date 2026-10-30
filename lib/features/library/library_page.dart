@@ -4,7 +4,7 @@ import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/object_library_models.dart';
 import '../../data/storage/attachment_image.dart';
-import '../../data/models/library_models.dart' show extractUrl;
+import '../../data/models/library_models.dart' show Asset, AssetKind, extractUrl;
 import '../../data/repositories/library_repository.dart';
 import '../../widgets/common.dart';
 
@@ -41,7 +41,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _newNote() async {
     final title=await promptText(context,title:'New library note',hint:'Title',action:'Continue');
-    if(title==null)return;
+    if(!mounted || title==null)return;
     final body=await promptText(context,title:'Note content',hint:'Write a note…',action:'Save');
     if(body==null)return;
     await repo.save(type:LibraryObjectType.note,title:title,content:body,spaceId:_space);
@@ -61,7 +61,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _newSpace({required bool smart}) async {
     final name=await promptText(context,title:smart?'New Smart Space':'New Space',hint:'Name',action:'Continue');
-    if(name==null)return;
+    if(!mounted || name==null)return;
     final query=smart?await promptText(context,title:'Smart Space search',hint:'type:image object:chair',action:'Save')??'':'';
     final parsed=LibraryQuery.parse(query);
     if(smart&&parsed.error!=null){s.showToast(parsed.error!);return;}
@@ -130,7 +130,9 @@ class _LibraryPageState extends State<LibraryPage> {
   Future<void> _deleteSpace(LibrarySpace space) async {
     final ok=await confirm(context,title:'Delete "${space.name}"?',message:'The objects themselves will remain in your library.',action:'Delete');
     if(!ok)return;
-    for(final relation in s.workspace.libraryRelations.all.where((r)=>r.kind=='space'&&r.targetId==space.id).toList())s.workspace.libraryRelations.remove(relation.id);
+    for(final relation in s.workspace.libraryRelations.all.where((r)=>r.kind=='space'&&r.targetId==space.id).toList()) {
+      s.workspace.libraryRelations.remove(relation.id);
+    }
     s.workspace.librarySpaces.remove(space.id);await s.workspace.libraryRelations.flush();await s.workspace.librarySpaces.flush();if(_space==space.id)setState(()=>_space=null);
   }
 
@@ -178,7 +180,11 @@ class _LibraryPageState extends State<LibraryPage> {
       final memberships=s.workspace.libraryRelations.all.where((r)=>r.objectId==object.id&&r.kind=='space').map((r)=>r.targetId).toSet();
       return AlertDialog(backgroundColor:AppColors.card,title:const Text('Regular Spaces'),content:SizedBox(width:360,child:Column(mainAxisSize:MainAxisSize.min,children:[
         for(final space in spaces)CheckboxListTile(value:memberships.contains(space.id),title:Text(space.name),onChanged:(checked){
-          if(checked==true)repo.addToRegularSpace(space.id,object.id);else repo.removeFromRegularSpace(space.id,object.id);
+          if(checked==true) {
+            repo.addToRegularSpace(space.id,object.id);
+          } else {
+            repo.removeFromRegularSpace(space.id,object.id);
+          }
           setDialogState((){});setState((){});
         }),
         if(spaces.isEmpty)const Text('Create a Regular Space from the library view.'),
