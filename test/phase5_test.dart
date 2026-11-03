@@ -36,7 +36,7 @@ void main() {
   }
 
   test('a capture request processed twice (crash before removal) '
-      'gives one Inbox item', () async {
+      'gives one Archive object', () async {
     final s = await app();
     final req = File(
       '${s.sendTo.requestsDir.path}${Platform.pathSeparator}r1.json',
@@ -47,7 +47,7 @@ void main() {
     await s.sendTo.processRequests(s.capture);
     await req.writeAsString(body); // as if the app crashed before deleting
     await s.sendTo.processRequests(s.capture);
-    expect(s.workspace.inbox.all.where((i) => i.text == 'hello'), hasLength(1));
+    expect(s.library.objects.where((o) => o.content == 'hello'), hasLength(1));
     await s.flush();
     s.dispose();
   });

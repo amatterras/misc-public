@@ -103,7 +103,13 @@ class _TagPickerState extends State<_TagPicker> {
       setState(() => _problem = problem);
       return;
     }
-    final r = s.workspace.createTag(_name.text, _color);
+    final ({CustomTag tag, bool existed}) r;
+    try {
+      r = s.workspace.createTag(_name.text, _color);
+    } on ArgumentError catch (e) {
+      setState(() => _problem = '${e.message}');
+      return;
+    }
     setState(() {
       _chosen.add(r.tag.id);
       _problem = r.existed

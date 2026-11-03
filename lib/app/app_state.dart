@@ -58,6 +58,7 @@ import '../features/calendar/external/external_calendar.dart';
 import '../features/calendar/external/oauth.dart';
 import '../features/graph/relationship_graph.dart';
 import '../features/links/archive_library.dart';
+import '../features/links/link_tags.dart';
 import '../features/search/pdf_ocr.dart';
 import '../features/search/text_index.dart';
 import '../features/think/experiment_page.dart';
@@ -68,7 +69,7 @@ import 'floating_windows.dart';
 import 'page_windows.dart';
 import 'test_environment.dart';
 
-enum AppPage { home, canvas, notes, links, calendar, tasks, browser, ai }
+enum AppPage { canvas, notes, links, calendar, tasks, browser, ai }
 
 /// Surfaces with background dots (each has its own dot opacity).
 enum DotSurface { mindmap, archive }
@@ -169,7 +170,7 @@ class AppState extends ChangeNotifier {
   /// Opens a stored document file; replaceable in tests.
   bool Function(String path) openDocument = native.openDocument;
 
-  AppPage _page = AppPage.home;
+  AppPage _page = AppPage.canvas;
   AppPage get page => _page;
 
   bool _sidebarCollapsed = false;
@@ -219,7 +220,6 @@ class AppState extends ChangeNotifier {
 
   /// Pages that are restored at the next start (see [goTo]).
   static const _restorablePages = {
-    AppPage.home,
     AppPage.canvas,
     AppPage.notes,
     AppPage.links,
@@ -1752,8 +1752,8 @@ class AppState extends ChangeNotifier {
 
   /// Links opened from outside (e.g. an iOS Shortcut opening
   /// `theapp://capture?url=...`) and requests left by the Share Extension
-  /// go to the Inbox, through the same code as Windows "Send to". Only ever
-  /// adds Inbox items. Not yet verified on a device.
+  /// go to the Archive, through the same code as Windows "Send to". Not yet
+  /// verified on a device.
   /// Apple Pencil double-tap = Undo on the drawing in use (see
   /// pencil_double_tap.dart). Drawing pages register themselves.
   late final PencilDoubleTap pencilDoubleTap = PencilDoubleTap()
@@ -1786,16 +1786,16 @@ class AppState extends ChangeNotifier {
       if (completeOAuthRedirect(uri)) return; // a calendar sign-in
       if (openWidgetLink(uri)) return;
       if (await addSharedLinkToLinks(uri)) return;
-      final items = await sendTo.handleUri(uri, capture);
-      if (items.isEmpty) return;
+      final saved = await sendTo.handleUriToArchive(uri, capture);
+      if (saved == 0) return;
       await workspace.flush();
-      showToast('Added ${items.length} item(s) to the Inbox');
+      showToast('Added $saved item(s) to the Archive');
     });
   }
 
   /// `theapp://capture?url=…&to=links[&tags=resource,projects]` (e.g. an
-  /// iOS Shortcut in the share sheet): puts the link straight on the Links
-  /// board instead of the Inbox. Returns false for any other link.
+  /// iOS Shortcut in the share sheet): saves the link in the Archive, with
+  /// the chosen categories. Returns false for any other link.
   Future<bool> addSharedLinkToLinks(Uri uri) async {
     if (uri.scheme != 'theapp' || uri.queryParameters['to'] != 'links') {
       return false;
@@ -1806,9 +1806,15 @@ class AppState extends ChangeNotifier {
       for (final t in (uri.queryParameters['tags'] ?? '').split(','))
         if (t.trim().isNotEmpty) t.trim().toLowerCase(),
     ];
-    final asset = capture.link(url, title: uri.queryParameters['title']);
-    await addToLinks(asset, tags: tags);
-    showToast('Added to Links');
+    await capture.captureToArchive(
+      url: url,
+      title: uri.queryParameters['title'],
+      categories: {
+        for (final t in tags)
+          if (LinkTag.byId(t) != null) t,
+      },
+    );
+    showToast('Added to the Archive');
     return true;
   }
 
@@ -1816,7 +1822,7 @@ class AppState extends ChangeNotifier {
   /// the app comes back to the front). Returns how many were added.
   Future<int> importSharedItems() async {
     final count = await _sharedInbox?.processRequests(capture) ?? 0;
-    if (count > 0) showToast('Added $count shared item(s) to the Inbox');
+    if (count > 0) showToast('Added $count shared item(s) to the Archive');
     return count;
   }
 
@@ -2114,8 +2120,6 @@ class AppState extends ChangeNotifier {
           title: 'New chat',
           mode: mode,
         );
-      case AppPage.home:
-        return windows.open(kind, title: 'start', mode: mode);
     }
   }
 
@@ -2280,7 +2284,9 @@ class AppState extends ChangeNotifier {
   late final PdfTextCache pdfTexts = PdfTextCache(
     workspace,
     ocr: (path) => ocrPdf(path, ios: ios),
-    ocrEnabled: () => settings.get<bool>('ocrEnabled') ?? true,
+    // OCR-based search is not part of the product, so scanned PDFs are
+    // never recognized for search (handwriting recognition is separate).
+    ocrEnabled: () => false,
   );
 
   // -------------------------------------------------------- archive --
@@ -2456,32 +2462,6 @@ class AppState extends ChangeNotifier {
         if (v.id != id) {'kind': v.kind, 'id': v.id, 'at': utcIso(v.at)},
     ];
     return settings.set(_visitsKey, list.take(maxVisits).toList());
-  }
-
-  /// Start-page sections in the user's order; hidden ones are left out.
-  /// Kept per device, so a tablet layout never changes the PC's.
-  List<String> get homeSections {
-    final saved = settings.get<List<dynamic>>('homeSections');
-    if (saved == null) return defaultHomeSections;
-    return [
-      for (final v in saved)
-        if (v is String && allHomeSections.contains(v)) v,
-    ];
-  }
-
-  static const allHomeSections = [
-    'today',
-    'upcoming',
-    'inbox',
-    'notes',
-    'canvases',
-    'activity',
-  ];
-  static const defaultHomeSections = allHomeSections;
-
-  Future<void> setHomeSections(List<String> sections) async {
-    await settings.set('homeSections', sections);
-    notifyListeners();
   }
 
   // ----------------------------------------------------- full screen --
@@ -2828,6 +2808,11 @@ class AppState extends ChangeNotifier {
   final Map<String, CanvasController> _special = {};
   final Map<String, Future<CanvasController>> _specialOpening = {};
 
+  /// Set when the app state is closed, so a document still being opened in
+  /// the background (e.g. the Calendar drawings, opened at start-up) does
+  /// not use resources that are gone.
+  bool _disposed = false;
+
   Future<CanvasController> _openSpecial(String id, String kind, String title) =>
       _specialOpening[id] ??= () async {
         final doc =
@@ -2842,11 +2827,11 @@ class AppState extends ChangeNotifier {
         final c = CanvasController(
           document: doc,
           onSave: saveDocument,
-          resources: resources,
+          resources: _disposed ? null : resources,
           clock: workspace.clock,
         );
         _special[id] = c;
-        notifyListeners();
+        if (!_disposed) notifyListeners();
         return c;
       }();
 
@@ -3205,6 +3190,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _scheduler?.stop();
     unawaited(maintenance?.stop(wait: Duration.zero));
     unawaited(hubHost?.stop());

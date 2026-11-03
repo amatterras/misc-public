@@ -39,6 +39,20 @@ bytes untouched. This follows THEapp's verified-backup and no-data-loss rules.
   explicit user selection and an outgoing preview before private content is
   sent to an AI provider.
 
+## Labels: categories and custom tags
+
+- **Categories** are the five canonical Archive categories (Resource,
+  Projects, Other, Shopping, Second-brain) with their fixed colors. An object
+  carries a `category` relation per chosen category.
+- **Custom tags** come from the shared `custom_tags` registry (name and
+  color, also used by the Mindmap). An object carries a `tag` relation to
+  `tag:<id>`. At most 15 tags exist; an existing name is reused, and deleting
+  a tag removes it from every object without deleting the objects.
+- **Filtering** on the Archive page uses the category and tag chips; every
+  chosen label must be on the object. Only library objects are filtered, so
+  notes, tasks, Calendar entries and canvas items never appear in the Archive.
+- OCR is not used for search (scanned PDFs are not recognized).
+
 ## Capabilities that still need implementation
 
 The standalone URL form stores the address but does not fetch it. A hardened

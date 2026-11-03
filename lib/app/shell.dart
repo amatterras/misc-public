@@ -11,7 +11,6 @@ import '../features/ai/ai_chat_page.dart';
 import '../features/browser/browser_page.dart';
 import '../features/capture/capture_dialog.dart';
 import '../features/capture/capture_service.dart';
-import '../features/home/home_page.dart';
 import '../features/notes/notes_page.dart';
 import '../features/palette/app_switcher.dart';
 import '../features/palette/command_palette.dart';
@@ -50,10 +49,9 @@ Future<void> openQuickAdd(BuildContext context, AppState state) async {
       AppPage.notes => CaptureDestination.notes,
       AppPage.calendar => CaptureDestination.calendar,
       AppPage.tasks => CaptureDestination.task,
-      AppPage.home => CaptureDestination.inbox,
       AppPage.canvas => CaptureDestination.canvas,
       AppPage.links => CaptureDestination.links,
-      AppPage.browser || AppPage.ai => CaptureDestination.inbox,
+      AppPage.browser || AppPage.ai => CaptureDestination.links,
     },
   );
 }
@@ -127,6 +125,11 @@ class _AppShellState extends State<AppShell> {
   final _pagesKey = GlobalKey();
   late final MotivationService _motivation;
 
+  // The shell's own focus, so Ctrl+N, Ctrl+K and the other shortcuts keep
+  // working after a page that had the keyboard focus goes off screen.
+  final _focus = FocusNode(debugLabel: 'shell');
+  AppPage? _lastPage;
+
   AppState get state => widget.state;
 
   @override
@@ -141,6 +144,27 @@ class _AppShellState extends State<AppShell> {
               state.settings.set('welcomeGreetingDismissed', true),
         );
     if (widget.motivation == null) unawaited(_loadMotivation());
+    _lastPage = state.page;
+    state.addListener(_pageChanged);
+  }
+
+  /// A page that held the focus is hidden when another page opens, which
+  /// drops the focus out to the route; take it back for the shell.
+  void _pageChanged() {
+    if (state.page == _lastPage) return;
+    _lastPage = state.page;
+    // Twice: the hidden page releases its focus during the frame after the
+    // page changes.
+    void reclaim() {
+      if (!mounted) return;
+      final primary = FocusManager.instance.primaryFocus;
+      if (primary == null || primary is FocusScopeNode) _focus.requestFocus();
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      reclaim();
+      WidgetsBinding.instance.addPostFrameCallback((_) => reclaim());
+    });
   }
 
   Future<void> _loadMotivation() async {
@@ -153,6 +177,8 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    state.removeListener(_pageChanged);
+    _focus.dispose();
     if (widget.motivation == null) _motivation.dispose();
     super.dispose();
   }
@@ -163,6 +189,10 @@ class _AppShellState extends State<AppShell> {
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
             openQuickAdd(context, state),
+        // Global search stays on the keyboard and in the palette; there is
+        // no search bar or button in the top bar or sidebar.
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () =>
+            showSearchDialog(context, state),
         const SingleActivator(
           LogicalKeyboardKey.keyP,
           control: true,
@@ -192,6 +222,7 @@ class _AppShellState extends State<AppShell> {
         },
       },
       child: Focus(
+        focusNode: _focus,
         autofocus: true,
         child: ListenableBuilder(
           listenable: Listenable.merge([state, state.windows]),
@@ -227,10 +258,6 @@ class _AppShellState extends State<AppShell> {
                               key: _pagesKey,
                               index: state.page.index,
                               children: [
-                                page(
-                                  AppPage.home,
-                                  () => HomePage(state: state),
-                                ),
                                 page(
                                   AppPage.canvas,
                                   () => CanvasPage(state: state),
@@ -295,14 +322,12 @@ class _AppShellState extends State<AppShell> {
                       child: Column(
                         children: [
                           ListenableBuilder(
-                            // Its Inbox badge follows new captures.
                             listenable: state.workspace.changes,
                             builder: (context, _) =>
                                 _CompactTopBar(state: state),
                           ),
                           Expanded(child: mainContent),
                           ListenableBuilder(
-                            // The Inbox badge follows new captures.
                             listenable: state.workspace.changes,
                             builder: (context, _) => _CompactBottomNav(
                               state: state,
@@ -355,7 +380,6 @@ class _CompactTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pageTitle = switch (state.page) {
-      AppPage.home => 'THEapp',
       AppPage.canvas => state.canvas?.title ?? 'mindmap',
       AppPage.notes => 'notes',
       AppPage.links => 'archive',
@@ -399,26 +423,6 @@ class _CompactTopBar extends StatelessWidget {
               ),
             ),
           const Spacer(),
-          // Start page (today, Inbox): not one of the four destinations.
-          IconButton(
-            key: const ValueKey('compact-start-page'),
-            icon: Badge(
-              isLabelVisible: state.workspace.inbox.length > 0,
-              label: Text('${state.workspace.inbox.length}'),
-              backgroundColor: AppColors.accent,
-              child: Icon(
-                Icons.wb_sunny_outlined,
-                size: 20,
-                color: state.page == AppPage.home
-                    ? AppColors.accent
-                    : AppColors.textMuted,
-              ),
-            ),
-            tooltip: 'Start page',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-            onPressed: () => state.goTo(AppPage.home),
-          ),
           IconButton(
             icon: Icon(
               Icons.add_circle_outline,
@@ -479,45 +483,12 @@ class _CompactBottomNav extends StatelessWidget {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Icon(
-                                  icon,
-                                  size: 22,
-                                  color: state.page == page
-                                      ? AppColors.accent
-                                      : AppColors.textMuted,
-                                ),
-                                if (page == AppPage.home &&
-                                    state.workspace.inbox.length > 0)
-                                  Positioned(
-                                    right: -8,
-                                    top: -4,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                        vertical: 1,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.accent,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      constraints: const BoxConstraints(
-                                        minWidth: 14,
-                                      ),
-                                      child: Text(
-                                        '${state.workspace.inbox.length}',
-                                        style: TextStyle(
-                                          color: AppColors.text,
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                            Icon(
+                              icon,
+                              size: 22,
+                              color: state.page == page
+                                  ? AppColors.accent
+                                  : AppColors.textMuted,
                             ),
                             const SizedBox(height: 3),
                             Text(

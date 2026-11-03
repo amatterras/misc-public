@@ -263,9 +263,8 @@ extension Transfers on AppState {
         ];
       case (NoteTransfer(), TasksPlace()):
         return const [TransferChoice(TransferOp.convert, 'New task about it')];
-      case (TaskTransfer t, DayPlace p):
-        if (t.from != null && daysBetween(t.from!, p.day) == 0) return const [];
-        return const [TransferChoice(TransferOp.move, 'Schedule on this day')];
+      // Dragging a task onto a day to schedule it is not supported: dates
+      // are set in the task itself (or with Quick Add).
       case (CalendarItemTransfer t, DayPlace p):
         // Google / Outlook events are changed there, not moved here.
         if (t.item is ExternalOnDay || daysBetween(t.from, p.day) == 0) {
@@ -685,14 +684,6 @@ extension Transfers on AppState {
         return TransferResult(
           'New task about the note.',
           undo: () => ws.deleteTask(task.id),
-        );
-      case (TaskTransfer t, DayPlace p):
-        final task = ws.tasks[t.taskId];
-        if (task == null) return const TransferResult('The task is gone.');
-        ws.moveDayItem(TaskOnDay(task, 0), t.from, p.day);
-        return TransferResult(
-          'Scheduled on ${_day(p.day)}.',
-          undo: () => ws.tasks.put(task),
         );
       case (CalendarItemTransfer t, DayPlace p):
         final item = t.item;

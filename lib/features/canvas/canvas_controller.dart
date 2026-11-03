@@ -1821,7 +1821,8 @@ class CanvasController extends ChangeNotifier {
               hits.add(item.id);
             }
           }
-          select(hits);
+          // A grouped item brings its whole group, as everywhere else.
+          select(withGroups(hits));
         }
         _lassoPoints = [];
       case _Drag.connect:

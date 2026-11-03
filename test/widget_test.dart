@@ -8,7 +8,6 @@ import 'package:flutter_application_1/app/shell.dart';
 import 'package:flutter_application_1/app/theme.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
-import 'package:flutter_application_1/data/models/library_models.dart';
 import 'package:flutter_application_1/data/models/record.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
@@ -83,9 +82,8 @@ void main() {
   testWidgets('every page opens from the sidebar', (tester) async {
     addTearDown(tester.view.reset);
     final s = await boot(tester, dir);
-    await tester.tap(find.byKey(const ValueKey('sidebar-start-page')));
-    await tester.pump();
-    expect(s.page, AppPage.home);
+    // There is no Home page or start-page button any more.
+    expect(find.byKey(const ValueKey('sidebar-start-page')), findsNothing);
     // Exactly the four destinations, in order and spelling.
     for (final label in ['mindmap', 'notes', 'archive', 'calendar']) {
       await tester.tap(find.text(label).last);
@@ -231,17 +229,26 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('capture-tag-shopping')));
     await tester.pump();
-    await tester.ensureVisible(find.textContaining('Save').last);
-    await tester.tap(find.textContaining('Save').last);
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    // The app opens on the mindmap, whose guide also says "save".
+    final save = find.descendant(
+      of: find.byType(CaptureDialog),
+      matching: find.textContaining('Save'),
     );
+    await tester.ensureVisible(save.last);
+    await tester.tap(save.last);
+    // Saving into the Archive writes files: real time, and the fake clock
+    // for the save timers.
+    for (var i = 0; i < 300 && s.page != AppPage.links; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+    }
     await settle(tester);
     expect(s.page, AppPage.links);
-    final card = s.linksBoard!.items.whereType<LinkItem>().single;
-    final asset = s.workspace.assets[card.assetId]!;
-    expect(asset.url, 'https://example.com/recipe');
-    expect(asset.linkTags, ['shopping']);
+    final saved = s.library.objects.single;
+    expect(saved.sourceUrl, 'https://example.com/recipe');
+    expect(s.library.categoriesOf(saved.id), {'shopping'});
     await shutDown(tester, s);
   });
 
@@ -268,7 +275,13 @@ void main() {
       );
       await tester.pump();
       expect(find.textContaining('Link: example.com/article'), findsOneWidget);
-      await tester.tap(find.textContaining('Save'));
+      // The app opens on the mindmap, whose guide also says "save".
+      await tester.tap(
+        find.descendant(
+          of: find.byType(CaptureDialog),
+          matching: find.textContaining('Save'),
+        ),
+      );
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );
@@ -612,65 +625,6 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(warning, findsNothing);
-    await shutDown(tester, s);
-  });
-
-  testWidgets('Inbox: dismissing a typed thought asks first; a link does not', (
-    tester,
-  ) async {
-    addTearDown(tester.view.reset);
-    final s = await boot(tester, dir);
-    final ws = s.workspace;
-    ws.inbox.put(
-      InboxItem(
-        id: 'th',
-        text: 'Only copy of this idea',
-        createdAt: DateTime.now(),
-      ),
-    );
-    s.goTo(AppPage.home);
-    await tester.pump();
-    await tester.pump();
-    Finder dismissOf(String text) => find.descendant(
-      of: find.ancestor(of: find.text(text), matching: find.byType(Row)).first,
-      matching: find.byTooltip('Dismiss'),
-    );
-
-    await tester.tap(dismissOf('Only copy of this idea'));
-    for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(find.text('Delete this thought?'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
-    for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(ws.inbox['th'], isNotNull, reason: 'cancel keeps it');
-
-    await tester.tap(dismissOf('Only copy of this idea'));
-    for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
-    for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(ws.inbox['th'], isNull);
-
-    // A link keeps its own record, so it is dismissed without a question.
-    final link = s.capture.link('https://example.com/kept');
-    ws.inbox.put(
-      InboxItem(id: 'ln', assetId: link.id, createdAt: DateTime.now()),
-    );
-    await tester.pump();
-    await tester.pump();
-    await tester.tap(find.byTooltip('Dismiss').first);
-    for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(find.text('Delete this thought?'), findsNothing);
-    expect(ws.inbox['ln'], isNull);
-    expect(ws.assets[link.id], isNotNull, reason: 'the link record stays');
     await shutDown(tester, s);
   });
 

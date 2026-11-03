@@ -851,6 +851,12 @@ class Workspace {
     if (problem != null) throw ArgumentError(problem);
     final existing = tagNamed(name);
     if (existing != null) return (tag: existing, existed: true);
+    if (customTags.all.length >= CustomTag.maxTags) {
+      throw ArgumentError(
+        'You can have at most ${CustomTag.maxTags} tags. '
+        'Delete one to make another.',
+      );
+    }
     final now = DateTime.now();
     final tag = CustomTag(
       id: newId(),
@@ -894,6 +900,13 @@ class Workspace {
       if (!a.linkTags.contains(ref)) continue;
       assets.put(a.copyWith(linkTags: [...a.linkTags]..remove(ref)));
       n++;
+    }
+    // Library objects lose it too (the objects themselves stay).
+    for (final r in libraryRelations.all.toList()) {
+      if (r.kind == 'tag' && r.targetId == ref) {
+        libraryRelations.remove(r.id);
+        n++;
+      }
     }
     customTags.remove(id);
     return n;

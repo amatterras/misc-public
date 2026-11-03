@@ -173,7 +173,8 @@ void main() {
         },
         saveDelay: const Duration(milliseconds: 1),
       );
-      // Drag item "a" to the right.
+      // Drag item "a" to the right (selected first, as the lasso would).
+      c.select(['a']);
       c.pointerDown(
         const Offset(20, 20),
         timeStamp: const Duration(seconds: 1),
@@ -298,6 +299,7 @@ void main() {
           saveDelay: const Duration(milliseconds: 1),
           clock: oldWs.clock,
         );
+        c.select(['a']); // as the lasso would
         c.pointerDown(
           const Offset(20, 20),
           timeStamp: const Duration(seconds: 1),

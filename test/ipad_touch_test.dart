@@ -334,7 +334,7 @@ void main() {
       expect(find.textContaining('Double-click'), findsNothing);
       expect(find.text('Ctrl K'), findsNothing);
 
-      s.goTo(AppPage.home);
+      s.goTo(AppPage.notes);
       await settle(tester);
       expect(find.text('Quick Add'), findsWidgets);
       expect(find.textContaining('Ctrl+N'), findsNothing);
@@ -356,7 +356,7 @@ void main() {
     final s = await bootIpad(tester, dir);
     s.goTo(AppPage.canvas);
     await settle(tester);
-    expect(find.text('Ctrl K'), findsOneWidget);
+    expect(find.text('Ctrl K'), findsNothing, reason: 'no search entry');
     expect(find.text('Saved on this PC'), findsOneWidget);
     await shutDown(tester, s);
   });

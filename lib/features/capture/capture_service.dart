@@ -259,6 +259,88 @@ class CaptureService {
   ///
   /// Called for `theapp://` links (iOS Shortcut, via [SendToBridge.handleUri]);
   /// not yet run on a device.
+  /// Saves an image or document [asset] as an Archive (library) object.
+  /// Returns false when there is no library to save to.
+  Future<bool> saveAssetToArchive(Asset asset, {Set<String> categories = const {}}) async {
+    final library = libraryRepository;
+    if (library == null) return false;
+    final info = asset.file == null
+        ? null
+        : await workspace.attachments.contentInfo(asset.file!);
+    final stored = info == null
+        ? asset
+        : asset.copyWith(fileSha256: info.$1, fileSize: info.$2);
+    workspace.assets.put(stored);
+    await workspace.assets.flush();
+    final object = await library.save(
+      type: stored.kind == AssetKind.image
+          ? LibraryObjectType.image
+          : LibraryObjectType.document,
+      title: stored.label,
+      attachmentIds: [stored.id],
+      metadata: {'legacyAssetId': stored.id},
+    );
+    for (final c in categories) {
+      await library.setCategory(object.id, c, true);
+    }
+    return true;
+  }
+
+  /// Saves what was shared from outside (a link, text, files) in the
+  /// Archive. Returns how many objects were saved (0 without a library).
+  Future<int> captureToArchive({
+    String? url,
+    String? text,
+    String? title,
+    List<String> files = const [],
+    Set<String> categories = const {},
+  }) async {
+    final library = libraryRepository;
+    if (library == null) return 0;
+    final cleanUrl = url != null ? extractUrl(url) : null;
+    var bodyText = (text ?? '').trim();
+    if (bodyText.length > maxInboundText) {
+      bodyText = bodyText.substring(0, maxInboundText);
+    }
+    // Text that only repeats the link adds nothing.
+    if (bodyText == cleanUrl || bodyText == url?.trim()) bodyText = '';
+    var saved = 0;
+    Future<void> label(LibraryObject o) async {
+      for (final c in categories) {
+        await library.setCategory(o.id, c, true);
+      }
+      saved++;
+    }
+
+    if (cleanUrl != null) {
+      await label(
+        await library.save(
+          type: LibraryObjectType.website,
+          sourceUrl: cleanUrl,
+          title: title ?? Uri.parse(cleanUrl).host,
+        ),
+      );
+    }
+    if (bodyText.isNotEmpty) {
+      await label(
+        await library.save(
+          type: LibraryObjectType.note,
+          title: title ?? 'Shared note',
+          content: bodyText,
+        ),
+      );
+    }
+    if (files.isNotEmpty) {
+      for (final asset in [
+        ...await imagesFromFiles(files),
+        ...await documentsFromFiles(files),
+      ]) {
+        if (await saveAssetToArchive(asset, categories: categories)) saved++;
+      }
+    }
+    return saved;
+  }
+
   Future<List<InboxItem>> captureInbound({
     String? url,
     String? text,
@@ -272,22 +354,6 @@ class CaptureService {
     }
     // Text that only repeats the link adds nothing.
     if (bodyText == cleanUrl || bodyText == url?.trim()) bodyText = '';
-    final library=libraryRepository;
-    if(library!=null) {
-      final saved=<InboxItem>[];
-      if(cleanUrl!=null) await library.save(type:LibraryObjectType.website,sourceUrl:cleanUrl,title:title??Uri.parse(cleanUrl).host);
-      if(bodyText.isNotEmpty) await library.save(type:LibraryObjectType.note,title:title??'Shared note',content:bodyText);
-      if(files.isNotEmpty) {
-        final assets=<Asset>[...await imagesFromFiles(files),...await documentsFromFiles(files)];
-        for(final asset in assets) {
-          final info=asset.file==null?null:await workspace.attachments.contentInfo(asset.file!);
-          final stored=info==null?asset:asset.copyWith(fileSha256:info.$1,fileSize:info.$2);
-          workspace.assets.put(stored); await workspace.assets.flush();
-          await library.save(type:stored.kind==AssetKind.image?LibraryObjectType.image:LibraryObjectType.document,title:stored.label,attachmentIds:[stored.id],metadata:{'legacyAssetId':stored.id});
-        }
-      }
-      return saved;
-    }
     final created = <InboxItem>[];
     void add({String? text, String? assetId}) {
       final item = InboxItem(

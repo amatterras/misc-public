@@ -10,7 +10,6 @@ import '../features/browser/browser_page.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/canvas/canvas_controller.dart';
 import '../features/canvas/canvas_page.dart';
-import '../features/home/home_page.dart';
 import '../features/library/library_page.dart';
 import '../features/notes/note_page.dart';
 import '../features/notes/notes_page.dart';
@@ -53,7 +52,6 @@ Widget buildPageInstance(BuildContext context, AppState s, PageInstance p) =>
             ? p.refId!.substring(7)
             : null,
       ),
-      AppPage.home => HomePage(state: s),
     };
 
 /// A mindmap in its own window. Shares the document's controller with any

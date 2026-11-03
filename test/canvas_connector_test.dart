@@ -72,7 +72,8 @@ void main() {
       c.itemBounds(c.itemById('a')!).inflate(0.01).contains(before.$1),
       isTrue,
     );
-    // Move b with the select tool.
+    // Move b (selected, as the lasso would) with the select tool.
+    c.select(['b']);
     c.tool = CanvasTool.select;
     c.pointerDown(bCentre);
     c.pointerMove(bCentre + const Offset(0, 200));
@@ -102,13 +103,22 @@ void main() {
     expect(lines(c), hasLength(3));
   });
 
-  test('clicking the line selects only the connection; Delete removes it', () {
+  test('the lasso selects only the connection; Delete removes it', () {
     final c = twoBoxes();
     connect(c, aCentre, bCentre);
     final ends = c.connectorEnds(lines(c).single)!;
     c.tool = CanvasTool.select;
     final mid = Offset.lerp(ends.$1, ends.$2, 0.5)!;
+    // Clicking the line does not select it (only photos and links are
+    // selected by a click).
     c.pointerDown(mid);
+    c.pointerUp();
+    expect(c.selection, isEmpty);
+    c.tool = CanvasTool.lasso;
+    c.pointerDown(mid + const Offset(-6, -6));
+    c.pointerMove(mid + const Offset(6, -6));
+    c.pointerMove(mid + const Offset(6, 6));
+    c.pointerMove(mid + const Offset(-6, 6));
     c.pointerUp();
     expect(c.selection, {lines(c).single.id});
     expect(c.resizeHandleAt(mid), isNull, reason: 'lines have no handle');

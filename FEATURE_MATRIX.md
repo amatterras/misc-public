@@ -12,8 +12,8 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
 |---|---|---|---|---|---|
 | Dark, minimal design; collapsible right sidebar | P1 | W | VERIFIED | `lib/app/shell.dart`, `sidebar.dart`; `widget_test` "every page opens from the sidebar"; `spec_coverage_test` sidebar persistence | click-through on real binary not automated |
-| Navigation (2026-10-23): sidebar has exactly Mind map, Notes, Calendar, Archive; Home opens from the THEapp/sun button; Tasks is a collapsible ~3/5 column inside Calendar (replaces the calendar below 900 px); 5 most recent notes under Notes; last page restored at start | P1 | W,i | VERIFIED (widget tests) | `sidebar.dart` `appDestinations`, `calendar_page.dart`; `widget_test`, `layout_test` (8 sizes incl. phone/iPad) | real-binary and iPad click-through |
-| Home: today's tasks, priorities, upcoming deadlines, quick capture, recent/favorite notes | P1 | W | VERIFIED (screenshot of real binary on test data + widget tests) | `lib/features/home/home_page.dart` | |
+| Navigation (2026-10-23): sidebar has six entries (decided 2026-11-03): mindmap, notes, calendar, archive, safari, ai; there is no Home page (deleted 2026-11-03); Tasks is a collapsible ~3/5 column inside Calendar (replaces the calendar below 900 px); 5 most recent notes under Notes; last page restored at start | P1 | W,i | VERIFIED (widget tests) | `sidebar.dart` `appDestinations`, `calendar_page.dart`; `widget_test`, `layout_test` (8 sizes incl. phone/iPad) | real-binary and iPad click-through |
+| [SUPERSEDED 2026-11-03, see Specification lock] Home: today's tasks, priorities, upcoming deadlines, quick capture, recent/favorite notes | P1 | W | VERIFIED (screenshot of real binary on test data + widget tests) | `lib/features/home/home_page.dart` | |
 | Canonical global, Archive/Links, Calendar and ink palettes; backed-up legacy color migration | P1 | W,i | PARTIAL | `canonical_color_migration_test`, `phase3_test` (selected-tag highlight callback); see `MASTER_SPEC.md` | Lasso tags (dots + minimap glow) implemented in Phase 3; project custom colors await an approved palette |
 
 ## 2. Canvas (highest priority)
@@ -36,7 +36,7 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
 |---|---|---|---|---|---|
 | Editable notes; nested folders; tags; favorites; linked notes | P1 | W | VERIFIED | `workspace_test` "notes, tags, favourites and links persist", folders test | |
-| Search across the app (PDF text is not searched, and says so), incl. note-page text, Archive board, link tags, projects; a link result opens its card in Archive | P1 | W | VERIFIED | `phase5_test`, `spec_coverage_test`, `interaction_test` Ctrl+K | |
+| [SUPERSEDED 2026-11-03, see Specification lock] Search across the app (PDF text is not searched, and says so), incl. note-page text, Archive board, link tags, projects; a link result opens its card in Archive | P1 | W | VERIFIED | `phase5_test`, `spec_coverage_test`, `interaction_test` Ctrl+K | |
 | Quick capture; Send-to requests are idempotent (no duplicate after a crash) | P1 | W | VERIFIED | `phase5_test`, `interaction_test`, `widget_test` Quick Add | |
 | Images and URLs in notes | P1 | W | VERIFIED | `workspace_test`, capture tests | |
 | PDFs in notes ("where practical") | P2 | W,i | PARTIAL: import into a note or as a note, write on pages, export annotated copy (iOS, PDFKit; Swift unverified); Windows: attach + open | `phase2_test` (coordinates, pages, bridge simulated) | iPad run |
@@ -100,9 +100,9 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Share-menu link capture | P2 | i | PARTIAL (Dart side tested with simulated channel, shared text capped; Swift uncompiled; extension target not in the Xcode project) | `ios_bridge_test`, `ios_readiness_test` | Mac; Share Extension needs paid account (App Groups) |
 | Apple Pencil (pressure, low-latency live layer, prediction, squeeze to erase, hold to straighten) | P2 | i | IMPLEMENTED BUT UNVERIFIED (logic tested; feel needs a device) | `phase2_test` | iPad + Pencil (Pro for squeeze) |
 | Notes as full pages with lazy handwriting pages | P1 | W,i | VERIFIED (logic, widget tests) | `phase2_test`, `widget_test`, `version_history_test` | |
-| Links library: board of link cards (preview, title, tags), Pencil ink on the board, filter by tag | P1 | W,i | VERIFIED (logic, widget tests incl. phone width); iPad not run | `phase3_test` | |
-| Link tags Resource/Projects/Other/Shopping/Second-brain with canonical colors, synced and selected-tag minimap glow | P1 | W,i | PARTIAL: tag-color persistence and selection highlighting tested; minimap visual check pending | `phase3_test` | manual minimap check |
-| Share a link into Links (Quick Add, paste, `theapp://capture?to=links` Shortcut) | P1 | W,i | VERIFIED on Windows; iOS Shortcut path UNVERIFIED | `phase3_test`, `widget_test` | iPad |
+| [SUPERSEDED 2026-11-03, see Specification lock] Links library: board of link cards (preview, title, tags), Pencil ink on the board, filter by tag | P1 | W,i | VERIFIED (logic, widget tests incl. phone width); iPad not run | `phase3_test` | |
+| [SUPERSEDED 2026-11-03, see Specification lock] Link tags Resource/Projects/Other/Shopping/Second-brain with canonical colors, synced and selected-tag minimap glow | P1 | W,i | PARTIAL: tag-color persistence and selection highlighting tested; minimap visual check pending | `phase3_test` | manual minimap check |
+| [SUPERSEDED 2026-11-03, see Specification lock] Share a link into Links (Quick Add, paste, `theapp://capture?to=links` Shortcut) | P1 | W,i | VERIFIED on Windows; iOS Shortcut path UNVERIFIED | `phase3_test`, `widget_test` | iPad |
 | Home-screen widgets: today + tomorrow tasks and events, +N more, deep links, light/dark | P2 | i | IMPLEMENTED BUT UNVERIFIED (snapshot and deep links tested; Swift cloud-compiled only; App Group with free signing unknown) | `phase3_test` | iPad; App Group via sideloader |
 | Touch-only use (no mouse/keyboard): every menu reachable by press and hold, canvas trash in the title menu, 44 px resize target, double-tap tolerance, touch wording | P1 | i | VERIFIED in simulated touch tests / NOT VERIFIED on an iPad | `ipad_touch_test` | iPad |
 | Dart ↔ Swift channel contract | P1 | i | VERIFIED by source check (every Dart call has a Swift case and back); Swift not compiled | `ipad_touch_test` | Mac |
@@ -149,7 +149,7 @@ iPad (see the manual checklist in `MANUAL_CHECKLIST.md`).
 | Category and colour filters | VERIFIED | `itemsOn` filter test | |
 | Date format and week start (per device) | VERIFIED | `widgets/date_prefs.dart` | |
 | Freeform drawing on the calendar, saved per date | VERIFIED | `calendar_ink.dart` (doc `calendar-ink`) | Pencil feel on iPad not run |
-| Drag a task onto a day to schedule it | VERIFIED (logic) | `moveDayItem(from: null)` | drag by hand not run |
+| [SUPERSEDED 2026-11-03, see Specification lock] Drag a task onto a day to schedule it | VERIFIED (logic) | `moveDayItem(from: null)` | drag by hand not run |
 | Recurring workflow templates | MISSING | — | scope to confirm |
 
 ### Phase 3 — connections (`test/roadmap_phase3_test.dart`, 17 tests)
@@ -173,9 +173,9 @@ iPad (see the manual checklist in `MANUAL_CHECKLIST.md`).
 | Text-conversion bar: Task / Subtask / Project / Note, preview, duplicate check | VERIFIED | `notes/conversion.dart` | |
 | Command palette (Ctrl+Shift+P) | VERIFIED | `palette/command_palette.dart` | |
 | App switcher, can float | VERIFIED | `palette/app_switcher.dart` | not on phone width (bottom tabs instead) |
-| Customizable start page (choose, order; per device) | VERIFIED | `homeSections` | |
-| Activity timeline | VERIFIED | `home/activity.dart` | |
-| Archive: projects on resources, project filter, video links marked | VERIFIED (model) | `Asset.projectIds`, `isVideo` | Archive folders: MISSING |
+| [REMOVED 2026-11-03, see Specification lock] Customizable start page (choose, order; per device) | removed | | |
+| [REMOVED 2026-11-03, see Specification lock] Activity timeline | removed | | |
+| [SUPERSEDED 2026-11-03, see Specification lock] Archive: projects on resources, project filter, video links marked | VERIFIED (model) | `Asset.projectIds`, `isVideo` | Archive folders: MISSING |
 | The three Graveyard areas | BLOCKED | no Graveyard exists in the code or earlier docs | please say where they were |
 
 ### Phase 4 — advanced (`test/roadmap_phase4_test.dart`, 12 tests)
@@ -222,6 +222,20 @@ do not count as real service or hardware verification.
 | Google and Outlook calendar import plus optional two-way sync of linked local entries | IMPLEMENTED; local HTTP server/fake provider tests | `lib/features/calendar/external/external_calendar.dart`, `platform_features_test.dart` (`P3 calendar sync`) | Real OAuth registration, permissions and account sync |
 | Note zoom and isolated floating-browser compact mode | IMPLEMENTED; persistence/widget tests | `note_zoom_test.dart`, `browser_compact_test.dart` | Manual visual check |
 | Handwriting-to-calendar suggestion and user-confirmed creation | IMPLEMENTED; parser/render plumbing tests | `calendar_handwriting_test.dart`, Windows Ink and iOS Vision bridges | Windows Ink returned HRESULT `0x80280008` on this host; iOS build/device unavailable here |
+
+## Specification lock (2026-11-03)
+Decisions that supersede earlier rows marked SUPERSEDED above. Statuses are
+automated-test statuses only; nothing was verified on a device.
+| Requirement | Status | Evidence / references | Notes |
+|---|---|---|---|
+| Sidebar: six entries (mindmap, notes, calendar, archive, safari, ai). The Home page, start page, Inbox and activity timeline are deleted; the app opens on the mindmap; shared and dropped items go to the Archive | IMPLEMENTED | `sidebar.dart` `appDestinations`, `capture_service.dart` `captureToArchive`; `widget_test`, `audit_regressions_test`, `ios_bridge_test` | Waiting Inbox items are moved into the Archive by `inbox-to-archive-v1` (`inbox_migration_test`, `data_safety_test`); the Inbox records stay on disk and sync but are not shown |
+| Tasks live inside Calendar; no standalone Tasks page | IMPLEMENTED | `page_host.dart` | |
+| Archive is the Object Library (`library_page.dart`, `LibraryRepository`); the old Mindmap-style board is not mounted | IMPLEMENTED | `LIBRARY_ARCHITECTURE.md` | Legacy board code remains in `AppState` (unreachable); not removed |
+| Archive categories: the five canonical colors (Resource, Projects, Other, Shopping, Second-brain) as library labels | IMPLEMENTED | `library_tags_test` | |
+| Archive custom tags from the shared registry, colored, at most 15 | IMPLEMENTED | `Workspace.createTag`, `CustomTag.maxTags`; `library_tags_test` | The registry is shared with the Mindmap, so the 15 limit covers both |
+| Archive filter by category and tag (all chosen labels must match), isolated to library objects | IMPLEMENTED | `library_page.dart`; `phase3_test` "Archive: filter…", `library_tags_test` | |
+| OCR-based search is not part of the product | IMPLEMENTED (off) | scanned PDFs are never recognized for search (`app_state.dart`); settings toggle removed | Handwriting recognition (Calendar) is separate and unchanged |
+| Dragging a task onto a day to schedule it is not supported | IMPLEMENTED (removed) | `transfer.dart`; `core_repairs_test` | Moving an item already on the calendar to another day is unchanged |
 
 ## Explicitly excluded (never implement)
 Separate Tracker page · Projects category in Calendar · time blocking ·
@@ -272,7 +286,7 @@ Result after the audit: `flutter analyze` clean; 422 passed, 3 skipped, 0 failed
 | Four more pen sizes | P1 | W,i | VERIFIED (automated) | `pen_sizes_test` (6) | — |
 | Dot opacity (Mindmap, Archive) | P2 | W,i | IMPLEMENTED, UNTESTED | `canvas_painter.dart`, `app_state.dart` dotOpacityFor | Codex tests this batch |
 | Collapsible tool and options strips | P2 | W,i | IMPLEMENTED, UNTESTED | `CollapsibleBar` in `canvas_toolbar.dart` | Codex tests this batch |
-| Custom tags (Archive + Mindmap, synced) | P1 | W,i | IMPLEMENTED, UNTESTED | `tag_models.dart`, `tag_ui.dart`, `workspace.dart` | Codex tests this batch |
+| [SUPERSEDED 2026-11-03, see Specification lock] Custom tags (Archive + Mindmap, synced) | P1 | W,i | IMPLEMENTED, UNTESTED | `tag_models.dart`, `tag_ui.dart`, `workspace.dart` | Codex tests this batch |
 | System/light/dark theme and semantic light tokens | P2 | W,i | IMPLEMENTED (provisional light palette) | `theme_mode_test`; see `MASTER_SPEC.md` | Exact prior palette could not be recovered; host rendering still needs verification |
 
 ## 21. Data safety and storage modes (2026-10-25)

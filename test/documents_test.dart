@@ -9,6 +9,7 @@ import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/capture/send_to.dart';
 import 'package:flutter_application_1/features/search/search_dialog.dart';
+import 'package:flutter_application_1/data/models/object_library_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final sep = Platform.pathSeparator;
@@ -110,8 +111,9 @@ void main() {
     final bridge = SendToBridge(Directory('${dir.path}${sep}sendto'));
     await bridge.forward([pdf.path]);
     expect(await bridge.processRequests(s.capture), 1);
-    final item = s.workspace.inbox.all.single;
-    expect(s.workspace.assets[item.assetId]?.kind, AssetKind.document);
+    final saved = s.library.objects.single;
+    expect(saved.type, LibraryObjectType.document);
+    expect(s.workspace.assets[saved.attachmentIds.single]?.kind, AssetKind.document);
     s.dispose();
   });
 

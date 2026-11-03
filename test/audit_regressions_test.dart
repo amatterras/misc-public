@@ -299,7 +299,7 @@ void main() {
       await shutDown(tester);
     });
 
-    testWidgets('phone layout: Inbox badge updates; pages keep their state', (
+    testWidgets('phone layout: shared items reach the Archive; pages keep their state', (
       tester,
     ) async {
       await boot(tester, const Size(1280, 800));
@@ -321,13 +321,18 @@ void main() {
       );
 
       await tester.runAsync(
-        () => state.capture.captureInbound(text: 'from outside'),
+        () => state.capture.captureToArchive(text: 'from outside'),
       );
       await tester.pump();
       expect(
-        find.text('1'),
-        findsOneWidget,
-        reason: 'badge shows the new item',
+        state.library.objects.map((o) => o.content),
+        ['from outside'],
+        reason: 'the shared item is saved in the Archive',
+      );
+      expect(
+        find.byKey(const ValueKey('compact-start-page')),
+        findsNothing,
+        reason: 'there is no start-page button or Inbox badge any more',
       );
 
       tester.view.physicalSize = const Size(1280, 800);

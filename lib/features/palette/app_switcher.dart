@@ -22,12 +22,6 @@ List<SwitcherAction> switcherActions(
   required void Function(BuildContext) palette,
 }) => [
   SwitcherAction(
-    'start',
-    Icons.wb_sunny_outlined,
-    (_) => s.goTo(AppPage.home),
-    active: s.page == AppPage.home,
-  ),
-  SwitcherAction(
     'mindmap',
     Icons.hub_outlined,
     (_) => s.goTo(AppPage.canvas),

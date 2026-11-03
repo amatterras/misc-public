@@ -290,7 +290,7 @@ void main() {
       (call) async => call.method == 'sharedContainer' ? shared.path : null,
     );
     final s = await app(ipad: true);
-    final texts = s.workspace.inbox.all.map((i) => i.text ?? '');
+    final texts = s.library.objects.map((o) => o.content ?? '');
     expect(texts.single.length, CaptureService.maxInboundText);
     s.dispose();
   });

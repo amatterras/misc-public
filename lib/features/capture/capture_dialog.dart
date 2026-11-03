@@ -14,15 +14,13 @@ import '../../widgets/common.dart';
 import '../links/link_tags.dart';
 import 'capture_service.dart';
 
-enum CaptureDestination { canvas, notes, links, calendar, task, inbox }
+enum CaptureDestination { canvas, notes, links, calendar, task }
 
-/// Opens Quick Add. [initial] pre-fills it (e.g. from the clipboard);
-/// [inboxItem] files an Inbox item, reusing its records.
+/// Opens Quick Add. [initial] pre-fills it (e.g. from the clipboard).
 Future<void> showCaptureDialog(
   BuildContext context,
   AppState state, {
   ClipboardContent? initial,
-  InboxItem? inboxItem,
   CaptureDestination? destination,
   DateTime? day,
 }) {
@@ -31,7 +29,6 @@ Future<void> showCaptureDialog(
     builder: (_) => CaptureDialog(
       state: state,
       initial: initial,
-      inboxItem: inboxItem,
       destination: destination,
       day: day,
     ),
@@ -55,14 +52,12 @@ class CaptureDialog extends StatefulWidget {
     super.key,
     required this.state,
     this.initial,
-    this.inboxItem,
     this.destination,
     this.day,
   });
 
   final AppState state;
   final ClipboardContent? initial;
-  final InboxItem? inboxItem;
   final CaptureDestination? destination;
   final DateTime? day;
 
@@ -98,18 +93,6 @@ class _CaptureDialogState extends State<CaptureDialog> {
     _day = widget.day ?? dateOnly(DateTime.now());
     final initial = widget.initial;
     if (initial != null) _apply(initial);
-    final inbox = widget.inboxItem;
-    if (inbox != null) {
-      _text.text = inbox.text ?? '';
-      final asset = s.workspace.assets[inbox.assetId];
-      if (asset?.kind == AssetKind.image) {
-        _images.add(_PendingImage.asset(asset));
-      }
-      if (asset?.kind == AssetKind.link) {
-        _existingLink = asset;
-        _text.text = asset!.url!;
-      }
-    }
     _text.addListener(() => setState(() {}));
   }
 
@@ -178,7 +161,6 @@ class _CaptureDialogState extends State<CaptureDialog> {
               : s.capture.link(url, title: title.isEmpty ? null : title));
     final text = url == null ? _text.text.trim() : '';
     final assets = [?link, ...images];
-    final now = DateTime.now();
     String done;
 
     switch (_dest) {
@@ -218,14 +200,20 @@ class _CaptureDialogState extends State<CaptureDialog> {
           s.showToast('Links keeps web links. Add a link, or save elsewhere.');
           return;
         }
-        await s.addToLinks(link, tags: _linkTags.toList());
+        final categories = {
+          for (final t in _linkTags)
+            if (LinkTag.byId(t) != null) t,
+        };
+        await s.capture.captureToArchive(
+          url: link.url,
+          title: title.isEmpty ? null : title,
+          categories: categories,
+        );
         for (final a in images) {
-          ws.inbox.put(InboxItem(id: newId(), assetId: a.id, createdAt: now));
+          await s.capture.saveAssetToArchive(a, categories: categories);
         }
         s.goTo(AppPage.links);
-        done = images.isEmpty
-            ? 'Added to Links'
-            : 'Added to Links (photos went to the Inbox)';
+        done = 'Added to the Archive';
       case CaptureDestination.notes:
         if (_newNote || _noteId == null) {
           final noteTitle = title.isNotEmpty
@@ -315,18 +303,6 @@ class _CaptureDialogState extends State<CaptureDialog> {
           ),
         );
         done = 'Added task “$taskTitle”';
-      case CaptureDestination.inbox:
-        for (final a in assets) {
-          ws.inbox.put(InboxItem(id: newId(), assetId: a.id, createdAt: now));
-        }
-        if (text.isNotEmpty) {
-          ws.inbox.put(InboxItem(id: newId(), text: text, createdAt: now));
-        }
-        done = 'Saved to Inbox';
-    }
-    final inbox = widget.inboxItem;
-    if (inbox != null && _dest != CaptureDestination.inbox) {
-      ws.inbox.remove(inbox.id);
     }
     s.showToast(done);
     if (mounted) Navigator.pop(context);
@@ -490,11 +466,6 @@ class _CaptureDialogState extends State<CaptureDialog> {
                         value: CaptureDestination.task,
                         label: Text('Task'),
                         icon: Icon(Icons.check_box_outlined, size: 16),
-                      ),
-                      ButtonSegment(
-                        value: CaptureDestination.inbox,
-                        label: Text('Inbox'),
-                        icon: Icon(Icons.inbox_outlined, size: 16),
                       ),
                     ],
                     selected: {_dest},
@@ -723,11 +694,6 @@ class _CaptureDialogState extends State<CaptureDialog> {
               ),
             ),
           ],
-        );
-      case CaptureDestination.inbox:
-        return Text(
-          'Keep it in the Inbox (on Home) and decide later.',
-          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
         );
     }
   }

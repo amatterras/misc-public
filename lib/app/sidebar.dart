@@ -13,13 +13,9 @@ import 'theme.dart';
 import '../features/transfer/transfer.dart';
 
 /// Compact, collapsible navigation on the right side of the window.
-/// The four top-level destinations, in this order and spelling. Tasks are
-/// in Calendar's task column; the start page (Home, with the Inbox) opens
-/// from the THEapp button at the top, not as a fifth destination.
 /// The six primary destinations, in this order. Every navigation surface
 /// (sidebar, phone tabs, command palette, top bar) uses this one list.
-/// Home is the start page behind the THEapp identity control; Tasks live in
-/// Calendar.
+/// There is no Home page; Tasks live in Calendar.
 const appDestinations = [
   (AppPage.canvas, Icons.hub_outlined, 'mindmap'),
   (AppPage.notes, Icons.description_outlined, 'notes'),
@@ -71,7 +67,10 @@ class Sidebar extends StatelessWidget {
     );
   }
 
-  int get _inboxCount => state.workspace.inbox.length;
+  /// The same drop behaviour for other navigation surfaces (the New
+  /// interface's sidebar), so drops on a destination mean one thing.
+  Widget navDropTarget(AppPage page, Widget child) =>
+      _navDropTarget(page, child);
 
   /// Dropping on a top-level entry: notes → a new note, archive → the
   /// Archive board, calendar → today, mindmap → the open mindmap.
@@ -103,14 +102,6 @@ class Sidebar extends StatelessWidget {
           onTap: state.toggleSidebar,
         ),
         const SizedBox(height: Space.md),
-        _IconButton(
-          icon: Icons.wb_sunny_outlined,
-          tooltip: 'Start page',
-          active: state.page == AppPage.home,
-          badge: _inboxCount,
-          onTap: () => state.goTo(AppPage.home),
-        ),
-        const SizedBox(height: Space.sm),
         _IconButton(
           icon: Icons.add,
           tooltip: 'Quick Add  (Ctrl+N)',
@@ -167,46 +158,35 @@ class Sidebar extends StatelessWidget {
           const SizedBox(height: Space.lg),
           Row(
             children: [
-              // The start page (today, Inbox); not a sidebar destination.
+              // The app's name and mark; it is not a button.
               Expanded(
-                child: InkWell(
-                  key: const ValueKey('sidebar-start-page'),
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => state.goTo(AppPage.home),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: state.page == AppPage.home
-                              ? AppColors.selected
-                              : AppColors.cardRaised,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Icon(
-                          Icons.wb_sunny_outlined,
-                          size: 16,
-                          color: AppColors.textMuted,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: AppColors.cardRaised,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Icon(
+                        Icons.wb_sunny_outlined,
+                        size: 16,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(width: Space.md),
+                    const Flexible(
+                      child: Text(
+                        'THEapp',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(width: Space.md),
-                      const Flexible(
-                        child: Text(
-                          'THEapp',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      if (_inboxCount > 0) ...[
-                        const SizedBox(width: Space.sm),
-                        _Badge(count: _inboxCount),
-                      ],
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               _IconButton(
@@ -338,29 +318,6 @@ class Sidebar extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-    decoration: BoxDecoration(
-      color: AppColors.accent,
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Text(
-      '$count',
-      style: TextStyle(
-        fontSize: 11,
-        color: AppColors.text,
-        fontWeight: FontWeight.w600,
-      ),
-    ),
-  );
 }
 
 class _NewButton extends StatelessWidget {
@@ -638,7 +595,6 @@ class _IconButton extends StatelessWidget {
     required this.onTap,
     this.active = false,
     this.filled = false,
-    this.badge = 0,
   });
 
   final IconData icon;
@@ -646,7 +602,6 @@ class _IconButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool active;
   final bool filled;
-  final int badge;
 
   @override
   Widget build(BuildContext context) {
@@ -667,19 +622,14 @@ class _IconButton extends StatelessWidget {
             width: 36,
             height: 36,
             child: Center(
-              child: Badge(
-                isLabelVisible: badge > 0,
-                label: Text('$badge'),
-                backgroundColor: AppColors.accent,
-                child: Icon(
-                  icon,
-                  size: 18,
-                  color: filled
-                      ? AppColors.background
-                      : active
-                      ? AppColors.text
-                      : AppColors.textMuted,
-                ),
+              child: Icon(
+                icon,
+                size: 18,
+                color: filled
+                    ? AppColors.background
+                    : active
+                    ? AppColors.text
+                    : AppColors.textMuted,
               ),
             ),
           ),

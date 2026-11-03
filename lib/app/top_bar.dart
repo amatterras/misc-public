@@ -13,7 +13,6 @@ import 'theme.dart';
 import '../widgets/common.dart' show promptText;
 
 IconData pageIcon(AppPage kind) => switch (kind) {
-  AppPage.home => Icons.wb_sunny_outlined,
   AppPage.tasks => Icons.checklist,
   _ =>
     appDestinations.where((d) => d.$1 == kind).firstOrNull?.$2 ??
@@ -21,7 +20,6 @@ IconData pageIcon(AppPage kind) => switch (kind) {
 };
 
 String pageLabel(AppPage kind) => switch (kind) {
-  AppPage.home => 'start',
   AppPage.tasks => 'tasks',
   _ => appDestinations.where((d) => d.$1 == kind).firstOrNull?.$3 ?? kind.name,
 };

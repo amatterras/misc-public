@@ -113,6 +113,24 @@ class SendToBridge {
     return const [];
   }
 
+  /// Like [handleUri], but saves into the Archive (the object library) when
+  /// there is one. Returns how many items were saved.
+  Future<int> handleUriToArchive(Uri uri, CaptureService capture) async {
+    if (capture.libraryRepository == null) {
+      return (await handleUri(uri, capture)).length;
+    }
+    if (uri.scheme != 'theapp') return 0;
+    final host = uri.host.toLowerCase();
+    if (host == 'capture' || host == 'share' || uri.path.contains('capture')) {
+      return capture.captureToArchive(
+        url: uri.queryParameters['url'],
+        text: uri.queryParameters['text'] ?? uri.queryParameters['body'],
+        title: uri.queryParameters['title'],
+      );
+    }
+    return 0;
+  }
+
   /// Starts the heartbeat and polls for requests from other launches.
   void start(CaptureService capture) {
     Future<void> beat() async {
@@ -134,7 +152,8 @@ class SendToBridge {
 
   bool _busy = false;
 
-  /// Turns pending request files into Inbox items.
+  /// Turns pending request files into Archive objects (Inbox items when there
+  /// is no library, as in tests).
   Future<int> processRequests(CaptureService capture) async {
     if (_busy || !await requestsDir.exists()) return 0;
     _busy = true;
@@ -166,32 +185,47 @@ class SendToBridge {
           );
           var part = 0;
           String itemId() => 'req-$requestId-${part++}';
-          switch (json['type']) {
-            case 'file':
-              final assets = [
-                ...await capture.imagesFromFiles([value]),
-                ...await capture.documentsFromFiles([value]),
-              ];
-              for (final a in assets) {
+          if (capture.libraryRepository != null) {
+            // The Archive keeps one object per link, file or text (repeats
+            // of the same request reuse it), so a retried request adds no
+            // duplicate.
+            final saved = switch (json['type']) {
+              'file' => await capture.captureToArchive(files: [value]),
+              'url' => await capture.captureToArchive(url: value),
+              _ => await capture.captureToArchive(text: value),
+            };
+            // Not an image or document: keep the path as text.
+            if (saved == 0 && json['type'] == 'file') {
+              await capture.captureToArchive(text: value);
+            }
+          } else {
+            switch (json['type']) {
+              case 'file':
+                final assets = [
+                  ...await capture.imagesFromFiles([value]),
+                  ...await capture.documentsFromFiles([value]),
+                ];
+                for (final a in assets) {
+                  ws.inbox.put(
+                    InboxItem(id: itemId(), assetId: a.id, createdAt: now),
+                  );
+                }
+                if (assets.isEmpty) {
+                  // Not an image: keep the path as text so nothing is lost.
+                  ws.inbox.put(
+                    InboxItem(id: itemId(), text: value, createdAt: now),
+                  );
+                }
+              case 'url':
+                final asset = capture.link(extractUrl(value)!);
                 ws.inbox.put(
-                  InboxItem(id: itemId(), assetId: a.id, createdAt: now),
+                  InboxItem(id: itemId(), assetId: asset.id, createdAt: now),
                 );
-              }
-              if (assets.isEmpty) {
-                // Not an image: keep the path as text so nothing is lost.
+              default:
                 ws.inbox.put(
                   InboxItem(id: itemId(), text: value, createdAt: now),
                 );
-              }
-            case 'url':
-              final asset = capture.link(extractUrl(value)!);
-              ws.inbox.put(
-                InboxItem(id: itemId(), assetId: asset.id, createdAt: now),
-              );
-            default:
-              ws.inbox.put(
-                InboxItem(id: itemId(), text: value, createdAt: now),
-              );
+            }
           }
           count++;
           // The request is only removed once its Inbox item is on disk, so a
@@ -249,7 +283,7 @@ class SendToBridge {
     final script =
         "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('$lnk'); "
         "\$s.TargetPath = '$exe'; \$s.Arguments = '--send-to'; "
-        "\$s.Description = 'Send to THEapp Inbox'; \$s.Save()";
+        "\$s.Description = 'Send to THEapp'; \$s.Save()";
     final result = await Process.run('powershell', [
       '-NoProfile',
       '-NonInteractive',

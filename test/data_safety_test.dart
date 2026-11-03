@@ -92,6 +92,8 @@ void main() {
       expect(outcome.applied, [
         'reading-legacy-payload-v1',
         'canvas-revisions-v1',
+        'object-library-foundation-v1',
+        'inbox-to-archive-v1',
       ]);
       expect((await verifyRestorable(ws.backups, outcome.backup!)).ok, isTrue);
 
@@ -101,7 +103,18 @@ void main() {
       final (re, reCanvases) = await open();
       final after = await WorkspaceCensus.take(re, reCanvases);
       expect(before.missingFrom(after), isEmpty, reason: 'nothing lost');
-      expect(after.ids, before.ids, reason: 'nothing duplicated or added');
+      // Only the Archive objects made from the waiting Inbox item are new
+      // (the Inbox record itself stays, as the check above shows).
+      final added = after.ids.difference(before.ids);
+      expect(
+        added.where((id) => !id.startsWith('library_')),
+        isEmpty,
+        reason: 'nothing duplicated or added besides Archive objects',
+      );
+      expect(
+        added.where((id) => id.startsWith('library_objects/')),
+        hasLength(1),
+      );
       expect(await attachmentHashes(re), filesBefore);
       for (final e in re.allCollections.entries) {
         expect(e.value.tombstones, tombstonesBefore[e.key], reason: e.key);

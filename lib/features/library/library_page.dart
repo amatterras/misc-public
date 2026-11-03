@@ -6,7 +6,10 @@ import '../../data/models/object_library_models.dart';
 import '../../data/storage/attachment_image.dart';
 import '../../data/models/library_models.dart' show Asset, AssetKind, extractUrl;
 import '../../data/repositories/library_repository.dart';
+import '../../data/models/tag_models.dart';
 import '../../widgets/common.dart';
+import '../links/link_tags.dart';
+import '../tags/tag_ui.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key,required this.state,this.initialObjectId});
@@ -18,6 +21,8 @@ class LibraryPage extends StatefulWidget {
 class _LibraryPageState extends State<LibraryPage> {
   final _query=TextEditingController();
   String? _space;
+  final _categories=<String>{};
+  final _tags=<String>{};
   String _sort='newest';
   AppState get s=>widget.state;
   LibraryRepository get repo=>s.library;
@@ -71,8 +76,8 @@ class _LibraryPageState extends State<LibraryPage> {
 
   @override Widget build(BuildContext context){
     return ListenableBuilder(listenable:Listenable.merge([s.workspace.libraryObjects,s.workspace.librarySpaces,
-      s.workspace.libraryIndex,s.workspace.libraryRelations,s.workspace.libraryJobs]),builder:(context,_) {
-      final result=repo.search(_query.text); final visible=(_space==null?result.items:repo.inSpace(_space!)).toList()
+      s.workspace.libraryIndex,s.workspace.libraryRelations,s.workspace.libraryJobs,s.workspace.customTags]),builder:(context,_) {
+      final result=repo.search(_query.text); final visible=repo.withLabels(_space==null?result.items:repo.inSpace(_space!),categories:_categories,tagIds:_tags).toList()
         ..sort((a,b)=>switch(_sort){'oldest'=>a.createdAt.compareTo(b.createdAt),'title'=>a.title.toLowerCase().compareTo(b.title.toLowerCase()),_=> (b.lastSavedAt??b.createdAt).compareTo(a.lastSavedAt??a.createdAt)});
       final spaces=s.workspace.librarySpaces.all.toList()..sort((a,b)=>a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       return ColoredBox(color:AppColors.background,child:Column(children:[
@@ -96,9 +101,10 @@ class _LibraryPageState extends State<LibraryPage> {
             PopupMenuItem(value:'newest',child:Text('Recently saved')),PopupMenuItem(value:'oldest',child:Text('Oldest first')),PopupMenuItem(value:'title',child:Text('Title'))],
             child:const Padding(padding:EdgeInsets.all(8),child:Icon(Icons.sort))),
         ])),
+        _labelFilters(),
         if(result.error!=null) Padding(padding:const EdgeInsets.all(12),child:Text(result.error!,style:TextStyle(color:AppColors.danger))),
         if(_space==null && _query.text.isNotEmpty && visible.isEmpty && result.error==null) Padding(padding:const EdgeInsets.all(16),child:Text('No matching items. Semantic search and visual recognition are not configured.',style:TextStyle(color:AppColors.textMuted))),
-        Expanded(child:visible.isEmpty?Center(child:Text('Your library is ready for its first item.',style:TextStyle(color:AppColors.textMuted))):
+        Expanded(child:visible.isEmpty?Center(child:Text(_categories.isNotEmpty||_tags.isNotEmpty?'No items have these labels.':'Your library is ready for its first item.',style:TextStyle(color:AppColors.textMuted))):
           LayoutBuilder(builder:(context,c){final cols=(c.maxWidth/240).floor().clamp(1,6);
             return GridView.builder(padding:const EdgeInsets.all(20),gridDelegate:SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount:cols,crossAxisSpacing:14,mainAxisSpacing:14,childAspectRatio:.88),
               itemCount:visible.length,itemBuilder:(context,i)=>_ObjectCard(state:s,object:visible[i],onTap:()=>_open(visible[i])));
@@ -106,6 +112,19 @@ class _LibraryPageState extends State<LibraryPage> {
       ]));
     });
   }
+
+  /// Filter by the five canonical categories and the custom tags (every
+  /// chosen label must be on the item). Only library objects are filtered.
+  Widget _labelFilters()=>SizedBox(height:48,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:20),children:[
+    for(final c in LinkTag.values)Padding(padding:const EdgeInsets.symmetric(horizontal:4),child:FilterChip(key:ValueKey('library-filter-${c.id}'),
+      avatar:CircleAvatar(backgroundColor:c.color,radius:6),label:Text(c.label),selected:_categories.contains(c.id),
+      onSelected:(on)=>setState(()=>on?_categories.add(c.id):_categories.remove(c.id)))),
+    for(final tag in s.workspace.tagsByName)Padding(padding:const EdgeInsets.symmetric(horizontal:4),child:FilterChip(key:ValueKey('library-filter-tag-${tag.id}'),
+      avatar:CircleAvatar(backgroundColor:Color(tag.color),radius:6),label:Text(tag.name),selected:_tags.contains(tag.id),
+      onSelected:(on)=>setState(()=>on?_tags.add(tag.id):_tags.remove(tag.id)))),
+    if(_categories.isNotEmpty||_tags.isNotEmpty)Padding(padding:const EdgeInsets.symmetric(horizontal:4),child:ActionChip(key:const ValueKey('library-filter-clear'),
+      label:const Text('Clear'),onPressed:()=>setState((){_categories.clear();_tags.clear();}))),
+  ]));
 
   Widget _spaceChip(String label,String? id)=>Padding(padding:const EdgeInsets.symmetric(horizontal:4),child:ChoiceChip(label:Text(label),selected:_space==id,onSelected:(_)=>setState(()=>_space=id)));
 
@@ -140,7 +159,6 @@ class _LibraryPageState extends State<LibraryPage> {
     final controller=TextEditingController(text:object.content??'');
     final titleController=TextEditingController(text:object.title);
     final noteController=TextEditingController(text:s.workspace.libraryRelations.all.where((r)=>r.objectId==object.id&&r.kind=='note').map((r)=>r.value['text']).whereType<String>().join('\n'));
-    final tagController=TextEditingController();
     final attachedAsset=object.attachmentIds.map((id)=>s.workspace.assets[id]).whereType<Asset>().firstOrNull;
     await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(backgroundColor:AppColors.card,title:Text(object.title.isEmpty?'Untitled':object.title),
       content: SizedBox(width:620,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
@@ -154,10 +172,22 @@ class _LibraryPageState extends State<LibraryPage> {
         if(object.type==LibraryObjectType.note)TextField(controller:controller,maxLines:8,decoration:const InputDecoration(labelText:'Saved content'))
         else if(object.content?.isNotEmpty==true)SelectableText(object.content!,style:TextStyle(color:AppColors.text,height:1.55)),
         TextField(controller:noteController,maxLines:3,decoration:const InputDecoration(labelText:'Your notes')),
-        Row(children:[Expanded(child:TextField(controller:tagController,decoration:const InputDecoration(labelText:'Add a manual tag'))),
-          IconButton(icon:const Icon(Icons.add),onPressed:() async {final tag=tagController.text.trim();if(tag.isEmpty)return;
-            await repo.setManualTag(object.id,tag);tagController.clear();setState((){});})]),
-        Wrap(spacing:6,children:[for(final r in s.workspace.libraryRelations.all.where((r)=>r.objectId==object.id&&r.kind=='tag'))Chip(label:Text(r.targetId,style:TextStyle(color:AppColors.text)),onDeleted:() async {await repo.removeRelation(r.id);})]),
+        StatefulBuilder(builder:(ctx,setLabels)=>Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          const SizedBox(height:8),Text('Category',style:TextStyle(color:AppColors.text,fontWeight:FontWeight.w600)),
+          Wrap(spacing:6,children:[for(final c in LinkTag.values)FilterChip(key:ValueKey('library-category-${c.id}'),
+            avatar:CircleAvatar(backgroundColor:c.color,radius:6),label:Text(c.label),selected:repo.categoriesOf(object.id).contains(c.id),
+            onSelected:(on) async {await repo.setCategory(object.id,c.id,on);setLabels((){});setState((){});})]),
+          const SizedBox(height:8),Text('Tags',style:TextStyle(color:AppColors.text,fontWeight:FontWeight.w600)),
+          Wrap(spacing:6,children:[
+            for(final id in repo.tagIdsOf(object.id))if(s.workspace.customTags[id] case final tag?)Chip(
+              avatar:CircleAvatar(backgroundColor:Color(tag.color),radius:6),label:Text(tag.name,style:TextStyle(color:AppColors.text))),
+            for(final r in s.workspace.libraryRelations.all.where((r)=>r.objectId==object.id&&r.kind=='tag'&&CustomTag.idOfAssetRef(r.targetId)==null))
+              Chip(label:Text(r.targetId,style:TextStyle(color:AppColors.text)),onDeleted:() async {await repo.removeRelation(r.id);setLabels((){});setState((){});}),
+            ActionChip(key:const ValueKey('library-edit-tags'),avatar:const Icon(Icons.sell_outlined,size:16),label:const Text('Edit tags'),onPressed:() async {
+              final chosen=await showTagPicker(ctx,s,selected:repo.tagIdsOf(object.id),what:'this item');
+              if(chosen==null)return;await repo.setTags(object.id,chosen);setLabels((){});setState((){});}),
+          ]),
+        ])),
         TextButton.icon(onPressed:()=>_manageSpaces(object),icon:const Icon(Icons.folder_open),label:const Text('Manage Regular Spaces')),
         const SizedBox(height:8),Text('Processing',style:TextStyle(color:AppColors.text,fontWeight:FontWeight.w600)),
         for(final job in s.workspace.libraryJobs.all.where((j)=>j.objectId==object.id && j.stage!=LibraryJobStage.extract)) Row(children:[Expanded(child:Text('${job.stage.name}: ${job.status.name}${job.error==null?'':' · ${job.error}'}',style:TextStyle(color:AppColors.textMuted,fontSize:12))),
@@ -171,7 +201,7 @@ class _LibraryPageState extends State<LibraryPage> {
         await repo.setUserNote(object.id,noteController.text);
         if(ctx.mounted)Navigator.pop(ctx);setState((){});
       },child:const Text('Save'))]));
-    controller.dispose();titleController.dispose();noteController.dispose();tagController.dispose();
+    controller.dispose();titleController.dispose();noteController.dispose();
   }
 
   Future<void> _manageSpaces(LibraryObject object) async {
@@ -196,6 +226,15 @@ class _LibraryPageState extends State<LibraryPage> {
 class _ObjectCard extends StatelessWidget {
   const _ObjectCard({required this.state,required this.object,required this.onTap});
   final AppState state;final LibraryObject object;final VoidCallback onTap;
+
+  /// Small dots in the colours of the item's categories and tags.
+  Widget _labelDots(){
+    final repo=state.library;
+    final colors=[for(final id in repo.categoriesOf(object.id)) LinkTag.byId(id)!.color,
+      for(final id in repo.tagIdsOf(object.id)) Color(state.workspace.customTags[id]!.color)];
+    if(colors.isEmpty)return const SizedBox(height:10);
+    return Padding(padding:const EdgeInsets.only(top:6),child:Wrap(spacing:4,children:[for(final c in colors)CircleAvatar(backgroundColor:c,radius:5)]));
+  }
   @override Widget build(BuildContext context){
     final assetId=object.attachmentIds.where((id)=>id.isNotEmpty).firstOrNull;
     final asset=assetId==null?null:state.workspace.assets[assetId];
@@ -206,6 +245,7 @@ class _ObjectCard extends StatelessWidget {
       Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         Text(object.title.isEmpty?'Untitled':object.title,maxLines:2,overflow:TextOverflow.ellipsis,style:TextStyle(color:AppColors.text,fontWeight:FontWeight.w600)),
         const SizedBox(height:4),Text(object.mainEntity?.name??object.sourceUrl??object.type.name,maxLines:1,overflow:TextOverflow.ellipsis,style:TextStyle(color:AppColors.textMuted,fontSize:12)),
+        _labelDots(),
       ])),
     ])));
   }

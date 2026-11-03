@@ -236,10 +236,6 @@ class _CalendarPageState extends State<CalendarPage> {
   Future<void> _recognizeHandwriting(DateTime day) async {
     final ink = _ink;
     if (ink == null) return;
-    if (s.settings.get<bool>('ocrEnabled') == false) {
-      s.showToast('On-device OCR is turned off in Settings.');
-      return;
-    }
     try {
       final recognized = await recognizeCalendarInk(
         controller: ink,

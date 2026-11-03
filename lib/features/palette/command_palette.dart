@@ -63,11 +63,6 @@ List<PaletteCommand> paletteCommands(
       Icons.bookmarks_outlined,
       (_) => s.goTo(AppPage.links),
     ),
-    PaletteCommand(
-      'Go to start page',
-      Icons.wb_sunny_outlined,
-      (_) => s.goTo(AppPage.home),
-    ),
     PaletteCommand('Show tasks', Icons.checklist, (_) => s.goTo(AppPage.tasks)),
     PaletteCommand(
       'Quick Add',

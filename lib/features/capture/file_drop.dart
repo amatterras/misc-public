@@ -1,14 +1,13 @@
 // Files dragged from File Explorer onto THEapp's window. The Windows
 // runner reports them on the "theapp/windows" channel ("filesDropped").
 // Photos and PDFs land on the open mindmap (when it is shown) or in the
-// Inbox; Markdown/text files become notes; a dropped folder is imported
+// Archive; Markdown/text files become notes; a dropped folder is imported
 // like a folder of notes. The dropped files are only read.
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
-import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/object_library_models.dart';
 import '../import/note_import.dart';
@@ -61,7 +60,7 @@ extension FileDrop on AppState {
       ...await capture.imagesFromFiles(images),
       ...await capture.documentsFromFiles(pdfs),
     ];
-    var onCanvas = 0, toInbox = 0, inLibrary = 0;
+    var onCanvas = 0, inLibrary = 0;
     final c = canvas;
     if (page == AppPage.links) {
       for (final a in assets) {
@@ -84,10 +83,8 @@ extension FileDrop on AppState {
       }
     } else {
       for (final a in assets) {
-        workspace.inbox.put(
-          InboxItem(id: newId(), createdAt: DateTime.now(), assetId: a.id),
-        );
-        toInbox++;
+        await capture.saveAssetToArchive(a);
+        inLibrary++;
       }
     }
     var notes = 0;
@@ -127,7 +124,6 @@ extension FileDrop on AppState {
     final summary = [
       if (onCanvas > 0) '$onCanvas on the mindmap',
       if (inLibrary > 0) '$inLibrary in the library',
-      if (toInbox > 0) '$toInbox in the Inbox',
       if (notes > 0) '$notes note(s)',
       if (skipped.isNotEmpty)
         'not added: ${skipped.take(3).join(', ')}${skipped.length > 3 ? '…' : ''}',

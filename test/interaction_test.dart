@@ -103,12 +103,10 @@ class Harness {
     await tester.pump(const Duration(seconds: 4));
   }
 
-  /// Old page names map to the four destinations; Home is the THEapp
-  /// start-page button, Tasks the task column inside calendar.
+  /// Old page names map to the destinations; Tasks is the task column
+  /// inside calendar.
   Future<void> nav(String label) async {
-    if (label == 'Home') {
-      await tester.tap(find.byKey(const ValueKey('sidebar-start-page')));
-    } else if (label == 'Tasks') {
+    if (label == 'Tasks') {
       await tester.tap(find.text('calendar').last);
       await tester.pump();
       final toggle = find.byKey(const ValueKey('calendar-tasks-toggle'));
@@ -155,7 +153,13 @@ class Harness {
 
 void main() {
   late Directory dir;
-  setUp(() => dir = Directory.systemTemp.createTempSync('theapp_ui_'));
+  setUp(() {
+    dir = Directory.systemTemp.createTempSync('theapp_ui_');
+    // rootBundle caches the Future of each asset load. One created inside an
+    // earlier test's fake-async zone completes in that (dead) zone, so a later
+    // test would wait forever for the greeting and quote files.
+    rootBundle.clear();
+  });
   tearDown(() {
     try {
       dir.deleteSync(recursive: true);
@@ -307,7 +311,6 @@ void main() {
       final h = Harness(tester, dir);
       await h.boot();
       await h.nav('Canvas');
-      await h.nav('Home');
       await h.nav('Canvas');
       final c = h.s.canvas!;
 
@@ -423,7 +426,13 @@ void main() {
         'Buy train tickets\nfor the trip on Friday',
       );
       await tester.pump();
-      await tester.tap(find.textContaining('Save'));
+      // The app now opens on the mindmap, whose guide also says "save".
+      await tester.tap(
+        find.descendant(
+          of: find.byType(CaptureDialog),
+          matching: find.textContaining('Save'),
+        ),
+      );
       await h.settle();
       final task = s.workspace.tasks.all.single;
       expect(task.title, 'Buy train tickets');
@@ -521,7 +530,7 @@ void main() {
       addTearDown(tester.view.reset);
       final h = Harness(tester, dir);
       await h.boot();
-      for (final page in ['Home', 'Canvas', 'Notes', 'Calendar', 'Tasks']) {
+      for (final page in ['Canvas', 'Notes', 'Calendar', 'Tasks']) {
         await h.nav(page);
         await h.key(LogicalKeyboardKey.keyN, ctrl: true);
         await h.settle();
@@ -558,35 +567,4 @@ void main() {
       await h.shutDown();
     },
   );
-
-  testWidgets('filing an Inbox photo into Notes reuses the same photo record', (
-    tester,
-  ) async {
-    addTearDown(tester.view.reset);
-    final h = Harness(tester, dir);
-    await h.boot();
-    final ws = h.s.workspace;
-    final asset = (await tester.runAsync(
-      () async => h.s.capture.imageFromBytes(await makePng(), 'png'),
-    ))!;
-    ws.inbox.put(
-      InboxItem(id: newId(), assetId: asset.id, createdAt: DateTime.now()),
-    );
-    await tester.pump();
-    expect(find.textContaining('Inbox  ·  1 to file'), findsOneWidget);
-
-    await tester.tap(find.text('File…'));
-    await h.settle();
-    await tester.tap(find.text('Notes').last); // destination segment
-    await tester.pump();
-    await tester.tap(find.textContaining('Save'));
-    await h.settle();
-
-    final note = ws.notes.all.single;
-    expect(note.assetIds, [asset.id]);
-    expect(ws.assets.length, 1);
-    expect(ws.inbox.length, 0);
-    expect(ws.attachments.dir.listSync(), hasLength(1));
-    await h.shutDown();
-  });
 }

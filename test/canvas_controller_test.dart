@@ -76,6 +76,14 @@ void main() {
       text: 'Move me',
     );
     final c = makeController(items: [text]);
+    // Items are selected with the lasso, never by tapping them.
+    c.tool = CanvasTool.lasso;
+    c.pointerDown(const Offset(-20, -20));
+    c.pointerMove(const Offset(220, -20));
+    c.pointerMove(const Offset(220, 60));
+    c.pointerMove(const Offset(-20, 60));
+    c.pointerUp();
+    expect(c.selection, {'t'});
     c.pointerDown(const Offset(20, 20), timeStamp: const Duration(seconds: 1));
     c.pointerMove(const Offset(70, 45));
     c.pointerUp();
@@ -100,7 +108,7 @@ void main() {
     expect(c.editingItem, isNotNull);
   });
 
-  test('marquee drag selects items inside it', () {
+  test('lasso drag selects items inside it', () {
     final items = [
       TextItem(
         id: 'a',
@@ -118,8 +126,16 @@ void main() {
       ),
     ];
     final c = makeController(items: items);
+    // The select tool has no marquee: dragging on empty space selects nothing.
     c.pointerDown(const Offset(-50, -50));
     c.pointerMove(const Offset(200, 200));
+    c.pointerUp();
+    expect(c.selection, isEmpty);
+    c.tool = CanvasTool.lasso;
+    c.pointerDown(const Offset(-50, -50));
+    c.pointerMove(const Offset(200, -50));
+    c.pointerMove(const Offset(200, 200));
+    c.pointerMove(const Offset(-50, 200));
     c.pointerUp();
     expect(c.selection, {'a'});
   });

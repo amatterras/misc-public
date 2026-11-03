@@ -18,10 +18,16 @@
 // A failure never deletes or re-creates anything: the data folder becomes
 // read-only, the failure is recorded, and the app offers Retry or Restore
 // (the verified backup).
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:crypto/crypto.dart';
 
 import '../models/calendar_models.dart';
 import '../models/canvas_models.dart';
+import '../models/library_models.dart';
+import '../models/object_library_models.dart';
+import '../repositories/library_repository.dart';
 import '../repositories/canvas_repository.dart';
 import '../storage/app_log.dart';
 import '../storage/backup_verifier.dart';
@@ -101,6 +107,7 @@ class MigrationRunner {
     readingLegacyPayloadV1,
     canvasRevisionsV1,
     libraryFoundationV1,
+    inboxToArchiveV1,
   ];
 
   Future<Map<String, dynamic>> loadState() async =>
@@ -404,6 +411,109 @@ final libraryFoundationV1 = MigrationStep(
   description: 'Initialize the object library while preserving existing assets',
   apply: (ctx) async => 0,
   verify: (ctx) async => const [],
+);
+
+/// The Home page and its Inbox were removed. Items still waiting there
+/// (shared links, text, photos and files) become Archive objects, marked with
+/// the Inbox item they came from. The Inbox records themselves stay where
+/// they are, and an item already moved (or already in the Archive, by its
+/// link or text) is not saved a second time.
+final inboxToArchiveV1 = MigrationStep(
+  id: 'inbox-to-archive-v1',
+  description:
+      'Move waiting Inbox items into the Archive without removing them',
+  apply: (ctx) async {
+    final ws = ctx.workspace;
+    final library = LibraryRepository(ws);
+    try {
+      final moved = {
+        for (final o in library.objects)
+          if (o.metadata['fromInbox'] is String)
+            o.metadata['fromInbox'] as String,
+      };
+      var count = 0;
+      for (final item in ws.inbox.all.toList()) {
+        if (moved.contains(item.id)) continue;
+        final meta = {'fromInbox': item.id};
+        final asset = item.assetId == null ? null : ws.assets[item.assetId!];
+        try {
+          if (asset != null &&
+              asset.kind == AssetKind.link &&
+              asset.url != null) {
+            await library.save(
+              type: LibraryObjectType.website,
+              sourceUrl: asset.url,
+              title: asset.label,
+              metadata: meta,
+            );
+            count++;
+          } else if (asset != null &&
+              (asset.kind == AssetKind.image ||
+                  asset.kind == AssetKind.document)) {
+            await library.save(
+              type: asset.kind == AssetKind.image
+                  ? LibraryObjectType.image
+                  : LibraryObjectType.document,
+              title: asset.label,
+              attachmentIds: [asset.id],
+              metadata: {...meta, 'legacyAssetId': asset.id},
+            );
+            count++;
+          } else if ((item.text ?? '').trim().isNotEmpty) {
+            await library.save(
+              type: LibraryObjectType.note,
+              title: 'Shared note',
+              content: item.text!,
+              metadata: meta,
+            );
+            count++;
+          }
+        } on ArgumentError {
+          // A link that is not a public http(s) address: left in the Inbox.
+        }
+      }
+      return count;
+    } finally {
+      library.dispose();
+    }
+  },
+  verify: (ctx) async {
+    final ws = ctx.workspace;
+    final objects = ws.libraryObjects.all.where((o) => !o.deleted).toList();
+    final problems = <String>[];
+    for (final item in ws.inbox.all) {
+      final asset = item.assetId == null ? null : ws.assets[item.assetId!];
+      final bool present;
+      if (asset != null && asset.kind == AssetKind.link && asset.url != null) {
+        final canonical = LibraryRepository.canonicalizeUrl(asset.url!);
+        if (canonical == null) continue; // not a public web link
+        present = objects.any(
+          (o) =>
+              o.metadata['fromInbox'] == item.id || o.canonicalUrl == canonical,
+        );
+      } else if (asset != null) {
+        final sha = asset.fileSha256;
+        present = objects.any(
+          (o) =>
+              o.metadata['fromInbox'] == item.id ||
+              o.attachmentIds.contains(asset.id) ||
+              (sha != null &&
+                  o.attachmentIds.any(
+                    (id) => ws.assets[id]?.fileSha256 == sha,
+                  )),
+        );
+      } else if ((item.text ?? '').trim().isNotEmpty) {
+        final hash = sha256.convert(utf8.encode(item.text!)).toString();
+        present = objects.any(
+          (o) => o.metadata['fromInbox'] == item.id || o.contentHash == hash,
+        );
+      } else {
+        continue;
+      }
+      if (!present) problems.add('Inbox item ${item.id} is not in the Archive');
+    }
+    return problems;
+  },
 );
 
 /// The legacy Reading values of [entry] ([raw] is its stored JSON, which

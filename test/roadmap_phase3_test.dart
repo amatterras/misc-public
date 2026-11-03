@@ -16,7 +16,6 @@ import 'package:flutter_application_1/data/models/task_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/canvas/canvas_controller.dart';
-import 'package:flutter_application_1/features/home/activity.dart';
 import 'package:flutter_application_1/features/ink/shape_recognition.dart';
 import 'package:flutter_application_1/features/notes/conversion.dart';
 import 'package:flutter_application_1/features/notes/note_diff.dart';
@@ -136,8 +135,16 @@ void main() {
       expect(c2.tagOf('b'), isNull);
       expect(c2.groupOf('a'), isNotNull);
       expect(c2.groupOf('a'), c2.groupOf('b'));
-      // Clicking one grouped item selects the group.
+      // Lassoing one grouped item selects the group (a click does not).
+      c2.tool = CanvasTool.select;
       c2.pointerDown(const Offset(10, 10));
+      c2.pointerUp();
+      expect(c2.selection, isEmpty);
+      c2.tool = CanvasTool.lasso;
+      c2.pointerDown(const Offset(-20, -20));
+      c2.pointerMove(const Offset(100, -20));
+      c2.pointerMove(const Offset(100, 20));
+      c2.pointerMove(const Offset(-20, 20));
       c2.pointerUp();
       expect(c2.selection, {'a', 'b'});
       c2.ungroupSelection();
@@ -556,32 +563,6 @@ void main() {
         s.dispose();
       },
     );
-
-    test('start page sections and the activity timeline', () async {
-      var s = await app();
-      expect(s.homeSections, AppState.defaultHomeSections);
-      await s.setHomeSections(['activity', 'today', 'bogus']);
-      final n = s.workspace.createNote(title: 'Diary');
-      final t = s.workspace.createTask('Run');
-      s.toggleTask(t.id);
-      s.openNote(n.id);
-      await s.flush();
-      s.dispose();
-
-      s = await app();
-      expect(s.homeSections, ['activity', 'today']);
-      final events = activityTimeline(s);
-      expect(
-        events.map((e) => (e.kind, e.title)),
-        containsAll([
-          (ActivityKind.created, 'Diary'),
-          (ActivityKind.completed, 'Run'),
-          (ActivityKind.opened, 'Diary'),
-        ]),
-      );
-      await s.flush();
-      s.dispose();
-    });
 
     test('Archive: projects on resources and video links', () {
       final a = Asset(

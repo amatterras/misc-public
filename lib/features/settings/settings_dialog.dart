@@ -253,24 +253,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   s.openVault();
                 },
               ),
-              SwitchListTile(
-                key: const ValueKey('ocr-enabled'),
-                contentPadding: EdgeInsets.zero,
-                value: s.settings.get<bool>('ocrEnabled') ?? true,
-                onChanged: (v) async {
-                  await s.settings.set('ocrEnabled', v);
-                  if (mounted) setState(() {});
-                },
-                title: const Text(
-                  'Read scanned PDFs for search',
-                  style: TextStyle(fontSize: 14),
-                ),
-                subtitle: Text(
-                  'On-device text recognition (Windows OCR, Apple Vision on '
-                  'iPhone/iPad). Nothing is sent to AI or online services.',
-                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
-                ),
-              ),
               if (s.ios != null)
                 SwitchListTile(
                   key: const ValueKey('pencil-double-tap'),
@@ -430,8 +412,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 const _Heading('Send to THEapp'),
                 Text(
                   'Adds “THEapp” to the right-click “Send to” menu in File Explorer. '
-                  'Photos and files you send land in the Inbox on Home, where you '
-                  'choose Canvas, Notes or Calendar.',
+                  'Photos and files you send are saved in the Archive.',
                   style: TextStyle(fontSize: 13, color: AppColors.textMuted),
                 ),
                 const SizedBox(height: Space.sm),

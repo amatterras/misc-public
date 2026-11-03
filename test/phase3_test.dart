@@ -10,6 +10,8 @@ import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/models/library_models.dart';
+import 'package:flutter_application_1/data/models/object_library_models.dart';
+import 'package:flutter_application_1/data/models/tag_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/canvas/canvas_text.dart';
@@ -22,7 +24,6 @@ import 'package:flutter_application_1/sync/sync_client.dart';
 import 'package:flutter_application_1/sync/sync_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'support/both_clocks.dart';
 
 final sep = Platform.pathSeparator;
 
@@ -162,7 +163,7 @@ void main() {
       s.dispose();
     });
 
-    test('tags can be added from share-in and changed later', () async {
+    test('categories can be added from share-in and changed later', () async {
       final s = await appState();
       final handled = await s.addSharedLinkToLinks(
         Uri.parse(
@@ -171,13 +172,13 @@ void main() {
         ),
       );
       expect(handled, isTrue);
-      final card = s.linksBoard!.items.whereType<LinkItem>().single;
-      final asset = s.workspace.assets[card.assetId]!;
-      expect(asset.url, 'https://docs.example/a?b=1&c=2');
-      expect(asset.linkTags, ['resource', 'projects']);
-      s.setLinkTags(asset.id, ['shopping']);
-      expect(s.workspace.assets[asset.id]!.linkTags, ['shopping']);
-      // Not for the Links board: left to the Inbox code as before.
+      final saved = s.library.objects.single;
+      expect(saved.sourceUrl, 'https://docs.example/a?b=1&c=2');
+      expect(s.library.categoriesOf(saved.id), {'resource', 'projects'});
+      await s.library.setCategory(saved.id, 'projects', false);
+      await s.library.setCategory(saved.id, 'shopping', true);
+      expect(s.library.categoriesOf(saved.id), {'resource', 'shopping'});
+      // Not for the Archive shortcut: left to the ordinary share code.
       expect(
         await s.addSharedLinkToLinks(
           Uri.parse('theapp://capture?url=https%3A%2F%2Fx.example'),
@@ -230,67 +231,73 @@ void main() {
       ipad.dispose();
     });
 
-    testWidgets('Links page: filter by tag and tag the selected card', (
+    testWidgets('Archive: filter by category and tag, and label an item', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(1400, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final s = (await tester.runAsync(appState))!;
-      final a = s.capture.link('https://one.example');
-      final b = s.capture.link('https://two.example');
+      late LibraryObject one, two;
+      late CustomTag tag;
       await tester.runAsync(() async {
-        await s.addToLinks(a, tags: ['resource']);
-        await s.addToLinks(b);
+        one = await s.library.save(
+          type: LibraryObjectType.website,
+          sourceUrl: 'https://one.example',
+          title: 'One',
+        );
+        two = await s.library.save(
+          type: LibraryObjectType.website,
+          sourceUrl: 'https://two.example',
+          title: 'Two',
+        );
+        await s.library.setCategory(one.id, 'resource', true);
+        tag = s.workspace.createTag('Reading', 0xFF2878F0).tag;
+        await s.library.setTags(two.id, {tag.id});
       });
       await tester.pumpWidget(TheApp(state: s));
       s.goTo(AppPage.links);
       await tester.pump();
       await tester.pump();
-      final board = s.linksBoard!;
-      expect(find.byKey(const ValueKey('links-filter-resource')), findsOne);
+      expect(find.text('One'), findsOne);
+      expect(find.text('Two'), findsOne);
 
-      await tester.tap(find.byKey(const ValueKey('links-filter-resource')));
+      final resource = find.byKey(const ValueKey('library-filter-resource'));
+      expect(resource, findsOne);
+      await tester.tap(resource);
       await tester.pump();
-      final cards = board.items.whereType<LinkItem>().toList();
-      final dimmed = {
-        for (final c in cards)
-          s.workspace.assets[c.assetId]!.url: board.dimmed!(c),
-      };
-      expect(dimmed, {
-        'https://one.example': false,
-        'https://two.example': true,
-      });
-      final highlights = {
-        for (final c in cards)
-          s.workspace.assets[c.assetId]!.url: board.highlighted!(c),
-      };
-      expect(highlights['https://one.example'], LinkTag.resource.color);
-      expect(highlights['https://two.example'], isNull);
-      await tester.tap(find.byKey(const ValueKey('links-filter-all')));
+      expect(find.text('One'), findsOne);
+      expect(find.text('Two'), findsNothing);
+      await tester.tap(resource);
       await tester.pump();
-      expect(board.dimmed, isNull);
-      expect(board.highlighted, isNull);
+      expect(find.text('Two'), findsOne);
 
-      // Select the second card: the tag bar appears and sets its tags.
-      board.select([cards[1].id]);
+      await tester.tap(find.byKey(ValueKey('library-filter-tag-${tag.id}')));
       await tester.pump();
-      expect(find.byKey(const ValueKey('links-tag-editor')), findsOne);
-      await tester.tap(find.byKey(const ValueKey('links-tag-shopping')));
+      expect(find.text('One'), findsNothing);
+      expect(find.text('Two'), findsOne);
+      await tester.tap(find.byKey(const ValueKey('library-filter-clear')));
       await tester.pump();
-      expect(s.workspace.assets[b.id]!.linkTags, ['shopping']);
-      await tester.tap(find.byKey(const ValueKey('links-tag-shopping')));
-      await tester.pump();
-      expect(s.workspace.assets[b.id]!.linkTags, isEmpty);
+      expect(find.text('One'), findsOne);
+      expect(find.text('Two'), findsOne);
 
-      // Phone width: header and tag bar still fit (they scroll sideways).
+      // Label an item from its dialog.
+      await tester.tap(find.text('One'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('library-category-shopping')));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
+      expect(s.library.categoriesOf(one.id), {'resource', 'shopping'});
+
+      // Phone width still fits.
       tester.view.physicalSize = const Size(375, 812);
       await tester.pump();
       await tester.pump();
       expect(tester.takeException(), isNull);
-      expect(find.byKey(const ValueKey('links-tag-editor')), findsOne);
 
-      await waitForBothClocks(tester, s.flush, what: 'Saving');
+      await tester.runAsync(s.flush);
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 4));
       s.dispose();

@@ -68,7 +68,6 @@ class ReviewData {
     archivedThisWeek = ws.assets.all
         .where((a) => !a.createdAt.isBefore(weekAgo))
         .length;
-    inbox = ws.inbox.all.length;
   }
 
   final overdue = <Task>[];
@@ -79,7 +78,6 @@ class ReviewData {
   late final List<DayItem> calendarToday;
   late final int notesThisWeek;
   late final int archivedThisWeek;
-  late final int inbox;
 }
 
 Future<void> showReviewCenter(BuildContext context, AppState s) =>
@@ -227,15 +225,6 @@ class _ReviewCenterState extends State<ReviewCenter> {
                             Navigator.pop(context);
                             s.openCalendarDay(DateTime.now());
                           },
-                        ),
-                      if (r.inbox > 0)
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            '${r.inbox} things wait in the inbox on the start '
-                            'page.',
-                            style: TextStyle(color: AppColors.textMuted),
-                          ),
                         ),
                     ],
             ),

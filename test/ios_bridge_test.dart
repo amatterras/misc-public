@@ -12,6 +12,7 @@ import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/capture/capture_service.dart';
 import 'package:flutter_application_1/platform/ios_bridge.dart';
 import 'package:flutter_application_1/sync/secret_store.dart';
+import 'package:flutter_application_1/data/models/object_library_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final sep = Platform.pathSeparator;
@@ -102,7 +103,7 @@ void main() {
     },
   );
 
-  test('launch link, later links and shared items reach the Inbox', () async {
+  test('launch link, later links and shared items reach the Archive', () async {
     final shared = Directory('${dir.path}${sep}group')..createSync();
     final requests = Directory('${shared.path}${sep}inbox_requests')
       ..createSync();
@@ -122,13 +123,12 @@ void main() {
     ];
 
     final state = await start();
-    final ws = state.workspace;
     expect(
-      ws.inbox.all.map((i) => i.text),
+      state.library.objects.map((o) => o.content),
       containsAll(['launch note', 'second']),
     );
     expect(
-      ws.inbox.all.map((i) => ws.assets[i.assetId]?.url),
+      state.library.objects.map((o) => o.sourceUrl),
       contains('https://example.com/shared'),
     );
     expect(requests.listSync(), isEmpty);
@@ -139,20 +139,23 @@ void main() {
     );
     await state.flush();
     expect(
-      ws.inbox.all.map((i) => ws.assets[i.assetId]?.url),
+      state.library.objects.map((o) => o.sourceUrl),
       contains('https://example.com/later'),
     );
 
     // Something else opened with the theapp:// scheme changes nothing.
-    final before = ws.inbox.all.length;
+    final before = state.library.objects.length;
     await fromNative('openedUrl', 'theapp://settings?pair=evil');
-    expect(ws.inbox.all.length, before);
+    expect(state.library.objects.length, before);
 
     File('${requests.path}${sep}b.json').writeAsStringSync(
       jsonEncode({'type': 'text', 'value': 'while in background'}),
     );
     expect(await state.importSharedItems(), 1);
-    expect(ws.inbox.all.map((i) => i.text), contains('while in background'));
+    expect(
+      state.library.objects.map((o) => o.content),
+      contains('while in background'),
+    );
     state.dispose();
   });
 
@@ -178,11 +181,12 @@ void main() {
     answers['sharedContainer'] = (_) => shared.path;
 
     final state = await start();
-    final ws = state.workspace;
-    final images = ws.inbox.all
-        .map((i) => ws.assets[i.assetId])
-        .where((a) => a?.kind == AssetKind.image);
-    expect(images, hasLength(3));
+    final images = state.library.objects.where(
+      (o) => o.type == LibraryObjectType.image,
+    );
+    // The Archive keeps one object per distinct file: the outside photo
+    // arrives twice (directly and by a ../ path) and is saved once.
+    expect(images, hasLength(2));
     expect(inside.existsSync(), isFalse, reason: 'shared copy cleaned up');
     expect(outside.existsSync(), isTrue, reason: 'never delete outside files');
     expect(requests.listSync(), isEmpty);

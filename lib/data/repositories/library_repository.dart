@@ -6,6 +6,8 @@ import 'package:crypto/crypto.dart';
 import '../models/canvas_models.dart' show newId;
 import '../models/library_models.dart' show AssetKind;
 import '../models/object_library_models.dart';
+import '../models/tag_models.dart';
+import '../../features/links/link_tags.dart';
 import '../workspace.dart';
 
 /// Local-first persistence and indexed discovery for the replacement library.
@@ -94,7 +96,7 @@ class LibraryRepository {
 
   Future<void> _writeIndex(LibraryObject o) async {
     final related = workspace.libraryRelations.all.where((r)=>r.objectId==o.id)
-      .map((r)=>'${r.targetId} ${r.value.values.join(' ')}').join(' ');
+      .map((r)=>'${_tagName(r)??r.targetId} ${r.value.values.join(' ')}').join(' ');
     final text = [o.title,o.description,o.summary,o.content,o.sourceUrl,o.canonicalUrl,o.mainEntity?.name,
       jsonEncode(o.metadata),related].whereType<String>().join('\n');
     workspace.libraryIndex.put(LibraryIndexEntry(id:o.id,objectId:o.id,text:text,updatedAt:DateTime.now().toUtc()));
@@ -209,6 +211,63 @@ class LibraryRepository {
     final item=workspace.libraryObjects[objectId]; if(item!=null) await _writeIndex(item);
     await workspace.libraryIndex.flush();
   }
+  /// The name of the custom tag a 'tag' relation points at, if it does.
+  String? _tagName(LibraryRelation r) {
+    if(r.kind!='tag') return null;
+    final id=CustomTag.idOfAssetRef(r.targetId);
+    return id==null?null:workspace.customTags[id]?.name;
+  }
+
+  /// Archive categories on [objectId]: ids of the five canonical [LinkTag]s.
+  Set<String> categoriesOf(String objectId)=>{for(final r in workspace.libraryRelations.all)
+    if(r.objectId==objectId && r.kind=='category' && LinkTag.byId(r.targetId)!=null) r.targetId};
+
+  Future<void> setCategory(String objectId,String categoryId,bool on) async {
+    final tag=LinkTag.byId(categoryId);
+    if(tag==null || workspace.libraryObjects[objectId]==null) return;
+    final id='$objectId.category.$categoryId';
+    if(on) {
+      workspace.libraryRelations.put(LibraryRelation(id:id,objectId:objectId,kind:'category',
+        targetId:categoryId,value:{'label':tag.label},updatedAt:DateTime.now().toUtc()));
+    } else {
+      workspace.libraryRelations.remove(id);
+    }
+    await workspace.libraryRelations.flush();
+    await _reindex(objectId);
+  }
+
+  /// Ids of the registry (custom) tags on [objectId] that still exist.
+  Set<String> tagIdsOf(String objectId)=>{for(final r in workspace.libraryRelations.all)
+    if(r.objectId==objectId && r.kind=='tag')
+      if(CustomTag.idOfAssetRef(r.targetId) case final id? when workspace.customTags[id]!=null) id};
+
+  /// Sets the custom tags of [objectId] to [tagIds] (ids from the shared tag
+  /// registry; unknown ids are ignored). Older free-text tags stay as they are.
+  Future<void> setTags(String objectId,Set<String> tagIds) async {
+    if(workspace.libraryObjects[objectId]==null) return;
+    for(final r in workspace.libraryRelations.all.where((r)=>r.objectId==objectId && r.kind=='tag').toList()) {
+      final id=CustomTag.idOfAssetRef(r.targetId);
+      if(id!=null && !tagIds.contains(id)) workspace.libraryRelations.remove(r.id);
+    }
+    for(final id in tagIds) {
+      if(workspace.customTags[id]==null) continue;
+      final ref=CustomTag.assetRef(id);
+      workspace.libraryRelations.put(LibraryRelation(id:'$objectId.tag.${Uri.encodeComponent(ref)}',
+        objectId:objectId,kind:'tag',targetId:ref,origin:LibraryTagOrigin.manual,updatedAt:DateTime.now().toUtc()));
+    }
+    await workspace.libraryRelations.flush();
+    await _reindex(objectId);
+  }
+
+  Future<void> _reindex(String objectId) async {
+    final item=workspace.libraryObjects[objectId];
+    if(item!=null){await _writeIndex(item);await workspace.libraryIndex.flush();}
+  }
+
+  /// Library objects in [items] that carry every chosen category and tag.
+  List<LibraryObject> withLabels(Iterable<LibraryObject> items,{Set<String> categories=const {},Set<String> tagIds=const {}})=>
+    [for(final o in items) if(categoriesOf(o.id).containsAll(categories) && tagIdsOf(o.id).containsAll(tagIds)) o];
+
   Future<void> removeRelation(String relationId) async {
     final relation=workspace.libraryRelations[relationId];
     if(relation==null)return;

@@ -28,6 +28,10 @@ class CustomTag implements Record {
 
   static const maxNameLength = 40;
 
+  /// Most custom tags that can exist (the Archive and the Mindmap share
+  /// one registry). An existing tag can always be reused or deleted.
+  static const maxTags = 15;
+
   /// How a tag id is written into an Archive resource's `linkTags`.
   static String assetRef(String id) => 'tag:$id';
 

@@ -106,7 +106,14 @@ void main() {
     await tester.runAsync(s.init);
     s.goTo(AppPage.calendar);
     await tester.pumpWidget(TheApp(state: s));
-    for (var i = 0; i < 5 && s.calendarInk == null; i++) {
+    // AppState opens the Calendar ink itself (for the widgets), so
+    // `calendarInk` is set before the page has attached its squeeze
+    // listener. The page is ready once its ink layers are on screen.
+    for (
+      var i = 0;
+      i < 20 && find.byType(DayInkLayer).evaluate().isEmpty;
+      i++
+    ) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );

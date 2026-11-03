@@ -230,7 +230,8 @@ void calendarCellAndColourTests() {
     );
     expect(
       (label.left - date.left).abs(),
-      lessThan(20),
+      // The 30px completion control (8ddfb4a) now sits before each label.
+      lessThan(50),
       reason: 'entry labels start at the left',
     );
 

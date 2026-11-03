@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/app/floating_windows.dart';
 import 'package:flutter_application_1/app/page_windows.dart';
+import 'package:flutter_application_1/app/sidebar.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/main.dart';
@@ -83,22 +84,27 @@ void main() {
     ws.createNote(title: 'Second note');
     await tester.pumpWidget(TheApp(state: state));
     await settle(tester);
+    // The open board's title also shows in the top bar, so look in the sidebar.
+    Finder inSidebar(String text) =>
+        find.descendant(of: find.byType(Sidebar), matching: find.text(text));
 
     expect(find.text('mindmap'), findsOneWidget);
     expect(find.text('notes'), findsOneWidget);
     expect(find.text('calendar'), findsOneWidget);
     expect(find.text('archive'), findsOneWidget);
-    expect(find.text('First board'), findsNWidgets(2));
-    expect(find.text('Second board'), findsNWidgets(2));
-    expect(find.text('First note'), findsNWidgets(2));
+    // Each name shows once: in its sidebar group (there is no Home page
+    // listing them a second time).
+    expect(inSidebar('First board'), findsOneWidget);
+    expect(inSidebar('Second board'), findsOneWidget);
+    expect(inSidebar('First note'), findsOneWidget);
     final selectedCanvas = state.canvas?.id;
 
     await tester.tap(
       find.byKey(const ValueKey('sidebar-group-mindmap-toggle')),
     );
     await settle(tester);
-    expect(find.text('First board'), findsOneWidget);
-    expect(find.text('Second board'), findsOneWidget);
+    expect(inSidebar('First board'), findsNothing);
+    expect(inSidebar('Second board'), findsNothing);
     expect(state.canvas?.id, selectedCanvas);
     expect(state.workspace.notes[firstNote.id], isNotNull);
 
@@ -106,12 +112,12 @@ void main() {
       find.byKey(const ValueKey('sidebar-group-mindmap-toggle')),
     );
     await settle(tester);
-    expect(find.text('First board'), findsNWidgets(2));
-    expect(find.text('Second board'), findsNWidgets(2));
+    expect(inSidebar('First board'), findsOneWidget);
+    expect(inSidebar('Second board'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('sidebar-group-notes-toggle')));
     await settle(tester);
-    expect(find.text('First note'), findsOneWidget);
+    expect(inSidebar('First note'), findsNothing);
     expect(state.workspace.notes[firstNote.id], isNotNull);
     expect(state.sidebarGroupExpanded('notes'), isFalse);
     await tester.runAsync(state.flush);

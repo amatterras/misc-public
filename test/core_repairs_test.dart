@@ -121,17 +121,23 @@ void main() {
 
     test('a single stroke is selected on its own; a group click narrows', () {
       final c = controller([stroke('a', 0, 0), stroke('b', 300, 0)]);
+      // Tapping a stroke does not select it: only the lasso selects.
+      c.tool = CanvasTool.select;
       c.pointerDown(const Offset(20, 5), timeStamp: const Duration(seconds: 1));
+      c.pointerUp();
+      expect(c.selection, isEmpty);
+      c.tool = CanvasTool.lasso;
+      c.pointerDown(const Offset(-20, -20));
+      c.pointerMove(const Offset(80, -20));
+      c.pointerMove(const Offset(80, 40));
+      c.pointerMove(const Offset(-20, 40));
       c.pointerUp();
       expect(c.selection, {'a'});
 
       c.select(['a', 'b']);
       c.groupSelection();
-      c.select(const []);
-      c.pointerDown(const Offset(20, 5), timeStamp: const Duration(seconds: 2));
-      c.pointerUp();
-      expect(c.selection, {'a', 'b'}, reason: 'a group selects as a unit');
-      expect(c.selectionUnits, hasLength(1));
+      expect(c.selection, {'a', 'b'});
+      expect(c.selectionUnits, hasLength(1), reason: 'a group is one unit');
       // Click again without dragging: just the stroke under the pointer.
       c.pointerDown(const Offset(20, 5), timeStamp: const Duration(seconds: 3));
       c.pointerUp();
@@ -293,21 +299,16 @@ void main() {
         await m.undo!();
         expect(ws.dayRecord(day).text, isNot(contains('[[Lab rules]]')));
 
+        // Dragging a task onto a day to schedule it is not supported.
         final task = ws.createTask('Essay', dueDate: DateTime(2026, 11, 1));
+        final drag = TaskTransfer(task.id, task.title, from: task.dueDate);
+        expect(s.transferChoices(drag, DayPlace(day)), isEmpty);
         expect(
-          s.transferChoices(
-            TaskTransfer(task.id, task.title, from: DateTime(2026, 11, 1)),
-            DayPlace(DateTime(2026, 11, 1)),
-          ),
+          s.transferChoices(drag, DayPlace(DateTime(2026, 11, 1))),
           isEmpty,
-          reason: 'same day: nothing to do',
         );
-        await s.performTransfer(
-          TaskTransfer(task.id, task.title, from: DateTime(2026, 11, 1)),
-          DayPlace(day),
-          TransferOp.move,
-        );
-        expect(ws.tasks[task.id]!.dueDate, day);
+        await s.performTransfer(drag, DayPlace(day), TransferOp.move);
+        expect(ws.tasks[task.id]!.dueDate, DateTime(2026, 11, 1));
         expect(ws.tasks.length, 1, reason: 'same record, no copy');
         await s.flush();
         s.dispose();
