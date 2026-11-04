@@ -201,12 +201,15 @@ class SyncEngine {
   final CanvasRepository canvases;
   final SyncClient client;
   final OpenCanvasBridge? openCanvas;
-  bool _running = false;
-  Completer<void>? _idle;
+  bool _busy = false;
+
+  /// Syncs with different remotes (the hub, other devices) never overlap:
+  /// they all change the same workspace, so they take turns.
+  static Future<void> _turn = Future.value();
 
   /// Completes when no sync is running (used before opening a canvas, so
   /// a sync never writes a canvas file that is being opened).
-  Future<void> whenIdle() => _idle?.future ?? Future.value();
+  Future<void> whenIdle() => _turn.catchError((Object _) {});
 
   Future<SyncState> loadState() async => SyncState.fromJson(
     await workspace.store.read('sync', _file('client_state')),
@@ -219,15 +222,25 @@ class SyncEngine {
   /// local data is never changed by a failed cycle except for records
   /// already applied (and saved) before the failure.
   Future<SyncReport> syncOnce() async {
-    if (_running) {
+    if (_busy) {
       throw const SyncFailure(
         'busy',
         'A sync is already running.',
         retryable: true,
       );
     }
-    _running = true;
-    _idle = Completer<void>();
+    _busy = true;
+    try {
+      // Wait for the sync of another remote that may be running.
+      final run = _turn.catchError((Object _) {}).then((_) => _syncOnce());
+      _turn = run.then<void>((_) {}, onError: (Object _) {});
+      return await run;
+    } finally {
+      _busy = false;
+    }
+  }
+
+  Future<SyncReport> _syncOnce() async {
     final report = SyncReport();
     try {
       await openCanvas?.flushOpenCanvas();
@@ -243,9 +256,6 @@ class SyncEngine {
       AppLog.info('Sync: $report');
       return report;
     } finally {
-      _running = false;
-      _idle?.complete();
-      _idle = null;
     }
   }
 

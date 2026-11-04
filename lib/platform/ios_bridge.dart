@@ -49,6 +49,8 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
   FutureOr<void> Function(Uri)? _onLink;
   bool _handlerSet = false;
   final _squeeze = StreamController<String>.broadcast();
+  final _peerFound = StreamController<Map<String, dynamic>>.broadcast();
+  final _peerLost = StreamController<String>.broadcast();
 
   /// One handler for everything the native side sends.
   void _ensureHandler() {
@@ -59,6 +61,10 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
         case 'openedUrl' when call.arguments is String:
           final uri = Uri.tryParse(call.arguments as String);
           if (uri != null) await _onLink?.call(uri);
+        case 'peerFound' when call.arguments is Map:
+          _peerFound.add((call.arguments as Map).cast<String, dynamic>());
+        case 'peerLost' when call.arguments is String:
+          _peerLost.add(call.arguments as String);
         case 'pencilSqueeze' when call.arguments is String:
           _squeeze.add(call.arguments as String);
         case 'protectedData' when call.arguments is bool:
@@ -197,6 +203,38 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
   Future<bool> writeWidgetSnapshot(String json) async =>
       await _invoke<bool>('widgetSnapshot', json) ?? false;
 
+  // ---- direct device sync: Bonjour on the local network ----
+
+  /// Devices found by Bonjour (`name`, `host`, `port`, `txt`).
+  Stream<Map<String, dynamic>> get peerFound {
+    _ensureHandler();
+    return _peerFound.stream;
+  }
+
+  /// A Bonjour service that went away (its service name).
+  Stream<String> get peerLost {
+    _ensureHandler();
+    return _peerLost.stream;
+  }
+
+  /// Announces this device on the local network (`_misc-sync._tcp`).
+  /// iOS asks for the local-network permission the first time.
+  Future<void> peerAdvertise({
+    required String name,
+    required int port,
+    required Map<String, String> txt,
+  }) => _invoke<void>('peerAdvertise', {
+    'name': name,
+    'port': port,
+    'txt': txt,
+  }, true);
+
+  /// Starts looking for other devices (answers arrive on [peerFound]).
+  Future<void> peerBrowse() => _invoke<void>('peerBrowse', null, true);
+
+  /// Stops announcing and looking.
+  Future<void> peerStop() => _invoke<void>('peerStop');
+
   /// "iPad" or "iPhone" (iOS no longer gives apps the device's own name).
   Future<String?> deviceModel() => _invoke<String>('deviceModel');
 
@@ -254,7 +292,10 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
   /// cancelled).
   Future<List<String>> pickBackupFiles() async {
     try {
-      return await _channel.invokeListMethod<String>('pickDocuments', 'backup') ??
+      return await _channel.invokeListMethod<String>(
+            'pickDocuments',
+            'backup',
+          ) ??
           const [];
     } on PlatformException {
       return const [];

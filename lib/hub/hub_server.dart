@@ -13,6 +13,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import '../data/storage/log_sanitizer.dart';
+import '../sync/peer_trust.dart';
 import '../sync/protocol.dart';
 import 'hub_auth.dart';
 import 'hub_backup.dart';
@@ -92,6 +93,10 @@ class HubServer {
 
   /// Set for an account inside the hosted service.
   final String? tenantId;
+
+  /// When set, devices that prove they hold the workspace key may join
+  /// without a pairing code (see sync/peer_trust.dart).
+  PeerTrust? peerTrust;
 
   /// Handles one request (used by the hosted front).
   Future<void> handle(HttpRequest r) => _handle(r);
@@ -513,6 +518,13 @@ class HubServer {
         case ('POST', '/v1/register') when tenantId == null:
           _checkProtocol(r);
           await _register(r);
+        // A device of the same workspace joins without a pairing code, by
+        // proving it holds the workspace key (PeerTrust). Off unless this
+        // hub was given a PeerTrust (a device hosting its own hub).
+        case ('POST', '/v1/peer/join')
+            when tenantId == null && peerTrust != null:
+          _checkProtocol(r);
+          await _peerJoin(r);
         case ('POST', '/v1/push'):
           _checkProtocol(r);
           final d = _syncDevice(r, write: true);
@@ -1058,6 +1070,44 @@ document.title=j.t;h.textContent=j.t;out.textContent=j.b;
     } catch (_) {
       // The client went away; nothing to tell it.
     }
+  }
+
+  Future<void> _peerJoin(HttpRequest r) async {
+    final remote = r.connectionInfo?.remoteAddress.address ?? '?';
+    final now = DateTime.now();
+    final recent = (_failedPairing[remote] ?? [])
+      ..removeWhere((t) => now.difference(t) > const Duration(minutes: 10));
+    if (recent.length >= 5) {
+      throw const ProtocolException(
+        'rate_limited',
+        'Too many failed attempts; wait 10 minutes.',
+        status: 429,
+      );
+    }
+    final body = await _json(r);
+    if (!peerTrust!.verify(body)) {
+      _failedPairing[remote] = recent..add(now);
+      throw const ProtocolException(
+        'peer_refused',
+        'This device could not prove it belongs to the workspace.',
+        status: 401,
+      );
+    }
+    // It proved it holds the workspace key, so it may write (unlike a
+    // device that joined with a plain code on an encrypted hub).
+    auth.keylessDevicesReadOnly = false;
+    final result = await auth.registerWithKey(
+      auth.createPairingCode(),
+      '${body['deviceId']}',
+      '${body['name']}',
+    );
+    _failedPairing.remove(remote);
+    await _send(r, 200, {
+      'token': result.token,
+      'protocol': syncProtocolVersion,
+      'lastSeq': store.lastSeq,
+      'hubId': store.hubId,
+    });
   }
 
   Future<void> _register(HttpRequest r) async {

@@ -87,7 +87,11 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>misc. uses Face ID to keep your workspace private when the app opens or returns from the background.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>misc. syncs with the misc. hub on your own PC.</string>
+	<string>misc. syncs with the misc. hub on your own PC and directly with your other devices on this network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_misc-sync._tcp</string>
+	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>misc. accesses photos you choose to import into your notes and canvases.</string>
 	<key>UIStatusBarHidden</key>

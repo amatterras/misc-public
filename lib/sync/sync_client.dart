@@ -410,6 +410,14 @@ class SyncClient {
     _waitHttp = null;
   }
 
+  /// Joins a peer's hub by proving this device holds the workspace key
+  /// (no pairing code); returns the token and keeps it for later calls.
+  Future<String> peerJoin(Map<String, String> proof) async {
+    final json = await _json(await _open('POST', '/v1/peer/join'), proof);
+    token = json['token'] as String;
+    return token!;
+  }
+
   /// Pairs this device; returns its token (keep it secret).
   Future<String> register(
     String code,

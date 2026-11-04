@@ -55,6 +55,7 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
   private var documentResult: FlutterResult?
   private var previewURL: URL?
   private var pencilInteraction: UIPencilInteraction?
+  private let peers = PeerBonjour()
 
   func attach(messenger: FlutterBinaryMessenger) {
     let channel = FlutterMethodChannel(name: "theapp/ios", binaryMessenger: messenger)
@@ -127,6 +128,21 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       result(installPencilInteraction())
     case "deviceModel":
       result(UIDevice.current.model)
+    case "peerAdvertise":
+      let args = call.arguments as? [String: Any] ?? [:]
+      peers.advertise(
+        name: args["name"] as? String ?? "misc",
+        port: Int32(args["port"] as? Int ?? 0),
+        txt: args["txt"] as? [String: String] ?? [:])
+      result(nil)
+    case "peerBrowse":
+      peers.onFound = { [weak self] info in self?.channel?.invokeMethod("peerFound", arguments: info) }
+      peers.onLost = { [weak self] name in self?.channel?.invokeMethod("peerLost", arguments: name) }
+      peers.browse()
+      result(nil)
+    case "peerStop":
+      peers.stop()
+      result(nil)
     case "appFolders":
       // HOME is not set for iOS apps, so Dart asks here for the real folders.
       let fm = FileManager.default
@@ -973,5 +989,87 @@ final class TheAppWebView: NSObject, FlutterPlatformView, WKNavigationDelegate, 
     if done, let path = d.path?.path { args["path"] = path }
     if let error = error { args["error"] = error }
     channel.invokeMethod("download", arguments: args)
+  }
+}
+
+// MARK: Direct device sync: Bonjour on the local network
+//
+// Announces this device as `_misc-sync._tcp` (the port is the one the app's
+// own peer hub listens on) and looks for the same service from other devices.
+// The TXT record carries only the device id and the public workspace tag; no
+// key and no data. Needs NSLocalNetworkUsageDescription and
+// NSBonjourServices in Info.plist (no paid developer account, no extra
+// entitlement). Compiled only in the cloud so far; never run on a device.
+final class PeerBonjour: NSObject, NetServiceDelegate, NetServiceBrowserDelegate {
+  static let serviceType = "_misc-sync._tcp."
+  private var service: NetService?
+  private var browser: NetServiceBrowser?
+  private var resolving: [String: NetService] = [:]
+  var onFound: (([String: Any]) -> Void)?
+  var onLost: ((String) -> Void)?
+
+  func advertise(name: String, port: Int32, txt: [String: String]) {
+    service?.stop()
+    guard port > 0 else { return }
+    let s = NetService(domain: "", type: Self.serviceType, name: name, port: port)
+    s.setTXTRecord(NetService.data(fromTXTRecord: txt.mapValues { Data($0.utf8) }))
+    s.delegate = self
+    s.publish()
+    service = s
+  }
+
+  func browse() {
+    browser?.stop()
+    let b = NetServiceBrowser()
+    b.delegate = self
+    b.searchForServices(ofType: Self.serviceType, inDomain: "local.")
+    browser = b
+  }
+
+  func stop() {
+    service?.stop()
+    service = nil
+    browser?.stop()
+    browser = nil
+    resolving.removeAll()
+  }
+
+  func netServiceBrowser(_ browser: NetServiceBrowser, didFind svc: NetService, moreComing: Bool) {
+    resolving[svc.name] = svc
+    svc.delegate = self
+    svc.resolve(withTimeout: 5)
+  }
+
+  func netServiceBrowser(_ browser: NetServiceBrowser, didRemove svc: NetService, moreComing: Bool) {
+    resolving.removeValue(forKey: svc.name)
+    onLost?(svc.name)
+  }
+
+  func netServiceDidResolveAddress(_ sender: NetService) {
+    var txt: [String: String] = [:]
+    if let data = sender.txtRecordData() {
+      for (key, value) in NetService.dictionary(fromTXTRecord: data) {
+        txt[key] = String(data: value, encoding: .utf8) ?? ""
+      }
+    }
+    var ip = ""
+    for data in sender.addresses ?? [] {
+      data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+        guard let base = raw.baseAddress else { return }
+        let sa = base.assumingMemoryBound(to: sockaddr.self)
+        if sa.pointee.sa_family == sa_family_t(AF_INET) {
+          var addr = base.assumingMemoryBound(to: sockaddr_in.self).pointee.sin_addr
+          var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+          inet_ntop(AF_INET, &addr, &buffer, socklen_t(INET_ADDRSTRLEN))
+          ip = String(cString: buffer)
+        }
+      }
+      if !ip.isEmpty { break }
+    }
+    onFound?(["name": sender.name, "host": ip, "port": sender.port, "txt": txt])
+  }
+
+  func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
+    resolving.removeValue(forKey: sender.name)
   }
 }
