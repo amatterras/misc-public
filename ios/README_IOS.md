@@ -30,8 +30,8 @@ being closed and are sent on the next sync (`test/sync_engine_test.dart`,
 | Device name on the hub ("iPad" instead of "localhost") | tested | `deviceModel` in `AppDelegate.swift`, untested |
 | Sync when the app returns to the front (timers stop in the background) | tested | — |
 | Picker copies in tmp deleted after import | tested | — |
-| `theapp://capture?url=…&text=…` links → Inbox | tested (also links that arrive before the app is ready) | `SceneDelegate.swift`, untested |
-| Share Extension → Inbox | import tested with files in the extension's format | `ShareExtension/`, untested, **needs paid account** |
+| `theapp://capture?url=…&text=…` links → Archive | tested (also links that arrive before the app is ready) | `SceneDelegate.swift`, untested |
+| Share Extension → Archive | app-side import tested on Windows with request files in the extension's format | `ShareExtension/` has **never run on a device or simulator**; needs a paid Apple account (see below) |
 | Sync with the PC hub | same engine as Windows (tested) | network path from an iPhone untested |
 | PDFs: pick (document picker) and open (Quick Look) | tested with a simulated channel; only `.pdf` passed on | `AppDelegate.swift`, untested; the "inside this app" path check may need adjusting for `/private/var` |
 | Mind-map connections, version history | shared Dart code (tested on Windows) | — |
@@ -43,10 +43,10 @@ being closed and are sent on the next sync (`test/sync_engine_test.dart`,
 1. **iOS Shortcut (free account is enough):** in the Shortcuts app create
    "Save to THEapp", turn on *Show in Share Sheet* (URLs, Text), add the action
    *Open URLs* with `theapp://capture?url=` followed by *Shortcut Input*
-   (choose "URL Encode" for the input). The app adds it to the Inbox. Any web
-   page could open such a link too, so these links can only ever **add Inbox
-   items** (text capped at 20,000 characters); they can't change settings,
-   delete or pair.
+   (choose "URL Encode" for the input). The app saves it in the Archive
+   (the Inbox only when there is no Archive library). Any web page could open
+   such a link too, so these links can only ever **add Archive items** (text
+   capped at 20,000 characters); they can't change settings, delete or pair.
 2. **Share to the Links library (free):** make a second Shortcut, "Save to
    THEapp Links", the same way but with
    `theapp://capture?to=links&url=` followed by the URL-encoded *Shortcut
@@ -54,9 +54,11 @@ being closed and are sent on the next sync (`test/sync_engine_test.dart`,
    be added with `&tags=resource,projects`; ids: resource, projects, other,
    shopping, second-brain). It only ever adds a card or tags; nothing is
    deleted. Same Dart code as tested on Windows; not yet run on a device.
-3. **Share Extension (paid account only):** the files in `ShareExtension/` need
-   the App Groups capability, which Apple only grants to the paid Developer
-   Program ($99/year). Not required; the Shortcut covers links and text.
+3. **Share Extension (paid account only):** the target already exists in the
+   Xcode project (`com.amaterasu.theapp.share`, embedded in Runner), but it
+   needs the App Groups capability, which Apple only grants to the paid
+   Developer Program ($99/year). Requirements and status are in
+   `ShareExtension/README.md`. Not required; the Shortcut covers links and text.
 
 ## What needs a Mac (cannot be done on Windows)
 - Any iOS build: `flutter build ios` needs macOS with Xcode (free).
@@ -118,9 +120,11 @@ ID; steps 3 and 4 below then need the iPad instead of the Simulator. With a Mac:
 9a. Reminders: give a synthetic task a reminder 2 minutes ahead, allow
    notifications when asked, close THEapp → the notification appears; mark
    the task done → no notification.
-10. Share Extension (paid account only): add the target as described in
-    `ShareExtension/README.md`, enable App Groups with a group id of your own
-    on both targets, and change `group.com.theapp.shared` in both Swift files.
+10. Share Extension (paid account only): follow "What is still needed" in
+    `ShareExtension/README.md` (App Group, three App IDs, profiles, Codemagic
+    signing variables). The target is already in the project. Then share a
+    link, a text, a photo and a PDF from other apps and check they appear in
+    the Archive. Until this is done the extension is **not verified**.
 
 ## Home-screen widgets (Today & Tomorrow)
 - Source: `ios/TheAppWidget/` (WidgetKit, SwiftUI; small, medium and large;
