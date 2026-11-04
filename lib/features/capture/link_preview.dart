@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../../data/storage/import_guard.dart';
+import '../../data/storage/url_guard.dart';
+
 /// Title, description and preview image of a web page.
 class LinkPreview {
   const LinkPreview({
@@ -20,13 +23,48 @@ class LinkPreview {
 
 /// Reads public metadata of a page (like a browser opening it). Only the
 /// URL itself is sent; nothing from your workspace leaves the computer.
+///
+/// The address is untrusted: only public http(s) hosts are contacted (never
+/// this PC, a home network or a Tailscale device), every redirect is checked
+/// the same way, and the answer is size- and time-limited. See url_guard.dart.
 class LinkPreviewFetcher {
+  LinkPreviewFetcher({Future<bool> Function(Uri uri)? isAllowed})
+    : _isAllowed = isAllowed ?? isFetchableUrl;
+
+  /// Decides whether [uri] may be contacted; replaceable in tests.
+  final Future<bool> Function(Uri uri) _isAllowed;
+
   static const _maxHtmlBytes = 768 * 1024;
   static const _maxImageBytes = 5 * 1024 * 1024;
   static const _timeout = Duration(seconds: 8);
+  static const _maxRedirects = 5;
   static const _userAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/130.0 Safari/537.36 THEapp/1.0';
+
+  /// Opens [uri], following up to [_maxRedirects] redirects by hand so each
+  /// hop can be checked. Null if any hop is not allowed or the chain is too
+  /// long. The caller closes [client].
+  Future<(HttpClientResponse, Uri)?> _open(
+    HttpClient client,
+    Uri uri,
+    void Function(HttpHeaders) headers,
+  ) async {
+    var current = uri;
+    for (var hop = 0; hop <= _maxRedirects; hop++) {
+      if (!await _isAllowed(current)) return null;
+      final request = await client.getUrl(current).timeout(_timeout);
+      request.followRedirects = false;
+      headers(request.headers);
+      final response = await request.close().timeout(_timeout);
+      if (!response.isRedirect) return (response, current);
+      final location = response.headers.value(HttpHeaders.locationHeader);
+      await response.drain<void>();
+      if (location == null) return null;
+      current = current.resolve(location);
+    }
+    return null;
+  }
 
   Future<LinkPreview?> fetch(String url) async {
     final uri = Uri.tryParse(url);
@@ -35,11 +73,15 @@ class LinkPreviewFetcher {
     }
     final client = HttpClient()..connectionTimeout = _timeout;
     try {
-      final request = await client.getUrl(uri).timeout(_timeout);
-      request.headers
-        ..set(HttpHeaders.userAgentHeader, _userAgent)
-        ..set(HttpHeaders.acceptHeader, 'text/html,application/xhtml+xml');
-      final response = await request.close().timeout(_timeout);
+      final opened = await _open(
+        client,
+        uri,
+        (h) => h
+          ..set(HttpHeaders.userAgentHeader, _userAgent)
+          ..set(HttpHeaders.acceptHeader, 'text/html,application/xhtml+xml'),
+      );
+      if (opened == null) return null;
+      final (response, base) = opened;
       final type = response.headers.contentType?.mimeType ?? '';
       if (response.statusCode >= 400 || !type.contains('html')) {
         await response.drain<void>();
@@ -47,9 +89,6 @@ class LinkPreviewFetcher {
       }
       final bytes = await _readLimited(response, _maxHtmlBytes);
       final html = utf8.decode(bytes, allowMalformed: true);
-      final base = response.redirects.isEmpty
-          ? uri
-          : uri.resolveUri(response.redirects.last.location);
       return parseHtml(html, base);
     } catch (_) {
       return null;
@@ -66,9 +105,13 @@ class LinkPreviewFetcher {
     }
     final client = HttpClient()..connectionTimeout = _timeout;
     try {
-      final request = await client.getUrl(uri).timeout(_timeout);
-      request.headers.set(HttpHeaders.userAgentHeader, _userAgent);
-      final response = await request.close().timeout(_timeout);
+      final opened = await _open(
+        client,
+        uri,
+        (h) => h.set(HttpHeaders.userAgentHeader, _userAgent),
+      );
+      if (opened == null) return null;
+      final (response, _) = opened;
       final type = response.headers.contentType;
       if (response.statusCode >= 400 || type?.primaryType != 'image') {
         await response.drain<void>();
@@ -86,6 +129,8 @@ class LinkPreviewFetcher {
         return null;
       }
       final bytes = await _readLimited(response, _maxImageBytes);
+      // The stored picture must really be that kind of picture.
+      if (!ImportGuard.matchesSignature(bytes, ext)) return null;
       return (bytes, ext);
     } catch (_) {
       return null;

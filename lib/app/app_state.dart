@@ -52,6 +52,7 @@ import '../sync/sync_scheduler.dart';
 import '../sync/storage_modes.dart';
 import '../data/integrity/integrity_check.dart';
 import '../hub/hub_host.dart';
+import 'attention_gate.dart';
 import 'maintenance.dart';
 import '../sync/local_hub.dart';
 import '../features/calendar/external/external_calendar.dart';
@@ -354,8 +355,8 @@ class AppState extends ChangeNotifier {
         workspace.newestRecordSchema > RecordCollection.schemaVersion) {
       workspace.store.readOnly = true;
       dataProblem =
-          'Your data was saved by a newer version of THEapp. To protect it, '
-          'this version will not open or change it. Please update THEapp.';
+          'Your data was saved by a newer version of misc. To protect it, '
+          'this version will not open or change it. Please update misc.';
       AppLog.error('Newer data schema found; opened nothing, wrote nothing.');
       notifyListeners();
       return;
@@ -383,9 +384,9 @@ class AppState extends ChangeNotifier {
       if (backup == null || !verified) {
         workspace.store.readOnly = true;
         dataProblem =
-            'THEapp needs to upgrade your data but could not make a verified '
+            'misc. needs to upgrade your data but could not make a verified '
             'backup first, so nothing was changed. Free some disk space and '
-            'restart THEapp.';
+            'restart misc.';
         AppLog.error('Pre-upgrade backup failed verification; data untouched.');
         notifyListeners();
         return;
@@ -796,7 +797,7 @@ class AppState extends ChangeNotifier {
     if (stored > dataFeatureLevel) {
       workspace.store.readOnly = true;
       dataProblem =
-          'Your data was saved by a newer build of THEapp. To protect it, '
+          'Your data was saved by a newer build of misc. To protect it, '
           'this build will not change it. Please install the newer build.';
       AppLog.error(
         'Data feature level $stored > $dataFeatureLevel; wrote nothing.',
@@ -824,9 +825,9 @@ class AppState extends ChangeNotifier {
       if (backup == null || !verified) {
         workspace.store.readOnly = true;
         dataProblem =
-            'THEapp could not make a verified backup before using this new '
+            'misc. could not make a verified backup before using this new '
             'build with your data, so nothing was changed. Free some space '
-            'and restart THEapp.';
+            'and restart misc.';
         AppLog.error('Pre-upgrade backup failed verification; data untouched.');
         notifyListeners();
         return false;
@@ -842,7 +843,7 @@ class AppState extends ChangeNotifier {
     } catch (e, s) {
       workspace.store.readOnly = true;
       dataProblem =
-          'THEapp could not complete the color migration safely. Your verified '
+          'misc. could not complete the color migration safely. Your verified '
           'backup is preserved and this data folder is now read-only.';
       AppLog.error('Canonical color migration failed', e, s);
       notifyListeners();
@@ -877,8 +878,8 @@ class AppState extends ChangeNotifier {
     migrationFailure = outcome;
     workspace.store.readOnly = true;
     dataProblem =
-        'THEapp could not finish upgrading your data: ${outcome.message} '
-        'Nothing was deleted, and THEapp will not change this data folder '
+        'misc. could not finish upgrading your data: ${outcome.message} '
+        'Nothing was deleted, and misc. will not change this data folder '
         'until the upgrade succeeds. '
         '${outcome.backup == null ? '' : 'A verified copy from before the upgrade is kept in backups.'}';
     notifyListeners();
@@ -889,7 +890,7 @@ class AppState extends ChangeNotifier {
   Future<String> retryMigrations() async {
     workspace.store.readOnly = false;
     if (await runMigrations()) {
-      return 'The upgrade finished. Close and reopen THEapp.';
+      return 'The upgrade finished. Close and reopen misc.';
     }
     return dataProblem ?? 'The upgrade failed again.';
   }
@@ -914,7 +915,7 @@ class AppState extends ChangeNotifier {
     }
     AppLog.info('Restored the backup from before the failed upgrade');
     return 'Restored the data from before the upgrade. Close and reopen '
-        'THEapp; it will try the upgrade again and stop safely if it fails.';
+        'misc.; it will try the upgrade again and stop safely if it fails.';
   }
 
   Future<void> _migrateCanonicalColors() async {
@@ -945,7 +946,7 @@ class AppState extends ChangeNotifier {
       hubUrl = url;
       syncStatus =
           'Sync is off: this platform cannot protect the encryption key, and '
-          'THEapp never syncs unencrypted.';
+          'misc. never syncs unencrypted.';
       AppLog.warn('Sync not started: no protected key storage');
       return;
     }
@@ -1001,6 +1002,7 @@ class AppState extends ChangeNotifier {
           };
     hubUrl = url.toString();
     syncNeedsPairing = false;
+    notifyGate.resolved('device-authorization');
     syncStatus = 'Waiting for first sync';
     // Syncs a moment after each local edit, at once when the hub reports
     // another device's change (live), and on a slow timer as a safety net.
@@ -1086,7 +1088,7 @@ class AppState extends ChangeNotifier {
     }
     if (!syncKeys.isSecure) {
       return 'This device cannot protect the encryption key, so it cannot '
-          'sync (THEapp never syncs unencrypted).';
+          'sync (misc. never syncs unencrypted).';
     }
     // An end-to-end pairing code brings the workspace key; the hub only gets
     // a one-way function of it. An ordinary short code uses this device's own
@@ -1191,7 +1193,7 @@ class AppState extends ChangeNotifier {
     }
     if (!syncKeys.isSecure) {
       return 'This device cannot protect the encryption key, so it cannot '
-          'sync (THEapp never syncs unencrypted).';
+          'sync (misc. never syncs unencrypted).';
     }
     final client = SyncClient(uri);
     try {
@@ -1321,7 +1323,7 @@ class AppState extends ChangeNotifier {
       throw const SyncFailure(
         'no_key_storage',
         'This device cannot protect the encryption key, so it cannot sync '
-            '(THEapp never syncs unencrypted).',
+            '(misc. never syncs unencrypted).',
       );
     }
     return StorageSwitch(
@@ -1518,6 +1520,12 @@ class AppState extends ChangeNotifier {
     };
   }
 
+  /// Keeps notifications rare (see attention_gate.dart).
+  final notifyGate = AttentionGate();
+
+  /// Local edits that the hub does not have yet.
+  bool get syncPendingLocal => _scheduler?.pendingLocal ?? false;
+
   /// Live (updates arrive within about a second), polling, offline or
   /// stopped.
   SyncConnection get syncConnection =>
@@ -1552,6 +1560,13 @@ class AppState extends ChangeNotifier {
             'hub was reset). Your data here is safe. Disconnect, then pair '
             'again with a new code.';
         AppLog.warn('Sync stopped: device not accepted by the hub');
+        // Said once, not on every retry; the status page shows it always.
+        if (notifyGate.allow('device-authorization')) {
+          showToast(
+            'This device needs to be authorized again before sync can '
+            'resume. Your data here is safe. Settings → Sync & Devices.',
+          );
+        }
       } else {
         _lastResult = e.retryable ? '${e.message} Will retry.' : e.message;
         if (!e.retryable) AppLog.warn('Sync stopped: ${e.code}');

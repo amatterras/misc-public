@@ -10,7 +10,9 @@ import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/object_library_models.dart';
 import '../../data/repositories/library_repository.dart';
+import '../../data/storage/app_log.dart';
 import '../../data/storage/attachment_store.dart';
+import '../../data/storage/import_guard.dart';
 import '../../data/workspace.dart';
 import '../../platform/platform.dart' as native;
 import 'link_preview.dart';
@@ -180,9 +182,23 @@ class CaptureService {
       )) {
         continue;
       }
+      if (!await _acceptable(file)) continue;
       assets.add(await workspace.imageAssetFromFile(file));
     }
     return assets;
+  }
+
+  /// Whether [file] really is what its name says and is a sane size (see
+  /// [ImportGuard]). A refused file is skipped like any other unsupported
+  /// one; the log records only that it happened, never its name or content.
+  Future<bool> _acceptable(File file) async {
+    final problem = await ImportGuard.problemWith(
+      file,
+      AttachmentStore.extensionOf(file.path),
+    );
+    if (problem == null) return true;
+    AppLog.warn('An imported file was refused: $problem');
+    return false;
   }
 
   /// Opens the Windows photo picker and imports the chosen files.
@@ -235,6 +251,7 @@ class CaptureService {
       )) {
         continue;
       }
+      if (!await _acceptable(file)) continue;
       assets.add(await workspace.documentAssetFromFile(file));
     }
     return assets;

@@ -22,6 +22,7 @@ import '../../widgets/common.dart';
 import '../capture/send_to.dart';
 import 'backup_actions.dart';
 import 'backup_details.dart';
+import 'security_status.dart';
 import 'settings_widgets.dart';
 import 'storage_section.dart';
 import 'sync_section.dart';
@@ -42,7 +43,11 @@ enum SettingsCategory {
   pencil(Icons.draw_outlined, 'Apple Pencil', 'Double-tap'),
   sync(Icons.sync_alt, 'Sync & Devices', 'Hub, storage mode, clipboard'),
   data(Icons.shield_outlined, 'Data & Storage', 'Backups, restore, export'),
-  privacy(Icons.lock_outline, 'Privacy', 'What stays on this device'),
+  privacy(
+    Icons.lock_outline,
+    'Security & Privacy',
+    'Protection, sync, backups, devices',
+  ),
   ai(Icons.auto_awesome_outlined, 'AI', 'Assistant and keys'),
   about(Icons.info_outline, 'About', 'Build');
 
@@ -286,7 +291,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   Widget _appearance() => SettingsPage(
     key: const ValueKey('settings-page-appearance'),
     title: 'Appearance',
-    subtitle: 'How THEapp looks on $thisDevice.',
+    subtitle: 'How misc. looks on $thisDevice.',
     children: [
       SettingsGroup(
         label: 'Look',
@@ -341,7 +346,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             key: const ValueKey('always-on-top'),
             title: 'Always on top',
             subtitle: s.alwaysOnTopSupported
-                ? 'Keeps the THEapp window above other windows. Saved on '
+                ? 'Keeps the misc. window above other windows. Saved on '
                       'this device only.'
                 : 'Not available here: iPhone and iPad apps cannot stay '
                       'above other apps.',
@@ -418,12 +423,12 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   Widget _archive() => SettingsPage(
     key: const ValueKey('settings-page-archive'),
     title: 'Archive & Links',
-    subtitle: 'What THEapp does with the links and files you save.',
+    subtitle: 'What misc. does with the links and files you save.',
     children: [
       SettingsGroup(
         label: 'Saving links',
         footer:
-            'THEapp visits the page you pasted, like a browser would. None of '
+            'misc. visits the page you pasted, like a browser would. None of '
             'your own content is sent anywhere.',
         children: [
           SettingsSwitch(
@@ -463,9 +468,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
       // Share menu / Shortcut (see ios/README_IOS.md).
       if (!touchFirst)
         SettingsGroup(
-          label: 'Send to THEapp',
+          label: 'Send to misc.',
           footer:
-              'Adds “THEapp” to the right-click “Send to” menu in File '
+              'Adds “misc.” to the right-click “Send to” menu in File '
               'Explorer. Photos and files you send are saved in the Archive.',
           children: [
             SettingsRow(
@@ -493,12 +498,12 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   Future<void> _toggleSendTo() => _run(() async {
     if (SendToBridge.isInstalled) {
       await SendToBridge.uninstall();
-      s.showToast('Removed THEapp from the Send to menu.');
+      s.showToast('Removed misc. from the Send to menu.');
     } else {
       final ok = await SendToBridge.install();
       s.showToast(
         ok
-            ? 'Added THEapp to the Send to menu.'
+            ? 'Added misc. to the Send to menu.'
             : 'Could not add the shortcut.',
       );
     }
@@ -550,12 +555,12 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             ? null
             : touchFirst
             ? 'Text copied on your PC arrives here, ready to paste in any app '
-                  '(while THEapp is open). Goes only through your own hub.'
-            : 'While THEapp runs, text you copy in any app is sent to your '
+                  '(while misc. is open). Goes only through your own hub.'
+            : 'While misc. runs, text you copy in any app is sent to your '
                   'other devices through your own hub, and text copied there '
                   'arrives on this clipboard. Off by default: copied '
                   'passwords would be shared too. The hub must run this '
-                  'version of THEapp.',
+                  'version of misc.',
         children: [
           SettingsSwitch(
             key: const ValueKey('share-clipboard'),
@@ -608,7 +613,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
       key: const ValueKey('settings-page-data'),
       title: 'Data & Storage',
       subtitle:
-          'Your data belongs to you, not to one installation of THEapp. '
+          'Your data belongs to you, not to one installation of misc. '
           'Keep a copy outside it.',
       children: [
         SettingsGroup(
@@ -623,8 +628,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               key: const ValueKey('auto-backup'),
               title: 'Back up automatically',
               subtitle: touchFirst
-                  ? 'A backup each time THEapp starts and the schedule is due.'
-                  : 'At start, and (while THEapp runs) after changes.',
+                  ? 'A backup each time misc. starts and the schedule is due.'
+                  : 'At start, and (while misc. runs) after changes.',
               value: s.autoBackupEnabled,
               onChanged: (v) => s.setAutoBackup(v),
             ),
@@ -658,11 +663,11 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           ],
         ),
         SettingsGroup(
-          label: 'Keep a copy outside THEapp',
+          label: 'Keep a copy outside misc.',
           footer:
               'Deleting the app deletes its own folder, backups included. A '
               'file saved to Files, iCloud Drive or your PC survives. '
-              '${touchFirst ? 'To update THEapp without losing data, install the new build over the old one (same bundle ID); do not delete the app first unless you have exported a file.' : ''}',
+              '${touchFirst ? 'To update misc. without losing data, install the new build over the old one (same bundle ID); do not delete the app first unless you have exported a file.' : ''}',
           children: [
             SettingsRow(
               key: const ValueKey('export-all'),
@@ -688,7 +693,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 icon: Icons.save_alt,
                 title: 'Save a copy in the Files app',
                 subtitle:
-                    'On My ${touchFirst ? 'iPad' : 'device'} → THEapp → THEapp '
+                    'On My ${touchFirst ? 'iPad' : 'device'} → misc. → THEapp '
                     'Backups. Move it to iCloud Drive or your PC to keep it '
                     'safe.',
                 onTap: _busy
@@ -699,7 +704,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                           if (copy != null) {
                             s.showToast(
                               'Backup saved in the Files app: On My iPad (or '
-                              'iPhone) → THEapp → THEapp Backups.',
+                              'iPhone) → misc. → THEapp Backups.',
                             );
                           }
                         } catch (e, st) {
@@ -718,7 +723,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   ? 'Paired: the hub keeps its own synced copy of your records '
                         'while it is reachable (${s.syncStatus}).'
                   : 'Not paired. When it is, the hub keeps a synced copy; '
-                        'THEapp works fully without it.',
+                        'misc. works fully without it.',
             ),
             const SettingsRow(
               icon: Icons.cloud_outlined,
@@ -796,10 +801,18 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
   Widget _privacy() => SettingsPage(
     key: const ValueKey('settings-page-privacy'),
-    title: 'Privacy',
-    subtitle: 'What THEapp keeps, sends and never sends.',
+    title: 'Security & Privacy',
+    subtitle:
+        'How your data is protected, and whether it is working. Everything '
+        'here happens automatically.',
     children: [
-      SettingsGroup(padded: true, children: [PrivacySummary(state: s)]),
+      SecurityStatusView(state: s),
+      const SizedBox(height: 12),
+      SettingsGroup(
+        label: 'What stays on this device',
+        padded: true,
+        children: [PrivacySummary(state: s)],
+      ),
     ],
   );
 
@@ -822,7 +835,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             '(at least 371c6ca).',
         children: [
           SettingsRow(
-            title: 'THEapp build',
+            title: 'misc. build',
             trailing: SelectableText(
               appBuild,
               key: const ValueKey('about-build'),
