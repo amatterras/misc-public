@@ -695,7 +695,136 @@ class SyncClient {
     }
   }
 
-  Future<void> upload(String sha, File file) async {
+  /// Files larger than this go up in pieces of this size (each piece is a
+  /// separate request, so a cut connection costs at most one piece, and the
+  /// hub keeps what it received). Smaller files go in one request.
+  int uploadChunkBytes = 4 * 1024 * 1024;
+
+  /// How much of [sha] the hub already holds from an interrupted upload, or
+  /// null if it holds the complete file.
+  Future<int?> partialBytes(String sha) async {
+    final req = await _open('HEAD', '/v1/attachments/$sha');
+    try {
+      final res = await req.close().timeout(timeout);
+      await res.drain<void>();
+      if (res.statusCode == 200) return null;
+      if (res.statusCode == 401) {
+        throw const SyncFailure(
+          'unauthorized',
+          'This device is no longer paired.',
+        );
+      }
+      return int.tryParse(res.headers.value('x-partial-bytes') ?? '') ?? 0;
+    } on SocketException {
+      throw const SyncFailure(
+        'offline',
+        'The hub is not reachable.',
+        retryable: true,
+      );
+    } on TimeoutException {
+      throw const SyncFailure(
+        'timeout',
+        'The hub did not answer.',
+        retryable: true,
+      );
+    }
+  }
+
+  /// Uploads [file] as attachment [sha]. Large files go up in pieces and
+  /// continue from what the hub already holds after an interruption.
+  /// [onProgress] gets (bytes the hub has, total).
+  Future<void> upload(
+    String sha,
+    File file, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final total = await file.length();
+    if (total <= uploadChunkBytes) {
+      await _uploadWhole(sha, file);
+      onProgress?.call(total, total);
+      return;
+    }
+    var offset = await partialBytes(sha);
+    if (offset == null) {
+      onProgress?.call(total, total);
+      return; // the hub has it all
+    }
+    while (offset! < total) {
+      final end = (offset + uploadChunkBytes).clamp(0, total);
+      final req = await _open('PUT', '/v1/attachments/$sha');
+      req.headers
+        ..contentLength = end - offset
+        ..contentType = ContentType.binary
+        ..set('x-upload-offset', '$offset')
+        ..set('x-upload-total', '$total');
+      try {
+        await req.addStream(file.openRead(offset, end));
+        final res = await req.close().timeout(timeout);
+        final body = await utf8.decodeStream(res);
+        if (res.statusCode == 409) {
+          // The hub holds a different amount than we thought: continue from
+          // what it really has.
+          final have = int.tryParse(res.headers.value('x-partial-bytes') ?? '');
+          if (have == null || have > total) {
+            throw const SyncFailure(
+              'integrity_failed',
+              'The hub and this device disagree about an upload.',
+              retryable: true,
+            );
+          }
+          offset = have;
+          continue;
+        }
+        if (res.statusCode == 422 && offset == 0) {
+          // An older hub reads a piece as the whole file and refuses it:
+          // send the whole file the old way.
+          await _uploadWhole(sha, file);
+          onProgress?.call(total, total);
+          return;
+        }
+        if (res.statusCode != 200) {
+          throw SyncFailure(
+            'error',
+            'The upload failed (${res.statusCode}).',
+            retryable: res.statusCode >= 500,
+          );
+        }
+        final complete = (jsonDecode(body) as Map)['complete'] == true;
+        offset = end;
+        onProgress?.call(offset, total);
+        if (complete) return;
+      } on SocketException {
+        throw const SyncFailure(
+          'offline',
+          'The upload was interrupted.',
+          retryable: true,
+        );
+      } on TimeoutException {
+        throw const SyncFailure(
+          'timeout',
+          'The upload timed out.',
+          retryable: true,
+        );
+      } on HttpException {
+        throw const SyncFailure(
+          'offline',
+          'The upload was interrupted.',
+          retryable: true,
+        );
+      }
+    }
+    // Every piece was accepted; the hub confirms it holds the whole, checked
+    // file before this returns.
+    if (await partialBytes(sha) != null) {
+      throw const SyncFailure(
+        'integrity_failed',
+        'The hub did not confirm the complete file.',
+        retryable: true,
+      );
+    }
+  }
+
+  Future<void> _uploadWhole(String sha, File file) async {
     final req = await _open('PUT', '/v1/attachments/$sha');
     req.headers.contentLength = await file.length();
     req.headers.contentType = ContentType.binary;
@@ -711,16 +840,38 @@ class SyncClient {
     await _json(req);
   }
 
-  /// Downloads an attachment to a temporary file, checks its size and
-  /// SHA-256, then moves it to [target]. A bad or interrupted download never
-  /// leaves a file at [target].
-  Future<void> download(String sha, int? size, File target) async {
-    final req = await _open('GET', '/v1/attachments/$sha');
+  /// Downloads an attachment to [target]: into a partial file that is kept if
+  /// the connection drops (the next call continues from its length), checked
+  /// against its size and SHA-256, then moved into place. A damaged or wrong
+  /// download never reaches [target]. Memory use is one network chunk at a
+  /// time, whatever the file size.
+  Future<void> download(
+    String sha,
+    int? size,
+    File target, {
+    void Function(int received, int? total)? onProgress,
+  }) async {
     final tmp = File('${target.path}.download');
+    await target.parent.create(recursive: true);
+    var keepPartial = false;
     IOSink? sink;
     try {
+      var have = await tmp.exists() ? await tmp.length() : 0;
+      if (have > maxAttachmentBytes) {
+        await tmp.delete();
+        have = 0;
+      }
+      final req = await _open('GET', '/v1/attachments/$sha');
+      if (have > 0) req.headers.set(HttpHeaders.rangeHeader, 'bytes=$have-');
       final res = await req.close().timeout(timeout);
-      if (res.statusCode != 200) {
+      if (res.statusCode == 416) {
+        // The partial file is not part of this attachment: start again.
+        await res.drain<void>();
+        await tmp.delete();
+        have = 0;
+        return await download(sha, size, target, onProgress: onProgress);
+      }
+      if (res.statusCode != 200 && res.statusCode != 206) {
         await res.drain<void>();
         throw SyncFailure(
           res.statusCode == 404 ? 'not_found' : 'error',
@@ -728,11 +879,20 @@ class SyncClient {
           retryable: res.statusCode != 404,
         );
       }
-      await target.parent.create(recursive: true);
-      sink = tmp.openWrite();
       final out = _Digest();
       final hasher = sha256.startChunkedConversion(out);
       var received = 0;
+      if (res.statusCode == 206 && have > 0) {
+        // Continue: first feed what is already on disk to the checksum.
+        await for (final chunk in tmp.openRead()) {
+          hasher.add(chunk);
+        }
+        received = have;
+        sink = tmp.openWrite(mode: FileMode.append);
+      } else {
+        // 200: the whole file (a hub without ranges, or a fresh start).
+        sink = tmp.openWrite();
+      }
       await for (final chunk in res.timeout(timeout)) {
         received += chunk.length;
         if (received > maxAttachmentBytes) {
@@ -743,10 +903,14 @@ class SyncClient {
         }
         hasher.add(chunk);
         sink.add(chunk);
+        onProgress?.call(received, size);
       }
+      await sink.flush();
       await sink.close();
+      sink = null;
       hasher.close();
       if (out.value.toString() != sha || (size != null && size != received)) {
+        // Damaged or incomplete beyond repair: never resumed.
         throw const SyncFailure(
           'integrity_failed',
           'Downloaded attachment is damaged.',
@@ -755,12 +919,21 @@ class SyncClient {
       }
       await tmp.rename(target.path);
     } on SocketException {
+      keepPartial = true;
+      throw const SyncFailure(
+        'offline',
+        'The download was interrupted.',
+        retryable: true,
+      );
+    } on HttpException {
+      keepPartial = true;
       throw const SyncFailure(
         'offline',
         'The download was interrupted.',
         retryable: true,
       );
     } on TimeoutException {
+      keepPartial = true;
       throw const SyncFailure(
         'timeout',
         'The download timed out.',
@@ -770,7 +943,7 @@ class SyncClient {
       try {
         await sink?.close();
       } catch (_) {}
-      if (await tmp.exists()) await tmp.delete();
+      if (!keepPartial && await tmp.exists()) await tmp.delete();
     }
   }
 }

@@ -26,6 +26,7 @@ import 'e2ee.dart';
 import 'record_merge.dart';
 import 'protocol.dart';
 import 'sync_client.dart';
+import 'transfer_tracker.dart';
 
 /// Lets the engine reach the canvas documents open on screen (the canvas
 /// and an open note's handwriting), so remote changes merge into them
@@ -866,6 +867,21 @@ class SyncEngine {
   Map<String, String>? _blobIds;
 
   /// plain SHA-256 of an attachment -> id of its sealed copy on the hub.
+  /// Sealed copies waiting in the outbox: plain SHA-256 -> sealed id.
+  Map<String, String>? _pendingIds;
+
+  Future<Map<String, String>> _pendingTable() async {
+    if (_pendingIds != null) return _pendingIds!;
+    final saved = await workspace.store.read('sync', 'outbox');
+    return _pendingIds = {
+      for (final e in ((saved?['pending'] as Map?) ?? const {}).entries)
+        '${e.key}': '${e.value}',
+    };
+  }
+
+  /// What the attachment transfers are doing (progress, retries, failures).
+  final TransferTracker transfers = TransferTracker();
+
   Future<Map<String, String>> _blobTable() async {
     if (_blobIds != null) return _blobIds!;
     final saved = await workspace.store.read('sync', 'blobs');
@@ -899,22 +915,74 @@ class SyncEngine {
       var id = table[sha] ?? data[blobKey] as String?;
       final haveLocal = await workspace.attachments.fileFor(name).exists();
       if (haveLocal && (id == null || !await client.hasAttachment(id))) {
-        final plain = await workspace.attachments.readBytes(name);
-        if (sha256.convert(plain).toString() != sha) {
-          report.problems.add(
-            'An attachment changed on disk and was not sent.',
-          );
-          continue;
-        }
-        final sealed = crypto.sealBlob(plain);
-        final staged = workspace.attachments.stagingFile('${sealed.id}.up');
-        try {
+        // The sealed copy is kept in the outbox until the hub has all of it,
+        // so an interrupted upload continues instead of sealing (and
+        // sending) the file again under a new id.
+        final outbox = Directory(
+          '${workspace.root.path}${Platform.pathSeparator}outbox',
+        );
+        await outbox.create(recursive: true);
+        final pending = await _pendingTable();
+        var sealedId = pending[sha];
+        var staged = File(
+          '${outbox.path}${Platform.pathSeparator}$sealedId.up',
+        );
+        if (sealedId == null ||
+            !await staged.exists() ||
+            await fileSha256(staged) != sealedId) {
+          final plain = await workspace.attachments.readBytes(name);
+          if (sha256.convert(plain).toString() != sha) {
+            report.problems.add(
+              'An attachment changed on disk and was not sent.',
+            );
+            continue;
+          }
+          final sealed = crypto.sealBlob(plain);
+          sealedId = sealed.id;
+          staged = File('${outbox.path}${Platform.pathSeparator}$sealedId.up');
           await staged.writeAsBytes(sealed.bytes, flush: true);
-          await client.upload(sealed.id, staged);
-        } finally {
-          if (await staged.exists()) await staged.delete();
+          pending[sha] = sealedId;
+          await workspace.store.write('sync', 'outbox', {'pending': pending});
         }
-        id = sealed.id;
+        final total = await staged.length();
+        transfers.update(
+          sealedId,
+          upload: true,
+          stage: TransferStage.active,
+          total: total,
+        );
+        try {
+          await client.upload(
+            sealedId,
+            staged,
+            onProgress: (sent, all) => transfers.update(
+              sealedId!,
+              upload: true,
+              stage: TransferStage.active,
+              bytes: sent,
+              total: all,
+            ),
+          );
+        } on SyncFailure catch (e) {
+          transfers.update(
+            sealedId,
+            upload: true,
+            stage: e.retryable ? TransferStage.retrying : TransferStage.failed,
+            error: e.message,
+          );
+          rethrow;
+        }
+        // Done only now: the hub confirmed the complete, checked file.
+        transfers.update(
+          sealedId,
+          upload: true,
+          stage: TransferStage.done,
+          total: total,
+        );
+        if (await staged.exists()) await staged.delete();
+        pending.remove(sha);
+        await workspace.store.write('sync', 'outbox', {'pending': pending});
+        id = sealedId;
         table[sha] = id;
         await workspace.store.write('sync', 'blobs', {'blobs': table});
         report.uploaded++;
@@ -1155,21 +1223,64 @@ class SyncEngine {
                       : 'previewBlob']
                   as String?;
           if (crypto != null && blob != null && sha256Pattern.hasMatch(blob)) {
-            await client.download(blob, null, staged);
+            // The partial file lives in `incoming/` (not the view-copy
+            // folder, which is emptied whenever the app goes to the
+            // background), so a cut download continues next time.
+            final partial = File(
+              '${workspace.root.path}${Platform.pathSeparator}incoming'
+              '${Platform.pathSeparator}$blob.dl',
+            );
+            transfers.update(blob, upload: false, stage: TransferStage.active);
+            try {
+              await client.download(
+                blob,
+                null,
+                partial,
+                onProgress: (got, all) => transfers.update(
+                  blob,
+                  upload: false,
+                  stage: TransferStage.active,
+                  bytes: got,
+                  total: all ?? size,
+                ),
+              );
+            } on SyncFailure catch (e) {
+              transfers.update(
+                blob,
+                upload: false,
+                stage: e.retryable
+                    ? TransferStage.retrying
+                    : TransferStage.failed,
+                error: e.message,
+              );
+              rethrow;
+            }
+            transfers.update(
+              blob,
+              upload: false,
+              stage: TransferStage.verifying,
+            );
             final Uint8List plain;
             try {
-              plain = crypto.openBlob(await staged.readAsBytes());
+              plain = crypto.openBlob(await partial.readAsBytes());
             } on DecryptionFailure {
+              transfers.update(
+                blob,
+                upload: false,
+                stage: TransferStage.failed,
+                error: 'could not be decrypted',
+              );
               report.problems.add('An attachment could not be decrypted.');
               continue;
             } finally {
-              if (await staged.exists()) await staged.delete();
+              if (await partial.exists()) await partial.delete();
             }
             if (sha256.convert(plain).toString() != sha) {
               report.problems.add('A downloaded attachment is damaged.');
               continue;
             }
             await workspace.attachments.storeBytes(name, plain);
+            transfers.update(blob, upload: false, stage: TransferStage.done);
           } else if (client.requireSealed) {
             report.problems.add('An attachment is not available yet.');
             continue;

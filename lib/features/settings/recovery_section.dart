@@ -47,7 +47,7 @@ Future<bool> showRecoveryCodeDialog(
 }
 
 class RecoveryCodeDialog extends StatefulWidget {
-  const RecoveryCodeDialog({required this.code});
+  const RecoveryCodeDialog({super.key, required this.code});
 
   final String code;
 

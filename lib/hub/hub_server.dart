@@ -596,6 +596,13 @@ class HubServer {
           who = _syncDevice(r).id;
           final exists = await store.hasAttachment(segments[2]);
           r.response.statusCode = exists ? 200 : 404;
+          if (!exists) {
+            // How much of an interrupted upload the hub already holds.
+            r.response.headers.set(
+              'x-partial-bytes',
+              '${await store.partialBytes(segments[2])}',
+            );
+          }
           await r.response.close();
         case ('PUT', '/v1/attachments/:sha'):
           _checkProtocol(r);
@@ -608,8 +615,38 @@ class HubServer {
               status: 411,
             );
           }
-          await store.putAttachment(segments[2], size, r);
-          await _send(r, 200, {'ok': true});
+          final offsetHeader = r.headers.value('x-upload-offset');
+          if (offsetHeader == null) {
+            await store.putAttachment(segments[2], size, r);
+            await _send(r, 200, {'ok': true});
+          } else {
+            // One piece of a resumable upload (HubStore.putAttachmentPart).
+            final offset = int.tryParse(offsetHeader);
+            final total = int.tryParse(r.headers.value('x-upload-total') ?? '');
+            if (offset == null || total == null || offset < 0) {
+              throw const ProtocolException(
+                'bad_request',
+                'Bad upload offset.',
+              );
+            }
+            try {
+              final complete = await store.putAttachmentPart(
+                segments[2],
+                offset: offset,
+                total: total,
+                data: r,
+              );
+              await _send(r, 200, {'ok': true, 'complete': complete});
+            } on ProtocolException catch (e) {
+              if (e.code == 'offset_mismatch') {
+                r.response.headers.set(
+                  'x-partial-bytes',
+                  '${await store.partialBytes(segments[2])}',
+                );
+              }
+              rethrow;
+            }
+          }
         case ('GET', '/v1/attachments/:sha'):
           _checkProtocol(r);
           who = _syncDevice(r).id;
@@ -621,12 +658,32 @@ class HubServer {
               status: 404,
             );
           }
-          r.response
-            ..statusCode = 200
-            ..headers.contentType = ContentType.binary
-            ..headers.contentLength = await file.length();
-          await r.response.addStream(file.openRead());
-          await r.response.close();
+          final length = await file.length();
+          // A download can continue where it stopped ("Range: bytes=N-").
+          final range = RegExp(r'^bytes=(\d+)-$')
+              .firstMatch(r.headers.value(HttpHeaders.rangeHeader) ?? '');
+          final from = range == null ? 0 : int.parse(range.group(1)!);
+          if (range != null && from >= length) {
+            r.response.statusCode = 416;
+            r.response.headers.set(
+              HttpHeaders.contentRangeHeader,
+              'bytes */$length',
+            );
+            await r.response.close();
+          } else {
+            r.response
+              ..statusCode = range == null ? 200 : 206
+              ..headers.contentType = ContentType.binary
+              ..headers.contentLength = length - from;
+            if (range != null) {
+              r.response.headers.set(
+                HttpHeaders.contentRangeHeader,
+                'bytes $from-${length - 1}/$length',
+              );
+            }
+            await r.response.addStream(file.openRead(from));
+            await r.response.close();
+          }
         case ('GET', '/v1/admin/status'):
           _admin(r);
           who = 'admin';

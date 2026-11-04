@@ -895,6 +895,162 @@ class HubStore {
 
   Future<bool> hasAttachment(String sha) => attachmentFile(sha).exists();
 
+  // ---- resumable uploads -------------------------------------------------
+  //
+  // A large attachment can arrive in pieces. The pieces are appended to
+  // `.incoming/<sha>.part`; only when the part holds exactly the declared
+  // size AND its SHA-256 matches does it become the attachment (so a
+  // half-sent or damaged file is never visible, and a device that was cut
+  // off continues from `partialBytes` instead of starting again).
+
+  File _partFile(String sha) =>
+      File('${attachmentsDir.path}$_sep.incoming$_sep$sha.part');
+
+  final Map<String, Future<void>> _partLocks = {};
+
+  /// How many bytes of [sha] the hub already holds from an interrupted
+  /// upload (0 if none).
+  Future<int> partialBytes(String sha) async {
+    final f = _partFile(sha);
+    return await f.exists() ? await f.length() : 0;
+  }
+
+  /// Parts untouched for [maxAge] are removed (a device that never came
+  /// back must not leave files behind forever).
+  Future<void> sweepPartials({
+    Duration maxAge = const Duration(days: 7),
+  }) async {
+    final dir = Directory('${attachmentsDir.path}$_sep.incoming');
+    if (!await dir.exists()) return;
+    final cutoff = DateTime.now().subtract(maxAge);
+    await for (final e in dir.list()) {
+      if (e is File && e.path.endsWith('.part')) {
+        if ((await e.lastModified()).isBefore(cutoff)) {
+          try {
+            await e.delete();
+          } on FileSystemException {
+            // In use; next time.
+          }
+        }
+      }
+    }
+  }
+
+  /// Appends one piece of [sha] that starts at [offset] (which must equal
+  /// [partialBytes]) of a file of [total] bytes. Returns true when the file
+  /// is complete, checked and in place.
+  Future<bool> putAttachmentPart(
+    String sha, {
+    required int offset,
+    required int total,
+    required Stream<List<int>> data,
+  }) {
+    final previous = _partLocks[sha] ?? Future<void>.value();
+    final run = previous
+        .catchError((_) {})
+        .then((_) => _putPart(sha, offset, total, data));
+    final marker = run.then<void>((_) {}, onError: (_) {});
+    _partLocks[sha] = marker;
+    marker.whenComplete(() {
+      if (identical(_partLocks[sha], marker)) _partLocks.remove(sha);
+    });
+    return run;
+  }
+
+  Future<bool> _putPart(
+    String sha,
+    int offset,
+    int total,
+    Stream<List<int>> data,
+  ) async {
+    if (total <= 0 || total > maxAttachmentBytes) {
+      await data.drain<void>();
+      throw const ProtocolException(
+        'too_large',
+        'Attachment is too large.',
+        status: 413,
+      );
+    }
+    final target = attachmentFile(sha);
+    if (await target.exists()) {
+      await data.drain<void>();
+      return true;
+    }
+    final part = _partFile(sha);
+    await part.parent.create(recursive: true);
+    final have = await partialBytes(sha);
+    if (offset != have) {
+      await data.drain<void>();
+      throw ProtocolException(
+        'offset_mismatch',
+        'The hub holds $have bytes of this file.',
+        status: 409,
+      );
+    }
+    if (offset == 0) unawaited(sweepPartials());
+    final sink = part.openWrite(mode: FileMode.append);
+    var received = 0;
+    var refused = false;
+    try {
+      await for (final chunk in data) {
+        if (offset == 0 &&
+            received == 0 &&
+            e2eeRequired &&
+            !sealedBlobPrefix(chunk)) {
+          refused = true;
+        }
+        received += chunk.length;
+        if (offset + received > total) {
+          throw const ProtocolException(
+            'integrity_failed',
+            'More data than declared.',
+            status: 422,
+          );
+        }
+        sink.add(chunk);
+      }
+      await sink.flush();
+      await sink.close();
+    } on Object {
+      try {
+        await sink.close();
+      } catch (_) {}
+      // Whatever arrived before a cut stays: the next try continues from
+      // the real length. Anything refused or too long goes.
+      if (refused) await _deletePart(part);
+      rethrow;
+    }
+    if (refused) {
+      await _deletePart(part);
+      throw const ProtocolException(
+        'plaintext_rejected',
+        'This hub only accepts end-to-end encrypted attachments.',
+      );
+    }
+    final size = await part.length();
+    if (size < total) return false;
+    final digest = (await sha256.bind(part.openRead()).first).toString();
+    if (size != total || digest != sha) {
+      await _deletePart(part);
+      throw const ProtocolException(
+        'integrity_failed',
+        'Attachment size or checksum does not match.',
+        status: 422,
+      );
+    }
+    await target.parent.create(recursive: true);
+    await part.rename(target.path);
+    return true;
+  }
+
+  Future<void> _deletePart(File part) async {
+    try {
+      if (await part.exists()) await part.delete();
+    } on FileSystemException {
+      // Swept later.
+    }
+  }
+
   /// Stores an attachment streamed in [data]. It is written to a temporary
   /// file while being hashed and only moved into place when its size and
   /// SHA-256 match, so an interrupted or corrupted upload never becomes a

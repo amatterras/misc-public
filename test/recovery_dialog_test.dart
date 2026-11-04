@@ -36,9 +36,11 @@ void main() {
     await tester.tapAt(const Offset(2, 2));
     await tester.pumpAndSettle();
     expect(find.text(code), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const ValueKey('recovery-saved')));
     await tester.tap(find.byKey(const ValueKey('recovery-saved')));
     await tester.pump();
     expect(done().onPressed, isNotNull);
+    await tester.ensureVisible(find.byKey(const ValueKey('recovery-done')));
     await tester.tap(find.byKey(const ValueKey('recovery-done')));
     await tester.pumpAndSettle();
     expect(result, isTrue);
