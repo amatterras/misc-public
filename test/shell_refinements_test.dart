@@ -61,7 +61,7 @@ void main() {
     geometryDir.deleteSync(recursive: true);
   });
 
-  testWidgets('right sidebar groups hide and restore their same children', (
+  testWidgets('the sidebar has no lists, commands or app switcher', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1280, 900);
@@ -78,48 +78,47 @@ void main() {
     await tester.runAsync(state.init);
     await tester.runAsync(() async {
       await state.createCanvas(title: 'First board', show: false);
-      await state.createCanvas(title: 'Second board', show: false);
     });
-    final firstNote = ws.createNote(title: 'First note');
-    ws.createNote(title: 'Second note');
+    final note = ws.createNote(title: 'First note');
     await tester.pumpWidget(TheApp(state: state));
     await settle(tester);
-    // The open board's title also shows in the top bar, so look in the sidebar.
     Finder inSidebar(String text) =>
         find.descendant(of: find.byType(Sidebar), matching: find.text(text));
 
-    expect(find.text('mindmap'), findsOneWidget);
-    expect(find.text('notes'), findsOneWidget);
-    expect(find.text('calendar'), findsOneWidget);
-    expect(find.text('archive'), findsOneWidget);
-    // Each name shows once: in its sidebar group (there is no Home page
-    // listing them a second time).
-    expect(inSidebar('First board'), findsOneWidget);
-    expect(inSidebar('Second board'), findsOneWidget);
-    expect(inSidebar('First note'), findsOneWidget);
-    final selectedCanvas = state.canvas?.id;
-
-    await tester.tap(
-      find.byKey(const ValueKey('sidebar-group-mindmap-toggle')),
-    );
-    await settle(tester);
+    // The six destinations and Quick Add stay.
+    for (final label in const [
+      'mindmap',
+      'notes',
+      'calendar',
+      'archive',
+      'safari',
+      'ai',
+      'Quick Add',
+    ]) {
+      expect(inSidebar(label), findsOneWidget, reason: label);
+    }
+    // No Commands, no App switcher, no canvas / recent-note / favorite lists
+    // (and no way to open them).
+    expect(inSidebar('Commands'), findsNothing);
+    expect(find.byTooltip('App switcher'), findsNothing);
     expect(inSidebar('First board'), findsNothing);
-    expect(inSidebar('Second board'), findsNothing);
-    expect(state.canvas?.id, selectedCanvas);
-    expect(state.workspace.notes[firstNote.id], isNotNull);
-
-    await tester.tap(
-      find.byKey(const ValueKey('sidebar-group-mindmap-toggle')),
-    );
-    await settle(tester);
-    expect(inSidebar('First board'), findsOneWidget);
-    expect(inSidebar('Second board'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('sidebar-group-notes-toggle')));
-    await settle(tester);
     expect(inSidebar('First note'), findsNothing);
-    expect(state.workspace.notes[firstNote.id], isNotNull);
-    expect(state.sidebarGroupExpanded('notes'), isFalse);
+    expect(inSidebar('FAVORITES'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('sidebar-group-mindmap-toggle')),
+      findsNothing,
+    );
+    // Nothing was deleted: the data is still there, and the note is still
+    // reachable from Notes.
+    expect(state.workspace.notes[note.id], isNotNull);
+    expect(state.canvasList.map((c) => c.title), contains('First board'));
+
+    // Collapsed: only icons, still no switcher.
+    state.toggleSidebar();
+    await settle(tester);
+    expect(find.byTooltip('App switcher'), findsNothing);
+    expect(find.byTooltip('mindmap'), findsOneWidget);
+
     await tester.runAsync(state.flush);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 9));

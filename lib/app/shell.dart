@@ -20,7 +20,14 @@ import '../features/search/search_dialog.dart';
 import '../features/settings/settings_dialog.dart';
 import '../widgets/common.dart' show GhostIconButton;
 import '../widgets/floating_layer.dart';
+import '../new_ui/new_archive_page.dart';
+import '../new_ui/new_phone_shell.dart';
+import '../new_ui/new_sidebar.dart';
+import '../platform/device_idiom.dart';
+import '../platform/input_hints.dart' show touchFirst;
+import 'interface_version.dart';
 import 'page_host.dart';
+import 'quote_footer.dart';
 import 'page_windows.dart';
 import 'app_state.dart';
 import 'top_bar.dart';
@@ -229,6 +236,12 @@ class _AppShellState extends State<AppShell> {
           builder: (context, _) {
             final width = MediaQuery.sizeOf(context).width;
             final isCompact = width < 640;
+            // New interface on an iPhone: its own layout with Home.
+            // The shell follows the device, the width only adapts it: an
+            // iPhone always gets the phone layout (with Home); an iPad never
+            // does, however narrow its window is.
+            final isNew = state.interfaceVersion == InterfaceVersion.newDesign;
+            final phone = isNew && touchFirst && DeviceIdiom.isPhone;
             final windows = state.windows;
             windows.titleOf ??= (p) => pageTitle(state, p);
             windows.builder ??= (context, p) =>
@@ -268,7 +281,11 @@ class _AppShellState extends State<AppShell> {
                                 ),
                                 page(
                                   AppPage.links,
-                                  () => LibraryPage(state: state),
+                                  () =>
+                                      state.interfaceVersion ==
+                                          InterfaceVersion.newDesign
+                                      ? NewArchivePage(state: state)
+                                      : LibraryPage(state: state),
                                 ),
                                 page(
                                   AppPage.calendar,
@@ -309,6 +326,7 @@ class _AppShellState extends State<AppShell> {
                     ),
                   ),
                 ),
+                QuoteFooter(service: _motivation),
               ],
             );
 
@@ -316,7 +334,15 @@ class _AppShellState extends State<AppShell> {
               backgroundColor: AppColors.background,
               body: Stack(
                 children: [
-                  if (isCompact)
+                  if (phone)
+                    SizedBox.expand(
+                      child: NewPhoneShell(
+                        state: state,
+                        pages: mainContent,
+                        motivation: _motivation,
+                      ),
+                    )
+                  else if (isCompact && !isNew)
                     SafeArea(
                       bottom: false,
                       child: Column(
@@ -329,31 +355,43 @@ class _AppShellState extends State<AppShell> {
                           Expanded(child: mainContent),
                           ListenableBuilder(
                             listenable: state.workspace.changes,
-                            builder: (context, _) => _CompactBottomNav(
-                              state: state,
-                              motivation: _motivation,
-                            ),
+                            builder: (context, _) =>
+                                _CompactBottomNav(state: state),
                           ),
                         ],
                       ),
+                    )
+                  else if (isNew)
+                    // New interface (Windows, iPad, any width): same pages,
+                    // floating sidebar; narrow windows get its compact form.
+                    SizedBox.expand(
+                      child: NewSidebarLayout(state: state, child: mainContent),
                     )
                   else
                     Row(
                       children: [
                         Expanded(child: mainContent),
-                        Sidebar(state: state, motivation: _motivation),
+                        Sidebar(state: state),
                       ],
                     ),
-                  _Toast(state: state, bottomOffset: isCompact ? 72 : 28),
+                  _Toast(
+                    state: state,
+                    bottomOffset: (isCompact && !isNew) || phone ? 72 : 28,
+                  ),
                   _TransferBar(
                     state: state,
-                    bottomOffset: isCompact ? 120 : 76,
+                    bottomOffset: (isCompact && !isNew) || phone ? 120 : 76,
                   ),
                   ListenableBuilder(
                     listenable: _motivation,
                     builder: (context, _) => _motivation.greetingVisible
                         ? Positioned(
-                            top: isCompact ? 56 : 16,
+                            // Below the page bar (and the phone's own
+                            // top bar), not on top of it.
+                            top:
+                                TopBar.height +
+                                10 +
+                                ((isCompact && !isNew) || phone ? 48 : 0),
                             left: 16,
                             child: _GreetingWindow(service: _motivation),
                           )
@@ -452,10 +490,9 @@ class _CompactTopBar extends StatelessWidget {
 }
 
 class _CompactBottomNav extends StatelessWidget {
-  const _CompactBottomNav({required this.state, required this.motivation});
+  const _CompactBottomNav({required this.state});
 
   final AppState state;
-  final MotivationService motivation;
 
   @override
   Widget build(BuildContext context) {
@@ -471,7 +508,6 @@ class _CompactBottomNav extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _MotivationalQuoteBar(service: motivation),
             SizedBox(
               height: 54,
               child: Row(
@@ -515,47 +551,6 @@ class _CompactBottomNav extends StatelessWidget {
       ),
     );
   }
-}
-
-class _MotivationalQuoteBar extends StatelessWidget {
-  const _MotivationalQuoteBar({required this.service});
-
-  final MotivationService service;
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: service,
-    builder: (context, _) {
-      final quote = service.quote;
-      if (quote == null) return const SizedBox.shrink();
-      final text = quote.attribution.isEmpty
-          ? '“${quote.text}”'
-          : '“${quote.text}”  ${quote.attribution}';
-      return Container(
-        key: const ValueKey('motivational-quote'),
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-        decoration: BoxDecoration(
-          color: AppColors.sidebar,
-          border: Border(top: BorderSide(color: AppColors.border)),
-        ),
-        child: Tooltip(
-          message: quote.attribution,
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11,
-              height: 1.4,
-            ),
-          ),
-        ),
-      );
-    },
-  );
 }
 
 class _GreetingWindow extends StatefulWidget {

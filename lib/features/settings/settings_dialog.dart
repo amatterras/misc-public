@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'privacy_summary.dart';
 import '../../app/app_state.dart';
 import '../../app/build_info.dart';
+import '../../app/interface_version.dart';
 import '../../app/test_environment.dart';
 import '../../app/theme.dart';
 import '../../data/storage/app_log.dart';
@@ -159,6 +160,32 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   await s.setThemeMode(mode);
                   if (mounted) setState(() {});
                 },
+              ),
+              const SizedBox(height: Space.md),
+              Text(
+                'Interface Version',
+                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              ),
+              const SizedBox(height: Space.sm),
+              SegmentedButton<InterfaceVersion>(
+                key: const ValueKey('interface-version'),
+                showSelectedIcon: false,
+                segments: [
+                  for (final v in InterfaceVersion.values)
+                    ButtonSegment(value: v, label: Text(v.label)),
+                ],
+                selected: {s.interfaceVersion},
+                onSelectionChanged: (choice) async {
+                  await s.setInterfaceVersion(choice.first);
+                  if (mounted) setState(() {});
+                },
+              ),
+              const SizedBox(height: Space.xs),
+              Text(
+                'Original is the interface you know. New is the redesign. '
+                'Your data is the same in both, and this choice applies to '
+                '$thisDevice only.',
+                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
               ),
               const _Heading('Privacy'),
               PrivacySummary(state: s),

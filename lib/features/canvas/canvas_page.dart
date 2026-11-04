@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
+import '../../app/interface_version.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
@@ -840,11 +841,14 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       _focusNode.requestFocus();
                     },
                   ),
-                Positioned(
-                  left: Space.xl,
-                  top: Space.xl,
-                  child: _TitleChip(state: s, controller: c),
-                ),
+                // New: no canvas picker in the corner. What it offered
+                // (rename, move to folder, trash) is in the command palette.
+                if (s.interfaceVersion != InterfaceVersion.newDesign)
+                  Positioned(
+                    left: Space.xl,
+                    top: Space.xl,
+                    child: _TitleChip(state: s, controller: c),
+                  ),
                 Positioned(
                   left: 0,
                   right: 0,
@@ -1124,63 +1128,74 @@ class _TextEditorOverlayState extends State<_TextEditorOverlay> {
   }
 }
 
+/// The canvas options: `rename`, `folder` (move to folder) and `delete`
+/// (move to trash). Used by the title chip and, in the New interface (which
+/// has no chip), by the command palette.
+Future<void> runCanvasOption(
+  BuildContext context,
+  AppState state,
+  CanvasController controller,
+  String choice,
+) async {
+  if (choice == 'rename') {
+    final title = await promptText(
+      context,
+      title: 'Rename canvas',
+      initial: controller.title,
+    );
+    if (title != null) await state.renameCanvas(controller.id, title);
+  } else if (choice == 'folder') {
+    String? folderId = controller.folderId;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Move to folder', style: TextStyle(fontSize: 16)),
+          content: SizedBox(
+            width: 320,
+            child: FolderDropdown(
+              workspace: state.workspace,
+              value: folderId,
+              onChanged: (v) => setState(() => folderId = v),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Move'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok == true) await state.moveCanvasToFolder(controller.id, folderId);
+  } else if (choice == 'delete') {
+    // Also here, not only in the sidebar's right-click menu: on a phone
+    // or a touch-only iPad this is the way to remove a canvas.
+    final ok = await confirm(
+      context,
+      title: 'Move “${controller.title}” to trash?',
+      message:
+          'The file is moved to a trash folder inside your data folder, '
+          'not erased.',
+      action: 'Move to trash',
+    );
+    if (ok) await state.deleteCanvas(controller.id);
+  }
+}
+
 class _TitleChip extends StatelessWidget {
   const _TitleChip({required this.state, required this.controller});
 
   final AppState state;
   final CanvasController controller;
 
-  Future<void> _onMenu(BuildContext context, String choice) async {
-    if (choice == 'rename') {
-      final title = await promptText(
-        context,
-        title: 'Rename canvas',
-        initial: controller.title,
-      );
-      if (title != null) await state.renameCanvas(controller.id, title);
-    } else if (choice == 'folder') {
-      String? folderId = controller.folderId;
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setState) => AlertDialog(
-            title: const Text('Move to folder', style: TextStyle(fontSize: 16)),
-            content: SizedBox(
-              width: 320,
-              child: FolderDropdown(
-                workspace: state.workspace,
-                value: folderId,
-                onChanged: (v) => setState(() => folderId = v),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Move'),
-              ),
-            ],
-          ),
-        ),
-      );
-      if (ok == true) await state.moveCanvasToFolder(controller.id, folderId);
-    } else if (choice == 'delete') {
-      // Also here, not only in the sidebar's right-click menu: on a phone
-      // or a touch-only iPad this is the way to remove a canvas.
-      final ok = await confirm(
-        context,
-        title: 'Move “${controller.title}” to trash?',
-        message:
-            'The file is moved to a trash folder inside your data folder, '
-            'not erased.',
-        action: 'Move to trash',
-      );
-      if (ok) await state.deleteCanvas(controller.id);
-    }
-  }
+  Future<void> _onMenu(BuildContext context, String choice) =>
+      runCanvasOption(context, state, controller, choice);
 
   @override
   Widget build(BuildContext context) {

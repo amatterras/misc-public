@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/interface_version.dart';
 import '../../app/canvas_ops.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
@@ -255,7 +256,15 @@ Future<void> showCanvasMenu(
     case 'selectAll':
       c.selectAll();
     case 'dots':
-      await showDotOpacityDialog(context, c, s.setDotOpacity);
+      await showDotOpacityDialog(
+        context,
+        c,
+        s.setDotOpacity,
+        // The size control belongs to the New interface.
+        saveSize: s.interfaceVersion == InterfaceVersion.newDesign
+            ? s.setDotSize
+            : null,
+      );
   }
 }
 

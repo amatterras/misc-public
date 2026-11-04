@@ -66,6 +66,7 @@ import '../features/vault/vault_page.dart';
 import '../features/vault/vault_service.dart';
 import 'canvas_ops.dart';
 import 'floating_windows.dart';
+import 'interface_version.dart';
 import 'page_windows.dart';
 import 'test_environment.dart';
 
@@ -170,11 +171,74 @@ class AppState extends ChangeNotifier {
   /// Opens a stored document file; replaceable in tests.
   bool Function(String path) openDocument = native.openDocument;
 
-  AppPage _page = AppPage.canvas;
-  AppPage get page => _page;
+  AppPage _pageValue = AppPage.canvas;
+  AppPage get page => _pageValue;
+  AppPage get _page => _pageValue;
+
+  /// Every move to another page leaves the iPhone Home (see [showHome]).
+  set _page(AppPage value) {
+    _pageValue = value;
+    _homeActive = false;
+  }
+
+  /// iPhone, New interface only: Home is shown instead of the page. Home is
+  /// not a page of its own; it is shown until any navigation happens.
+  bool _homeActive = false;
+  bool get homeActive => _homeActive;
+
+  /// Whether Home has already been shown once in this run (the phone opens
+  /// on Home first, then keeps wherever the user goes).
+  bool homeOpenedOnce = false;
+
+  void showHome() {
+    if (_homeActive) return;
+    _homeActive = true;
+    notifyListeners();
+  }
 
   bool _sidebarCollapsed = false;
   bool get sidebarCollapsed => _sidebarCollapsed;
+
+  InterfaceVersion _interfaceVersion = InterfaceVersion.original;
+
+  /// Which interface is shown (Settings → Appearance → Interface Version).
+  InterfaceVersion get interfaceVersion => _interfaceVersion;
+
+  /// Lets the app root restyle (theme + palette) when the version changes
+  /// without rebuilding for every unrelated state change.
+  final ValueNotifier<InterfaceVersion> interfaceVersionListenable =
+      ValueNotifier(InterfaceVersion.original);
+
+  /// Switches the interface at once and remembers it on this device. Only
+  /// the presentation changes; no data, page or open document is touched.
+  Future<void> setInterfaceVersion(InterfaceVersion version) async {
+    if (version == _interfaceVersion) return;
+    _interfaceVersion = version;
+    interfaceVersionListenable.value = version;
+    notifyListeners();
+    await settings.set(InterfaceVersion.settingsKey, version.stored);
+  }
+
+  /// The New sidebar can be hidden completely (a small handle brings it
+  /// back). Separate from [sidebarCollapsed], which belongs to Original.
+  bool _newSidebarHidden = false;
+  bool get newSidebarHidden => _newSidebarHidden;
+
+  /// Compact (icons only) or expanded (icons with names) New sidebar.
+  bool _newSidebarExpanded = false;
+  bool get newSidebarExpanded => _newSidebarExpanded;
+
+  void toggleNewSidebarExpanded() {
+    _newSidebarExpanded = !_newSidebarExpanded;
+    settings.set('newSidebarExpanded', _newSidebarExpanded);
+    notifyListeners();
+  }
+
+  void toggleNewSidebarHidden() {
+    _newSidebarHidden = !_newSidebarHidden;
+    settings.set('newSidebarHidden', _newSidebarHidden);
+    notifyListeners();
+  }
 
   List<CanvasSummary> _canvasList = const [];
   List<CanvasSummary> get canvasList => _canvasList;
@@ -257,6 +321,12 @@ class AppState extends ChangeNotifier {
     step('Loading your data');
     await workspace.load();
     _sidebarCollapsed = settings.get<bool>('sidebarCollapsed') ?? false;
+    _interfaceVersion = InterfaceVersion.fromStored(
+      settings.get<String>(InterfaceVersion.settingsKey),
+    );
+    interfaceVersionListenable.value = _interfaceVersion;
+    _newSidebarHidden = settings.get<bool>('newSidebarHidden') ?? false;
+    _newSidebarExpanded = settings.get<bool>('newSidebarExpanded') ?? false;
     _calendarTasksOpen = settings.get<bool>('calendarTasksOpen') ?? false;
     // Reopen where the user was (the last canvas is restored below).
     final lastPage = AppPage.values
@@ -1876,6 +1946,7 @@ class AppState extends ChangeNotifier {
       windows.showDestination();
     }
     if (page == _page) {
+      _homeActive = false;
       notifyListeners(); // e.g. a task was selected
       return;
     }
@@ -2671,7 +2742,8 @@ class AppState extends ChangeNotifier {
             )
             ..setEraser(mode: eraserMode, size: eraserSize)
             ..setPen(width: canvasPenWidth)
-            ..setDotOpacity(dotOpacityFor(DotSurface.mindmap)));
+            ..setDotOpacity(dotOpacityFor(DotSurface.mindmap))
+            ..setDotSize(dotSizeFor(DotSurface.mindmap)));
       await settings.set('lastCanvasId', id);
     }
     if (show) {
@@ -2744,7 +2816,8 @@ class AppState extends ChangeNotifier {
               )
               ..setEraser(mode: eraserMode, size: eraserSize)
               ..setPen(width: canvasPenWidth)
-              ..setDotOpacity(dotOpacityFor(DotSurface.mindmap)));
+              ..setDotOpacity(dotOpacityFor(DotSurface.mindmap))
+              ..setDotSize(dotSizeFor(DotSurface.mindmap)));
     }
     _canvasRefs[id] = (c!, 1);
     return c;
@@ -2790,13 +2863,16 @@ class AppState extends ChangeNotifier {
           updatedAt: DateTime.now(),
           kind: 'links',
         );
-    final c = CanvasController(
-      document: doc,
-      onSave: saveDocument,
-      resources: resources,
-      onActivate: _activateCanvasItem,
-      clock: workspace.clock,
-    )..setDotOpacity(dotOpacityFor(DotSurface.archive));
+    final c =
+        CanvasController(
+            document: doc,
+            onSave: saveDocument,
+            resources: resources,
+            onActivate: _activateCanvasItem,
+            clock: workspace.clock,
+          )
+          ..setDotOpacity(dotOpacityFor(DotSurface.archive))
+          ..setDotSize(dotSizeFor(DotSurface.archive));
     _links = c;
     notifyListeners();
     return c;
@@ -2891,6 +2967,23 @@ class AppState extends ChangeNotifier {
                 CanvasController.dotOpacityMax,
               )
               .toDouble();
+  }
+
+  /// How big the background dots are, per surface (this device). Absent =
+  /// the original size.
+  double dotSizeFor(DotSurface surface) {
+    final v = settings.get<num>('dotSize.${surface.name}')?.toDouble();
+    return v == null || !v.isFinite
+        ? CanvasController.defaultDotSize
+        : v
+              .clamp(CanvasController.dotSizeMin, CanvasController.dotSizeMax)
+              .toDouble();
+  }
+
+  /// Shows [value] on [c] at once and keeps it for its surface.
+  Future<void> setDotSize(CanvasController c, double value) {
+    c.setDotSize(value);
+    return settings.set('dotSize.${dotSurfaceOf(c).name}', c.dotSize);
   }
 
   /// The surface [c] belongs to.
@@ -3210,6 +3303,7 @@ class AppState extends ChangeNotifier {
     sendTo.dispose();
     library.dispose();
     themeModePreference.dispose();
+    interfaceVersionListenable.dispose();
     timer.dispose();
     _canvas?.dispose();
     _links?.dispose();

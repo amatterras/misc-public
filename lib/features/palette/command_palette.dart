@@ -1,6 +1,9 @@
 // The command palette (Ctrl+Shift+P, or the ⌘ button): find and run any
 // app command or open any place by typing. Different from the right-click
 // menus, which only offer actions for what was clicked.
+import '../../app/interface_version.dart';
+import '../canvas/canvas_page.dart' show runCanvasOption;
+
 import 'dart:async';
 import 'dart:io';
 
@@ -83,6 +86,25 @@ List<PaletteCommand> paletteCommands(
     PaletteCommand('New mindmap', Icons.add_box_outlined, (_) {
       unawaited(s.createCanvas(title: 'mindmap ${s.canvasList.length + 1}'));
     }),
+    // The New interface has no canvas picker; its options live here.
+    if (s.interfaceVersion == InterfaceVersion.newDesign &&
+        s.canvas != null) ...[
+      PaletteCommand(
+        'Rename this mindmap',
+        Icons.drive_file_rename_outline,
+        (context) => runCanvasOption(context, s, s.canvas!, 'rename'),
+      ),
+      PaletteCommand(
+        'Move this mindmap to a folder',
+        Icons.folder_outlined,
+        (context) => runCanvasOption(context, s, s.canvas!, 'folder'),
+      ),
+      PaletteCommand(
+        'Move this mindmap to trash',
+        Icons.delete_outline,
+        (context) => runCanvasOption(context, s, s.canvas!, 'delete'),
+      ),
+    ],
     PaletteCommand('New task', Icons.add_task, (context) async {
       final title = await promptText(context, title: 'New task', action: 'Add');
       if (title == null) return;

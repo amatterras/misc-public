@@ -298,6 +298,22 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// How big the background dots are (their diameter on screen, in pixels).
+  /// Only the dots change; items and text never do. The default is the
+  /// original look.
+  double dotSize = defaultDotSize;
+  static const defaultDotSize = 1.6;
+  static const dotSizeMin = 0.8, dotSizeMax = 5.0;
+
+  void setDotSize(double value) {
+    final v = value.isFinite
+        ? value.clamp(dotSizeMin, dotSizeMax).toDouble()
+        : defaultDotSize;
+    if (v == dotSize) return;
+    dotSize = v;
+    notifyListeners();
+  }
+
   /// What the eraser removes: whole strokes it touches, or only the part
   /// of a stroke under it ([EraserMode.partial]).
   EraserMode eraserMode = EraserMode.stroke;

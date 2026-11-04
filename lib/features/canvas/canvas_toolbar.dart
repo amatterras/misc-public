@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show PointMode;
 
 import 'package:flutter/material.dart';
 
@@ -902,13 +903,15 @@ class EraserPanel extends StatelessWidget {
   }
 }
 
-/// Background dot visibility for the surface of [c] (Mindmap or Archive),
-/// changed live. Only the dots fade; items and text stay as they are.
+/// Background dots for the surface of [c] (Mindmap or Archive), changed
+/// live: how visible they are, and (when [saveSize] is given, in the New
+/// interface) how big. Only the dots change; items and text stay as they are.
 Future<void> showDotOpacityDialog(
   BuildContext context,
   CanvasController c,
-  Future<void> Function(CanvasController c, double value) save,
-) => showDialog<void>(
+  Future<void> Function(CanvasController c, double value) save, {
+  Future<void> Function(CanvasController c, double value)? saveSize,
+}) => showDialog<void>(
   context: context,
   builder: (context) => StatefulBuilder(
     builder: (context, setState) => AlertDialog(
@@ -917,7 +920,27 @@ Future<void> showDotOpacityDialog(
         width: 300,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // A small sample of the dots as they are now.
+            Container(
+              key: const ValueKey('dot-preview'),
+              height: 44,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: AppColors.canvas,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: CustomPaint(
+                painter: _DotPreviewPainter(c.dotOpacity, c.dotSize),
+              ),
+            ),
+            const SizedBox(height: Space.md),
+            Text(
+              'Visibility',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
             Slider(
               key: const ValueKey('dot-opacity-slider'),
               value: c.dotOpacity,
@@ -935,6 +958,29 @@ Future<void> showDotOpacityDialog(
               key: const ValueKey('dot-opacity-value'),
               style: const TextStyle(fontSize: 12),
             ),
+            if (saveSize != null) ...[
+              const SizedBox(height: Space.md),
+              Text(
+                'Size',
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+              Slider(
+                key: const ValueKey('dot-size-slider'),
+                value: c.dotSize,
+                min: CanvasController.dotSizeMin,
+                max: CanvasController.dotSizeMax,
+                onChanged: (v) {
+                  c.setDotSize(v);
+                  setState(() {});
+                },
+                onChangeEnd: (v) => saveSize(c, v),
+              ),
+              Text(
+                '${c.dotSize.toStringAsFixed(1)} px',
+                key: const ValueKey('dot-size-value'),
+                style: const TextStyle(fontSize: 12),
+              ),
+            ],
           ],
         ),
       ),
@@ -944,6 +990,10 @@ Future<void> showDotOpacityDialog(
           onPressed: () {
             c.setDotOpacity(CanvasController.defaultDotOpacity);
             save(c, CanvasController.defaultDotOpacity);
+            if (saveSize != null) {
+              c.setDotSize(CanvasController.defaultDotSize);
+              saveSize(c, CanvasController.defaultDotSize);
+            }
             setState(() {});
           },
           child: const Text('Default'),
@@ -956,6 +1006,34 @@ Future<void> showDotOpacityDialog(
     ),
   ),
 );
+
+class _DotPreviewPainter extends CustomPainter {
+  _DotPreviewPainter(this.opacity, this.size);
+
+  final double opacity;
+  final double size;
+
+  @override
+  void paint(Canvas canvas, Size box) {
+    const spacing = 24.0;
+    final points = <Offset>[
+      for (var x = spacing / 2; x < box.width; x += spacing)
+        for (var y = spacing / 2; y < box.height; y += spacing) Offset(x, y),
+    ];
+    canvas.drawPoints(
+      PointMode.points,
+      points,
+      Paint()
+        ..color = const Color(0xFFFFFFFF).withValues(alpha: opacity)
+        ..strokeWidth = size
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_DotPreviewPainter old) =>
+      old.opacity != opacity || old.size != size;
+}
 
 /// A tool strip that can be folded away with its own handle. Folding only
 /// hides it: the active tool, colour, thickness and eraser stay as they

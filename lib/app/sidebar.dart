@@ -3,12 +3,8 @@ import 'package:flutter/material.dart';
 import '../data/models/canvas_models.dart';
 import '../data/models/record.dart' show dateOnly;
 import '../features/settings/settings_dialog.dart';
-import '../platform/input_hints.dart';
-import '../widgets/common.dart';
-import '../features/motivation/motivation_service.dart';
 import 'app_state.dart';
-import 'page_windows.dart';
-import 'shell.dart' show openAppSwitcher, openCommandPalette, openQuickAdd;
+import 'shell.dart' show openQuickAdd;
 import 'theme.dart';
 import '../features/transfer/transfer.dart';
 
@@ -26,12 +22,9 @@ const appDestinations = [
 ];
 
 class Sidebar extends StatelessWidget {
-  const Sidebar({super.key, required this.state, this.motivation});
+  const Sidebar({super.key, required this.state});
 
   final AppState state;
-
-  /// The hourly motivational quote is shown at the bottom of the sidebar.
-  final MotivationService? motivation;
 
   static const expandedWidth = 272.0;
   static const collapsedWidth = 60.0;
@@ -108,13 +101,7 @@ class Sidebar extends StatelessWidget {
           filled: true,
           onTap: () => openQuickAdd(context, state),
         ),
-        const SizedBox(height: Space.sm),
-        _IconButton(
-          icon: Icons.apps,
-          tooltip: 'App switcher',
-          onTap: () => openAppSwitcher(context, state),
-        ),
-        const SizedBox(height: Space.md),
+        const SizedBox(height: Space.lg),
         for (final (page, icon, label) in _pages)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
@@ -126,8 +113,6 @@ class Sidebar extends StatelessWidget {
             ),
           ),
         const Spacer(),
-        if (motivation != null)
-          SidebarQuote(service: motivation!, compact: true),
         if (state.timer.running)
           Padding(
             padding: const EdgeInsets.only(bottom: Space.sm),
@@ -147,9 +132,6 @@ class Sidebar extends StatelessWidget {
   }
 
   Widget _buildExpanded(BuildContext context) {
-    final favorites =
-        state.workspace.notes.all.where((n) => n.favorite).toList()
-          ..sort((a, b) => a.displayTitle.compareTo(b.displayTitle));
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Space.md),
       child: Column(
@@ -190,42 +172,20 @@ class Sidebar extends StatelessWidget {
                 ),
               ),
               _IconButton(
-                icon: Icons.apps,
-                tooltip: 'App switcher',
-                onTap: () => openAppSwitcher(context, state),
-              ),
-              _IconButton(
-                icon: Icons.settings_outlined,
-                tooltip: 'Settings, backups & Send to',
-                onTap: () => showSettingsDialog(context, state),
-              ),
-              _IconButton(
                 icon: Icons.chevron_right,
                 tooltip: 'Collapse sidebar',
                 onTap: state.toggleSidebar,
               ),
             ],
           ),
-          const SizedBox(height: Space.lg),
+          const SizedBox(height: Space.xl),
           _NewButton(onTap: () => openQuickAdd(context, state)),
-          const SizedBox(height: Space.sm),
-          _NavItem(
-            icon: Icons.keyboard_command_key,
-            label: 'Commands',
-            trailing: touchFirst
-                ? null
-                : Text(
-                    'Ctrl ⇧ P',
-                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
-                  ),
-            active: false,
-            onTap: () => openCommandPalette(context, state),
-          ),
-          const SizedBox(height: Space.sm),
+          const SizedBox(height: Space.lg),
           Expanded(
             child: ListView(
+              padding: EdgeInsets.zero,
               children: [
-                for (final (page, icon, label) in _pages) ...[
+                for (final (page, icon, label) in _pages)
                   _navDropTarget(
                     page,
                     _NavItem(
@@ -233,21 +193,6 @@ class Sidebar extends StatelessWidget {
                       label: label,
                       active: state.page == page,
                       onTap: () => state.goTo(page),
-                      groupId: page == AppPage.canvas
-                          ? 'mindmap'
-                          : page == AppPage.notes
-                          ? 'notes'
-                          : null,
-                      expanded: page == AppPage.canvas
-                          ? state.sidebarGroupExpanded('mindmap')
-                          : page == AppPage.notes
-                          ? state.sidebarGroupExpanded('notes')
-                          : null,
-                      onToggle: page == AppPage.canvas || page == AppPage.notes
-                          ? () => state.toggleSidebarGroup(
-                              page == AppPage.canvas ? 'mindmap' : 'notes',
-                            )
-                          : null,
                       trailing: page == AppPage.calendar && state.timer.running
                           ? Text(
                               state.timer.label,
@@ -259,61 +204,18 @@ class Sidebar extends StatelessWidget {
                           : null,
                     ),
                   ),
-                  if (page == AppPage.canvas &&
-                      state.sidebarGroupExpanded('mindmap'))
-                    _CanvasList(state: state),
-                  if (page == AppPage.notes &&
-                      state.sidebarGroupExpanded('notes'))
-                    _RecentNotes(state: state),
-                ],
-                if (favorites.isNotEmpty) ...[
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(12, 20, 12, 6),
-                    child: Text(
-                      'FAVORITES',
-                      style: TextStyle(
-                        fontSize: 11,
-                        letterSpacing: 0.6,
-                        color: AppColors.textFaint,
-                      ),
-                    ),
-                  ),
-                  for (final note in favorites)
-                    InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: () => state.openNote(note.id),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 7,
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.star_outline,
-                              size: 15,
-                              color: AppColors.warm,
-                            ),
-                            const SizedBox(width: Space.sm),
-                            Expanded(
-                              child: Text(
-                                note.displayTitle,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.textMuted,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
               ],
             ),
           ),
-          if (motivation != null) SidebarQuote(service: motivation!),
+          // Settings sits at the bottom, apart from the destinations.
+          _NavItem(
+            key: const ValueKey('sidebar-settings'),
+            icon: Icons.settings_outlined,
+            label: 'Settings',
+            active: false,
+            onTap: () => showSettingsDialog(context, state),
+          ),
+          const SizedBox(height: Space.lg),
         ],
       ),
     );
@@ -361,14 +263,12 @@ class _NewButton extends StatelessWidget {
 
 class _NavItem extends StatelessWidget {
   const _NavItem({
+    super.key,
     required this.icon,
     required this.label,
     required this.active,
     required this.onTap,
     this.trailing,
-    this.groupId,
-    this.expanded,
-    this.onToggle,
   });
 
   final IconData icon;
@@ -376,9 +276,6 @@ class _NavItem extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
   final Widget? trailing;
-  final String? groupId;
-  final bool? expanded;
-  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -416,173 +313,10 @@ class _NavItem extends StatelessWidget {
                   trailing!,
                   const SizedBox(width: Space.md),
                 ],
-                if (onToggle != null)
-                  IconButton(
-                    key: ValueKey('sidebar-group-${groupId!}-toggle'),
-                    tooltip: expanded!
-                        ? 'Collapse $groupId items'
-                        : 'Expand $groupId items',
-                    onPressed: onToggle,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                    icon: Icon(
-                      expanded! ? Icons.expand_more : Icons.chevron_right,
-                      size: 18,
-                      color: AppColors.textFaint,
-                    ),
-                  ),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// The canvas boards listed under "Canvas".
-class _CanvasList extends StatelessWidget {
-  const _CanvasList({required this.state});
-
-  final AppState state;
-
-  Future<void> _menu(
-    BuildContext context,
-    CanvasSummary canvas,
-    Offset at,
-  ) async {
-    final choice = await showMenu<String>(
-      context: context,
-      position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
-      items: const [
-        PopupMenuItem(
-          value: 'window',
-          height: 36,
-          child: Text('Open in a window'),
-        ),
-        PopupMenuItem(value: 'rename', height: 36, child: Text('Rename')),
-        PopupMenuItem(
-          value: 'delete',
-          height: 36,
-          child: Text('Move to trash'),
-        ),
-      ],
-    );
-    if (!context.mounted) return;
-    if (choice == 'window') {
-      state.windows.open(
-        AppPage.canvas,
-        refId: canvas.id,
-        title: canvas.title,
-        mode: PageMode.floating,
-      );
-      return;
-    }
-    if (choice == 'rename') {
-      final title = await promptText(
-        context,
-        title: 'Rename canvas',
-        initial: canvas.title,
-      );
-      if (title != null) await state.renameCanvas(canvas.id, title);
-    } else if (choice == 'delete') {
-      final ok = await confirm(
-        context,
-        title: 'Move “${canvas.title}” to trash?',
-        message:
-            'The file is moved to a trash folder inside your data folder, '
-            'not erased.',
-        action: 'Move to trash',
-      );
-      if (ok) await state.deleteCanvas(canvas.id);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final currentId = state.canvas?.id;
-    return Container(
-      margin: const EdgeInsets.only(left: 21, top: 2, bottom: 4),
-      padding: const EdgeInsets.only(left: Space.md),
-      decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: AppColors.border)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final canvas in state.canvasList)
-            TransferTarget(
-              key: ValueKey('drop-canvas-${canvas.id}'),
-              state: state,
-              place: CanvasPlace(canvas.id),
-              child: GestureDetector(
-                onSecondaryTapUp: (d) =>
-                    _menu(context, canvas, d.globalPosition),
-                // Touch (iPad/iPhone): press and hold opens the same menu.
-                onLongPressStart: (d) =>
-                    _menu(context, canvas, d.globalPosition),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  hoverColor: AppColors.hover,
-                  onTap: () => state.openCanvas(canvas.id),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 7,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.crop_square,
-                          size: 14,
-                          color:
-                              canvas.id == currentId &&
-                                  state.page == AppPage.canvas
-                              ? AppColors.text
-                              : AppColors.textFaint,
-                        ),
-                        const SizedBox(width: Space.sm),
-                        Expanded(
-                          child: Text(
-                            canvas.title,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color:
-                                  canvas.id == currentId &&
-                                      state.page == AppPage.canvas
-                                  ? AppColors.text
-                                  : AppColors.textMuted,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: () => state.createCanvas(),
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-              child: Row(
-                children: [
-                  Icon(Icons.add, size: 14, color: AppColors.textFaint),
-                  SizedBox(width: Space.sm),
-                  Text(
-                    'New canvas',
-                    style: TextStyle(fontSize: 13, color: AppColors.textFaint),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -637,117 +371,4 @@ class _IconButton extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Under "notes": the five most recently edited notes, newest first.
-class _RecentNotes extends StatelessWidget {
-  const _RecentNotes({required this.state});
-
-  final AppState state;
-
-  static const count = 5;
-
-  @override
-  Widget build(BuildContext context) {
-    final recent = state.workspace.notes.all.toList()
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    if (recent.isEmpty) return const SizedBox.shrink();
-    return Container(
-      key: const ValueKey('sidebar-recent-notes'),
-      margin: const EdgeInsets.only(left: 21, top: 2, bottom: 4),
-      padding: const EdgeInsets.only(left: Space.md),
-      decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: AppColors.border)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final note in recent.take(count))
-            TransferTarget(
-              state: state,
-              place: NotePlace(note.id),
-              child: TransferSource(
-                transfer: () => NoteTransfer(note.id, note.displayTitle),
-                touch: true,
-                child: InkWell(
-                  key: ValueKey('recent-note-${note.id}'),
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: () => state.openNote(note.id),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                    child: Text(
-                      note.displayTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The hourly motivational quote at the bottom of the sidebar (collapsed:
-/// a small mark that shows the quote on hover or press).
-class SidebarQuote extends StatelessWidget {
-  const SidebarQuote({super.key, required this.service, this.compact = false});
-
-  final MotivationService service;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: service,
-    builder: (context, _) {
-      final quote = service.quote;
-      if (quote == null) return const SizedBox.shrink();
-      final text = quote.attribution.isEmpty
-          ? '“${quote.text}”'
-          : '“${quote.text}”  ${quote.attribution}';
-      if (compact) {
-        return Tooltip(
-          key: const ValueKey('sidebar-quote-compact'),
-          message: text,
-          triggerMode: TooltipTriggerMode.tap,
-          child: Padding(
-            padding: EdgeInsets.all(10),
-            child: Icon(
-              Icons.format_quote,
-              size: 18,
-              color: AppColors.textFaint,
-              semanticLabel: 'Quote of the hour',
-            ),
-          ),
-        );
-      }
-      return Container(
-        key: const ValueKey('motivational-quote'),
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: AppColors.border)),
-        ),
-        child: Text(
-          text,
-          maxLines: 4,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 12,
-            height: 1.4,
-          ),
-        ),
-      );
-    },
-  );
 }

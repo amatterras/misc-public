@@ -7,18 +7,21 @@
 // canvas document with the fixed id `nb-<noteId>` and kind "notebook".
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/interface_version.dart';
 import '../../app/page_windows.dart';
 import '../../app/shell.dart' show WorkspaceBuilder;
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/paper.dart';
 import '../../data/storage/app_log.dart';
+import '../../platform/device_idiom.dart';
 import '../../platform/input_hints.dart';
 import '../../platform/ios_bridge.dart';
 import '../../widgets/common.dart';
@@ -63,6 +66,48 @@ class _NotePageState extends State<NotePage> {
   CanvasController? _c;
   bool _closed = false;
   double _zoom = 1; // times "fit the page width"
+
+  /// The smallest page zoom (times "fit the page width"). Original: 40 %.
+  /// New: the zoom at which the whole page (the tallest one in the note) is
+  /// visible with about 2.5 cm of workspace around it, worked out from the
+  /// real page size and the room available; never larger than "fit width".
+  double _minZoom = originalMinZoom;
+  static const originalMinZoom = 0.4;
+
+  /// The zoom actually shown: [_zoom], but never below [_minZoom] (a window
+  /// that became small, or a zoom saved before the limit existed).
+  double get _z => _zoom < _minZoom ? _minZoom : _zoom;
+
+  /// Logical pixels in one centimetre on this device (Windows 96 dpi, iPad
+  /// about 132, iPhone about 160 points per inch).
+  double get _pixelsPerCm =>
+      touchFirst ? (DeviceIdiom.isPhone ? 62.0 : 52.0) : 37.8;
+
+  double _minZoomFor(BoxConstraints box, NotebookLayout? layout, double fit) {
+    if (s.interfaceVersion != InterfaceVersion.newDesign) {
+      return originalMinZoom;
+    }
+    var tallest = NotebookLayout.plainHeight;
+    if (layout != null) {
+      tallest = 0;
+      for (var i = 0; i < layout.pageCount; i++) {
+        tallest = math.max(tallest, layout.pageHeight(i));
+      }
+    }
+    final shortSide = math.min(box.maxWidth, box.maxHeight);
+    // About 2.5 cm each side, but never more than 14 % of the room: on a
+    // phone that would leave no space for the page.
+    final margin = math.min(2.5 * _pixelsPerCm, shortSide * 0.14);
+    final widthScale = (box.maxWidth - 2 * margin) / NotebookLayout.pageWidth;
+    final heightScale = (box.maxHeight - 2 * margin) / tallest;
+    final wholePage = math.min(widthScale, heightScale);
+    if (!wholePage.isFinite || wholePage <= 0 || fit <= 0) {
+      return originalMinZoom;
+    }
+    // Never forces a zoom-in, and never goes below the canvas minimum.
+    return (wholePage / fit).clamp(0.2 / fit, 1.0).toDouble();
+  }
+
   bool _fingerDraws = false;
   final _scroll = ScrollController();
   final _horizontalScroll = ScrollController();
@@ -118,7 +163,7 @@ class _NotePageState extends State<NotePage> {
   void _onNotebookScroll() => _c?.cancelPendingLineStraightening();
 
   void _setZoom(double value) {
-    final zoom = value.clamp(0.4, 3.0);
+    final zoom = value.clamp(_minZoom, 3.0).toDouble();
     if (_zoom == zoom) return;
     setState(() => _zoom = zoom);
     unawaited(s.settings.set(_zoomSetting, zoom));
@@ -136,9 +181,9 @@ class _NotePageState extends State<NotePage> {
       }
       final points = _noteTouches.values.toList();
       _pinchStartDistance = (points[0] - points[1]).distance;
-      _pinchStartZoom = _zoom;
+      _pinchStartZoom = _z;
       _pinchStartFocal = (points[0] + points[1]) / 2;
-      _pinchStartScale = _c?.scale ?? _fitScale * _zoom;
+      _pinchStartScale = _c?.scale ?? _fitScale * _z;
       _capturePinchAnchor(_pinchStartFocal!);
     }
   }
@@ -157,10 +202,10 @@ class _NotePageState extends State<NotePage> {
     if (_pinchStartDistance! < 10) return;
     final focal = (points[0] + points[1]) / 2;
     final nextZoom = (_pinchStartZoom! * distance / _pinchStartDistance!).clamp(
-      0.4,
+      _minZoom,
       3.0,
     );
-    if ((_zoom - nextZoom).abs() < 0.001) return;
+    if ((_z - nextZoom).abs() < 0.001) return;
     setState(() => _zoom = nextZoom);
     final anchor = _pinchDocumentAnchor;
     final prefix = _pinchPrefix;
@@ -595,7 +640,8 @@ class _NotePageState extends State<NotePage> {
     return LayoutBuilder(
       builder: (context, box) {
         final fit = (box.maxWidth - 80) / NotebookLayout.pageWidth;
-        final scale = (fit * _zoom).clamp(0.2, 4.0);
+        _minZoom = _minZoomFor(box, layout, fit);
+        final scale = (fit * _z).clamp(0.2, 4.0);
         _currentLayout = layout;
         _fitScale = fit;
         c?.setView(Offset.zero, scale);
@@ -819,7 +865,7 @@ class _NotePageState extends State<NotePage> {
             GhostIconButton(
               icon: Icons.zoom_out,
               tooltip: 'Smaller pages',
-              onTap: () => _setZoom(_zoom / 1.25),
+              onTap: () => _setZoom(_z / 1.25),
             ),
             GhostIconButton(
               icon: Icons.fit_screen_outlined,
@@ -827,11 +873,11 @@ class _NotePageState extends State<NotePage> {
               onTap: () => _setZoom(1),
             ),
             Tooltip(
-              message: 'Page zoom ${(_zoom * 100).round()}% relative to fit',
+              message: 'Page zoom ${(_z * 100).round()}% relative to fit',
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: Space.sm),
                 child: Text(
-                  '${(_zoom * 100).round()}%',
+                  '${(_z * 100).round()}%',
                   key: const ValueKey('note-zoom-value'),
                   style: TextStyle(
                     fontSize: 12,
@@ -844,7 +890,7 @@ class _NotePageState extends State<NotePage> {
             GhostIconButton(
               icon: Icons.zoom_in,
               tooltip: 'Larger pages',
-              onTap: () => _setZoom(_zoom * 1.25),
+              onTap: () => _setZoom(_z * 1.25),
             ),
             const SizedBox(width: Space.sm),
             PopupMenuButton<String>(

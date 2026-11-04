@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import 'app/app_state.dart';
 import 'app/build_info.dart';
+import 'app/interface_version.dart';
 import 'app/test_environment.dart';
 import 'app/shell.dart';
 import 'app/startup.dart';
@@ -22,6 +23,7 @@ import 'data/workspace.dart';
 import 'features/browser/webview_selftest.dart';
 import 'features/capture/send_to.dart';
 import 'platform/app_lock.dart';
+import 'platform/device_idiom.dart';
 import 'platform/file_protection.dart';
 import 'platform/ios_bridge.dart';
 import 'sync/secret_store.dart';
@@ -47,6 +49,8 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
       final folders = await IosBridge.instance.appFolders();
       iosApplicationSupport = folders?['applicationSupport'];
       iosDocuments = folders?['documents'];
+      // iPhone or iPad (decides the New interface's shell, not the width).
+      DeviceIdiom.resolve(await IosBridge.instance.deviceModel());
     } catch (e) {
       debugPrint('App folders not reported by iOS ($e); using fallbacks');
     }
@@ -280,11 +284,18 @@ class _TheAppState extends State<TheApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<String>(
-      valueListenable: widget.state.themeModePreference,
-      builder: (context, rawMode, _) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        widget.state.themeModePreference,
+        widget.state.interfaceVersionListenable,
+      ]),
+      builder: (context, _) {
+        final rawMode = widget.state.themeModePreference.value;
         final mode = ThemeMode.values.asNameMap()[rawMode] ?? ThemeMode.dark;
         AppColors.mode = mode;
+        // New interface: its own palette everywhere (see AppColors).
+        AppColors.newDesign =
+            widget.state.interfaceVersion == InterfaceVersion.newDesign;
         return MaterialApp(
           title: 'THEapp',
           debugShowCheckedModeBanner: false,

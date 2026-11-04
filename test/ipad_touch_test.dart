@@ -221,24 +221,18 @@ void main() {
   });
 
   group('menus without right-click', () {
-    testWidgets('press and hold a canvas in the sidebar opens its menu', (
+    testWidgets('the sidebar lists no canvases; the title menu is the way', (
       tester,
     ) async {
       final s = await bootIpad(tester, dir);
       s.goTo(AppPage.canvas);
       await settle(tester);
       final title = s.canvasList.first.title;
-      // Two texts carry the title: the title chip and the sidebar entry
-      // (the sidebar is on the right in this layout).
-      final entries = find.text(title).evaluate().toList()
-        ..sort(
-          (a, b) => tester
-              .getCenter(find.byWidget(a.widget))
-              .dx
-              .compareTo(tester.getCenter(find.byWidget(b.widget)).dx),
-        );
-      await tester.longPress(find.byWidget(entries.last.widget));
-      await tester.pump(const Duration(milliseconds: 300));
+      // Only the title chip carries the name now (no sidebar entry to hold).
+      expect(find.text(title), findsOneWidget);
+      await tester.tap(find.byTooltip('Canvas options'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
       expect(find.text('Rename'), findsOneWidget);
       expect(find.text('Move to trash'), findsOneWidget);
       await tester.tapAt(const Offset(5, 5)); // close the menu

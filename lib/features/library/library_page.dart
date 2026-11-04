@@ -12,9 +12,18 @@ import '../links/link_tags.dart';
 import '../tags/tag_ui.dart';
 
 class LibraryPage extends StatefulWidget {
-  const LibraryPage({super.key,required this.state,this.initialObjectId});
+  const LibraryPage({
+    super.key,
+    required this.state,
+    this.initialObjectId,
+    this.closeAfterInitialObject = false,
+  });
   final AppState state;
   final String? initialObjectId;
+
+  /// Pop this page once the first object's dialog is closed (the New
+  /// Archive opens an item through this page's own detail dialog).
+  final bool closeAfterInitialObject;
   @override State<LibraryPage> createState()=>_LibraryPageState();
 }
 
@@ -27,9 +36,12 @@ class _LibraryPageState extends State<LibraryPage> {
   AppState get s=>widget.state;
   LibraryRepository get repo=>s.library;
 
-  @override void initState(){super.initState();WidgetsBinding.instance.addPostFrameCallback((_){
+  @override void initState(){super.initState();WidgetsBinding.instance.addPostFrameCallback((_) async {
     final item=widget.initialObjectId==null?null:s.workspace.libraryObjects[widget.initialObjectId!];
-    if(item!=null&&mounted)_open(item);
+    if(item!=null&&mounted){
+      await _open(item);
+      if(widget.closeAfterInitialObject&&mounted)Navigator.of(context).maybePop();
+    }
   });}
 
   @override void dispose(){_query.dispose();super.dispose();}

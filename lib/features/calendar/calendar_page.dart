@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../app/interface_version.dart';
 import '../../app/shell.dart';
+import '../../new_ui/new_components.dart';
+import '../../new_ui/new_tokens.dart';
 import '../../app/theme.dart';
 import '../../data/models/calendar_models.dart';
 import '../../data/models/canvas_models.dart' show newId;
@@ -493,55 +496,129 @@ class _CalendarPageState extends State<CalendarPage> {
     // Short windows (a phone held sideways) get tighter spacing.
     final short = MediaQuery.sizeOf(context).height < 480;
     final gap = short ? Space.xs : Space.md;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        Space.xl,
-        short ? Space.sm : Space.xl,
-        Space.xl,
-        0,
+    final isNew = s.interfaceVersion == InterfaceVersion.newDesign;
+    final rest = <Widget>[
+      ..._overLimitWarning(),
+      SizedBox(height: gap),
+      _viewBar(),
+      SizedBox(height: short ? Space.sm : Space.lg),
+      _tabs(),
+      SizedBox(height: gap),
+      Expanded(
+        child: _tab == null && _view != CalendarView.range
+            ? _otherView()
+            : _tab == null
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _grid()),
+                  if (_selectedDay != null) ...[
+                    const SizedBox(width: Space.md),
+                    SizedBox(
+                      width: 340,
+                      child: DayPanel(
+                        key: ValueKey(dayKey(_selectedDay!)),
+                        state: s,
+                        day: _selectedDay!,
+                        onClose: () => setState(() => _selectedDay = null),
+                        onNewEntry: (c) => _newEntry(c, _selectedDay),
+                        onRecognizeHandwriting: _recognizeHandwriting,
+                      ),
+                    ),
+                  ],
+                ],
+              )
+            : CategoryView(
+                state: s,
+                category: _tab!,
+                onNew: () => _newEntry(_tab),
+              ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _header(),
-          ..._overLimitWarning(),
-          SizedBox(height: gap),
-          _viewBar(),
-          SizedBox(height: short ? Space.sm : Space.lg),
-          _tabs(),
-          SizedBox(height: gap),
-          Expanded(
-            child: _tab == null && _view != CalendarView.range
-                ? _otherView()
-                : _tab == null
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: _grid()),
-                      if (_selectedDay != null) ...[
-                        const SizedBox(width: Space.md),
-                        SizedBox(
-                          width: 340,
-                          child: DayPanel(
-                            key: ValueKey(dayKey(_selectedDay!)),
-                            state: s,
-                            day: _selectedDay!,
-                            onClose: () => setState(() => _selectedDay = null),
-                            onNewEntry: (c) => _newEntry(c, _selectedDay),
-                            onRecognizeHandwriting: _recognizeHandwriting,
-                          ),
-                        ),
-                      ],
-                    ],
-                  )
-                : CategoryView(
-                    state: s,
-                    category: _tab!,
-                    onNew: () => _newEntry(_tab),
-                  ),
+    ];
+    if (!isNew) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          Space.xl,
+          short ? Space.sm : Space.xl,
+          Space.xl,
+          0,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [_header(), ...rest],
+        ),
+      );
+    }
+    // New: the same top section as the Archive (see NewPageHeader), then
+    // the very same calendar controls and grid.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _newHeader(),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Space.xl, 0, Space.xl, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: rest,
+            ),
           ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  /// The New interface's header: the Archive's top section with the
+  /// Calendar's own title line and buttons (the same actions as [_header]).
+  Widget _newHeader() {
+    final start = s.calendarStart;
+    final end = addDays(start, s.calendarDays - 1);
+    final archived = ws.entries.all.where((e) => e.archived).length;
+    return NewPageHeader(
+      title: 'Calendar',
+      subtitle: InkWell(
+        onTap: _pickRange,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                '${formatShortDate(start)} – ${formatShortDate(end)} ${end.year}  ·  ${s.calendarDays} days',
+                overflow: TextOverflow.ellipsis,
+                style: NewText.meta.copyWith(color: NewColors.textMuted),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.edit_calendar_outlined,
+              size: 14,
+              color: NewColors.textFaint,
+            ),
+          ],
+        ),
       ),
+      actions: [
+        _colorFilter(),
+        NewHeaderButton(
+          key: const ValueKey('calendar-tasks-toggle'),
+          onPressed: () => s.setCalendarTasksOpen(!s.calendarTasksOpen),
+          icon: s.calendarTasksOpen
+              ? Icons.keyboard_double_arrow_right
+              : Icons.checklist,
+          label: s.calendarTasksOpen ? 'Hide tasks' : 'Tasks',
+        ),
+        NewHeaderButton(
+          filled: true,
+          onPressed: () => _newEntry(),
+          icon: Icons.add,
+          label: 'Quick Add',
+        ),
+        NewHeaderButton(
+          onPressed: () => showArchive(context, s),
+          icon: Icons.inventory_2_outlined,
+          label: 'Archive  $archived',
+        ),
+      ],
     );
   }
 

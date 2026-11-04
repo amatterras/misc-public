@@ -178,7 +178,7 @@ class CanvasPainter extends CustomPainter {
       Paint()
         ..color = const Color(0xFFFFFFFF)
             .withValues(alpha: controller.dotOpacity)
-        ..strokeWidth = 1.6
+        ..strokeWidth = controller.dotSize
         ..strokeCap = StrokeCap.round,
     );
   }

@@ -150,14 +150,75 @@ class LibraryRelation implements Record {
 }
 
 class LibrarySpace implements Record {
-  const LibrarySpace({required this.id,required this.name,required this.kind,required this.updatedAt,this.query = ''});
-  @override final String id; final String name; final LibrarySpaceKind kind; final String query;
-  @override final DateTime updatedAt;
-  LibrarySpace copyWith({String? name,String? query})=>LibrarySpace(id:id,name:name??this.name,kind:kind,query:query??this.query,updatedAt:DateTime.now().toUtc());
-  @override Map<String,dynamic> toJson()=>{'id':id,'name':name,'kind':kind.name,'query':query,'updatedAt':utcIso(updatedAt)};
-  factory LibrarySpace.fromJson(Map<String,dynamic> j)=>LibrarySpace(id:j['id'] as String,name:j['name'] as String? ?? '',
-    kind:LibrarySpaceKind.values.where((e)=>e.name==j['kind']).firstOrNull ?? LibrarySpaceKind.regular,
-    query:j['query'] as String? ?? '',updatedAt:parseDate(j['updatedAt']) ?? DateTime.now().toUtc());
+  const LibrarySpace({
+    required this.id,
+    required this.name,
+    required this.kind,
+    required this.updatedAt,
+    this.query = '',
+    this.colorId,
+    this.pinned = false,
+    this.sortOrder,
+    this.parentId,
+  });
+  @override
+  final String id;
+  final String name;
+  final LibrarySpaceKind kind;
+  final String query;
+
+  /// Folder presentation (additive; older data simply has none of these):
+  /// the New interface's colour id, pinned-first, manual order and the
+  /// parent folder for nesting. Original ignores them.
+  final String? colorId;
+  final bool pinned;
+  final int? sortOrder;
+  final String? parentId;
+  @override
+  final DateTime updatedAt;
+  LibrarySpace copyWith({
+    String? name,
+    String? query,
+    String? colorId,
+    bool? pinned,
+    int? sortOrder,
+    String? Function()? parentId,
+  }) => LibrarySpace(
+    id: id,
+    name: name ?? this.name,
+    kind: kind,
+    query: query ?? this.query,
+    colorId: colorId ?? this.colorId,
+    pinned: pinned ?? this.pinned,
+    sortOrder: sortOrder ?? this.sortOrder,
+    parentId: parentId != null ? parentId() : this.parentId,
+    updatedAt: DateTime.now().toUtc(),
+  );
+  @override
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'kind': kind.name,
+    'query': query,
+    if (colorId != null) 'colorId': colorId,
+    if (pinned) 'pinned': true,
+    if (sortOrder != null) 'sortOrder': sortOrder,
+    if (parentId != null) 'parentId': parentId,
+    'updatedAt': utcIso(updatedAt),
+  };
+  factory LibrarySpace.fromJson(Map<String, dynamic> j) => LibrarySpace(
+    id: j['id'] as String,
+    name: j['name'] as String? ?? '',
+    kind:
+        LibrarySpaceKind.values.where((e) => e.name == j['kind']).firstOrNull ??
+        LibrarySpaceKind.regular,
+    query: j['query'] as String? ?? '',
+    colorId: j['colorId'] as String?,
+    pinned: j['pinned'] == true,
+    sortOrder: (j['sortOrder'] as num?)?.toInt(),
+    parentId: j['parentId'] as String?,
+    updatedAt: parseDate(j['updatedAt']) ?? DateTime.now().toUtc(),
+  );
 }
 
 class LibraryIndexEntry implements Record {

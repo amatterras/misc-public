@@ -4,7 +4,7 @@
 //
 //  Receives shared links, text, photos and files (e.g. PDFs) on iPhone/iPad
 //  and leaves them as request files in the App Group folder. THEapp imports
-//  them into the Inbox (AppState.importSharedItems → send_to.dart) when it
+//  them into the Archive (AppState.importSharedItems → send_to.dart) when it
 //  starts or comes back to the front; nothing is put into a note, sent to
 //  AI or uploaded. No network.
 //
@@ -133,7 +133,7 @@ class ShareViewController: UIViewController {
       guard let self = self else { return }
       self.finish(
         message: self.skipped == 0
-          ? "Added to THEapp's Inbox."
+          ? "Added to THEapp's Archive."
           : "Added \(self.saved); \(self.skipped) could not be added (too large or not supported).")
     }
   }

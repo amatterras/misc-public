@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../new_ui/new_tokens.dart';
+
 import 'dart:ui' show PlatformDispatcher;
 
 /// Colour tokens taken from the Gemini prototype: near-black surfaces,
 /// hairline white borders and soft grey text.
 abstract final class AppColors {
   static ThemeMode mode = ThemeMode.dark;
+
+  /// True while the New interface is shown: every getter below then returns
+  /// the New palette (lib/new_ui/new_tokens.dart) instead of Original's.
+  /// Set by TheApp before it builds; Original never sets it.
+  static bool newDesign = false;
   static bool get light => switch (mode) {
     ThemeMode.light => true,
     ThemeMode.dark => false,
@@ -35,29 +42,51 @@ abstract final class AppColors {
   static const _lightWarm = Color(0xFF8A551A);
   static const _lightDanger = Color(0xFFB42318);
 
-  static Color get background => light ? _lightBackground : _darkBackground;
-  static Color get canvas => light ? _lightCanvas : _darkBackground;
-  static Color get sidebar => light ? _lightSidebar : _darkSidebar;
-  static Color get card => light ? _lightSidebar : _darkSidebar;
-  static Color get cardRaised => light ? _lightRaised : _darkRaised;
-  static Color get border => light ? _lightBorder : _darkBorder;
-  static Color get hover =>
+  static Color get background => newDesign ? NewColors.background : _background;
+  static Color get _background => light ? _lightBackground : _darkBackground;
+  static Color get canvas => newDesign ? NewColors.canvasPage : _canvas;
+  static Color get _canvas => light ? _lightCanvas : _darkBackground;
+  static Color get sidebar => newDesign ? NewColors.surface : _sidebar;
+  static Color get _sidebar => light ? _lightSidebar : _darkSidebar;
+  static Color get card => newDesign ? NewColors.surface : _card;
+  static Color get _card => light ? _lightSidebar : _darkSidebar;
+  static Color get cardRaised =>
+      newDesign ? NewColors.surfaceRaised : _cardRaised;
+  static Color get _cardRaised => light ? _lightRaised : _darkRaised;
+  static Color get border => newDesign ? NewColors.border : _border;
+  static Color get _border => light ? _lightBorder : _darkBorder;
+  static Color get hover => newDesign ? NewColors.hover : _hover;
+  static Color get _hover =>
       light ? const Color(0x1A456E8B) : const Color(0x1A789BB5);
-  static Color get selected => light ? const Color(0xFFDCE6ED) : _darkRaised;
-  static Color get text => light ? _lightText : _darkText;
-  static Color get textMuted => light ? _lightMuted : _darkMuted;
-  static Color get textFaint => light ? _lightDisabled : _darkMuted;
-  static Color get disabled => light ? _lightDisabled : _darkMuted;
-  static Color get accent => light ? _lightAccent : const Color(0xFF789BB5);
+  static Color get selected => newDesign ? NewColors.selected : _selected;
+  static Color get _selected => light ? const Color(0xFFDCE6ED) : _darkRaised;
+  static Color get text => newDesign ? NewColors.text : _text;
+  static Color get _text => light ? _lightText : _darkText;
+  static Color get textMuted => newDesign ? NewColors.textMuted : _textMuted;
+  static Color get _textMuted => light ? _lightMuted : _darkMuted;
+  static Color get textFaint => newDesign ? NewColors.textFaint : _textFaint;
+  static Color get _textFaint => light ? _lightDisabled : _darkMuted;
+  static Color get disabled => newDesign ? NewColors.textFaint : _disabled;
+  static Color get _disabled => light ? _lightDisabled : _darkMuted;
+  static Color get accent => newDesign ? NewColors.accent : _accent;
+  static Color get _accent => light ? _lightAccent : const Color(0xFF789BB5);
   static Color get accentSecondary =>
+      newDesign ? NewColors.accentSecondary : _accentSecondary;
+  static Color get _accentSecondary =>
       light ? _lightAccentSecondary : const Color(0xFF829CB5);
-  static Color get focus => accent;
-  static Color get selection =>
+  static Color get focus => newDesign ? NewColors.accent : _focus;
+  static Color get _focus => accent;
+  static Color get selection => newDesign ? NewColors.selection : _selection;
+  static Color get _selection =>
       light ? const Color(0x55456E8B) : const Color(0x55789BB5);
-  static Color get success => light ? _lightSuccess : const Color(0xFF8FBFA9);
-  static Color get brand => const Color(0xFF172943);
-  static Color get warm => light ? _lightWarm : const Color(0xFFE5D5B8);
-  static Color get danger => light ? _lightDanger : warm;
+  static Color get success => newDesign ? NewColors.success : _success;
+  static Color get _success => light ? _lightSuccess : const Color(0xFF8FBFA9);
+  static Color get brand => newDesign ? NewColors.deepIndigo : _brand;
+  static Color get _brand => const Color(0xFF172943);
+  static Color get warm => newDesign ? NewColors.warm : _warm;
+  static Color get _warm => light ? _lightWarm : const Color(0xFFE5D5B8);
+  static Color get danger => newDesign ? NewColors.danger : _danger;
+  static Color get _danger => light ? _lightDanger : warm;
 }
 
 /// Canonical ink choices shared by fineliner, brush, pencil, highlighter,
