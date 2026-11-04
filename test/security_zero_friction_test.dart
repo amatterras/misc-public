@@ -2,7 +2,6 @@
 // networks, imported files must be what they say, the status page never
 // shows a false "Protected", notifications are rare, and the app opens with
 // no lock or login. Temporary folders and local test servers only.
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';

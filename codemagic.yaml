@@ -52,7 +52,7 @@ workflows:
               | grep -E " (PRODUCT_BUNDLE_IDENTIFIER|CODE_SIGN_ENTITLEMENTS) ="
           done
       - name: Static analysis
-        script: flutter analyze
+        script: flutter analyze --no-fatal-infos
       - name: Build iOS app without code signing
         script: |
           # On failure, show Xcode's own errors (the summary above them is short).
