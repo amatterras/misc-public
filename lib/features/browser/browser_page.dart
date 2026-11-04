@@ -128,14 +128,20 @@ class _BrowserPageState extends State<BrowserPage> {
     final ws = s.workspace;
     switch (where) {
       case 'library':
-        var pageText=selected;
-        if(engine!=null) {
-          try { pageText=await engine.pageText(); } catch (_) {}
+        var pageText = selected;
+        if (engine != null) {
+          try {
+            pageText = await engine.pageText();
+          } catch (_) {}
         }
-        if(pageText.length>200000) pageText=pageText.substring(0,200000);
-        await s.library.save(type:LibraryObjectType.article,sourceUrl:t.url,
-          title:t.title.isEmpty?t.url:t.title,content:pageText.isEmpty?null:pageText,
-          metadata:{'browserCapture':true});
+        if (pageText.length > 200000) pageText = pageText.substring(0, 200000);
+        await s.library.save(
+          type: LibraryObjectType.article,
+          sourceUrl: t.url,
+          title: t.title.isEmpty ? t.url : t.title,
+          content: pageText.isEmpty ? null : pageText,
+          metadata: {'browserCapture': true},
+        );
         s.showToast('Saved to Library.');
       case 'note':
         final a = ws.linkAsset(t.url, title: t.title.isEmpty ? null : t.title);

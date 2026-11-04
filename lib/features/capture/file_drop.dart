@@ -64,10 +64,23 @@ extension FileDrop on AppState {
     final c = canvas;
     if (page == AppPage.links) {
       for (final a in assets) {
-        final info=a.file==null?null:await workspace.attachments.contentInfo(a.file!);
-        if(info!=null){workspace.assets.put(a.copyWith(fileSha256:info.$1,fileSize:info.$2));await workspace.assets.flush();}
-        await library.save(type:a.kind==AssetKind.image?LibraryObjectType.image:LibraryObjectType.document,
-          title:a.label,attachmentIds:[a.id],metadata:{'legacyAssetId':a.id});
+        final info = a.file == null
+            ? null
+            : await workspace.attachments.contentInfo(a.file!);
+        if (info != null) {
+          workspace.assets.put(
+            a.copyWith(fileSha256: info.$1, fileSize: info.$2),
+          );
+          await workspace.assets.flush();
+        }
+        await library.save(
+          type: a.kind == AssetKind.image
+              ? LibraryObjectType.image
+              : LibraryObjectType.document,
+          title: a.label,
+          attachmentIds: [a.id],
+          metadata: {'legacyAssetId': a.id},
+        );
         inLibrary++;
       }
     } else if (page == AppPage.canvas && c != null) {

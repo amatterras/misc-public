@@ -34,10 +34,7 @@ void main() {
     c.pointerDown(const Offset(20, 20), timeStamp: const Duration(seconds: 1));
     c.pointerUp();
     expect(c.selection, isEmpty);
-    c.pointerDown(
-      const Offset(450, 30),
-      timeStamp: const Duration(seconds: 5),
-    );
+    c.pointerDown(const Offset(450, 30), timeStamp: const Duration(seconds: 5));
     c.pointerUp();
     expect(c.selection, {'l'});
     c.dispose();

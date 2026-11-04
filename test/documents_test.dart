@@ -113,7 +113,10 @@ void main() {
     expect(await bridge.processRequests(s.capture), 1);
     final saved = s.library.objects.single;
     expect(saved.type, LibraryObjectType.document);
-    expect(s.workspace.assets[saved.attachmentIds.single]?.kind, AssetKind.document);
+    expect(
+      s.workspace.assets[saved.attachmentIds.single]?.kind,
+      AssetKind.document,
+    );
     s.dispose();
   });
 

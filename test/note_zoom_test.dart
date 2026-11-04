@@ -295,24 +295,24 @@ void main() {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(seconds: 1)),
       );
-    await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-    final verticalList = find.byType(ListView).last;
-    final verticalScrollable = find.descendant(
-      of: verticalList,
-      matching: find.byType(Scrollable),
-    );
-    tester
-        .state<ScrollableState>(verticalScrollable.first)
-        .position
-        .jumpTo(
-          tester
-              .state<ScrollableState>(verticalScrollable.first)
-              .position
-              .maxScrollExtent,
-        );
-    await tester.pumpAndSettle();
-    final page = tester.getRect(
+      final verticalList = find.byType(ListView).last;
+      final verticalScrollable = find.descendant(
+        of: verticalList,
+        matching: find.byType(Scrollable),
+      );
+      tester
+          .state<ScrollableState>(verticalScrollable.first)
+          .position
+          .jumpTo(
+            tester
+                .state<ScrollableState>(verticalScrollable.first)
+                .position
+                .maxScrollExtent,
+          );
+      await tester.pumpAndSettle();
+      final page = tester.getRect(
         find.byKey(const ValueKey('notebook-page-0')),
       );
       final visiblePage = page.intersect(Offset.zero & const Size(640, 600));

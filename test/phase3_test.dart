@@ -24,7 +24,6 @@ import 'package:flutter_application_1/sync/sync_client.dart';
 import 'package:flutter_application_1/sync/sync_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-
 final sep = Platform.pathSeparator;
 
 void main() {

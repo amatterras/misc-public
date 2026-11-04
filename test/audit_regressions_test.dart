@@ -299,47 +299,46 @@ void main() {
       await shutDown(tester);
     });
 
-    testWidgets('phone layout: shared items reach the Archive; pages keep their state', (
-      tester,
-    ) async {
-      await boot(tester, const Size(1280, 800));
-      state.goTo(AppPage.notes);
-      await tester.pump();
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Search notes'),
-        'kept',
-      );
-      await tester.pump();
+    testWidgets(
+      'phone layout: shared items reach the Archive; pages keep their state',
+      (tester) async {
+        await boot(tester, const Size(1280, 800));
+        state.goTo(AppPage.notes);
+        await tester.pump();
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Search notes'),
+          'kept',
+        );
+        await tester.pump();
 
-      tester.view.physicalSize = const Size(390, 844);
-      await tester.pump();
-      await tester.pump();
-      expect(
-        find.text('kept'),
-        findsOneWidget,
-        reason: 'typed text survives the switch',
-      );
+        tester.view.physicalSize = const Size(390, 844);
+        await tester.pump();
+        await tester.pump();
+        expect(
+          find.text('kept'),
+          findsOneWidget,
+          reason: 'typed text survives the switch',
+        );
 
-      await tester.runAsync(
-        () => state.capture.captureToArchive(text: 'from outside'),
-      );
-      await tester.pump();
-      expect(
-        state.library.objects.map((o) => o.content),
-        ['from outside'],
-        reason: 'the shared item is saved in the Archive',
-      );
-      expect(
-        find.byKey(const ValueKey('compact-start-page')),
-        findsNothing,
-        reason: 'there is no start-page button or Inbox badge any more',
-      );
+        await tester.runAsync(
+          () => state.capture.captureToArchive(text: 'from outside'),
+        );
+        await tester.pump();
+        expect(state.library.objects.map((o) => o.content), [
+          'from outside',
+        ], reason: 'the shared item is saved in the Archive');
+        expect(
+          find.byKey(const ValueKey('compact-start-page')),
+          findsNothing,
+          reason: 'there is no start-page button or Inbox badge any more',
+        );
 
-      tester.view.physicalSize = const Size(1280, 800);
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('kept'), findsOneWidget);
-      await shutDown(tester);
-    });
+        tester.view.physicalSize = const Size(1280, 800);
+        await tester.pump();
+        await tester.pump();
+        expect(find.text('kept'), findsOneWidget);
+        await shutDown(tester);
+      },
+    );
   });
 }

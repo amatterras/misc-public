@@ -261,7 +261,10 @@ class CaptureService {
   /// not yet run on a device.
   /// Saves an image or document [asset] as an Archive (library) object.
   /// Returns false when there is no library to save to.
-  Future<bool> saveAssetToArchive(Asset asset, {Set<String> categories = const {}}) async {
+  Future<bool> saveAssetToArchive(
+    Asset asset, {
+    Set<String> categories = const {},
+  }) async {
     final library = libraryRepository;
     if (library == null) return false;
     final info = asset.file == null
