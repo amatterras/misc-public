@@ -103,6 +103,99 @@ workflows:
       - build/ios/iphoneos/THEapp-with-widgets.ipa
       - /tmp/xcodebuild_logs/*.log
 
+  # UI test build of the New interface (branch ui/new-design): the same steps
+  # as ios-unsigned, but WITHOUT the static-analysis step, so a style notice in
+  # code that is not part of the build cannot stop a test build. Same unsigned
+  # outputs (THEapp-unsigned.ipa without extensions = the safest UI test;
+  # THEapp-with-widgets.ipa with the widget and Share Extension). The
+  # production workflows below are unchanged.
+  ios-ui-test:
+    name: THEapp iOS UI test (unsigned, New interface)
+    instance_type: mac_mini_m2
+    max_build_duration: 30 # minutes; a normal build should need about 10
+    environment:
+      # This PC uses Flutter 3.47.7 (stable). "stable" is the newest stable
+      # release on Codemagic; replace with 3.47.7 if a newer one breaks.
+      flutter: stable
+      xcode: latest
+    scripts:
+      - name: Show tool versions
+        script: |
+          flutter --version
+          xcodebuild -version
+      - name: Get packages
+        script: flutter pub get
+      - name: Validate the iOS project
+        script: |
+          set -e
+          # Property lists and entitlements must parse; the targets and
+          # bundle ids must be what signing expects.
+          for f in ios/Runner/Info.plist ios/TheAppWidget/Info.plist \
+                   ios/Runner/Runner.entitlements \
+                   ios/TheAppWidget/TheAppWidget.entitlements \
+                   ios/ShareExtension/Info.plist \
+                   ios/ShareExtension/ShareExtension.entitlements; do
+            plutil -lint "$f"
+          done
+          xcodebuild -list -project ios/Runner.xcodeproj
+          xcodebuild -showBuildSettings -project ios/Runner.xcodeproj \
+            -target Runner -configuration Release \
+            | grep -E " (PRODUCT_BUNDLE_IDENTIFIER|IPHONEOS_DEPLOYMENT_TARGET|CODE_SIGN_ENTITLEMENTS) ="
+          for t in TheAppWidget ShareExtension; do
+            xcodebuild -showBuildSettings -project ios/Runner.xcodeproj \
+              -target "$t" -configuration Release \
+              | grep -E " (PRODUCT_BUNDLE_IDENTIFIER|CODE_SIGN_ENTITLEMENTS) ="
+          done
+      - name: Build iOS app without code signing
+        script: |
+          # On failure, show Xcode's own errors (the summary above them is short).
+          # The build id (git hash) is shown in Settings → About and the log.
+          flutter build ios --release --no-codesign \
+            --dart-define=THEAPP_BUILD=$(git rev-parse --short HEAD) || {
+            grep -h -B3 -A8 "error:" /tmp/xcodebuild_logs/*.log | head -200
+            grep -h -o -- "-target [a-z0-9_.-]*" /tmp/xcodebuild_logs/*.log | sort | uniq -c
+            exit 1
+          }
+      - name: Pack unsigned IPA
+        script: |
+          set -e
+          cd build/ios/iphoneos
+          rm -rf Payload THEapp-unsigned.ipa
+          mkdir Payload
+          cp -R Runner.app Payload/
+          # The widget extension goes only into THEapp-with-widgets.ipa, so
+          # this IPA installs exactly like the earlier builds.
+          ls Payload/Runner.app/PlugIns || true
+          rm -rf Payload/Runner.app/PlugIns
+          zip -qry THEapp-unsigned.ipa Payload
+          ls -la THEapp-unsigned.ipa
+      - name: Pack IPA with App Group entitlements (for widgets)
+        ignore_failure: true
+        script: |
+          # Same app, ad-hoc signed (no certificate, no account) only so the
+          # App Group entitlement is inside it: some free sideloaders keep
+          # it when they re-sign, which the home-screen widgets need. If this
+          # step fails, use THEapp-unsigned.ipa as before.
+          set -e
+          ROOT="$PWD"
+          cd build/ios/iphoneos
+          rm -rf Signed THEapp-with-widgets.ipa
+          mkdir -p Signed/Payload
+          cp -R Runner.app Signed/Payload/
+          APP=Signed/Payload/Runner.app
+          for f in "$APP"/Frameworks/*; do codesign --force --sign - "$f"; done
+          codesign --force --sign - --entitlements "$ROOT/ios/TheAppWidget/TheAppWidget.entitlements" "$APP/PlugIns/TheAppWidget.appex"
+          codesign --force --sign - --entitlements "$ROOT/ios/ShareExtension/ShareExtension.entitlements" "$APP/PlugIns/ShareExtension.appex"
+          codesign --force --sign - --entitlements "$ROOT/ios/Runner/Runner.entitlements" "$APP"
+          codesign -d --entitlements - "$APP"
+          cd Signed
+          zip -qry ../THEapp-with-widgets.ipa Payload
+          ls -la ../THEapp-with-widgets.ipa
+    artifacts:
+      - build/ios/iphoneos/THEapp-unsigned.ipa
+      - build/ios/iphoneos/THEapp-with-widgets.ipa
+      - /tmp/xcodebuild_logs/*.log
+
   # Signed, installable IPA. Needs a PAID Apple Developer Program membership
   # (App Groups and distribution certificates are not available to free
   # Apple IDs). Nothing secret is in this file: Codemagic supplies it from
