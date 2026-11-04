@@ -16,7 +16,8 @@ abstract final class ImportGuard {
   static const maxDocumentBytes = 256 * 1024 * 1024;
 
   /// Whether [head] (the first bytes of a file, at least 12 and up to 1024)
-  /// has the signature of a file of kind [extension] (lower case, no dot).
+  /// has the signature of the kind of file [extension] names (pictures: any
+  /// picture format) (lower case, no dot).
   /// Kinds that are not checked here (unknown extensions) pass.
   static bool matchesSignature(List<int> head, String extension) {
     bool starts(List<int> sig, [int at = 0]) {
@@ -27,17 +28,20 @@ abstract final class ImportGuard {
       return true;
     }
 
+    bool isImage() =>
+        starts(const [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) || // png
+        starts(const [0xFF, 0xD8, 0xFF]) || // jpeg
+        starts('GIF87a'.codeUnits) ||
+        starts('GIF89a'.codeUnits) ||
+        (starts('RIFF'.codeUnits) && starts('WEBP'.codeUnits, 8)) ||
+        starts('BM'.codeUnits);
+
     switch (extension.toLowerCase()) {
-      case 'png':
-        return starts(const [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-      case 'jpg' || 'jpeg':
-        return starts(const [0xFF, 0xD8, 0xFF]);
-      case 'gif':
-        return starts('GIF87a'.codeUnits) || starts('GIF89a'.codeUnits);
-      case 'webp':
-        return starts('RIFF'.codeUnits) && starts('WEBP'.codeUnits, 8);
-      case 'bmp':
-        return starts('BM'.codeUnits);
+      case 'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'bmp':
+        // Any real picture format is accepted under any picture name: web
+        // images are often a PNG called .jpg and image decoders go by the
+        // content. What is refused is a file that is not a picture at all.
+        return isImage();
       case 'pdf':
         // The PDF header may follow a few bytes of junk; viewers accept it
         // anywhere in the first 1024 bytes.

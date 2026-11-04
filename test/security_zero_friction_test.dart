@@ -257,6 +257,13 @@ void main() {
       expect(await ImportGuard.problemWith(html, 'png'), isNotNull);
     });
 
+    test('a PNG called .jpg is still a picture and is accepted', () async {
+      final f = await file('web.jpg', [
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, //
+      ]);
+      expect(await ImportGuard.problemWith(f, 'jpg'), isNull);
+    });
+
     test('empty files are refused', () async {
       final f = await file('empty.png', const []);
       expect(await ImportGuard.problemWith(f, 'png'), 'The file is empty.');

@@ -50,7 +50,7 @@ copy of the data.
 | # | Severity | Finding | Fix |
 |---|---|---|---|
 | V1 | **Medium** | Link previews fetched any pasted/shared URL, including `http://192.168.x.x`, `127.0.0.1`, link-local (`169.254.169.254`) and Tailscale addresses, and followed up to 5 redirects blindly. A hostile link could make the device send GET requests into the user's own networks (router admin pages, NAS, other services). | `url_guard.dart`: only public http(s) hosts without credentials; every address a name resolves to must be public; redirects are followed by hand and each hop is checked, max 5. Tested with real local servers. |
-| V2 | **Low–Medium** | Imported images/PDFs were accepted by file extension only, with no size limit. A program or HTML file renamed `.png`/`.pdf` was stored and later handed to system viewers. | `import_guard.dart`: signature check (png, jpg, gif, webp, bmp, pdf), size limits (64 MB images, 256 MB PDFs), empty files refused; downloaded preview images are checked too. A refused file is skipped and logged without its name. Tested. |
+| V2 | **Low–Medium** | Imported images/PDFs were accepted by file extension only, with no size limit. A program or HTML file renamed `.png`/`.pdf` was stored and later handed to system viewers. | `import_guard.dart`: signature check (a picture must be a real picture in any common format, a PDF must be a PDF), size limits (64 MB images, 256 MB PDFs), empty files refused; downloaded preview images are checked too. A refused file is skipped and logged without its name. Tested. |
 | V3 | **Low** | The status of local protection, sync authorization and backups was spread over several settings sections with no single, honest summary. | New Settings → Security & Privacy page (below). |
 
 ### Open items (not fixed here)
