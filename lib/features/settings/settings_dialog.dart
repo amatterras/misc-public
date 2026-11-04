@@ -24,6 +24,7 @@ import '../capture/send_to.dart';
 import 'backup_actions.dart';
 import 'backup_details.dart';
 import 'security_status.dart';
+import 'recovery_section.dart';
 import 'settings_widgets.dart';
 import 'storage_section.dart';
 import 'sync_section.dart';
@@ -810,6 +811,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         'here happens automatically.',
     children: [
       SecurityStatusView(state: s),
+      const SizedBox(height: 12),
+      RecoverySection(state: s),
       const SizedBox(height: 12),
       SettingsGroup(
         label: 'What stays on this device',

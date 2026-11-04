@@ -38,9 +38,8 @@ class BackupLabel {
   BackupLabel(this.directory) {
     final name = directory.uri.pathSegments.where((p) => p.isNotEmpty).last;
     this.name = name;
-    final m = RegExp(
-      r'^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-(.*)$',
-    ).firstMatch(name);
+    final m = RegExp(r'^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-(.*)$')
+        .firstMatch(name);
     if (m != null) {
       at = DateTime(
         int.parse(m.group(1)!),
@@ -80,9 +79,11 @@ class BackupLabel {
     final today = now ?? DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
     final time = '${two(t.hour)}:${two(t.minute)}';
-    final days = DateTime(today.year, today.month, today.day)
-        .difference(DateTime(t.year, t.month, t.day))
-        .inDays;
+    final days = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).difference(DateTime(t.year, t.month, t.day)).inDays;
     if (days == 0) return 'Today $time';
     if (days == 1) return 'Yesterday $time';
     return '${formatShortDate(t)}, ${t.year} · $time';
@@ -135,7 +136,9 @@ Future<File?> exportAllData(AppState s) async {
     return file;
   } on FileSystemException catch (e, st) {
     AppLog.error('Backup export failed', e, st);
-    s.showToast('Could not save the backup: ${e.message}. Nothing was changed.');
+    s.showToast(
+      'Could not save the backup: ${e.message}. Nothing was changed.',
+    );
   } on BackupFileException catch (e) {
     s.showToast(e.message);
   }

@@ -35,6 +35,7 @@ class BackupService {
     'canvas_snapshots', // named mindmap versions
     'retention', // permanent calendar-expiration ledger
     'migrations', // migration checkpoints and history
+    'recovery', // the sealed recovery envelope (opens only with the code)
   ];
   static const _attachments = 'attachments';
   static const keepAutomatic = 14;
@@ -734,11 +735,7 @@ class BackupService {
   /// temporary backup folder it was made from is removed again. [out] is
   /// replaced only when the new file is complete.
   Future<File> exportFile(File out, {DateTime? now}) async {
-    final backup = await snapshot(
-      'export',
-      includeAttachments: true,
-      now: now,
-    );
+    final backup = await snapshot('export', includeAttachments: true, now: now);
     try {
       if (!await verify(backup)) {
         throw const FileSystemException(
@@ -747,12 +744,16 @@ class BackupService {
       }
       final problems = await checkManifest(backup);
       if (problems.isNotEmpty) {
-        throw FileSystemException('The backup failed its check: ${problems.first}');
+        throw FileSystemException(
+          'The backup failed its check: ${problems.first}',
+        );
       }
       final file = await BackupFile.pack(backup, out);
       if (!await BackupFile.looksLikeBackup(file)) {
         await file.delete();
-        throw const FileSystemException('The exported file could not be read back');
+        throw const FileSystemException(
+          'The exported file could not be read back',
+        );
       }
       return file;
     } finally {

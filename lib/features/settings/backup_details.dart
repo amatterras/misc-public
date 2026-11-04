@@ -132,7 +132,10 @@ class _BackupDetailsState extends State<_BackupDetails> {
                       child: Text(
                         'Intact: every file matches.',
                         key: const ValueKey('backup-intact'),
-                        style: TextStyle(fontSize: 13, color: AppColors.success),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.success,
+                        ),
                       ),
                     ),
                   if (_check == _Check.problems)

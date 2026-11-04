@@ -315,11 +315,7 @@ class SettingsMenu<T> extends StatelessWidget {
                 style: TextStyle(fontSize: 13, color: AppColors.text),
               ),
               const SizedBox(width: 4),
-              Icon(
-                Icons.unfold_more,
-                size: 16,
-                color: AppColors.textFaint,
-              ),
+              Icon(Icons.unfold_more, size: 16, color: AppColors.textFaint),
             ],
           ),
         ),

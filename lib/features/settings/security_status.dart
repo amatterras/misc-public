@@ -92,6 +92,7 @@ class SecurityFacts {
 
   /// The backup job's last failure, while it is still failing.
   final String? backupFailure;
+
   /// "Now" for the wording (tests set it); null means the real time.
   final DateTime? now;
 

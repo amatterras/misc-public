@@ -19,6 +19,7 @@ import 'data/storage/backup_service.dart';
 import 'data/storage/encryption_migration.dart';
 import 'data/storage/storage_encryption.dart';
 import 'data/storage/json_file_store.dart';
+import 'data/storage/recovery_service.dart';
 import 'data/workspace.dart';
 import 'features/browser/webview_selftest.dart';
 import 'features/capture/send_to.dart';
@@ -161,7 +162,7 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
     runApp(
       MaterialApp(
         theme: buildAppTheme(),
-        home: _DataProblemPage(message: encryption.message),
+        home: _DataProblemPage(message: encryption.message, recoveryRoot: root),
       ),
     );
     return;
@@ -318,9 +319,13 @@ class _TheAppState extends State<TheApp> {
 /// Shown instead of the app when the data can't be opened safely. After a
 /// failed upgrade it offers Retry and Restore (never "reset" or "clear").
 class _DataProblemPage extends StatefulWidget {
-  const _DataProblemPage({this.state, this.message});
+  const _DataProblemPage({this.state, this.message, this.recoveryRoot});
 
   final AppState? state;
+
+  /// The data folder when its keys are missing: a recovery code can bring
+  /// them back (see data/storage/recovery_service.dart).
+  final Directory? recoveryRoot;
 
   /// Shown when there is no app state yet (bad test-data folder).
   final String? message;
@@ -332,6 +337,25 @@ class _DataProblemPage extends StatefulWidget {
 class _DataProblemPageState extends State<_DataProblemPage> {
   bool _busy = false;
   String? _result;
+  final _code = TextEditingController();
+  String? _recoveryMessage;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _useRecoveryCode() async {
+    setState(() => _busy = true);
+    final r = await RecoveryService(widget.recoveryRoot!).restore(_code.text);
+    if (mounted) {
+      setState(() {
+        _busy = false;
+        _recoveryMessage = r.message;
+      });
+    }
+  }
 
   Future<void> _run(Future<String> Function() action) async {
     setState(() => _busy = true);
@@ -389,6 +413,33 @@ class _DataProblemPageState extends State<_DataProblemPage> {
                 style: const TextStyle(fontSize: 15, height: 1.5),
               ),
               const SizedBox(height: Space.md),
+              if (widget.recoveryRoot != null &&
+                  RecoveryService(widget.recoveryRoot!).file.existsSync()) ...[
+                const SizedBox(height: Space.lg),
+                const Text(
+                  'If you saved a recovery code, enter it to get access back.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: Space.sm),
+                TextField(
+                  key: const ValueKey('recovery-code-input'),
+                  controller: _code,
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(
+                    hintText: 'XXXX-XXXX-XXXX-…',
+                  ),
+                ),
+                const SizedBox(height: Space.sm),
+                FilledButton(
+                  key: const ValueKey('recovery-code-restore'),
+                  onPressed: _busy ? null : _useRecoveryCode,
+                  child: const Text('Restore access'),
+                ),
+                if (_recoveryMessage != null) ...[
+                  const SizedBox(height: Space.sm),
+                  Text(_recoveryMessage!, textAlign: TextAlign.center),
+                ],
+              ],
               if (failure != null) ...[
                 const SizedBox(height: Space.lg),
                 Wrap(

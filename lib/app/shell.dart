@@ -16,6 +16,7 @@ import '../features/palette/app_switcher.dart';
 import '../features/palette/command_palette.dart';
 import '../features/library/library_page.dart';
 import '../features/motivation/motivation_service.dart';
+import '../features/settings/recovery_section.dart' show offerRecoveryCodeOnce;
 import '../features/search/search_dialog.dart';
 import '../features/settings/settings_dialog.dart';
 import '../widgets/common.dart' show GhostIconButton;
@@ -152,6 +153,11 @@ class _AppShellState extends State<AppShell> {
     if (widget.motivation == null) unawaited(_loadMotivation());
     _lastPage = state.page;
     state.addListener(_pageChanged);
+    // Once, after start-up: offer a recovery code (never blocks anything).
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future<void>.delayed(const Duration(seconds: 4));
+      if (mounted) unawaited(offerRecoveryCodeOnce(context, state));
+    });
   }
 
   /// A page that held the focus is hidden when another page opens, which

@@ -311,6 +311,11 @@ abstract final class StorageEncryption {
     return StorageEncryptionState(EncryptionStatus.enabled, cipher);
   }
 
+  /// Whether [cipher] opens the data in [root] (or there is nothing yet to
+  /// compare with). Never changes or quarantines data.
+  static Future<bool> keyOpens(Directory root, FileCipher cipher) =>
+      _keyMatches(root, cipher);
+
   static const _sentinelText = 'THEapp key check';
 
   static File _sentinel(Directory root) => File(
