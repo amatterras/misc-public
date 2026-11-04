@@ -128,7 +128,7 @@ class _PhoneArchiveState extends State<PhoneArchive> {
                       itemCount: recent.length > 12 ? 12 : recent.length,
                       separatorBuilder: (_, _) => const SizedBox(width: 10),
                       itemBuilder: (context, i) =>
-                          _RecentTile(state: s, object: recent[i]),
+                          RecentTile(state: s, object: recent[i]),
                     ),
                   ),
                 ),
@@ -223,8 +223,8 @@ class _PhoneArchiveState extends State<PhoneArchive> {
 }
 
 /// A picture, or the title set on a tint of the folder's colour.
-class _RecentTile extends StatelessWidget {
-  const _RecentTile({required this.state, required this.object});
+class RecentTile extends StatelessWidget {
+  const RecentTile({super.key, required this.state, required this.object});
 
   final AppState state;
   final LibraryObject object;

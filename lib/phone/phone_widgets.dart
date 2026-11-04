@@ -241,6 +241,8 @@ Future<T?> showPhoneSheet<T>(
   barrierColor: Colors.black.withValues(alpha: 0.45),
   showDragHandle: false,
   useSafeArea: true,
+  // On an iPad the sheet is a column in the middle, not a full-width slab.
+  constraints: const BoxConstraints(maxWidth: 560),
   shape: RoundedRectangleBorder(
     borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
     side: BorderSide(color: NewColors.border.withValues(alpha: 0.8)),

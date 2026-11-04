@@ -7,10 +7,19 @@ import 'package:flutter/foundation.dart';
 
 abstract final class DeviceIdiom {
   static bool? _fromModel;
+  static bool? _modelIsIpad;
 
   /// Tests set this to decide without a device.
   @visibleForTesting
   static bool? debugIsPhone;
+
+  /// Tests set this to decide "this is an iPad" without a device.
+  @visibleForTesting
+  static bool? debugIsIpad;
+
+  /// True only when the device itself said "iPad". Unknown means no: the
+  /// iPad interface is never chosen by a guess.
+  static bool get isIpad => debugIsIpad ?? _modelIsIpad ?? false;
 
   /// Records what iOS says about itself (`UIDevice.current.model`: "iPhone",
   /// "iPod touch", "iPad"). Called once at start-up on iOS.
@@ -18,6 +27,7 @@ abstract final class DeviceIdiom {
     final m = model?.toLowerCase();
     if (m == null || m.isEmpty) return;
     _fromModel = !m.contains('ipad');
+    _modelIsIpad = m.contains('ipad');
   }
 
   /// True on an iPhone/iPod touch. If the device did not say what it is, the

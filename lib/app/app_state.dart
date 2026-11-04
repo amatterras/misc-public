@@ -68,7 +68,7 @@ import '../features/vault/vault_service.dart';
 import 'canvas_ops.dart';
 import 'floating_windows.dart';
 import 'interface_version.dart';
-import '../phone/phone_profile.dart';
+import '../ipad/ipad_profile.dart';
 import 'page_windows.dart';
 import 'test_environment.dart';
 
@@ -205,11 +205,13 @@ class AppState extends ChangeNotifier {
 
   /// Which interface is shown (Settings → Appearance → Interface Version).
   ///
-  /// The iPhone interface (lib/phone) is built on the New palette, so on an
-  /// iPhone this is always [InterfaceVersion.newDesign]; the stored choice is
-  /// kept untouched for this device. Windows and iPad follow the choice.
-  InterfaceVersion get interfaceVersion =>
-      PhoneProfile.active ? InterfaceVersion.newDesign : _interfaceVersion;
+  /// The iPhone (lib/phone) and iPad (lib/ipad) interfaces are built on the
+  /// New palette, so on those devices this is always
+  /// [InterfaceVersion.newDesign]; the stored choice is kept untouched.
+  /// Windows follows the choice.
+  InterfaceVersion get interfaceVersion => IpadProfile.fixedInterface
+      ? InterfaceVersion.newDesign
+      : _interfaceVersion;
 
   /// Lets the app root restyle (theme + palette) when the version changes
   /// without rebuilding for every unrelated state change.
