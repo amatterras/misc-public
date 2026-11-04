@@ -184,7 +184,18 @@ class SyncEngine {
     required this.canvases,
     required this.client,
     this.openCanvas,
+    this.remote = '',
   });
+
+  /// Which remote this engine syncs with: '' for the hub (the default, and
+  /// what every existing install uses), or a peer's id. Each remote has its
+  /// own sync state (cursor, last confirmed versions) and attachment tables,
+  /// so a device can sync with several remotes (the PC hub and other
+  /// devices) independently; what is already identical is recognised by its
+  /// revision and never sent twice.
+  final String remote;
+
+  String _file(String base) => remote.isEmpty ? base : '${base}_$remote';
 
   final Workspace workspace;
   final CanvasRepository canvases;
@@ -197,11 +208,12 @@ class SyncEngine {
   /// a sync never writes a canvas file that is being opened).
   Future<void> whenIdle() => _idle?.future ?? Future.value();
 
-  Future<SyncState> loadState() async =>
-      SyncState.fromJson(await workspace.store.read('sync', 'client_state'));
+  Future<SyncState> loadState() async => SyncState.fromJson(
+    await workspace.store.read('sync', _file('client_state')),
+  );
 
   Future<void> _saveState(SyncState s) =>
-      workspace.store.write('sync', 'client_state', s.toJson());
+      workspace.store.write('sync', _file('client_state'), s.toJson());
 
   /// One full cycle. Throws [SyncFailure] if the hub can't be reached; the
   /// local data is never changed by a failed cycle except for records
@@ -753,7 +765,7 @@ class SyncEngine {
       await workspace.store.write('sync', 'purged_blobs', {
         'done': handled.toList(),
       });
-      await workspace.store.write('sync', 'blobs', {'blobs': table});
+      await workspace.store.write('sync', _file('blobs'), {'blobs': table});
     }
   }
 
@@ -872,7 +884,7 @@ class SyncEngine {
 
   Future<Map<String, String>> _pendingTable() async {
     if (_pendingIds != null) return _pendingIds!;
-    final saved = await workspace.store.read('sync', 'outbox');
+    final saved = await workspace.store.read('sync', _file('outbox'));
     return _pendingIds = {
       for (final e in ((saved?['pending'] as Map?) ?? const {}).entries)
         '${e.key}': '${e.value}',
@@ -884,7 +896,7 @@ class SyncEngine {
 
   Future<Map<String, String>> _blobTable() async {
     if (_blobIds != null) return _blobIds!;
-    final saved = await workspace.store.read('sync', 'blobs');
+    final saved = await workspace.store.read('sync', _file('blobs'));
     return _blobIds = {
       for (final e in ((saved?['blobs'] as Map?) ?? const {}).entries)
         '${e.key}': '${e.value}',
@@ -942,7 +954,9 @@ class SyncEngine {
           staged = File('${outbox.path}${Platform.pathSeparator}$sealedId.up');
           await staged.writeAsBytes(sealed.bytes, flush: true);
           pending[sha] = sealedId;
-          await workspace.store.write('sync', 'outbox', {'pending': pending});
+          await workspace.store.write('sync', _file('outbox'), {
+            'pending': pending,
+          });
         }
         final total = await staged.length();
         transfers.update(
@@ -981,10 +995,12 @@ class SyncEngine {
         );
         if (await staged.exists()) await staged.delete();
         pending.remove(sha);
-        await workspace.store.write('sync', 'outbox', {'pending': pending});
+        await workspace.store.write('sync', _file('outbox'), {
+          'pending': pending,
+        });
         id = sealedId;
         table[sha] = id;
-        await workspace.store.write('sync', 'blobs', {'blobs': table});
+        await workspace.store.write('sync', _file('blobs'), {'blobs': table});
         report.uploaded++;
       }
       if (id != null) data[blobKey] = id;
