@@ -1,3 +1,4 @@
+import 'peer_sync_row.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -221,6 +222,7 @@ class _SyncSectionState extends State<SyncSection> {
             ),
             if (s.maintenance case final m?)
               MaintenanceStatusView(state: s, m: m),
+            if (s.peerSync.isSupported) PeerSyncRow(state: s),
             // The master switch lives on the Windows PC (it also pauses the
             // hub there); devices just show "paused".
             if (Platform.isWindows)

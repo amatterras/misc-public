@@ -40,6 +40,7 @@ import '../platform/ios_bridge.dart';
 import '../platform/input_hints.dart';
 import '../platform/platform.dart' as native;
 import '../widgets/date_prefs.dart';
+import '../sync/peer_controller.dart';
 import '../sync/device_keys.dart' show DeviceKeyPair;
 import '../sync/e2ee.dart';
 import '../sync/protocol.dart';
@@ -464,6 +465,8 @@ class AppState extends ChangeNotifier {
     windows.restore();
     step('Starting reminders');
     _startReminders();
+    // Direct sync between this user's own devices, only if switched on.
+    unawaited(peerSync.startIfEnabled());
     _applyClipboardSetting();
     _startCalendarSyncSchedule();
     unawaited(syncCalendarAccounts());
@@ -594,6 +597,7 @@ class AppState extends ChangeNotifier {
   Future<void> shutdown() async {
     await maintenance?.stop();
     _scheduler?.stop();
+    await peerSync.stop();
     await flush();
     await hubHost?.stop();
   }
@@ -1252,6 +1256,7 @@ class AppState extends ChangeNotifier {
   /// in the background, where timers do not run). Imports shared items and
   /// syncs if the last sync is more than [resumeSyncAfter] old.
   Future<void> appResumed() async {
+    unawaited(peerSync.startIfEnabled());
     // iOS shows its bars again after the app was in the background.
     if (immersive) applyImmersive(true);
     await importSharedItems();
@@ -1283,7 +1288,19 @@ class AppState extends ChangeNotifier {
 
   /// The app went to the background (iPhone/iPad): stop the live
   /// connection and timers; [appResumed] starts them again.
-  void syncPaused() => _scheduler?.stop();
+  void syncPaused() {
+    _scheduler?.stop();
+    // iOS does not let the app serve or listen in the background.
+    unawaited(peerSync.stop());
+  }
+
+  /// Direct sync between this user's own devices (off unless switched on in
+  /// Settings; see sync/peer_controller.dart).
+  late final PeerSyncController peerSync = PeerSyncController(
+    workspace: workspace,
+    canvases: canvases,
+    settings: settings,
+  );
 
   // ------------------------------------------------------- storage modes --
   //
