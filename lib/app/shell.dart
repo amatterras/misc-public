@@ -21,8 +21,6 @@ import '../features/settings/settings_dialog.dart';
 import '../widgets/common.dart' show GhostIconButton;
 import '../widgets/floating_layer.dart';
 import '../new_ui/new_archive_page.dart';
-import '../ipad/ipad_profile.dart';
-import '../ipad/ipad_shell.dart';
 import '../phone/phone_profile.dart';
 import '../phone/phone_shell.dart';
 import '../new_ui/new_sidebar.dart';
@@ -243,10 +241,6 @@ class _AppShellState extends State<AppShell> {
             // does, however narrow its window is.
             final isNew = state.interfaceVersion == InterfaceVersion.newDesign;
             final phone = PhoneProfile.active;
-            // iPad, wide enough for the rail; a narrow window (Slide Over,
-            // thin Split View) keeps the compact New layout.
-            final ipad =
-                IpadProfile.active && width >= IpadProfile.railMinWidth;
             final windows = state.windows;
             windows.titleOf ??= (p) => pageTitle(state, p);
             windows.builder ??= (context, p) =>
@@ -343,14 +337,6 @@ class _AppShellState extends State<AppShell> {
                     SizedBox.expand(
                       child: PhoneShell(state: state, motivation: _motivation),
                     )
-                  else if (ipad)
-                    SizedBox.expand(
-                      child: IpadShell(
-                        state: state,
-                        motivation: _motivation,
-                        pages: mainContent,
-                      ),
-                    )
                   else if (isCompact && !isNew)
                     SafeArea(
                       bottom: false,
@@ -392,7 +378,7 @@ class _AppShellState extends State<AppShell> {
                     bottomOffset: (isCompact && !isNew) || phone ? 120 : 76,
                   ),
                   // The phone shows the greeting itself, as a line on Today.
-                  if (!phone && !(ipad && state.homeActive))
+                  if (!phone)
                     ListenableBuilder(
                       listenable: _motivation,
                       builder: (context, _) => _motivation.greetingVisible

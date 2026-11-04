@@ -16,7 +16,7 @@ import '../../app/interface_version.dart';
 import '../../app/test_environment.dart';
 import '../../app/theme.dart';
 import '../../data/storage/app_log.dart';
-import '../../ipad/ipad_profile.dart';
+import '../../phone/phone_profile.dart';
 import '../../platform/input_hints.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
@@ -296,9 +296,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     children: [
       SettingsGroup(
         label: 'Look',
-        // The interface switch is not offered on an iPhone (iPhone and iPad
-        // have their own interface), so its caption is not either.
-        footer: IpadProfile.fixedInterface
+        // The interface switch is not offered on an iPhone (it always has
+        // its own interface), so its caption is not either.
+        footer: PhoneProfile.active
             ? null
             : 'Original is the interface you know. New is the redesign. Your '
                   'data is the same in both, and this choice applies to '
@@ -318,7 +318,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               if (mounted) setState(() {});
             },
           ),
-          if (!IpadProfile.fixedInterface)
+          if (!PhoneProfile.active)
             SettingsSegmentRow<InterfaceVersion>(
               key: const ValueKey('interface-version'),
               title: 'Interface',

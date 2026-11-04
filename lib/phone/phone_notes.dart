@@ -162,7 +162,7 @@ class _PhoneNotesState extends State<PhoneNotes> {
             else
               SliverList.builder(
                 itemCount: notes.length,
-                itemBuilder: (context, i) => NoteRow(
+                itemBuilder: (context, i) => _NoteRow(
                   key: ValueKey('note-${notes[i].id}'),
                   note: notes[i],
                   folder: folders
@@ -277,19 +277,19 @@ class _PhoneNotesState extends State<PhoneNotes> {
   }
 }
 
-class NoteRow extends StatelessWidget {
-  const NoteRow({
+class _NoteRow extends StatelessWidget {
+  const _NoteRow({
     super.key,
     required this.note,
     required this.folder,
     required this.onTap,
-    this.onMenu,
+    required this.onMenu,
   });
 
   final Note note;
   final String? folder;
   final VoidCallback onTap;
-  final VoidCallback? onMenu;
+  final VoidCallback onMenu;
 
   @override
   Widget build(BuildContext context) {
