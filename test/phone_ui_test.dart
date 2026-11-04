@@ -515,6 +515,33 @@ void main() {
     await close(tester, state);
   });
 
+  testWidgets(
+    'search: ranked results say why they matched and can be filtered',
+    (tester) async {
+      final state = await boot(tester, size: iphone, ios: true, phone: true);
+      await open(tester, state);
+      await tapKey(tester, 'phone-search');
+      await tester.enterText(
+        find.byKey(const ValueKey('global-search-field')),
+        'groceries',
+      );
+      await settle(tester);
+      final inDialog = find.descendant(
+        of: find.byType(Dialog),
+        matching: find.text('Groceries'),
+      );
+      expect(inDialog, findsOneWidget);
+      expect(find.textContaining('in title'), findsWidgets);
+      await tester.tap(find.byKey(const ValueKey('search-filter-tasks')));
+      await settle(tester);
+      expect(inDialog, findsNothing, reason: 'a note is not a task');
+      await tester.tap(find.byKey(const ValueKey('search-filter-notes')));
+      await settle(tester);
+      expect(inDialog, findsOneWidget);
+      await close(tester, state);
+    },
+  );
+
   // ── every place at every iPhone size, both themes ────────────────────
 
   for (final size in const [

@@ -1,3 +1,4 @@
+import '../search/workspace_search.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -1293,6 +1294,17 @@ class AppState extends ChangeNotifier {
     // iOS does not let the app serve or listen in the background.
     unawaited(peerSync.stop());
   }
+
+  /// The unified search index (lib/search): incremental, rebuildable.
+  late final WorkspaceSearch search = WorkspaceSearch(
+    workspace,
+    sources: SearchSources(
+      canvases: () => canvasList,
+      notebookPages: () => pageSearchText,
+      pdfPages: (id) => pdfTexts.pagesOf(id),
+      pdfText: (id) => pdfTexts[id],
+    ),
+  );
 
   /// Direct sync between this user's own devices (off unless switched on in
   /// Settings; see sync/peer_controller.dart).

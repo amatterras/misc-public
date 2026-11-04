@@ -1,3 +1,4 @@
+import 'ranked_search.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ class SearchResult {
     required this.title,
     required this.subtitle,
     required this.open,
+    this.why = '',
   });
 
   final IconData icon;
@@ -26,6 +28,9 @@ class SearchResult {
   final String title;
   final String subtitle;
   final VoidCallback open;
+
+  /// Where the match is ("in title, tags"), for ranked results.
+  final String why;
 }
 
 /// Searches every kind of record. Pure function so it can be tested.
@@ -258,14 +263,17 @@ List<SearchResult> searchEverything(AppState s, String query) {
 Future<void> showSearchDialog(BuildContext context, AppState state) {
   return showDialog<void>(
     context: context,
-    builder: (_) => _SearchDialog(state: state),
+    builder: (_) => _SearchDialog(state: state, rootContext: context),
   );
 }
 
 class _SearchDialog extends StatefulWidget {
-  const _SearchDialog({required this.state});
+  const _SearchDialog({required this.state, this.rootContext});
 
   final AppState state;
+
+  /// Where opened results may push pages (the window the search came from).
+  final BuildContext? rootContext;
 
   @override
   State<_SearchDialog> createState() => _SearchDialogState();
@@ -282,6 +290,7 @@ String _pdfLine(AppState s) {
 
 class _SearchDialogState extends State<_SearchDialog> {
   String _query = '';
+  SearchFilter _filter = SearchFilter.all;
 
   @override
   void initState() {
@@ -316,7 +325,14 @@ class _SearchDialogState extends State<_SearchDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final results = _meaning ?? searchEverything(widget.state, _query);
+    final results =
+        _meaning ??
+        searchRanked(
+          widget.state,
+          _query,
+          filter: _filter,
+          context: widget.rootContext,
+        );
     final viewport = MediaQuery.sizeOf(context);
     final dialogWidth = (viewport.width - 24).clamp(0.0, 620.0).toDouble();
     final dialogHeight = (viewport.height - 24).clamp(180.0, 460.0).toDouble();
@@ -383,6 +399,26 @@ class _SearchDialogState extends State<_SearchDialog> {
                 ],
               ),
             ),
+            SizedBox(
+              height: 40,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+                children: [
+                  for (final f in SearchFilter.values)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6, top: 6, bottom: 6),
+                      child: ChoiceChip(
+                        key: ValueKey('search-filter-${f.name}'),
+                        label: Text(f.label, style: const TextStyle(fontSize: 12)),
+                        selected: _filter == f,
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (_) => setState(() => _filter = f),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             const Divider(),
             Expanded(
               child: results.isEmpty
@@ -410,8 +446,8 @@ class _SearchDialogState extends State<_SearchDialog> {
                           ),
                           title: Text(r.title, overflow: TextOverflow.ellipsis),
                           subtitle: Text(
-                            r.subtitle,
-                            maxLines: 1,
+                            r.why.isEmpty ? r.subtitle : '${r.subtitle}\n${r.why}',
+                            maxLines: r.why.isEmpty ? 1 : 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,

@@ -49,6 +49,10 @@ class PdfTextCache extends ChangeNotifier {
   }
 
   /// The first OCR page containing every term: (page number, its text).
+  /// The pages of a PDF whose text was recognised page by page (scanned
+  /// pages), or null.
+  List<String>? pagesOf(String assetId) => _ocrPages[assetId];
+
   (int, String)? pageMatch(String assetId, List<String> terms) {
     final pages = _ocrPages[assetId];
     if (pages == null) return null;
