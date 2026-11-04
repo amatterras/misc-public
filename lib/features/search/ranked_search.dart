@@ -8,6 +8,7 @@ import '../../new_ui/new_archive_page.dart' show openArchiveItem;
 import '../../phone/phone_archive.dart' show openPhoneArchiveItem;
 import '../../phone/phone_profile.dart';
 import '../../search/search_index.dart';
+import '../relations/pdf_page_viewer.dart';
 import 'search_dialog.dart' show SearchResult;
 
 /// The kind filters offered in the dialog.
@@ -105,8 +106,14 @@ Future<void> openHit(AppState s, SearchHit h, BuildContext? context) async {
       }
     case DocKind.document:
       final a = ws.assets[id];
-      final file = a == null ? null : ws.documentFile(a);
-      if (file != null) s.openDocument(file.path);
+      if (a == null) return;
+      if (context != null && context.mounted) {
+        // Where this device can show pages, opens on the page that matched.
+        await openPdfAtPage(context, s, a, h.page);
+      } else {
+        final file = ws.documentFile(a);
+        if (file != null) s.openDocument(file.path);
+      }
     case DocKind.archive:
       if (context != null && context.mounted) {
         if (PhoneProfile.active) {

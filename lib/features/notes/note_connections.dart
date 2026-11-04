@@ -1,6 +1,9 @@
 // What a note is connected to, in both directions: its projects, the tasks
 // that link it, and the mindmaps that show a card of it. Every entry opens
 // the original record; nothing is copied.
+import '../relations/relations.dart';
+import '../relations/related_panel.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -128,6 +131,8 @@ class NoteConnections extends StatelessWidget {
             ],
           ),
         _OnMindmaps(state: state, noteId: note.id),
+        const SizedBox(height: Space.md),
+        RelatedPanel(state: state, item: Ref(RefKind.note, note.id)),
       ],
     );
   }

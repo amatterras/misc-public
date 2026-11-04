@@ -68,6 +68,118 @@ String pdfText(Uint8List bytes) {
       : result;
 }
 
+/// The text of each page, in page order, or null when the page structure
+/// cannot be read reliably (PDFs that keep their page tree inside compressed
+/// object streams, damaged files). A wrong page number is worse than none, so
+/// this never guesses: it follows the document's own page tree (/Pages →
+/// /Kids → /Page → /Contents) and only returns when that worked.
+List<String>? pdfPageTexts(Uint8List bytes) {
+  if (bytes.length > maxPdfBytes || !_startsWith(bytes, 0, '%PDF')) return null;
+  final s = latin1.decode(bytes, allowInvalid: true);
+  // Every "N G obj … endobj": its dictionary text and its stream (if any).
+  final dicts = <int, String>{};
+  final streams = <int, Uint8List>{};
+  final cmap = <int, String>{};
+  for (final m in RegExp(r'(\d+)\s+(\d+)\s+obj\b').allMatches(s)) {
+    final num = int.parse(m[1]!);
+    final end = s.indexOf('endobj', m.end);
+    if (end < 0) continue;
+    final body = s.substring(m.end, end);
+    final streamAt = body.indexOf('stream');
+    final dict = streamAt < 0 ? body : body.substring(0, streamAt);
+    dicts[num] = dict;
+    if (streamAt < 0) continue;
+    if (dict.contains('/Image') || dict.contains('/FontFile')) continue;
+    var start = m.end + streamAt + 6;
+    if (start < bytes.length && bytes[start] == 13) start++;
+    if (start < bytes.length && bytes[start] == 10) start++;
+    final stop = s.indexOf('endstream', start);
+    if (stop < 0 || stop > end) continue;
+    var data = Uint8List.sublistView(bytes, start, stop);
+    if (dict.contains('/FlateDecode')) {
+      try {
+        data = _inflate(data);
+      } catch (_) {
+        continue;
+      }
+    } else if (dict.contains('/Filter')) {
+      continue;
+    }
+    streams[num] = data;
+    final text = latin1.decode(data, allowInvalid: true);
+    if (text.contains('begincmap')) _readCMap(text, cmap);
+  }
+  if (dicts.isEmpty) return null;
+
+  final pageNode = RegExp(r'/Type\s*/Page(?![A-Za-z])');
+  final pagesNode = RegExp(r'/Type\s*/Pages(?![A-Za-z])');
+  int? root;
+  for (final e in dicts.entries) {
+    if (pagesNode.hasMatch(e.value) && !e.value.contains('/Parent')) {
+      root = e.key;
+      break;
+    }
+  }
+  if (root == null) return null;
+
+  final order = <int>[];
+  final seen = <int>{};
+  void walk(int node, int depth) {
+    if (depth > 32 || !seen.add(node)) return;
+    final d = dicts[node];
+    if (d == null) return;
+    if (pageNode.hasMatch(d)) {
+      order.add(node);
+      return;
+    }
+    final kids = RegExp(r'/Kids\s*\[(.*?)\]', dotAll: true).firstMatch(d);
+    if (kids == null) return;
+    for (final k in RegExp(r'(\d+)\s+\d+\s+R').allMatches(kids[1]!)) {
+      walk(int.parse(k[1]!), depth + 1);
+    }
+  }
+
+  walk(root, 0);
+  if (order.isEmpty || order.length > 5000) return null;
+
+  final pages = <String>[];
+  var anyContent = false;
+  for (final p in order) {
+    final d = dicts[p]!;
+    final refs = <int>[];
+    final array = RegExp(r'/Contents\s*\[(.*?)\]', dotAll: true).firstMatch(d);
+    if (array != null) {
+      for (final r in RegExp(r'(\d+)\s+\d+\s+R').allMatches(array[1]!)) {
+        refs.add(int.parse(r[1]!));
+      }
+    } else {
+      final single = RegExp(r'/Contents\s+(\d+)\s+\d+\s+R').firstMatch(d);
+      if (single != null) refs.add(int.parse(single[1]!));
+    }
+    final out = StringBuffer();
+    for (final r in refs) {
+      final data = streams[r];
+      if (data == null) continue;
+      anyContent = true;
+      final text = latin1.decode(data, allowInvalid: true);
+      if (text.contains('begincmap') || !text.contains('T')) continue;
+      _readContent(text, cmap, out);
+      out.write('\n');
+    }
+    pages.add(
+      out
+          .toString()
+          .replaceAll(RegExp(r'[ \t]+'), ' ')
+          .replaceAll(RegExp(r'\n\s*\n+'), '\n')
+          .trim(),
+    );
+  }
+  // Nothing readable behind any page: the content is somewhere this reader
+  // does not look; no page information is better than empty pages.
+  if (!anyContent) return null;
+  return pages;
+}
+
 bool _startsWith(Uint8List b, int at, String s) {
   if (at < 0 || at + s.length > b.length) return false;
   for (var i = 0; i < s.length; i++) {

@@ -31,6 +31,9 @@ class PdfTextCache extends ChangeNotifier {
 
   final Map<String, String> _text = {};
   final Map<String, List<String>> _ocrPages = {};
+
+  /// Pages of PDFs whose own page structure could be read.
+  final Map<String, List<String>> _pdfPages = {};
   bool _running = false;
 
   /// Below this much text a PDF is treated as scanned.
@@ -51,7 +54,8 @@ class PdfTextCache extends ChangeNotifier {
   /// The first OCR page containing every term: (page number, its text).
   /// The pages of a PDF whose text was recognised page by page (scanned
   /// pages), or null.
-  List<String>? pagesOf(String assetId) => _ocrPages[assetId];
+  List<String>? pagesOf(String assetId) =>
+      _ocrPages[assetId] ?? _pdfPages[assetId];
 
   (int, String)? pageMatch(String assetId, List<String> terms) {
     final pages = _ocrPages[assetId];
@@ -64,6 +68,10 @@ class PdfTextCache extends ChangeNotifier {
   }
 
   String _key(Asset a) => a.fileSha256 ?? a.id;
+
+  /// Page texts of a PDF (a cache next to its text).
+  File _pagesFile(Asset a) =>
+      File('${dir.path}${Platform.pathSeparator}${_key(a)}.pages1.json');
 
   File _cacheFile(Asset a) =>
       File('${dir.path}${Platform.pathSeparator}${_key(a)}.txt');
@@ -107,6 +115,7 @@ class PdfTextCache extends ChangeNotifier {
               _text[a.id] = '';
             }
           }
+          await _readPages(a, file);
           if ((_text[a.id] ?? '').trim().length < scannedBelowChars) {
             await _readScanned(a, file);
           }
@@ -120,6 +129,30 @@ class PdfTextCache extends ChangeNotifier {
       _running = false;
       notifyListeners();
     }
+  }
+
+  /// Page-by-page text, when the PDF's page tree can be followed.
+  Future<void> _readPages(Asset a, File file) async {
+    final f = _pagesFile(a);
+    if (await f.exists()) {
+      final raw = jsonDecode(
+        await StorageEncryption.readText(f, ws.attachments.cipher),
+      );
+      if (raw is List) _pdfPages[a.id] = [for (final p in raw) '$p'];
+      return;
+    }
+    if (!await file.exists() || await file.length() > maxPdfBytes) return;
+    final bytes = await ws.attachments.readBytes(a.file!);
+    final pages = await compute(pdfPageTexts, bytes);
+    // No page structure: remembered as an empty list so it is not tried
+    // again, and the whole text stays searchable without page numbers.
+    await dir.create(recursive: true);
+    await StorageEncryption.writeText(
+      f,
+      jsonEncode(pages ?? const <String>[]),
+      ws.attachments.cipher,
+    );
+    if (pages != null && pages.isNotEmpty) _pdfPages[a.id] = pages;
   }
 
   Future<void> _readScanned(Asset a, File file) async {

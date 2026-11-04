@@ -2,6 +2,8 @@
 // and Archive resources as dots, with a line for every real link between
 // them (note links, attachments, task notes and projects, mindmap cards).
 // Read-only: nothing is changed from here. Only linked things are shown.
+import '../relations/relations.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -93,6 +95,31 @@ Future<RelationGraph> buildGraph(
       };
       if (kind != null) link(node(kind, u.id, u.title), r);
     }
+  }
+  // Explicit relations (by id): note, task, project, entry, file, mindmap.
+  GraphNode? refNode(String key) {
+    final r = Ref.parse(key);
+    if (r == null) return null;
+    final service = RelationService(ws);
+    if (!service.exists(r)) return null;
+    final kind = switch (r.kind) {
+      RefKind.note => GraphKind.note,
+      RefKind.task => GraphKind.task,
+      RefKind.project => GraphKind.project,
+      RefKind.entry => GraphKind.entry,
+      RefKind.asset => GraphKind.resource,
+      RefKind.canvas => GraphKind.canvas,
+      RefKind.archive => null,
+    };
+    if (kind == null) return null;
+    final id = node(kind, r.id, service.titleOf(r));
+    return nodes[id];
+  }
+
+  for (final rel in ws.libraryRelations.all) {
+    if (rel.kind != RelationService.kind) continue;
+    final a = refNode(rel.objectId), b = refNode(rel.targetId);
+    if (a != null && b != null) link(a.key, b.key);
   }
   // Only linked things, the most connected first.
   final degree = <String, int>{};
