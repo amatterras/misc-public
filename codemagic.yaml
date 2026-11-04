@@ -196,6 +196,74 @@ workflows:
       - build/ios/iphoneos/THEapp-with-widgets.ipa
       - /tmp/xcodebuild_logs/*.log
 
+  # The dedicated iPhone build: the same app and the same data, started from
+  # lib/main_iphone.dart so it always shows the iPhone interface (lib/phone),
+  # and packed as an iPhone-only IPA (UIDeviceFamily = iPhone). The iPad and
+  # Windows builds are not affected: they keep using lib/main.dart through the
+  # workflows above. Same unsigned/sideload route, same manual trigger.
+  ios-iphone:
+    name: THEapp iPhone (unsigned, iPhone interface)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      flutter: stable
+      xcode: latest
+    scripts:
+      - name: Show tool versions
+        script: |
+          flutter --version
+          xcodebuild -version
+      - name: Get packages
+        script: flutter pub get
+      - name: Build the iPhone app without code signing
+        script: |
+          flutter build ios --release --no-codesign \
+            --target lib/main_iphone.dart \
+            --dart-define=THEAPP_BUILD=$(git rev-parse --short HEAD)-iphone || {
+            grep -h -B3 -A8 "error:" /tmp/xcodebuild_logs/*.log | head -200
+            exit 1
+          }
+      - name: Make the app iPhone-only
+        script: |
+          set -e
+          PLIST=build/ios/iphoneos/Runner.app/Info.plist
+          /usr/libexec/PlistBuddy -c "Delete :UIDeviceFamily" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UIDeviceFamily array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UIDeviceFamily:0 integer 1" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :UIDeviceFamily" "$PLIST"
+      - name: Pack unsigned iPhone IPA
+        script: |
+          set -e
+          cd build/ios/iphoneos
+          rm -rf Payload THEapp-iPhone-unsigned.ipa
+          mkdir Payload
+          cp -R Runner.app Payload/
+          # Extensions go only into the with-widgets IPA, as in ios-unsigned.
+          rm -rf Payload/Runner.app/PlugIns
+          zip -qry THEapp-iPhone-unsigned.ipa Payload
+          ls -la THEapp-iPhone-unsigned.ipa
+      - name: Pack iPhone IPA with App Group entitlements (for widgets)
+        ignore_failure: true
+        script: |
+          set -e
+          ROOT="$PWD"
+          cd build/ios/iphoneos
+          rm -rf Signed THEapp-iPhone-with-widgets.ipa
+          mkdir -p Signed/Payload
+          cp -R Runner.app Signed/Payload/
+          APP=Signed/Payload/Runner.app
+          for f in "$APP"/Frameworks/*; do codesign --force --sign - "$f"; done
+          codesign --force --sign - --entitlements "$ROOT/ios/TheAppWidget/TheAppWidget.entitlements" "$APP/PlugIns/TheAppWidget.appex"
+          codesign --force --sign - --entitlements "$ROOT/ios/ShareExtension/ShareExtension.entitlements" "$APP/PlugIns/ShareExtension.appex"
+          codesign --force --sign - --entitlements "$ROOT/ios/Runner/Runner.entitlements" "$APP"
+          cd Signed
+          zip -qry ../THEapp-iPhone-with-widgets.ipa Payload
+          ls -la ../THEapp-iPhone-with-widgets.ipa
+    artifacts:
+      - build/ios/iphoneos/THEapp-iPhone-unsigned.ipa
+      - build/ios/iphoneos/THEapp-iPhone-with-widgets.ipa
+      - /tmp/xcodebuild_logs/*.log
+
   # Signed, installable IPA. Needs a PAID Apple Developer Program membership
   # (App Groups and distribution certificates are not available to free
   # Apple IDs). Nothing secret is in this file: Codemagic supplies it from

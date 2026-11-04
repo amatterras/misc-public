@@ -36,7 +36,11 @@ class CanvasToolbar extends StatelessWidget {
     this.onAddDocument,
     this.onMore,
     this.onPenDoubleTap,
+    this.horizontal = false,
   });
+
+  /// One scrolling strip instead of two stacked panels (iPhone).
+  final bool horizontal;
 
   final CanvasController controller;
   final VoidCallback onAddImage;
@@ -64,7 +68,7 @@ class CanvasToolbar extends StatelessWidget {
       onDoubleTap: onDoubleTap,
     );
 
-    return Column(
+    final column = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -165,6 +169,19 @@ class CanvasToolbar extends StatelessWidget {
               ),
           ],
         ),
+      ],
+    );
+    if (!horizontal) return column;
+    // The iPhone: the same buttons as one strip that scrolls sideways.
+    final panels = column.children.whereType<ToolPanel>().toList();
+    return ToolPanel(
+      horizontal: true,
+      children: [
+        for (var i = 0; i < panels.length; i++) ...[
+          if (i > 0) const _PanelDivider(vertical: true),
+          for (final w in panels[i].children)
+            w is _PanelDivider ? const _PanelDivider(vertical: true) : w,
+        ],
       ],
     );
   }

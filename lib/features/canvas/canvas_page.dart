@@ -10,6 +10,7 @@ import '../../app/interface_version.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
+import '../../phone/phone_profile.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import 'canvas_controller.dart';
@@ -65,7 +66,8 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   double _lastPanZoomScale = 1;
   Size _size = Size.zero;
   bool _viewChecked = false;
-  bool _showMinimap = true;
+  // The iPhone starts without the minimap: the screen is small.
+  bool _showMinimap = !PhoneProfile.active;
   bool _wasVisible = false;
 
   // Touch and stylus tracking for iPad / iPhone and Apple Pencil
@@ -729,6 +731,12 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
 
   // -------------------------------------------------------------- build --
 
+  /// The tool strip: centred on the left edge (scrolls on short screens), or,
+  /// on the iPhone, as it is, along the bottom.
+  Widget _toolsPlace(Widget bar) => PhoneProfile.active
+      ? bar
+      : Center(child: SingleChildScrollView(child: bar));
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -875,56 +883,58 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                   child: _SaveIndicator(state: c.saveState),
                 ),
                 Positioned(
-                  left: Space.xl,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    // Scrolls on short screens (e.g. iPhone landscape).
-                    child: SingleChildScrollView(
-                      child: CollapsibleBar(
-                        collapsed: s.canvasToolsCollapsed,
-                        onToggle: () {
-                          unawaited(s.toggleCanvasTools());
+                  // iPhone: one horizontal strip along the bottom edge.
+                  // Everywhere else: the vertical strip on the left.
+                  left: PhoneProfile.active ? 10 : Space.xl,
+                  right: PhoneProfile.active ? 10 : null,
+                  top: PhoneProfile.active ? null : 0,
+                  bottom: PhoneProfile.active ? 12 : 0,
+                  child: _toolsPlace(
+                    CollapsibleBar(
+                      collapsed: s.canvasToolsCollapsed,
+                      onToggle: () {
+                        unawaited(s.toggleCanvasTools());
+                        setState(() {});
+                      },
+                      vertical: !PhoneProfile.active,
+                      what: 'tools',
+                      handleKey: const ValueKey('toolbar-collapse'),
+                      child: CanvasToolbar(
+                        horizontal: PhoneProfile.active,
+                        controller: c,
+                        onAddImage: _addImages,
+                        onAddLink: _addLink,
+                        onAddDocument: _addDocuments,
+                        onPenDoubleTap: () {
+                          // The existing context bar is THEapp's shared
+                          // pen color library. A double tap only unfolds it;
+                          // the normal single-tap tool action remains intact.
+                          unawaited(
+                            s.settings.set('canvasOptionsCollapsed', false),
+                          );
                           setState(() {});
                         },
-                        vertical: true,
-                        what: 'tools',
-                        handleKey: const ValueKey('toolbar-collapse'),
-                        child: CanvasToolbar(
-                          controller: c,
-                          onAddImage: _addImages,
-                          onAddLink: _addLink,
-                          onAddDocument: _addDocuments,
-                          onPenDoubleTap: () {
-                            // The existing context bar is THEapp's shared
-                            // pen color library. A double tap only unfolds it;
-                            // the normal single-tap tool action remains intact.
-                            unawaited(
-                              s.settings.set('canvasOptionsCollapsed', false),
-                            );
-                            setState(() {});
-                          },
-                          onMore: (at) {
-                            c.select(const []);
-                            unawaited(
-                              showCanvasMenu(
-                                context,
-                                s,
-                                c,
-                                at,
-                                c.toWorld(_size.center(Offset.zero)),
-                                canvasOnly: true,
-                              ),
-                            );
-                          },
-                        ),
+                        onMore: (at) {
+                          c.select(const []);
+                          unawaited(
+                            showCanvasMenu(
+                              context,
+                              s,
+                              c,
+                              at,
+                              c.toWorld(_size.center(Offset.zero)),
+                              canvasOnly: true,
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
                 ),
                 Positioned(
                   right: Space.xl,
-                  bottom: Space.xl,
+                  // Above the iPhone's tool strip.
+                  bottom: PhoneProfile.active ? 76 : Space.xl,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [

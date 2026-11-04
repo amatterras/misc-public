@@ -16,6 +16,7 @@ import '../../app/interface_version.dart';
 import '../../app/test_environment.dart';
 import '../../app/theme.dart';
 import '../../data/storage/app_log.dart';
+import '../../phone/phone_profile.dart';
 import '../../platform/input_hints.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
@@ -295,10 +296,13 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     children: [
       SettingsGroup(
         label: 'Look',
-        footer:
-            'Original is the interface you know. New is the redesign. Your '
-            'data is the same in both, and this choice applies to $thisDevice '
-            'only.',
+        // The interface switch is not offered on an iPhone (it always has
+        // its own interface), so its caption is not either.
+        footer: PhoneProfile.active
+            ? null
+            : 'Original is the interface you know. New is the redesign. Your '
+                  'data is the same in both, and this choice applies to '
+                  '$thisDevice only.',
         children: [
           SettingsSegmentRow<String>(
             key: const ValueKey('theme-mode'),
@@ -314,16 +318,17 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               if (mounted) setState(() {});
             },
           ),
-          SettingsSegmentRow<InterfaceVersion>(
-            key: const ValueKey('interface-version'),
-            title: 'Interface',
-            value: s.interfaceVersion,
-            options: [for (final v in InterfaceVersion.values) (v, v.label)],
-            onChanged: (choice) async {
-              await s.setInterfaceVersion(choice);
-              if (mounted) setState(() {});
-            },
-          ),
+          if (!PhoneProfile.active)
+            SettingsSegmentRow<InterfaceVersion>(
+              key: const ValueKey('interface-version'),
+              title: 'Interface',
+              value: s.interfaceVersion,
+              options: [for (final v in InterfaceVersion.values) (v, v.label)],
+              onChanged: (choice) async {
+                await s.setInterfaceVersion(choice);
+                if (mounted) setState(() {});
+              },
+            ),
         ],
       ),
       SettingsGroup(
@@ -502,9 +507,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     } else {
       final ok = await SendToBridge.install();
       s.showToast(
-        ok
-            ? 'Added misc. to the Send to menu.'
-            : 'Could not add the shortcut.',
+        ok ? 'Added misc. to the Send to menu.' : 'Could not add the shortcut.',
       );
     }
   });
@@ -574,8 +577,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           if (s.shareClipboard && touchFirst)
             SettingsRow(
               title: 'Share clipboard now',
-              subtitle:
-                  'Text copied on this device is sent only when you ask.',
+              subtitle: 'Text copied on this device is sent only when you ask.',
               trailing: SettingsButton(
                 label: 'Share',
                 icon: Icons.ios_share,
@@ -645,7 +647,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             ),
             SettingsRow(
               title: 'Last backup',
-              subtitle: last == null ? 'None yet' : '${last.when()} · ${last.reason}',
+              subtitle: last == null
+                  ? 'None yet'
+                  : '${last.when()} · ${last.reason}',
               trailing: SettingsButton(
                 key: const ValueKey('backup-now'),
                 icon: Icons.backup_outlined,
@@ -741,8 +745,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               : 'Open one to see when and by which build it was made, check '
                     'it, and restore it.',
           children: [
-            if (_backups.isEmpty)
-              const SettingsRow(title: 'No backups yet'),
+            if (_backups.isEmpty) const SettingsRow(title: 'No backups yet'),
             for (final b in shown)
               SettingsRow(
                 key: ValueKey('backup-${BackupLabel(b).name}'),
@@ -901,9 +904,7 @@ class _RailItemState extends State<_RailItem> {
                   : _hover
                   ? AppColors.hover
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(
-                AppColors.newDesign ? 12 : 8,
-              ),
+              borderRadius: BorderRadius.circular(AppColors.newDesign ? 12 : 8),
             ),
             child: Row(
               children: [

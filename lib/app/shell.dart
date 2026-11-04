@@ -21,10 +21,9 @@ import '../features/settings/settings_dialog.dart';
 import '../widgets/common.dart' show GhostIconButton;
 import '../widgets/floating_layer.dart';
 import '../new_ui/new_archive_page.dart';
-import '../new_ui/new_phone_shell.dart';
+import '../phone/phone_profile.dart';
+import '../phone/phone_shell.dart';
 import '../new_ui/new_sidebar.dart';
-import '../platform/device_idiom.dart';
-import '../platform/input_hints.dart' show touchFirst;
 import 'interface_version.dart';
 import 'page_host.dart';
 import 'quote_footer.dart';
@@ -241,7 +240,7 @@ class _AppShellState extends State<AppShell> {
             // iPhone always gets the phone layout (with Home); an iPad never
             // does, however narrow its window is.
             final isNew = state.interfaceVersion == InterfaceVersion.newDesign;
-            final phone = isNew && touchFirst && DeviceIdiom.isPhone;
+            final phone = PhoneProfile.active;
             final windows = state.windows;
             windows.titleOf ??= (p) => pageTitle(state, p);
             windows.builder ??= (context, p) =>
@@ -336,11 +335,7 @@ class _AppShellState extends State<AppShell> {
                 children: [
                   if (phone)
                     SizedBox.expand(
-                      child: NewPhoneShell(
-                        state: state,
-                        pages: mainContent,
-                        motivation: _motivation,
-                      ),
+                      child: PhoneShell(state: state, motivation: _motivation),
                     )
                   else if (isCompact && !isNew)
                     SafeArea(
@@ -382,21 +377,23 @@ class _AppShellState extends State<AppShell> {
                     state: state,
                     bottomOffset: (isCompact && !isNew) || phone ? 120 : 76,
                   ),
-                  ListenableBuilder(
-                    listenable: _motivation,
-                    builder: (context, _) => _motivation.greetingVisible
-                        ? Positioned(
-                            // Below the page bar (and the phone's own
-                            // top bar), not on top of it.
-                            top:
-                                TopBar.height +
-                                10 +
-                                ((isCompact && !isNew) || phone ? 48 : 0),
-                            left: 16,
-                            child: _GreetingWindow(service: _motivation),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
+                  // The phone shows the greeting itself, as a line on Today.
+                  if (!phone)
+                    ListenableBuilder(
+                      listenable: _motivation,
+                      builder: (context, _) => _motivation.greetingVisible
+                          ? Positioned(
+                              // Below the page bar (and the phone's own
+                              // top bar), not on top of it.
+                              top:
+                                  TopBar.height +
+                                  10 +
+                                  ((isCompact && !isNew) || phone ? 48 : 0),
+                              left: 16,
+                              child: _GreetingWindow(service: _motivation),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
                   if (TestEnvironment.active) const _TestDataBanner(),
                   _UnsavedNotice(state: state),
                   _ReminderNotice(state: state),
