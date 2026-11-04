@@ -181,7 +181,7 @@ class HubHost {
         onExit: events.sendPort,
         onError: events.sendPort,
         errorsAreFatal: false,
-        debugName: 'THEapp hub',
+        debugName: 'misc. hub',
       );
       // An exit or uncaught error message arrives as a non-map (handled
       // below by _onExit through the listener); give start a bound.
@@ -196,7 +196,7 @@ class HubHost {
       problem = null;
       _failures = 0;
       _loopbackFailures = 0;
-      _log('Hub: running inside THEapp on ${listening.join(', ')}');
+      _log('Hub: running inside misc. on ${listening.join(', ')}');
       await _writeRunFile();
     } catch (e) {
       _discard();
@@ -290,7 +290,7 @@ class HubHost {
         return HubHealth(state: state, listening: listening);
       }
       // The other hub process ended: run one here instead.
-      _log('Hub: the other hub process stopped; starting one in THEapp');
+      _log('Hub: the other hub process stopped; starting one in misc.');
       await _spawn();
       return HubHealth(
         state: state,
@@ -405,9 +405,9 @@ class HubHost {
     if (state != HubHostState.running) {
       problem =
           'The hub stopped responding and its port is still held. Close and '
-          'reopen THEapp to start it again (your data is safe).';
+          'reopen misc. to start it again (your data is safe).';
       state = HubHostState.failed;
-      _log('Hub: unresponsive and port held; THEapp needs a restart');
+      _log('Hub: unresponsive and port held; misc. needs a restart');
     }
   }
 

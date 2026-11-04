@@ -306,7 +306,7 @@ class BackupService {
     } catch (_) {
       return ['The manifest is damaged.'];
     }
-    if (json['format'] != manifestFormat) return ['Not a THEapp backup.'];
+    if (json['format'] != manifestFormat) return ['Not a misc. backup.'];
     for (final entry in (json['files'] as List? ?? const [])) {
       final rel = (entry as Map)['path'] as String;
       final file = File('${backup.path}$_sep${rel.replaceAll('/', _sep)}');

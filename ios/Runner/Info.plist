@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>THEapp</string>
+	<string>misc.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>THEapp</string>
+	<string>misc.</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -85,18 +85,18 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
-	<string>THEapp uses Face ID to keep your workspace private when the app opens or returns from the background.</string>
+	<string>misc. uses Face ID to keep your workspace private when the app opens or returns from the background.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>THEapp syncs with the THEapp hub on your own PC.</string>
+	<string>misc. syncs with the misc. hub on your own PC.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>THEapp accesses photos you choose to import into your notes and canvases.</string>
+	<string>misc. accesses photos you choose to import into your notes and canvases.</string>
 	<key>UIStatusBarHidden</key>
 	<true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>A web page open in THEapp Safari asked to use the camera. THEapp asks you first, for each site.</string>
+	<string>A web page open in misc. Safari asked to use the camera. misc. asks you first, for each site.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>A web page open in THEapp Safari asked to use the microphone. THEapp asks you first, for each site.</string>
+	<string>A web page open in misc. Safari asked to use the microphone. misc. asks you first, for each site.</string>
 </dict>
 </plist>

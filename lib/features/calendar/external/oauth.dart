@@ -151,9 +151,9 @@ Future<OAuthTokens> signIn(
             ..statusCode = 200
             ..headers.contentType = ContentType.html
             ..write(
-              '<!doctype html><meta charset="utf-8"><title>THEapp</title>'
+              '<!doctype html><meta charset="utf-8"><title>misc.</title>'
               '<body style="font:16px system-ui;margin:3em">'
-              'You can close this window and go back to THEapp.</body>',
+              'You can close this window and go back to misc.</body>',
             );
           await req.response.close();
           return uri;

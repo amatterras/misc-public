@@ -170,7 +170,7 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
                 style: TextStyle(fontSize: 13),
               ),
               subtitle: Text(
-                'THEapp entries sync both ways. Provider-created events are '
+                'misc. entries sync both ways. Provider-created events are '
                 'shown here read-only; edit those in Google Calendar or Outlook. '
                 'Connected calendars refresh every 5 minutes while the app is open.',
                 style: small,
@@ -206,7 +206,7 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
       Text(
         'Optional. Uses your own Google Cloud / Microsoft app registration '
         '(set up once; see the setup notes). You sign in on the provider\'s '
-        'own page; THEapp never sees your password.',
+        'own page; misc. never sees your password.',
         style: TextStyle(fontSize: 12, color: AppColors.textFaint),
       ),
       const SizedBox(height: Space.sm),

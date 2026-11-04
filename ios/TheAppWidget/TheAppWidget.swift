@@ -214,8 +214,8 @@ struct TheAppWidgetView: View {
   @ViewBuilder private var content: some View {
     if entry.missing {
       VStack(alignment: .leading, spacing: 4) {
-        Text("THEapp").font(.system(size: 13, weight: .semibold))
-        Text("Open THEapp once to show today and tomorrow here.")
+        Text("misc.").font(.system(size: 13, weight: .semibold))
+        Text("Open misc. once to show today and tomorrow here.")
           .font(.system(size: 11))
           .foregroundColor(.secondary)
       }

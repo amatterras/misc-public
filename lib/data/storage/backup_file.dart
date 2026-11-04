@@ -110,13 +110,13 @@ abstract final class BackupFile {
     try {
       final head = await reader.readExact(_magic.length);
       if (utf8.decode(head, allowMalformed: true) != _magic) {
-        throw const BackupFileException('This is not a THEapp backup file.');
+        throw const BackupFileException('This is not a misc. backup file.');
       }
       final version = _readU32(await reader.readExact(4));
       if (version > formatVersion) {
         throw BackupFileException(
-          'This backup was made by a newer THEapp (file format $version). '
-          'Update THEapp to open it.',
+          'This backup was made by a newer misc. (file format $version). '
+          'Update misc. to open it.',
         );
       }
       var seenManifest = false;
@@ -185,7 +185,7 @@ abstract final class BackupFile {
     }
     if (rel != 'manifest.json' && !_allowedTop.contains(parts.first)) {
       throw const BackupFileException(
-        'The backup file contains something THEapp does not store and was '
+        'The backup file contains something misc. does not store and was '
         'refused.',
       );
     }

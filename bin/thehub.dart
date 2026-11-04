@@ -53,7 +53,7 @@ Future<void> main(List<String> args) async {
           'Pairing code: ${r['code']}  (valid ${r['expiresInMinutes']} minutes, single use)',
         );
         stdout.writeln(
-          'Enter it in THEapp → Settings → Sync on the device you are adding.',
+          'Enter it in misc. → Settings → Sync on the device you are adding.',
         );
       case 'devices':
         final r = await _admin(dir, 'GET', '/v1/admin/status');
@@ -158,7 +158,7 @@ Future<void> main(List<String> args) async {
 }
 
 void _usage() => stdout.writeln('''
-THEapp sync hub
+misc. sync hub
 
   serve [--port N] [--private-host ADDRESS|auto] [--data DIR]
         [--tls-cert FILE --tls-key FILE]
@@ -270,7 +270,7 @@ Future<void> _serve(Directory dir, _Options options) async {
     }),
   );
   stdout.writeln(
-    'THEapp hub running on ${server.listening.join(', ')}. Press Ctrl+C to stop.',
+    'misc. hub running on ${server.listening.join(', ')}. Press Ctrl+C to stop.',
   );
   final sub = ProcessSignal.sigint.watch().listen((_) => server.stop());
   await server.done;
@@ -386,7 +386,7 @@ Future<void> _startup(String action) async {
       final script =
           "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('${q(lnk.path)}'); "
           "\$s.TargetPath = '${q(exe.path)}'; \$s.Arguments = 'serve --private-host auto'; "
-          "\$s.WindowStyle = 7; \$s.Description = 'THEapp sync hub'; \$s.Save()";
+          "\$s.WindowStyle = 7; \$s.Description = 'misc. sync hub'; \$s.Save()";
       final r = await Process.run('powershell', [
         '-NoProfile',
         '-NonInteractive',

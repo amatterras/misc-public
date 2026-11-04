@@ -1,4 +1,4 @@
-# THEapp feature matrix
+# misc. feature matrix
 
 Source of requirements: the original project brief (2026-10-21, quoted in
 section numbers below) and `MASTER_SPEC.md`. Code existing is never enough:
@@ -25,7 +25,7 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Separate Move/Select and Write/Draw modes | P1 | W | VERIFIED | `interaction_test` "drawing, moving and erasing do not interfere" | |
 | Undo/redo | P1 | W | VERIFIED | `interaction_test`, `canvas_edge_test` | |
 | Images | P1 | W | VERIFIED | `interaction_test` photos survive restarts | |
-| PDFs ("where practical") | P2 | W | PARTIAL: PDF cards on the canvas and in notes, stored/synced like photos, open in the default viewer — VERIFIED (`documents_test`, `sync_engine_test` PDF arrives); pages are not drawn inside THEapp | in-app rendering needs a plugin (Developer Mode off) |
+| PDFs ("where practical") | P2 | W | PARTIAL: PDF cards on the canvas and in notes, stored/synced like photos, open in the default viewer — VERIFIED (`documents_test`, `sync_engine_test` PDF arrives); pages are not drawn inside misc. | in-app rendering needs a plugin (Developer Mode off) |
 | Saved links and web previews ("where practical") | P2 | W | VERIFIED (title preview) | `canvas_features_test`, `workspace_test` link preview parsing | |
 | Mind maps / connections between notes on the canvas | P1 | W | VERIFIED | `ConnectorItem` (references, not copies), Connect tool (C); `canvas_connector_test` (create/undo, refusals, follows moves, delete cascade, copy remap, persistence, hidden when an end is missing) | real-binary click-through |
 | Persistence of positions, sizes, text, drawings | P1 | W | VERIFIED | `canvas_controller_test` JSON round trip; real binary restart check | |
@@ -64,7 +64,7 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
 |---|---|---|---|---|---|
 | Tasks, projects, subtasks, deadlines, priorities, completion | P1 | W | VERIFIED | `spec_coverage_test`, `workspace_test` | |
-| Reminders | P1 | W,i | VERIFIED in-app (notice + taskbar flash while running; missed ones at next start; follow recurring tasks). iOS notifications while closed: IMPLEMENTED BUT UNVERIFIED (Dart tested with simulated channel; Swift uncompiled) | `Task.remindBefore`, `reminders_test`, `ipad_touch_test` | no Windows notification while THEapp is closed (needs a background process); iOS needs a Mac build |
+| Reminders | P1 | W,i | VERIFIED in-app (notice + taskbar flash while running; missed ones at next start; follow recurring tasks). iOS notifications while closed: IMPLEMENTED BUT UNVERIFIED (Dart tested with simulated channel; Swift uncompiled) | `Task.remindBefore`, `reminders_test`, `ipad_touch_test` | no Windows notification while misc. is closed (needs a background process); iOS needs a Mac build |
 | Recurring tasks | P1 | W | VERIFIED | `workspace_test` recurring task moves | |
 | Subjects, revision tasks, exam dates, preparation materials (same task system) | P1 | W | VERIFIED (data) | `spec_coverage_test` exams/subtasks | |
 | Deadlines on Calendar as the original task record | P1 | W | VERIFIED | `workspace_test`, `interaction_test` | |
@@ -78,7 +78,7 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Automatic backups, recovery | P1 | W | VERIFIED | `workspace_test`, `json_file_store_test`, real-binary recovery | |
 | Safe attachment storage | P1 | W | VERIFIED | content-addressed, SHA-256 checks (`hub_test`, sync tests) | |
 | PC hub, offline editing, automatic sync, conflicts (local network) | P1 | W | VERIFIED | `sync_engine_test`, `sync_risks_test`, 11 cross-process checks | |
-| Sync across different networks (remote) | P1 | W,i | BLOCKED (no second device that runs THEapp; only an iPad, no iOS build). Done so far: test hub reachable and access-controlled through the PC's Tailscale address (11/11 `remote_check` on this PC; an iPad in the tailnet reached it, but on the same home network); never run across networks; THEapp sync from another device not run | `SYNC_ARCHITECTURE.md` §17; `tool/remote_check.dart`; `remote_readiness_test` | a second device that runs THEapp (second Windows PC/laptop, or a Mac-built iOS app), signed in to the same tailnet, on another network; Windows Firewall approval (Private only) |
+| Sync across different networks (remote) | P1 | W,i | BLOCKED (no second device that runs misc.; only an iPad, no iOS build). Done so far: test hub reachable and access-controlled through the PC's Tailscale address (11/11 `remote_check` on this PC; an iPad in the tailnet reached it, but on the same home network); never run across networks; misc. sync from another device not run | `SYNC_ARCHITECTURE.md` §17; `tool/remote_check.dart`; `remote_readiness_test` | a second device that runs misc. (second Windows PC/laptop, or a Mac-built iOS app), signed in to the same tailnet, on another network; Windows Firewall approval (Private only) |
 | Device revocation and re-pairing | P1 | W | VERIFIED | `remote_sync_test`: revoked token refused (push/pull/attachments); device stops retrying, keeps edits, sends them after pairing again | |
 | Encrypted transport | P1 | W,i | PARTIAL | Tailscale (WireGuard) by design, untested here; home-network addresses unencrypted — warning before pairing (`remote_sync_test`) | Tailscale |
 | Test copies can't reach real hubs | P1 | W | VERIFIED | test mode pairs only with 127.0.0.1:47799 (`test_environment_test`) | |
@@ -195,7 +195,7 @@ iPad (see the manual checklist in `MANUAL_CHECKLIST.md`).
 | Imports: Obsidian, Notion (Markdown), Apple Notes (HTML/TXT), Markdown folders; folders, tags, links, images; re-import skips | VERIFIED | `import/note_import.dart` | Notion CSV databases not imported (reported); Apple Notes has no direct export on Windows |
 | Drag-and-drop from File Explorer | IMPLEMENTED, Dart side VERIFIED, C++ compiles | `windows/runner/flutter_window.cpp` (WM_DROPFILES), `capture/file_drop.dart` | real drag NOT VERIFIED |
 | Exports: mindmap picture/web page, note Markdown/page pictures/web page; sources unchanged | VERIFIED | `export/exports.dart` | PDF page content not drawn in page pictures (reported) |
-| Branded read-only web sharing with access, expiry, revocation | BLOCKED | needs hosting; THEapp makes the read-only page as a file | hosting decision (free: Tailscale Funnel from the hub, or a static host) |
+| Branded read-only web sharing with access, expiry, revocation | BLOCKED | needs hosting; misc. makes the read-only page as a file | hosting decision (free: Tailscale Funnel from the hub, or a static host) |
 | Universal clipboard between devices | IMPLEMENTED, logic VERIFIED | `AppState.checkClipboard`, collection `clipboard` | no second device; hub must run this version; iOS only sends with a button (paste permission) |
 | iOS share-sheet capture | UNCHANGED | Shortcut fallback (`ios/README_IOS.md`) | Share Extension needs paid Apple account |
 | External calendar sync | IMPLEMENTED; local entries synchronize both ways (automated tests); imported provider events are read-only | `lib/features/calendar/external/external_calendar.dart`; `test/platform_features_test.dart` P3 calendar sync | real Google/Outlook credentials, permissions and live account behavior not verified |
@@ -270,14 +270,14 @@ Fixed (each with a regression test):
 
 Verified by two-device tests through a real local hub: new task fields (labels, properties, status, moved occurrence), note paper and projects, link projects, canvas item tags/locks; clipboard only while on.
 
-Known limits (not fixed): older THEapp builds on other devices list "Calendar drawings" and "Components" as mindmaps — update every device; clipboard text is kept in backups; real-app click-through and iPad still not tested (see MANUAL_CHECKLIST.md).
+Known limits (not fixed): older misc. builds on other devices list "Calendar drawings" and "Components" as mindmaps — update every device; clipboard text is kept in backups; real-app click-through and iPad still not tested (see MANUAL_CHECKLIST.md).
 
 Result after the audit: `flutter analyze` clean; 422 passed, 3 skipped, 0 failed; Windows Release build OK.
 
 ## 20. Second batch (2026-10-24)
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
 |---|---|---|---|---|---|
-| Hub run by THEapp; no duplicate hub; listener recovery; restart in place | P1 | W | VERIFIED (automated) | `hub_host_test` (7), `app_hub_sync_test`; stability 601 s + 124 s, 0 failures | real iPad over Tailscale after the update |
+| Hub run by misc.; no duplicate hub; listener recovery; restart in place | P1 | W | VERIFIED (automated) | `hub_host_test` (7), `app_hub_sync_test`; stability 601 s + 124 s, 0 failures | real iPad over Tailscale after the update |
 | 10-second sync + checked live backups, no overlap, bounded | P1 | W | VERIFIED (automated) | `maintenance_test` (9), `app_hub_sync_test` | — |
 | Pen ends round outward | P1 | W,i | VERIFIED (automated) | `pen_ends_test` (fails on the old renderer) | look on device |
 | Squeeze does not move the Calendar | P1 | i | VERIFIED (simulated) | `calendar_pencil_gestures_test` | real Pencil Pro |

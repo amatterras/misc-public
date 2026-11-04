@@ -112,7 +112,7 @@ Future<File?> exportAllData(AppState s) async {
     final path = askExportPath(
       suggestedName: '$name.$backupFileExtension',
       extension: backupFileExtension,
-      typeLabel: 'THEapp backup',
+      typeLabel: 'misc. backup',
       initialDir: folder.path,
     );
     if (path == null) {
@@ -129,7 +129,7 @@ Future<File?> exportAllData(AppState s) async {
     AppLog.info('Exported a backup file (${await file.length()} bytes)');
     s.showToast(
       'Saved ${file.path} (${formatBytes(await file.length())}). '
-      'Keep it somewhere safe, outside THEapp.',
+      'Keep it somewhere safe, outside misc.',
     );
     await revealExport(s, file);
     return file;
@@ -178,7 +178,7 @@ Future<void> restoreBackup(
     title: 'Restore this backup?',
     message:
         'Your current data is backed up first, then replaced with the '
-        'backup from ${label.when()}. THEapp closes afterwards: start it '
+        'backup from ${label.when()}. misc. closes afterwards: start it '
         'again to continue with the restored content.',
     action: 'Restore and close',
   );

@@ -1,4 +1,4 @@
-# THEapp on your iPad without a Mac (zero cost)
+# misc. on your iPad without a Mac (zero cost)
 
 **Status: prepared, not yet run.** No iOS build has been made and nothing has
 been installed. The Swift code has never been compiled, so the first cloud
@@ -12,14 +12,14 @@ installs it over USB.
 
 | Part | First test build | Why |
 |---|---|---|
-| THEapp itself (canvas, notes, calendar, tasks, backups) | yes | no special capabilities |
+| misc. itself (canvas, notes, calendar, tasks, backups) | yes | no special capabilities |
 | Hub key in the Keychain | yes | default Keychain access needs no entitlement |
 | `theapp://capture` links (Shortcut) | yes | URL scheme in `Info.plist`, no entitlement |
 | Photo picker, PDF picker, PDF preview | yes | PHPicker / document picker need no permission entitlement |
 | Task reminder notifications | yes (iOS asks you to allow them) | local notifications need no entitlement |
 | Sync over Tailscale with the **test** hub | yes, if the Tailscale app is on | plain network access |
-| Share Extension ("Add to THEapp" in the Share menu) | **no** | not in the Xcode project yet, and it needs App Groups (paid Apple Developer Program, $99/year) |
-| TestFlight / App Store / push notifications / iCloud | no | paid account; THEapp does not use them |
+| Share Extension ("Add to misc." in the Share menu) | **no** | not in the Xcode project yet, and it needs App Groups (paid Apple Developer Program, $99/year) |
+| TestFlight / App Store / push notifications / iCloud | no | paid account; misc. does not use them |
 
 Free Apple ID limits (Apple's rules, applied when signing):
 - the app stops opening after **7 days** until you sign and install it again (your data stays on the iPad as long as you don't delete the app);
@@ -41,7 +41,7 @@ The project's bundle ID is `com.amaterasu.theapp` (Flutter's default
 ## Step 1: put the code in a private repository (your decision)
 
 Codemagic builds from a Git repository, so the code must be uploaded to a
-host it can read (GitHub, GitLab or Bitbucket). **This uploads THEapp's source
+host it can read (GitHub, GitLab or Bitbucket). **This uploads misc.'s source
 code to that host and to Codemagic's build machines.** Nothing is pushed
 automatically; only you can do it.
 
@@ -68,7 +68,7 @@ remove them first if you don't want them on GitHub, even in a private repo.
 1. Go to codemagic.io → **Sign up** → with GitHub. Use a **personal** account
    (team accounts get no free minutes).
 2. When GitHub asks which repositories Codemagic may see, choose **Only select
-   repositories** → your THEapp repository. Nothing else.
+   repositories** → your misc. repository. Nothing else.
 3. Codemagic → **Add application** → GitHub → your repository → project type
    **Flutter App (via codemagic.yaml)**.
 4. Do **not** add code-signing certificates, an App Store Connect key, an Apple
@@ -78,7 +78,7 @@ remove them first if you don't want them on GitHub, even in a private repo.
 ## Step 3: build
 
 1. In the app's page, **Start new build** → branch `master` → workflow
-   **THEapp iOS (unsigned, for sideloading)** → Start.
+   **misc. iOS (unsigned, for sideloading)** → Start.
 2. When it finishes, open **Artifacts** and download
    **`THEapp-unsigned.ipa`** to Windows.
 3. If it fails: open the failed step, copy the red error lines (or download the
@@ -103,7 +103,7 @@ ID** made only for this if you'd rather not use your main one.
    on**, restart, confirm.
 6. **Settings → General → VPN & Device Management** → your Apple ID under
    *Developer App* → **Trust**.
-7. Open THEapp.
+7. Open misc.
 
 Every 7 days: repeat step 4 with the same `.ipa` (or a newer build) and the
 **same** Apple ID. Do not delete the app first, or its data is lost. Signing

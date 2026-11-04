@@ -161,7 +161,7 @@ class Sidebar extends StatelessWidget {
                     const SizedBox(width: Space.md),
                     const Flexible(
                       child: Text(
-                        'THEapp',
+                        'misc.',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,

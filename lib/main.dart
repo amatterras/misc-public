@@ -96,7 +96,7 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
   }
   if (logCopy != null) {
     startupLogHint =
-        'Full log on the iPad: Files → On My iPad → THEapp → THEapp-log.txt';
+        'Full log on the iPad: Files → On My iPad → misc. → THEapp-log.txt';
   }
   AppLog.init(root, copy: logCopy);
   if (Platform.isIOS) {
@@ -297,7 +297,7 @@ class _TheAppState extends State<TheApp> {
         AppColors.newDesign =
             widget.state.interfaceVersion == InterfaceVersion.newDesign;
         return MaterialApp(
-          title: 'THEapp',
+          title: 'misc.',
           debugShowCheckedModeBanner: false,
           theme: buildAppTheme(brightness: Brightness.light),
           darkTheme: buildAppTheme(brightness: Brightness.dark),

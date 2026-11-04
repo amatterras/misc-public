@@ -1,10 +1,10 @@
 ﻿# iOS IPA build guide (Windows + Codemagic)
 
-THEapp is a Flutter project with a native iOS Runner, a home-screen widget, a share extension, and custom Swift platform integrations. This Windows checkout cannot compile or sign iOS binaries; Codemagic's macOS/Xcode runner performs those steps.
+misc. is a Flutter project with a native iOS Runner, a home-screen widget, a share extension, and custom Swift platform integrations. This Windows checkout cannot compile or sign iOS binaries; Codemagic's macOS/Xcode runner performs those steps.
 
 ## Current configuration
 
-- Flutter package: `flutter_application_1`; visible app name: `THEapp`.
+- Flutter package: `flutter_application_1`; visible app name: `misc.`.
 - Main bundle ID: `com.amaterasu.theapp`; widget: `com.amaterasu.theapp.widget`; share extension: `com.amaterasu.theapp.share`.
 - iOS deployment target: 15.0 for Runner and extensions.
 - App Group: `group.com.theapp.shared` (needed for widget/share shared data).
@@ -14,7 +14,7 @@ THEapp is a Flutter project with a native iOS Runner, a home-screen widget, a sh
 ## Connect this project to Codemagic
 
 1. Preserve and review the existing local changes. Commit and push them to your Git host when you choose; Codemagic builds the selected remote commit, not unpushed Windows files.
-2. Sign in at [codemagic.io](https://codemagic.io/) and connect the GitHub account/repository containing THEapp. Grant repository access.
+2. Sign in at [codemagic.io](https://codemagic.io/) and connect the GitHub account/repository containing misc. Grant repository access.
 3. Add the repository as a Flutter app. Select the repository and branch containing `codemagic.yaml`; choose the workflow `ios-unsigned` for the first build.
 4. Press **Start new build**, select the intended branch/commit, and start. The workflow installs packages, validates plist/project settings, runs `flutter analyze`, compiles with `flutter build ios --release --no-codesign`, and packages the app into an IPA.
 5. Wait for the build to finish. A failed dependency, analysis, Xcode, or packaging step fails the workflow. Inspect the step log; the workflow also collects Xcode logs.

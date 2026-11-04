@@ -1,4 +1,4 @@
-# THEapp on iPhone and iPad — status
+# misc. on iPhone and iPad — status
 
 **Nothing in this file has run on an Apple device or been compiled.** All work was
 done on Windows. "Tested" below means automated tests on Windows, with the
@@ -41,14 +41,14 @@ being closed and are sent on the next sync (`test/sync_engine_test.dart`,
 
 ## Free ways to capture from other apps
 1. **iOS Shortcut (free account is enough):** in the Shortcuts app create
-   "Save to THEapp", turn on *Show in Share Sheet* (URLs, Text), add the action
+   "Save to misc.", turn on *Show in Share Sheet* (URLs, Text), add the action
    *Open URLs* with `theapp://capture?url=` followed by *Shortcut Input*
    (choose "URL Encode" for the input). The app saves it in the Archive
    (the Inbox only when there is no Archive library). Any web page could open
    such a link too, so these links can only ever **add Archive items** (text
    capped at 20,000 characters); they can't change settings, delete or pair.
 2. **Share to the Links library (free):** make a second Shortcut, "Save to
-   THEapp Links", the same way but with
+   misc. Links", the same way but with
    `theapp://capture?to=links&url=` followed by the URL-encoded *Shortcut
    Input*. The link goes straight onto the Links board as a card (tags can
    be added with `&tags=resource,projects`; ids: resource, projects, other,
@@ -79,7 +79,7 @@ being closed and are sent on the next sync (`test/sync_engine_test.dart`,
 
 ## Reaching the hub from an iPhone
 Install the free Tailscale app on the PC and the iPhone, start the hub with
-`serve --private-host <PC's Tailscale address>`, and pair in THEapp →
+`serve --private-host <PC's Tailscale address>`, and pair in misc. →
 Settings → Sync hub with `http://<that address>:47710`. Traffic is encrypted by
 Tailscale. `NSLocalNetworkUsageDescription` is set in `Info.plist` in case iOS
 asks for local-network permission. The app talks to the hub with Dart's own
@@ -118,7 +118,7 @@ ID; steps 3 and 4 below then need the iPad instead of the Simulator. With a Mac:
    double-tap to write, drag the resize handle with a finger, move a canvas
    to trash from its title menu.
 9a. Reminders: give a synthetic task a reminder 2 minutes ahead, allow
-   notifications when asked, close THEapp → the notification appears; mark
+   notifications when asked, close misc. → the notification appears; mark
    the task done → no notification.
 10. Share Extension (paid account only): follow "What is still needed" in
     `ShareExtension/README.md` (App Group, three App IDs, profiles, Codemagic
@@ -128,7 +128,7 @@ ID; steps 3 and 4 below then need the iPad instead of the Simulator. With a Mac:
 
 ## Home-screen widgets (Today & Tomorrow)
 - Source: `ios/TheAppWidget/` (WidgetKit, SwiftUI; small, medium and large;
-  follows light and dark mode). THEapp writes `widget_snapshot.json` into the
+  follows light and dark mode). misc. writes `widget_snapshot.json` into the
   App Group folder `group.com.theapp.shared` whenever tasks or the calendar
   change, and at midnight. The widget only reads it: the snapshot is derived
   display data, never a source of truth, so it can't change your tasks.
@@ -141,7 +141,7 @@ ID; steps 3 and 4 below then need the iPad instead of the Simulator. With a Mac:
 - Free Apple ID: the widget needs an App Group shared by the app and the
   widget. Whether your sideloader (iLoader) keeps or registers App Groups
   with a free account is NOT verified. If it doesn't, the widget installs but
-  shows "Open THEapp once…" and nothing else breaks. The extension also uses
+  shows "Open misc. once…" and nothing else breaks. The extension also uses
   one more of the free account's 10 App IDs per week.
 - STATUS: Dart side tested on Windows (snapshot, deep links, simulated
   channel). The Swift compiles in the cloud build. Nothing has been seen on a

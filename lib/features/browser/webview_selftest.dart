@@ -21,7 +21,7 @@ Future<void> runWebViewSelfTest(String target) async {
       r.response
         ..headers.contentType = ContentType.html
         ..write(
-          '<!doctype html><title>THEapp WebView2 check</title>'
+          '<!doctype html><title>misc. WebView2 check</title>'
           '<p id="t">Hello from the embedded browser.</p>',
         );
       r.response.close();

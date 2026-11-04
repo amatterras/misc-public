@@ -339,7 +339,7 @@ void main() {
       );
       await settle(tester);
       expect(find.textContaining('stored only on this device'), findsOneWidget);
-      expect(find.text('Send to THEapp'), findsNothing, reason: 'Windows only');
+      expect(find.text('Send to misc.'), findsNothing, reason: 'Windows only');
       Navigator.of(context).pop();
       await settle(tester);
       await shutDown(tester, s);

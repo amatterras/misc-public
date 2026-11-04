@@ -106,7 +106,7 @@ class IntegrityChecker {
           name,
           '${c.unreadableCount} record(s) this version cannot read are kept '
               'aside unchanged.',
-          'Update THEapp on this device; the records are preserved.',
+          'Update misc. on this device; the records are preserved.',
           severity: IntegritySeverity.warning,
         );
       }
@@ -369,7 +369,7 @@ class IntegrityChecker {
         'migration_unfinished',
         'migrations',
         'A data upgrade started but did not finish.',
-        'Restart THEapp to finish it; the backup made before it is kept '
+        'Restart misc. to finish it; the backup made before it is kept '
             '(${(state!['checkpoint'] as Map)['backup']}).',
       );
     }

@@ -44,7 +44,7 @@ const syncedCollections = {
   'vault_items', // private vault items (ciphertext only)
   'templates', // the user's own note and project templates
   'external_events', // Google / Outlook events (read-only mirrors)
-  'calendar_links', // THEapp entries exported to Google / Outlook
+  'calendar_links', // misc. entries exported to Google / Outlook
   'custom_tags', // the user's own Archive / Mindmap tags (name, colour)
   'purges', // permanent deletions (id = "<collection>.<record id>")
   'library_objects',

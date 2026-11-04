@@ -402,7 +402,7 @@ class _ConnectGuide extends StatelessWidget {
         'What this is',
         'Optional. Your own hub is a small program on your PC that keeps '
             'your devices in step. It is not a cloud service: your data goes '
-            'only between your devices and that PC. THEapp works the same '
+            'only between your devices and that PC. misc. works the same '
             'without it.',
       ),
       (
@@ -414,7 +414,7 @@ class _ConnectGuide extends StatelessWidget {
       (
         mobile ? 'Pair this iPhone/iPad' : 'Pair this PC',
         mobile
-            ? 'On the PC, open THEapp → Settings → Sync → "Get a code" (or '
+            ? 'On the PC, open misc. → Settings → Sync → "Get a code" (or '
                   'run "thehub pair"). Type the PC’s Tailscale address '
                   '(http://100.x.y.z:47710) and the code below.'
             : 'Press "Get a code from the hub on this PC", then Pair.',
@@ -494,7 +494,7 @@ class _HostedFormState extends State<_HostedForm> {
     ),
     subtitle: Text(
       'A server run for you (e.g. one you deployed from deploy/hosted). '
-      'Your data is stored there; THEapp keeps working offline.',
+      'Your data is stored there; misc. keeps working offline.',
       style: TextStyle(fontSize: 11, color: AppColors.textFaint),
     ),
     children: [
@@ -602,7 +602,7 @@ class MaintenanceStatusView extends StatelessWidget {
             if (host != null)
               Text(switch (host.state) {
                 HubHostState.running =>
-                  'Hub on this PC: running in THEapp (${host.listening.join(', ')})',
+                  'Hub on this PC: running in misc. (${host.listening.join(', ')})',
                 HubHostState.external =>
                   'Hub on this PC: running separately (${host.listening.join(', ')})',
                 HubHostState.recovering =>

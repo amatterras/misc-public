@@ -33,12 +33,12 @@ enum StorageMode {
   ),
   pcHub(
     'This device + PC hub',
-    'Saved here and synced with the THEapp hub on your Windows PC (on this '
+    'Saved here and synced with the misc. hub on your Windows PC (on this '
         'PC or over Tailscale). Syncs while the PC is on and reachable.',
   ),
   hosted(
     'This device + hosted service',
-    'Saved here and synced with a hosted THEapp service you set up. Works '
+    'Saved here and synced with a hosted misc. service you set up. Works '
         'without the PC. Your data is stored on that server.',
   );
 
@@ -272,8 +272,8 @@ class StorageSwitch {
       if (status['protocol'] != syncProtocolVersion) {
         throw const SyncFailure(
           'protocol_mismatch',
-          'The destination runs a different THEapp sync version. Update '
-              'THEapp or the hub first.',
+          'The destination runs a different misc. sync version. Update '
+              'misc. or the hub first.',
         );
       }
     } finally {

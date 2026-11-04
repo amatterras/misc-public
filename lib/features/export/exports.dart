@@ -232,7 +232,7 @@ footer{color:#AAAEB6;font-size:12px;margin-top:32px}
 .tag{display:inline-block;background:#303239;border-radius:10px;padding:1px 8px;margin-right:6px;font-size:12px}
 </style></head><body><main>
 $body
-<footer>Shared from THEapp · view-only copy made ${_escape(DateTime.now().toIso8601String().substring(0, 10))}</footer>
+<footer>Shared from misc. · view-only copy made ${_escape(DateTime.now().toIso8601String().substring(0, 10))}</footer>
 </main></body></html>
 ''';
 

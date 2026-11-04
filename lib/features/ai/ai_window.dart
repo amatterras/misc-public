@@ -301,7 +301,7 @@ class _AiPanelState extends State<AiPanel> {
           Text(switch (t.status) {
             AiMessageStatus.stopped => 'Stopped by you.',
             AiMessageStatus.interrupted =>
-              'Interrupted (THEapp closed while it was written).',
+              'Interrupted (misc. closed while it was written).',
             AiMessageStatus.failed => t.error ?? 'Failed.',
             _ => '',
           }, style: warn),

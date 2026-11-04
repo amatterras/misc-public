@@ -201,7 +201,7 @@ void main() {
         isA<BackupFileException>().having(
           (e) => e.message,
           'message',
-          contains('newer THEapp'),
+          contains('newer misc.'),
         ),
       ),
     );

@@ -156,7 +156,7 @@ class AppLockController extends ChangeNotifier {
     _set(AppLockState.authenticating);
     BiometricResult result;
     try {
-      result = await authenticator.authenticate('Unlock THEapp');
+      result = await authenticator.authenticate('Unlock misc.');
     } catch (e) {
       // Anything that goes wrong keeps the app locked (never opens it).
       AppLog.warn('Biometric prompt failed: $e');
@@ -302,7 +302,7 @@ class _LockCover extends StatelessWidget {
                 children: [
                   Icon(Icons.lock_outline, size: 40, color: scheme.primary),
                   const SizedBox(height: 16),
-                  const Text('THEapp is locked'),
+                  const Text('misc. is locked'),
                   if (_message != null) ...[
                     const SizedBox(height: 8),
                     ConstrainedBox(

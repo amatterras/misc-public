@@ -38,7 +38,7 @@ class StartupApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'THEapp',
+    title: 'misc.',
     debugShowCheckedModeBanner: false,
     theme: buildAppTheme(),
     home: StartupScreen(progress: progress),
@@ -100,7 +100,7 @@ class _StartupScreenState extends State<StartupScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    'THEapp',
+                    'misc.',
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: Space.lg),
@@ -130,7 +130,7 @@ class _StartupScreenState extends State<StartupScreen> {
                     ),
                   if (failed) ...[
                     Text(
-                      'THEapp could not start (step: ${p.step}). Nothing was '
+                      'misc. could not start (step: ${p.step}). Nothing was '
                       'deleted. Please take a screenshot of this screen.',
                       key: const ValueKey('startup-error'),
                       style: TextStyle(color: AppColors.danger),
@@ -186,7 +186,7 @@ Widget readableErrorWidget(FlutterErrorDetails details) => Directionality(
     child: Padding(
       padding: const EdgeInsets.all(8),
       child: Text(
-        'This part of THEapp could not be shown: ${details.exceptionAsString()}',
+        'This part of misc. could not be shown: ${details.exceptionAsString()}',
         style: TextStyle(color: AppColors.danger, fontSize: 12),
         maxLines: 6,
         overflow: TextOverflow.ellipsis,

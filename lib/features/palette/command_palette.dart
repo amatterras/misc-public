@@ -156,7 +156,7 @@ List<PaletteCommand> paletteCommands(
       (_) async {
         final dir = exportsFolder(s);
         await dir.create(recursive: true);
-        final f = freshFile(dir, 'THEapp calendar', 'ics');
+        final f = freshFile(dir, 'misc. calendar', 'ics');
         await f.writeAsString(calendarIcs(s.workspace));
         s.showToast('Saved ${f.path}');
         await revealExport(s, f);
@@ -240,7 +240,7 @@ List<PaletteCommand> paletteCommands(
     ),
     if (s.alwaysOnTopSupported)
       PaletteCommand(
-        s.alwaysOnTop ? 'Stop keeping THEapp on top' : 'Keep THEapp on top',
+        s.alwaysOnTop ? 'Stop keeping misc. on top' : 'Keep misc. on top',
         Icons.push_pin_outlined,
         (_) => unawaited(s.setAlwaysOnTop(!s.alwaysOnTop)),
       ),

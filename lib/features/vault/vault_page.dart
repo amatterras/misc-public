@@ -99,7 +99,7 @@ class _VaultPageState extends State<VaultPage> {
           const Text(
             'Write it down and keep it somewhere safe, away from this '
             'device. It is shown only now. Without the password or this '
-            'code, nobody (not even THEapp) can open the vault.',
+            'code, nobody (not even misc.) can open the vault.',
             style: TextStyle(fontSize: 12),
           ),
         ],
@@ -156,7 +156,7 @@ class _VaultPageState extends State<VaultPage> {
                     'or exported. If another device already has a vault, '
                     'sync first so both use the same one.'
               : 'Locks itself after ${VaultService.idleLimit.inMinutes} '
-                    'minutes without use and when THEapp is hidden.',
+                    'minutes without use and when misc. is hidden.',
           style: TextStyle(fontSize: 12, color: AppColors.textMuted),
         ),
         const SizedBox(height: Space.md),

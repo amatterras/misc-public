@@ -1,6 +1,6 @@
 # iOS Share Extension — implemented, NOT verified on a device
 
-"Add to THEapp" in the iPhone/iPad share sheet. Shared links, text, photos and
+"Add to misc." in the iPhone/iPad share sheet. Shared links, text, photos and
 files (e.g. PDFs) are saved into the **Archive**.
 
 ## What exists (code)
@@ -14,7 +14,7 @@ files (e.g. PDFs) are saved into the **Archive**.
 - `ShareExtension.entitlements`: declares the App Group.
 - The Xcode project already contains the `ShareExtension` target
   (`com.amaterasu.theapp.share`), embedded in Runner. Nothing has to be added by hand.
-- App side (Dart): when THEapp starts or returns to the front it reads the request
+- App side (Dart): when misc. starts or returns to the front it reads the request
   files (`AppState.importSharedItems` → `SendToBridge.processRequests` →
   `CaptureService.captureToArchive`) and saves Archive objects: a link becomes a
   website item, text a note, a photo/PDF an image/document item. Repeats add no duplicate.
@@ -48,6 +48,6 @@ files (e.g. PDFs) are saved into the **Archive**.
 ## What happens without it (the free route)
 With the unsigned/ad-hoc IPA and a free Apple ID, the App Group does not exist at
 runtime: `containerURL(forSecurityApplicationGroupIdentifier:)` is nil, the extension
-shows "THEapp cannot receive shared items on this install (App Group missing)" and
+shows "misc. cannot receive shared items on this install (App Group missing)" and
 saves nothing, and the app has no shared folder to read. Whether a sideloader keeps
 the entitlements is not verified. Use the free iOS Shortcut route in `../README_IOS.md`.

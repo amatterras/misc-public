@@ -94,7 +94,7 @@ class _BackupDetailsState extends State<_BackupDetails> {
                 children: [
                   SettingsRow(title: 'Made', subtitle: label.reason),
                   SettingsRow(
-                    title: 'THEapp build',
+                    title: 'misc. build',
                     subtitle: !_loaded
                         ? '…'
                         : build is String && build.isNotEmpty
@@ -114,7 +114,7 @@ class _BackupDetailsState extends State<_BackupDetails> {
                   if (copy)
                     const SettingsRow(
                       title: 'Stored in',
-                      subtitle: 'The Files app (a copy outside THEapp’s data)',
+                      subtitle: 'The Files app (a copy kept outside the app’s own data)',
                     ),
                 ],
               ),

@@ -37,7 +37,7 @@ class ShareViewController: UIViewController {
     label.textColor = .white
     label.textAlignment = .center
     label.numberOfLines = 0
-    label.text = "Adding to THEapp…"
+    label.text = "Adding to misc.…"
     label.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(label)
     NSLayoutConstraint.activate([
@@ -46,7 +46,7 @@ class ShareViewController: UIViewController {
       label.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
     ])
     if container == nil {
-      finish(message: "THEapp cannot receive shared items on this install (App Group missing).")
+      finish(message: "misc. cannot receive shared items on this install (App Group missing).")
       return
     }
     processSharedContent()
@@ -133,7 +133,7 @@ class ShareViewController: UIViewController {
       guard let self = self else { return }
       self.finish(
         message: self.skipped == 0
-          ? "Added to THEapp's Archive."
+          ? "Added to the misc. Archive."
           : "Added \(self.saved); \(self.skipped) could not be added (too large or not supported).")
     }
   }

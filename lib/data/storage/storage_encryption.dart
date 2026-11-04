@@ -133,11 +133,11 @@ final class FileCipher {
   /// truncated file or a format this version does not know.
   Uint8List decrypt(List<int> data, {List<int> context = const []}) {
     if (!isEncrypted(data)) {
-      throw const DecryptionFailure('Not an encrypted THEapp file');
+      throw const DecryptionFailure('Not an encrypted misc. file');
     }
     if (data[4] != formatVersion || data[5] != _algorithm) {
       throw const DecryptionFailure(
-        'Written by a newer version of THEapp (kept untouched)',
+        'Written by a newer version of misc. (kept untouched)',
       );
     }
     final bytes = data is Uint8List ? data : Uint8List.fromList(data);

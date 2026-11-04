@@ -706,7 +706,7 @@ class _UnsavedNotice extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'Some changes are not saved yet. THEapp keeps retrying — '
+                'Some changes are not saved yet. misc. keeps retrying — '
                 'keep the app open (details in the log).',
                 style: TextStyle(fontSize: 13, color: AppColors.text),
               ),

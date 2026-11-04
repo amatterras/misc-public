@@ -951,7 +951,7 @@ class HubServer {
       '$_pageHead<title>Not available</title>$_pageStyle</head><body>'
       '<h1>Not available</h1><pre>This link does not exist, was revoked or '
       'has expired.</pre><p style="color:#888;font-size:12px">Shared '
-      'read-only from THEapp.</p></body></html>';
+      'read-only from misc.</p></body></html>';
 
   /// Opens the sealed text with WebCrypto (AES-256-GCM): the key is in
   /// `location.hash` (`#k=...`), the ciphertext in the `d` element.
@@ -983,7 +983,7 @@ document.title=j.t;h.textContent=j.t;out.textContent=j.b;
       '$_pageHead<title>Shared note</title>$_pageStyle</head><body>'
       '<h1 id="h">Opening…</h1><pre id="b"></pre>'
       '<script id="d" type="application/octet-stream">$ct</script>'
-      '<p style="color:#888;font-size:12px">Shared read-only from THEapp. '
+      '<p style="color:#888;font-size:12px">Shared read-only from misc. '
       'End-to-end encrypted: the server cannot read this.</p>'
       '<script>$_shareScript</script></body></html>';
 

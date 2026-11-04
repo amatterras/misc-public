@@ -313,7 +313,7 @@ Future<void> _delete(BuildContext context, AppState s, ActionItem item) async {
     builder: (context) => AlertDialog(
       title: const Text('Delete this item?'),
       content: Text(
-        '“$label” will be removed from THEapp. Its original source and any other references will stay untouched.',
+        '“$label” will be removed from misc. Its original source and any other references will stay untouched.',
       ),
       actions: [
         TextButton(

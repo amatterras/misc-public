@@ -155,7 +155,7 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     case "biometricAvailable":
       result(LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil))
     case "biometricAuthenticate":
-      biometricAuthenticate(call.arguments as? String ?? "Unlock THEapp", result)
+      biometricAuthenticate(call.arguments as? String ?? "Unlock misc.", result)
     case "keychainRead":
       result(keychainRead(call.arguments as? String ?? ""))
     case "keychainWrite":
@@ -414,7 +414,7 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       _ = Self.protect([target], recursive: false)
       result(true)
     } catch {
-      NSLog("THEapp: PDF export failed: \(error)")
+      NSLog("misc.: PDF export failed: \(error)")
       result(false)
     }
   }

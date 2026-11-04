@@ -304,17 +304,17 @@ List<int> _u32(int v) => [
 /// paths (empty if cancelled).
 List<String> pickImageFiles() => _pickFiles(
   'Images\u0000*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp\u0000All files\u0000*.*\u0000\u0000',
-  'Add photos to THEapp',
+  'Add photos to misc.',
 );
 
 /// The same dialog for PDF documents.
 List<String> pickDocumentFiles() =>
-    _pickFiles('PDF documents\u0000*.pdf\u0000\u0000', 'Add PDFs to THEapp');
+    _pickFiles('PDF documents\u0000*.pdf\u0000\u0000', 'Add PDFs to misc.');
 
 /// The same dialog for a THEapp backup file.
 List<String> pickBackupFiles() => _pickFiles(
-  'THEapp backups\u0000*.theappbackup\u0000\u0000',
-  'Import a THEapp backup',
+  'misc. backups\u0000*.theappbackup\u0000\u0000',
+  'Import a misc. backup',
 );
 
 /// The same dialog for calendar files.
@@ -489,7 +489,7 @@ void focusMainWindow() {
   final w = _win;
   if (w == null) return;
   final cls = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
-  final title = 'THEapp'.toNativeUtf16();
+  final title = 'misc.'.toNativeUtf16();
   try {
     final hwnd = w.findWindow(cls, title);
     if (hwnd == 0) return;
@@ -508,7 +508,7 @@ void flashMainWindow() {
   final w = _win;
   if (w == null) return;
   final cls = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
-  final title = 'THEapp'.toNativeUtf16();
+  final title = 'misc.'.toNativeUtf16();
   try {
     final hwnd = w.findWindow(cls, title);
     if (hwnd != 0) w.flashWindow(hwnd, 1);
@@ -525,7 +525,7 @@ bool setMainWindowTopmost(bool topmost) {
   final w = _win;
   if (w == null) return false;
   final cls = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
-  final title = 'THEapp'.toNativeUtf16();
+  final title = 'misc.'.toNativeUtf16();
   try {
     final hwnd = w.findWindow(cls, title);
     if (hwnd == 0) return false;
@@ -672,7 +672,7 @@ bool setMainWindowFullScreen(bool on) {
         int Function(int, Pointer<_MonitorInfo>)
       >('GetMonitorInfoW');
   final cls = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
-  final title = 'THEapp'.toNativeUtf16();
+  final title = 'misc.'.toNativeUtf16();
   final rect = calloc<_Rect>();
   final info = calloc<_MonitorInfo>();
   try {

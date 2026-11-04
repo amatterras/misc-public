@@ -128,7 +128,7 @@ abstract class BrowserEngine {
   /// Why no engine runs on this platform (shown on the browser page).
   static String get unavailableReason =>
       'No browser engine is available here. Bookmarks, history and sending '
-      'pages to THEapp still work; pages can be opened in your default '
+      'pages to misc. still work; pages can be opened in your default '
       'browser.';
 
   final ValueNotifier<EngineState> state = ValueNotifier(const EngineState());

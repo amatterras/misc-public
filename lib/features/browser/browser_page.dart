@@ -429,7 +429,7 @@ class _BrowserPageState extends State<BrowserPage> {
               touch: touchFirst,
               feedback: Text(t.title.isEmpty ? t.url : t.title),
               child: Tooltip(
-                message: 'Drag this page somewhere in THEapp',
+                message: 'Drag this page somewhere in misc.',
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 6),
                   child: Icon(

@@ -267,14 +267,21 @@ class SendToBridge {
 
   // ------------------------------------------------- Send To menu entry --
 
-  static File get shortcutFile => File(
-    '${Platform.environment['APPDATA']}\\Microsoft\\Windows\\SendTo\\THEapp.lnk',
-  );
+  static String get _sendToFolder =>
+      '${Platform.environment['APPDATA']}\\Microsoft\\Windows\\SendTo';
+
+  /// The menu entry's file: its name is what Explorer shows ("misc.").
+  static File get shortcutFile => File('$_sendToFolder\\misc..lnk');
+
+  /// The entry made by builds before the rename ("THEapp"): still recognised
+  /// and removed, so an existing install is not left with two entries.
+  static File get _legacyShortcutFile => File('$_sendToFolder\\THEapp.lnk');
 
   static bool get isInstalled =>
-      Platform.isWindows && shortcutFile.existsSync();
+      Platform.isWindows &&
+      (shortcutFile.existsSync() || _legacyShortcutFile.existsSync());
 
-  /// Adds "THEapp" to Explorer's right-click "Send to" menu (a normal
+  /// Adds "misc." to Explorer's right-click "Send to" menu (a normal
   /// shortcut in your SendTo folder; remove it any time).
   static Future<bool> install() async {
     if (!Platform.isWindows) return false;
@@ -283,18 +290,23 @@ class SendToBridge {
     final script =
         "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('$lnk'); "
         "\$s.TargetPath = '$exe'; \$s.Arguments = '--send-to'; "
-        "\$s.Description = 'Send to THEapp'; \$s.Save()";
+        "\$s.Description = 'Send to misc.'; \$s.Save()";
     final result = await Process.run('powershell', [
       '-NoProfile',
       '-NonInteractive',
       '-Command',
       script,
     ]);
-    return result.exitCode == 0 && shortcutFile.existsSync();
+    final ok = result.exitCode == 0 && shortcutFile.existsSync();
+    if (ok && _legacyShortcutFile.existsSync()) {
+      await _legacyShortcutFile.delete();
+    }
+    return ok;
   }
 
   static Future<void> uninstall() async {
     if (shortcutFile.existsSync()) await shortcutFile.delete();
+    if (_legacyShortcutFile.existsSync()) await _legacyShortcutFile.delete();
   }
 
   void dispose() {

@@ -137,7 +137,7 @@ Future<bool> showStorageSwitchDialog(
       context,
       title: 'Store on this device only?',
       message:
-          'THEapp stops syncing. Everything stays on this device, and the '
+          'misc. stops syncing. Everything stays on this device, and the '
           '${state.storageMode.label.toLowerCase()} keeps its copy (nothing '
           'is deleted there). Changes made here afterwards reach no other '
           'device.',
@@ -670,7 +670,7 @@ class DataSafetySection extends StatelessWidget {
       title: const Text('Delete for good?', style: TextStyle(fontSize: 16)),
       content: const Text(
         'This cannot be undone. It is removed from this device, from the '
-        'backups THEapp keeps, and from the hub; your other devices are told '
+        'backups misc. keeps, and from the hub; your other devices are told '
         'and an old copy cannot bring it back. Links that shared it stop.\n\n'
         'It does not promise that no trace is left anywhere: disks and '
         'operating systems can keep traces, and anything you exported, '

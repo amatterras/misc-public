@@ -393,9 +393,9 @@ class SyncEngine {
           report.problems.add(
             name == 'clipboard'
                 ? 'The hub does not accept the shared clipboard yet: restart '
-                      'it with this version of THEapp.'
+                      'it with this version of misc.'
                 : 'The hub does not accept $name yet: restart it with this '
-                      'version of THEapp.',
+                      'version of misc.',
           );
           continue;
         }
@@ -776,7 +776,7 @@ class SyncEngine {
       if (e.code == 'not_found') {
         report.problems.add(
           'This hub is too old for end-to-end encryption: restart it with '
-          'this version of THEapp.',
+          'this version of misc.',
         );
         _sealedChecked = true; // nothing to retry until it is updated
         return;

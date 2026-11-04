@@ -158,7 +158,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
         if (ai.enabled) ...[
           Text(
             'Free: install Ollama on this PC and a model (e.g. llama3.2); '
-            'THEapp talks to it on this PC only. A ChatGPT subscription does '
+            'misc. talks to it on this PC only. A ChatGPT subscription does '
             'not include API access — the OpenAI option needs a separate '
             'API key that is paid per use.',
             style: small,
