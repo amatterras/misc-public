@@ -886,23 +886,36 @@ class _TransferBar extends StatelessWidget {
         right: 0,
         bottom: bottomOffset,
         child: Center(
-          child: Material(
-            key: const ValueKey('transfer-result'),
-            color: AppColors.cardRaised,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.only(left: 16, right: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(result.message, style: const TextStyle(fontSize: 13)),
-                  if (result.undo != null)
-                    TextButton(
-                      key: const ValueKey('transfer-undo'),
-                      onPressed: state.undoLastTransfer,
-                      child: const Text('Undo'),
+          // Never wider than the window: a long title shortens, Undo stays.
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width - 32,
+            ),
+            child: Material(
+              key: const ValueKey('transfer-result'),
+              color: AppColors.cardRaised,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 16, right: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        result.message,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
+                      ),
                     ),
-                ],
+                    if (result.undo != null)
+                      TextButton(
+                        key: const ValueKey('transfer-undo'),
+                        onPressed: state.undoLastTransfer,
+                        child: const Text('Undo'),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

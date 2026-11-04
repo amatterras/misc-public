@@ -1,3 +1,5 @@
+import 'dart:async';
+
 // Archive on the phone: a table of contents. The newest saved things run in a
 // strip of pictures on top; the folders follow as an index, each with its own
 // colour as a thin rule. A folder opens as a list. Same library records as the
@@ -6,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import '../app/app_state.dart';
 import '../data/models/object_library_models.dart';
+import '../features/capture/sorting.dart';
 import '../new_ui/archive_model.dart';
 import '../features/library/library_page.dart' show LibraryPage;
 import '../new_ui/new_archive_page.dart'
@@ -440,8 +443,11 @@ class ArchiveItemRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final image = archiveImageOf(state, object);
     final when = object.lastSavedAt ?? object.createdAt;
+    final sorter = CaptureSorter(state.workspace, state.library);
+    final sort = sorter.stateOf(object.id);
     return Press(
       onTap: () => openPhoneArchiveItem(context, state, object.id),
+      onLongPress: () => showSortSheet(context, state, object),
       child: Column(
         children: [
           Padding(
@@ -482,7 +488,8 @@ class ArchiveItemRow extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        '${archiveMetaOf(object)} · ${relativeDay(when)}',
+                        '${archiveMetaOf(object)} · ${relativeDay(when)}'
+                        '${sort == CaptureState.converted || sort == CaptureState.archived ? ' · ${sort.label}' : ''}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: PhoneType.meta,
@@ -527,3 +534,74 @@ Future<void> openPhoneArchiveItem(
     ),
   ),
 );
+
+/// What can be done with a saved item: file it, turn it into a note or a
+/// task, or put it away. Each one can be undone from the bar that appears.
+Future<void> showSortSheet(
+  BuildContext context,
+  AppState state,
+  LibraryObject object,
+) async {
+  final sorter = CaptureSorter(state.workspace, state.library);
+  final current = sorter.stateOf(object.id);
+  final choice = await showPhoneSheet<String>(
+    context,
+    eyebrow:
+        '${object.title.isEmpty ? 'Untitled' : object.title} · ${current.label}',
+    children: (c) => [
+      SheetItem(
+        label: 'File in a folder',
+        onTap: () => Navigator.pop(c, 'file'),
+      ),
+      SheetItem(label: 'Make a note', onTap: () => Navigator.pop(c, 'note')),
+      SheetItem(label: 'Make a task', onTap: () => Navigator.pop(c, 'task')),
+      if (current == CaptureState.archived)
+        SheetItem(label: 'Restore', onTap: () => Navigator.pop(c, 'restore'))
+      else
+        SheetItem(label: 'Archive', onTap: () => Navigator.pop(c, 'archive')),
+    ],
+  );
+  if (choice == null || !context.mounted) return;
+  SortResult? result;
+  switch (choice) {
+    case 'file':
+      final folders =
+          state.workspace.librarySpaces.all
+              .where((s) => s.kind == LibrarySpaceKind.regular)
+              .toList()
+            ..sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+            );
+      if (folders.isEmpty) {
+        state.showToast('There are no folders yet.');
+        return;
+      }
+      final picked = await showPhoneSheet<String>(
+        context,
+        eyebrow: 'File in',
+        children: (c) => [
+          for (final f in folders)
+            SheetItem(label: f.name, onTap: () => Navigator.pop(c, f.id)),
+        ],
+      );
+      if (picked != null) result = await sorter.file(object.id, picked);
+    case 'note':
+      result = await sorter.convertToNote(object.id);
+    case 'task':
+      result = await sorter.convertToTask(object.id);
+    case 'archive':
+      result = await sorter.archive(object.id);
+    case 'restore':
+      result = await sorter.restore(object.id);
+  }
+  if (result == null) return;
+  unawaited(
+    result.persisted.catchError(
+      (Object e) => state.showToast('Could not save that change: $e'),
+    ),
+  );
+  state.showTransferResult((
+    message: result.already ? 'Already done.' : result.undo.message,
+    undo: result.already ? null : result.undo.undo,
+  ));
+}
