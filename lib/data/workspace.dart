@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 
+import 'storage/transaction_log.dart';
 import 'models/calendar_models.dart';
 import 'models/canvas_models.dart' show newId;
 import 'models/library_models.dart';
@@ -284,6 +285,13 @@ class Workspace {
   /// Fires when any record anywhere changes.
   late final Listenable changes = Listenable.merge(_all);
 
+  /// All-or-nothing changes across several collections (see
+  /// transaction_log.dart).
+  late final TransactionLog txn = TransactionLog(store, allCollections);
+
+  /// What the last start-up finished of an interrupted multi-record change.
+  RecoveryReport lastRecovery = const RecoveryReport();
+
   Future<void> load() async {
     device = await DeviceIdentity.loadOrCreate(store);
     clock.deviceId = device!.id;
@@ -295,6 +303,7 @@ class Workspace {
     for (final c in _all) {
       await c.load();
     }
+    lastRecovery = await txn.recover();
     await _loadExpiredArchiveLedger();
     _expiredArchivedEntryIds.addAll(
       calendarExpirations.all.map((expiration) => expiration.id),
@@ -745,22 +754,34 @@ class Workspace {
   void deleteNote(String id) {
     final note = notes[id];
     if (note == null) return;
-    noteVersions.put(
-      NoteVersion(
-        id: newId(),
-        noteId: id,
-        title: note.title,
-        body: note.body,
-        savedAt: now(),
-        deleted: true,
-        folderId: note.folderId,
-        tags: note.tags,
-        favorite: note.favorite,
-        assetIds: note.assetIds,
-        paper: note.paper,
-      ),
+    // One all-or-nothing change: the kept version and the deletion are
+    // never saved separately (a crash cannot leave a note deleted without
+    // its version, or the other way round).
+    unawaited(
+      txn
+          .run('Delete note', (tx) {
+            tx.put(
+              noteVersions,
+              NoteVersion(
+                id: newId(),
+                noteId: id,
+                title: note.title,
+                body: note.body,
+                savedAt: now(),
+                deleted: true,
+                folderId: note.folderId,
+                tags: note.tags,
+                favorite: note.favorite,
+                assetIds: note.assetIds,
+                paper: note.paper,
+              ),
+            );
+            tx.remove(notes, id);
+          })
+          .catchError((Object e, StackTrace s) {
+            AppLog.error('Deleting a note was not saved completely', e, s);
+          }),
     );
-    notes.remove(id);
   }
 
   /// Deleted notes that can be restored (newest deletion first): the latest

@@ -326,8 +326,32 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
     await store.refreshBackup(_folder, name);
   }
 
+  /// Saves of this collection wait until [until] has finished (a failure of
+  /// [until] does not stop the save). Used by the transaction log: a
+  /// multi-record change must be written to its intent file before any of
+  /// the collections it touches is saved.
+  void hold(Future<void> until) {
+    final safe = until.catchError((Object _) {});
+    final previous = _hold;
+    _hold = previous == null ? safe : Future.wait([previous, safe]);
+  }
+
+  Future<void>? _hold;
+
+  /// Whether [id] was deleted here (it has a tombstone).
+  bool hasTombstone(String id) => _tombstones.containsKey(id);
+
+  /// Stores the record described by [json] as a local edit (used when
+  /// replaying an interrupted transaction).
+  void putJson(Map<String, dynamic> json) => put(fromJson(json));
+
   Future<void> flush() async {
     _timer?.cancel();
+    final hold = _hold;
+    if (hold != null) {
+      await hold;
+      if (identical(_hold, hold)) _hold = null;
+    }
     if (!_dirty) return;
     _dirty = false;
     _pruneDeleted();

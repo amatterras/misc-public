@@ -329,6 +329,21 @@ class JsonFileStore {
     }
   }
 
+  /// Deletes a document and its previous-version copy. Only for the
+  /// store's own bookkeeping (e.g. finished transaction intents); user
+  /// content is never removed with this: it goes to the trash instead.
+  Future<void> delete(String collection, String id) async {
+    await _pending[_file(collection, id).path]?.catchError((_) {});
+    final file = _file(collection, id);
+    for (final f in [
+      file,
+      File('${file.path}.bak'),
+      File('${file.path}.tmp'),
+    ]) {
+      if (await f.exists()) await _retry(f.delete);
+    }
+  }
+
   Future<void> moveToTrash(String collection, String id) async {
     final file = _file(collection, id);
     if (!await file.exists()) return;
