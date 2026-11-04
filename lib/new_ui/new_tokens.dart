@@ -29,9 +29,15 @@ abstract final class NewColors {
   static const steelBlue = Color(0xFF789BB5);
 
   // ── Surface hierarchy ────────────────────────────────────────────────
+  //
+  // Light theme ("porcelain & ink"): a cool pearl page with a breath of
+  // lavender, pure white cards that lift off it, and one violet-tinted ink for
+  // text and borders so nothing reads as neutral grey. Depth comes from soft
+  // layered shadows and hairlines, not from heavy fills or outlines.
+
   /// The window / canvas background.
   static Color get background =>
-      _light ? const Color(0xFFFFFBFA) : const Color(0xFF191A1D);
+      _light ? const Color(0xFFF5F4F9) : const Color(0xFF191A1D);
   static Color get canvas => background;
   static Color get canvasPage => background;
 
@@ -41,38 +47,37 @@ abstract final class NewColors {
 
   /// Secondary surface (inputs, grouped areas).
   static Color get surfaceSecondary =>
-      _light ? const Color(0xFFF7F3F5) : const Color(0xFF262932);
+      _light ? const Color(0xFFEEEDF5) : const Color(0xFF262932);
 
   /// Elevated surface (menus, tooltips, floating panels).
   static Color get surfaceRaised =>
-      _light ? const Color(0xFFF0EBF2) : const Color(0xFF2D3038);
+      _light ? const Color(0xFFE8E6F2) : const Color(0xFF2D3038);
 
   static Color get border =>
-      _light ? const Color(0xFFE4DDE8) : const Color(0xFF3A3D47);
+      _light ? const Color(0xFFE3E1EC) : const Color(0xFF3A3D47);
 
   // ── Text ─────────────────────────────────────────────────────────────
   static Color get text =>
-      _light ? const Color(0xFF292631) : const Color(0xFFF4F1F5);
+      _light ? const Color(0xFF1C1A27) : const Color(0xFFF4F1F5);
   static Color get textMuted =>
-      _light ? const Color(0xFF6F6A76) : const Color(0xFFB9B5C1);
+      _light ? const Color(0xFF5D5A6B) : const Color(0xFFB9B5C1);
 
-  /// Muted text. The light value is darker than the suggested #96909B,
-  /// which measured 3.0:1 on the page (below the 4.5:1 for small text).
+  /// Muted text, kept at 4.5:1 or better on the page and on white.
   static Color get textFaint =>
-      _light ? const Color(0xFF726C77) : const Color(0xFF898692);
+      _light ? const Color(0xFF6A6778) : const Color(0xFF898692);
 
   // ── Accent and states ───────────────────────────────────────────────
-  /// Primary accent for text, icons and fills. Light uses a slightly deeper
-  /// iris than [mutedViolet] (#7D80B8 is 3.6:1 on the page; this is 5.1:1).
+  /// Primary accent for text, icons and fills. Light uses a deeper iris than
+  /// [mutedViolet] (#7D80B8 is only 3.6:1 on the page; this is 5.2:1).
   static Color get accent =>
-      _light ? const Color(0xFF6367A2) : const Color(0xFF789BB5);
+      _light ? const Color(0xFF5B60A8) : const Color(0xFF789BB5);
   static Color get accentSecondary => _light ? deepIndigo : periwinkle;
-  static Color get accentSoft => accent.withValues(alpha: 0.16);
+  static Color get accentSoft => accent.withValues(alpha: _light ? 0.11 : 0.16);
   static Color get selected =>
-      _light ? const Color(0xFFEFEBF6) : const Color(0xFF282C38);
-  static Color get selection => accent.withValues(alpha: 0.33);
+      _light ? const Color(0xFFE9E8F6) : const Color(0xFF282C38);
+  static Color get selection => accent.withValues(alpha: 0.28);
   static Color get hover =>
-      _light ? const Color(0x14292631) : const Color(0x14FFFFFF);
+      _light ? const Color(0x0F1C1A27) : const Color(0x14FFFFFF);
   static Color get success =>
       _light ? const Color(0xFF3F7A57) : const Color(0xFF9DB59A);
   static Color get warm =>
@@ -82,11 +87,11 @@ abstract final class NewColors {
 
   // ── Glass ────────────────────────────────────────────────────────────
   static Color get glass =>
-      _light ? const Color(0xB3FFFFFF) : const Color(0x99202126);
+      _light ? const Color(0xCCFFFFFF) : const Color(0x99202126);
   static Color get glassBorder =>
-      _light ? const Color(0x40292631) : const Color(0x26FFFFFF);
+      _light ? const Color(0x1A1C1A27) : const Color(0x26FFFFFF);
   static Color get glassHighlight =>
-      _light ? const Color(0xCCFFFFFF) : const Color(0x33FFFFFF);
+      _light ? const Color(0xE6FFFFFF) : const Color(0x33FFFFFF);
 }
 
 /// Gradient library. The target is a soft blurred field, not hard bands:
@@ -97,7 +102,7 @@ abstract final class NewGradients {
   static bool get _light => AppColors.light;
 
   /// Opacity of the colour pools on top of the base.
-  static double get poolOpacity => _light ? 0.38 : 0.26;
+  static double get poolOpacity => _light ? 0.24 : 0.26;
 
   /// The pools: (alignment, colour, radius). Upper-left coral → upper-middle
   /// peach → upper-right rose/lavender → middle periwinkle → lavender blue →
@@ -130,9 +135,9 @@ abstract final class NewGradients {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      NewColors.periwinkle.withValues(alpha: _light ? 0.22 : 0.16),
+      NewColors.periwinkle.withValues(alpha: _light ? 0.14 : 0.16),
       Colors.transparent,
-      NewColors.softCoral.withValues(alpha: _light ? 0.18 : 0.12),
+      NewColors.softCoral.withValues(alpha: _light ? 0.12 : 0.12),
     ],
   );
 
@@ -189,26 +194,66 @@ abstract final class NewMotion {
 }
 
 abstract final class NewShadows {
-  static List<BoxShadow> get floating => [
-    BoxShadow(
-      color: Colors.black.withValues(alpha: AppColors.light ? 0.10 : 0.35),
-      blurRadius: 24,
-      offset: const Offset(0, 8),
-    ),
-  ];
+  // Light shadows are tinted with the ink violet and layered (a tight contact
+  // shadow plus a wide soft one), which is what makes white cards look lifted
+  // instead of outlined.
+  static const _ink = Color(0xFF1C1A27);
+
+  static List<BoxShadow> get floating => AppColors.light
+      ? [
+          BoxShadow(
+            color: _ink.withValues(alpha: 0.06),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+          BoxShadow(
+            color: _ink.withValues(alpha: 0.09),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
+          ),
+        ]
+      : [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ];
+
+  /// A resting card: barely there.
+  static List<BoxShadow> get card => AppColors.light
+      ? [
+          BoxShadow(
+            color: _ink.withValues(alpha: 0.05),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+          BoxShadow(
+            color: _ink.withValues(alpha: 0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ]
+      : [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.30),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ];
 
   /// Soft coloured light around a floating surface.
   static List<BoxShadow> get glow => [
     BoxShadow(
       color: NewColors.periwinkle.withValues(
-        alpha: AppColors.light ? 0.30 : 0.18,
+        alpha: AppColors.light ? 0.16 : 0.18,
       ),
       blurRadius: NewBlur.glow,
       spreadRadius: 1,
     ),
     BoxShadow(
       color: NewColors.warmCoral.withValues(
-        alpha: AppColors.light ? 0.16 : 0.10,
+        alpha: AppColors.light ? 0.08 : 0.10,
       ),
       blurRadius: NewBlur.glow,
       offset: const Offset(0, 14),

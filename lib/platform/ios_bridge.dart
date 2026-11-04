@@ -249,6 +249,20 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
     }
   }
 
+  /// Shows the system document picker for a `.theappbackup` file; returns a
+  /// copy of the chosen file in the app's temporary folder (empty if
+  /// cancelled).
+  Future<List<String>> pickBackupFiles() async {
+    try {
+      return await _channel.invokeListMethod<String>('pickDocuments', 'backup') ??
+          const [];
+    } on PlatformException {
+      return const [];
+    } on MissingPluginException {
+      return const [];
+    }
+  }
+
   /// Shows a stored PDF with the system previewer (Quick Look). Only paths
   /// ending in `.pdf` are passed on; the caller gives files from THEapp's
   /// attachments folder (`Workspace.documentFile`).

@@ -334,7 +334,9 @@ void main() {
       expect(find.textContaining('Ctrl+N'), findsNothing);
 
       final context = tester.element(find.byType(Scaffold).first);
-      unawaited(showSettingsDialog(context, s));
+      unawaited(
+        showSettingsDialog(context, s, open: SettingsCategory.data),
+      );
       await settle(tester);
       expect(find.textContaining('stored only on this device'), findsOneWidget);
       expect(find.text('Send to THEapp'), findsNothing, reason: 'Windows only');

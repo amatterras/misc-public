@@ -1180,7 +1180,18 @@ class CanvasController extends ChangeNotifier {
   // ---------------------------------------------------------- live state --
 
   StrokeItem? _liveStroke;
-  StrokeItem? get liveStroke => _liveStroke;
+
+  /// The points have grown since [_liveStroke] was built. Pen movements only
+  /// set this (O(1) per event, however many events one frame brings: Apple
+  /// Pencil delivers up to 240 a second); the stroke object, with its copy
+  /// of the points and its bounds, is rebuilt once per frame when painted.
+  bool _liveStale = false;
+
+  StrokeItem? get liveStroke {
+    if (_liveStale && _liveStroke != null) _updateLiveStroke();
+    return _liveStroke;
+  }
+
   List<StrokePoint> _livePoints = [];
 
   /// Repaints only the stroke being drawn. Drawing does not notify the
@@ -1220,12 +1231,13 @@ class CanvasController extends ChangeNotifier {
   List<StrokePoint>? _liveLinePreview;
   StrokeItem? get lineStraightenPreview {
     final live = _liveLinePreview;
-    if (live != null && _liveStroke != null) {
+    final base = _liveStroke;
+    if (live != null && base != null) {
       return StrokeItem(
-        id: _liveStroke!.id,
-        color: _liveStroke!.color,
-        strokeWidth: _liveStroke!.strokeWidth,
-        pressureWidth: _liveStroke!.pressureWidth,
+        id: base.id,
+        color: base.color,
+        strokeWidth: base.strokeWidth,
+        pressureWidth: base.pressureWidth,
         points: live,
       );
     }
@@ -1248,7 +1260,10 @@ class CanvasController extends ChangeNotifier {
     _holdTimer?.cancel();
     _holdTimer = null;
     _liveLinePreview = null;
-    if (_livePoints.length < 2 || !looksLikeLine(_livePoints, _scale)) {
+    // Whether the stroke is line-like is judged when the hold timer fires
+    // (below), not at every pen movement: that check walks every point, so
+    // doing it per movement made a long stroke slower the longer it got.
+    if (_livePoints.length < 2) {
       (liveInk as _Ping).ping();
       return;
     }
@@ -1749,11 +1764,16 @@ class CanvasController extends ChangeNotifier {
         final before = _lastMoveTime;
         if (timeStamp != null && before != null && timeStamp > before) {
           final ms = (timeStamp - before).inMicroseconds / 1000;
-          _velocity = (world - last) / ms;
+          // Events less than a millisecond apart (coalesced Pencil samples)
+          // give a noisy speed on their own: blend them with the last one so
+          // the look-ahead tip does not tremble. Slower events replace it.
+          final v = (world - last) / ms;
+          final old = _velocity;
+          _velocity = old == null || ms >= 4 ? v : Offset.lerp(old, v, 0.5);
         }
         _lastMoveTime = timeStamp ?? _lastMoveTime;
         _livePoints.add(StrokePoint(world.dx, world.dy, pressure));
-        _updateLiveStroke();
+        _liveStale = true;
         // A resting pen still jitters by a pixel or two; only real movement
         // restarts the hold.
         final anchor = _holdAnchor;
@@ -1790,8 +1810,9 @@ class CanvasController extends ChangeNotifier {
   void pointerUp() {
     switch (_drag) {
       case _Drag.draw:
-        final stroke = _liveStroke;
+        final stroke = liveStroke;
         _liveStroke = null;
+        _liveStale = false;
         _velocity = null;
         (liveInk as _Ping).ping();
         if (stroke != null) {
@@ -1969,7 +1990,10 @@ class CanvasController extends ChangeNotifier {
 
   void pointerCancel() {
     cancelPendingLineStraightening();
-    if (_drag == _Drag.draw) _liveStroke = null;
+    if (_drag == _Drag.draw) {
+      _liveStroke = null;
+      _liveStale = false;
+    }
     if (_drag == _Drag.lasso) _lassoPoints = [];
     if (_drag == _Drag.connect) _connectFrom = _connectEnd = null;
     // A pinch started during the second tap: keep waiting for the target.
@@ -1984,6 +2008,7 @@ class CanvasController extends ChangeNotifier {
   }
 
   void _updateLiveStroke() {
+    _liveStale = false;
     final isHighlighter = _tool == CanvasTool.highlighter;
     _liveStroke = StrokeItem(
       id: _liveStroke?.id ?? newId(),
@@ -2281,7 +2306,7 @@ class CanvasController extends ChangeNotifier {
     id: _id,
     title: _title,
     folderId: _folderId,
-    items: _liveStroke == null ? _items : [..._items, _liveStroke!],
+    items: liveStroke == null ? _items : [..._items, liveStroke!],
     viewport: CanvasViewport(offset: _offset, scale: _scale),
     updatedAt: DateTime.now(),
     itemRevs: Map.unmodifiable(_itemRevs),

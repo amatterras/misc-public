@@ -73,25 +73,19 @@ class _NewSidebarLayoutState extends State<NewSidebarLayout> {
     return narrow ? _narrow() : _regular();
   }
 
+  /// The capsule floats over the pages: they keep the whole width, and only
+  /// the strip the capsule really covers is taken. It sits centred on the
+  /// edge, clear of the page bar above and the quote line below, so nothing
+  /// that is not under it is blocked.
   Widget _regular() {
     final hidden = state.newSidebarHidden;
-    final width = state.newSidebarExpanded
-        ? NewSizes.capsuleExpandedWidth
-        : NewSizes.capsuleWidth;
     return Stack(
       children: [
-        AnimatedPadding(
-          duration: NewMotion.normal,
-          curve: NewMotion.curve,
-          padding: EdgeInsets.only(
-            right: hidden ? 0 : width + NewSpace.edge * 2,
-          ),
-          child: widget.child,
-        ),
+        Positioned.fill(child: widget.child),
         Positioned(
           right: hidden ? 0 : NewSpace.edge,
-          top: NewSpace.edge,
-          bottom: NewSpace.edge,
+          top: _clearTop,
+          bottom: _clearBottom,
           child: AnimatedSwitcher(
             duration: NewMotion.normal,
             switchInCurve: NewMotion.curve,
@@ -108,14 +102,15 @@ class _NewSidebarLayoutState extends State<NewSidebarLayout> {
     );
   }
 
+  // Room kept for the page bar (34) and the quote line (~34) plus a margin.
+  static const _clearTop = 34.0 + NewSpace.edge;
+  static const _clearBottom = 40.0 + NewSpace.edge;
+
   Widget _narrow() {
     return Stack(
       children: [
-        // The pages keep the full width, minus the handle.
-        Padding(
-          padding: const EdgeInsets.only(right: _handleWidth),
-          child: widget.child,
-        ),
+        // The pages keep the full width; the small handle floats over them.
+        Positioned.fill(child: widget.child),
         Positioned(
           right: 0,
           top: 0,
@@ -421,7 +416,11 @@ class _NavItem extends StatelessWidget {
                   margin: const EdgeInsets.symmetric(horizontal: 12),
                   height: 36,
                   decoration: BoxDecoration(
-                    color: hovered ? NewColors.hover : Colors.transparent,
+                    color: active
+                        ? NewColors.accentSoft
+                        : hovered
+                        ? NewColors.hover
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(NewRadii.md),
                   ),
                   child: Row(

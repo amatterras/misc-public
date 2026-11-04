@@ -82,6 +82,48 @@ class _NewArchivePageState extends State<NewArchivePage> {
     super.dispose();
   }
 
+  // ── saving a link in one tap ───────────────────────────────────────────
+
+  /// Saves the link on the clipboard, filed in [folderId] (none: Unfiled).
+  /// The save is durable at once with the host as its title; the library's own
+  /// background job then fills in the page title and preview, so nothing
+  /// waits on the network and it works offline. A link that is already saved
+  /// is not saved twice (it is filed in this folder instead).
+  Future<void> _pasteLink({String? folderId}) async {
+    final clip = await s.capture.readClipboard();
+    final url = clip.url;
+    if (url == null) {
+      s.showToast('No link on the clipboard. Copy one, then tap again.');
+      return;
+    }
+    final canonical = LibraryRepository.canonicalizeUrl(url);
+    if (canonical == null) {
+      s.showToast('That link cannot be saved (only public web links).');
+      return;
+    }
+    final host = Uri.parse(canonical).host;
+    final folder = folderId == null ? null : ws.librarySpaces[folderId]?.name;
+    final existing = repo.objects
+        .where((o) => o.canonicalUrl == canonical && !o.deleted)
+        .firstOrNull;
+    if (existing != null) {
+      if (folderId != null) await repo.addToRegularSpace(folderId, existing.id);
+      s.showToast(
+        folder == null
+            ? '$host is already in your Archive.'
+            : '$host is already in your Archive, now also in $folder.',
+      );
+      return;
+    }
+    await repo.save(
+      type: LibraryObjectType.website,
+      sourceUrl: url,
+      title: host,
+      spaceId: folderId,
+    );
+    s.showToast(folder == null ? 'Saved $host.' : 'Saved $host to $folder.');
+  }
+
   // ── folder actions (existing records, additive fields) ─────────────────
 
   Future<void> _newFolder({String? parentId}) async {
@@ -406,6 +448,13 @@ class _NewArchivePageState extends State<NewArchivePage> {
           title: 'Archive',
           actions: [
             NewHeaderButton(
+              key: const ValueKey('archive-paste-link'),
+              icon: Icons.add_link,
+              label: 'Paste link',
+              filled: true,
+              onPressed: _pasteLink,
+            ),
+            NewHeaderButton(
               key: const ValueKey('archive-whole-look'),
               icon: Icons.grid_view_rounded,
               label: 'Whole Look',
@@ -703,6 +752,13 @@ class _NewArchivePageState extends State<NewArchivePage> {
           ),
           NewPill('${c.total}'),
           IconButton(
+            key: const ValueKey('archive-paste-link'),
+            tooltip: 'Paste the link on the clipboard into this folder',
+            icon: Icon(Icons.add_link, color: NewColors.accent),
+            onPressed: () =>
+                _pasteLink(folderId: c.space == null ? null : c.id),
+          ),
+          IconButton(
             key: const ValueKey('archive-select'),
             tooltip: _selectMode ? 'Done selecting' : 'Select',
             icon: Icon(
@@ -921,7 +977,9 @@ class _CollectionCard extends StatelessWidget {
     final folder = c.color.color;
     final base = c.virtual
         ? NewColors.surfaceSecondary
-        : Color.lerp(NewColors.surface, folder, light ? 0.5 : 0.3)!;
+        // Light: a gentle wash of the folder colour (the saturated colour is
+        // kept for the border and the count), dark: a deeper tint.
+        : Color.lerp(NewColors.surface, folder, light ? 0.22 : 0.3)!;
     final fg = contrastOn(base);
     final shown = c.items.take(ArchiveCollection.visibleCount).toList();
     final hidden = c.hidden;
@@ -933,14 +991,8 @@ class _CollectionCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: base,
           borderRadius: BorderRadius.circular(NewRadii.lg + 2),
-          border: Border.all(color: folder.withValues(alpha: 0.55)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: light ? 0.08 : 0.3),
-              blurRadius: 14,
-              offset: const Offset(0, -2),
-            ),
-          ],
+          border: Border.all(color: folder.withValues(alpha: light ? 0.4 : 0.55)),
+          boxShadow: NewShadows.card,
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(NewRadii.lg + 2),
@@ -959,7 +1011,7 @@ class _CollectionCard extends StatelessWidget {
                         base,
                         light ? Colors.white : folder,
                         light
-                            ? 0.35 + 0.1 * (4 - k) / 3
+                            ? 0.55 + 0.1 * (4 - k) / 3
                             : 0.18 + 0.05 * (4 - k),
                       ),
                       borderRadius: BorderRadius.circular(NewRadii.md),

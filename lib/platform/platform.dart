@@ -33,6 +33,13 @@ FutureOr<List<String>> pickDocumentFiles() => Platform.isIOS
     ? win.pickDocumentFiles()
     : const <String>[];
 
+/// Lets the user choose a `.theappbackup` file to import.
+FutureOr<List<String>> pickBackupFile() => Platform.isIOS
+    ? IosBridge.instance.pickBackupFiles()
+    : Platform.isWindows
+    ? win.pickBackupFiles()
+    : const <String>[];
+
 /// Asks where to save a file (Windows "Save as"); null if cancelled.
 /// Elsewhere there is no such dialog: callers save to the exports folder
 /// and offer the share sheet (iPhone/iPad).

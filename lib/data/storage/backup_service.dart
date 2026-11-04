@@ -3,8 +3,10 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../../app/build_info.dart';
 import '../../platform/file_protection.dart';
 import '../../platform/windows_native.dart' as win;
+import 'backup_file.dart';
 import 'storage_encryption.dart';
 
 /// Point-in-time copies of all records under
@@ -273,6 +275,7 @@ class BackupService {
         'format': manifestFormat,
         'formatVersion': manifestFormatVersion,
         'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'appBuild': appBuild,
         'reason': reason,
         'schemas': schemaVersions,
         'includesAttachments':
@@ -379,7 +382,14 @@ class BackupService {
   /// Makes a daily automatic backup of the records, and once a week one
   /// that also holds photos and PDFs (so a copy of everything exists even
   /// if the attachments folder is lost).
-  Future<void> automaticBackup({DateTime? now}) async {
+  ///
+  /// [every] is how often the records-only backup is made between the weekly
+  /// full ones (default: each day; Settings → Data & Storage can choose a
+  /// week). The weekly full backup is made either way.
+  Future<void> automaticBackup({
+    DateTime? now,
+    Duration every = const Duration(days: 1),
+  }) async {
     final at = now ?? DateTime.now();
     final own = await _listIn(backupsDir);
     final fulls = own.where((d) => _isReason(d, 'auto-full'));
@@ -387,6 +397,16 @@ class BackupService {
     if (!fulls.any((d) => _name(d).compareTo(weekAgo) > 0)) {
       await snapshot('auto-full', includeAttachments: true, now: at);
       return; // it holds today's records too
+    }
+    if (every > const Duration(days: 1)) {
+      final since = _stamp(at.subtract(every));
+      final recent = own.any(
+        (d) =>
+            (_isReason(d, 'auto') || _isReason(d, 'auto-full')) &&
+            _name(d).compareTo(since) > 0,
+      );
+      if (!recent) await snapshot('auto', now: at);
+      return;
     }
     final today = _stamp(at).substring(0, 8);
     final hasToday = own.any(
@@ -707,6 +727,95 @@ class BackupService {
   String _name(Directory d) =>
       d.uri.pathSegments.where((s) => s.isNotEmpty).last;
 
+  // ------------------------------------------------------- backup files --
+
+  /// Makes a complete backup (records, photos, PDFs), checks it, and packs it
+  /// into one `.theappbackup` file at [out]. The file is the backup: the
+  /// temporary backup folder it was made from is removed again. [out] is
+  /// replaced only when the new file is complete.
+  Future<File> exportFile(File out, {DateTime? now}) async {
+    final backup = await snapshot(
+      'export',
+      includeAttachments: true,
+      now: now,
+    );
+    try {
+      if (!await verify(backup)) {
+        throw const FileSystemException(
+          'The data changed while the backup was made; try again',
+        );
+      }
+      final problems = await checkManifest(backup);
+      if (problems.isNotEmpty) {
+        throw FileSystemException('The backup failed its check: ${problems.first}');
+      }
+      final file = await BackupFile.pack(backup, out);
+      if (!await BackupFile.looksLikeBackup(file)) {
+        await file.delete();
+        throw const FileSystemException('The exported file could not be read back');
+      }
+      return file;
+    } finally {
+      if (await backup.exists()) await backup.delete(recursive: true);
+    }
+  }
+
+  /// Adds the backup inside [file] (a `.theappbackup`) to the list of
+  /// backups, after checking every file against its manifest. Live data is
+  /// not touched: restoring it is a separate, confirmed step ([restore]).
+  /// Throws if the file is not a THEapp backup, is incomplete, or fails its
+  /// check; nothing is added then.
+  Future<Directory> importFile(File file, {DateTime? now}) async {
+    final name = '${_stamp(now ?? DateTime.now())}-imported';
+    var target = Directory('${backupsDir.path}$_sep$name');
+    for (var n = 1; await target.exists(); n++) {
+      target = Directory('${backupsDir.path}$_sep$name-$n');
+    }
+    final partial = Directory(
+      '${backupsDir.path}$_sep$partialPrefix${_name(target)}',
+    );
+    try {
+      if (await partial.exists()) await partial.delete(recursive: true);
+      await partial.create(recursive: true);
+      await BackupFile.unpack(file, partial);
+      final problems = await checkManifest(partial);
+      if (problems.isNotEmpty) {
+        throw BackupFileException(
+          'The backup file failed its check (${problems.first}); nothing was '
+          'added.',
+        );
+      }
+      final done = await partial.rename(target.path);
+      await FileProtection.protect([done.path], tree: true);
+      return done;
+    } catch (_) {
+      if (await partial.exists()) await partial.delete(recursive: true);
+      rethrow;
+    }
+  }
+
+  /// How much room each kind of data takes, in bytes.
+  Future<({int records, int attachments, int backups})> usage() async {
+    Future<int> size(Directory d) async {
+      if (!await d.exists()) return 0;
+      var total = 0;
+      await for (final e in d.list(recursive: true)) {
+        if (e is File) total += await e.length();
+      }
+      return total;
+    }
+
+    var records = 0;
+    for (final name in _sources) {
+      records += await size(Directory('${root.path}$_sep$name'));
+    }
+    return (
+      records: records,
+      attachments: await size(Directory('${root.path}$_sep$_attachments')),
+      backups: await size(backupsDir),
+    );
+  }
+
   /// Backups that are never removed automatically, by reason (the end of the
   /// folder name): the state before the first sync with a hub.
   static const protectedReasons = {
@@ -802,23 +911,47 @@ class BackupService {
       '${root.path}$_sep.restore-${DateTime.now().millisecondsSinceEpoch}',
     );
     await restoreTo(backup, staging);
-    for (final name in _sources) {
-      final current = Directory('${root.path}$_sep$name');
-      final staged = Directory('${staging.path}$_sep$name');
-      final old = Directory(
-        '${root.path}$_sep.replaced-$name-${DateTime.now().millisecondsSinceEpoch}',
-      );
-      if (await current.exists()) await current.rename(old.path);
-      if (await staged.exists()) {
-        await staged.rename(current.path);
-      } else {
-        await current.create(recursive: true);
+    // Each live folder is moved aside (not deleted) before its replacement
+    // goes in, and the moved-aside folders are only deleted once every swap
+    // succeeded. If anything fails part-way, they are put back, so a failed
+    // restore leaves the data as it was.
+    final swapped = <(Directory current, Directory old)>[];
+    try {
+      for (final name in _sources) {
+        final current = Directory('${root.path}$_sep$name');
+        final staged = Directory('${staging.path}$_sep$name');
+        final old = Directory(
+          '${root.path}$_sep.replaced-$name-${DateTime.now().millisecondsSinceEpoch}',
+        );
+        if (await current.exists()) await current.rename(old.path);
+        swapped.add((current, old));
+        if (await staged.exists()) {
+          await staged.rename(current.path);
+        } else {
+          await current.create(recursive: true);
+        }
+        // Trash folders are not in backups: keep them (e.g. deleted notes'
+        // handwriting, which "Recently deleted" can still bring back).
+        await _keepTrash(old, current);
+        // This device's keys stay (backups never hold them).
+        await _keepSecrets(old, current);
       }
-      // Trash folders are not in backups: keep them (e.g. deleted notes'
-      // handwriting, which "Recently deleted" can still bring back).
-      await _keepTrash(old, current);
-      // This device's keys stay (backups never hold them).
-      await _keepSecrets(old, current);
+    } catch (_) {
+      for (final (current, old) in swapped.reversed) {
+        try {
+          if (!await old.exists()) continue;
+          if (await current.exists()) {
+            await current.rename('${current.path}.failed-restore');
+          }
+          await old.rename(current.path);
+        } catch (_) {
+          // The moved-aside folder stays on disk next to the data folder.
+        }
+      }
+      if (await staging.exists()) await staging.delete(recursive: true);
+      rethrow;
+    }
+    for (final (_, old) in swapped) {
       if (await old.exists()) await old.delete(recursive: true);
     }
     // Forget what the restored data last synced, so a paired hub treats the

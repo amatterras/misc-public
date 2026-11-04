@@ -401,7 +401,9 @@ class AppState extends ChangeNotifier {
     workspace.backups.copiesDir ??= backupCopiesFolder();
     step('Daily backup');
     try {
-      await workspace.backups.automaticBackup();
+      if (autoBackupEnabled) {
+        await workspace.backups.automaticBackup(every: autoBackupEvery);
+      }
     } catch (e, s) {
       AppLog.error('Automatic backup failed', e, s);
     }
@@ -570,6 +572,7 @@ class AppState extends ChangeNotifier {
   /// A frequent backup of the records, only if something changed (the
   /// first one after start always runs). Checked before it counts.
   Future<bool> _backupTick() async {
+    if (!autoBackupEnabled) return false;
     final pending = _changesSinceBackup;
     final job = maintenance?.job('backup');
     if (pending == 0 && job?.lastSuccess != null) return false;
@@ -728,6 +731,35 @@ class AppState extends ChangeNotifier {
     } on FileSystemException {
       return null;
     }
+  }
+
+  // Automatic backups (Settings → Data & Storage). Backups made before a
+  // data upgrade or a restore are separate and always happen.
+
+  bool get autoBackupEnabled => settings.get<bool>('autoBackup') ?? true;
+
+  /// 'daily' (default) or 'weekly'.
+  String get autoBackupFrequency =>
+      settings.get<String>('autoBackupFrequency') ?? 'daily';
+
+  Duration get autoBackupEvery => autoBackupFrequency == 'weekly'
+      ? const Duration(days: 7)
+      : const Duration(days: 1);
+
+  // The switch shows the new value at once; the file write follows.
+  Future<void> setAutoBackup(bool on) {
+    final write = settings.set('autoBackup', on);
+    notifyListeners();
+    return write;
+  }
+
+  Future<void> setAutoBackupFrequency(String frequency) {
+    final write = settings.set(
+      'autoBackupFrequency',
+      frequency == 'weekly' ? 'weekly' : 'daily',
+    );
+    notifyListeners();
+    return write;
   }
 
   /// Makes a backup of everything (records, photos, PDFs) and saves a

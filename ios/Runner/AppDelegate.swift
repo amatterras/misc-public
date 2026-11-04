@@ -141,7 +141,7 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     case "scheduleReminders":
       scheduleReminders(call.arguments as? [[String: Any]] ?? [], result)
     case "pickDocuments":
-      pickDocuments(result)
+      pickDocuments(call.arguments as? String, result)
     case "openDocument":
       openDocument(call.arguments as? String, result)
     case "pickImages":
@@ -643,14 +643,17 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
 
   // MARK: PDF documents (document picker + Quick Look; no permission needed)
 
-  private func pickDocuments(_ result: @escaping FlutterResult) {
+  /// [kind] "backup": a THEapp backup file (any file type is offered, the
+  /// app checks the contents); otherwise PDFs.
+  private func pickDocuments(_ kind: String?, _ result: @escaping FlutterResult) {
     guard documentResult == nil, let top = topViewController() else {
       result([String]())
       return
     }
     // asCopy: the app receives its own copies in its sandbox.
-    let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.pdf], asCopy: true)
-    picker.allowsMultipleSelection = true
+    let picker = UIDocumentPickerViewController(
+      forOpeningContentTypes: kind == "backup" ? [.data] : [.pdf], asCopy: true)
+    picker.allowsMultipleSelection = kind != "backup"
     picker.delegate = self
     documentResult = result
     top.present(picker, animated: true)

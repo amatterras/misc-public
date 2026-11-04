@@ -311,6 +311,12 @@ List<String> pickImageFiles() => _pickFiles(
 List<String> pickDocumentFiles() =>
     _pickFiles('PDF documents\u0000*.pdf\u0000\u0000', 'Add PDFs to THEapp');
 
+/// The same dialog for a THEapp backup file.
+List<String> pickBackupFiles() => _pickFiles(
+  'THEapp backups\u0000*.theappbackup\u0000\u0000',
+  'Import a THEapp backup',
+);
+
 /// The same dialog for calendar files.
 List<String> pickCalendarFiles() => _pickFiles(
   'Calendar files\u0000*.ics\u0000\u0000',

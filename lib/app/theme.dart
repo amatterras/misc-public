@@ -196,6 +196,8 @@ abstract final class Space {
 
 ThemeData buildAppTheme({Brightness brightness = Brightness.dark}) {
   final previousMode = AppColors.mode;
+  // New interface: rounder dialogs, menus and fields.
+  final fine = AppColors.newDesign;
   AppColors.mode = brightness == Brightness.light
       ? ThemeMode.light
       : ThemeMode.dark;
@@ -239,21 +241,26 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.dark}) {
       waitDuration: Duration(milliseconds: 400),
       decoration: BoxDecoration(
         color: AppColors.cardRaised,
-        borderRadius: BorderRadius.all(Radius.circular(6)),
+        borderRadius: BorderRadius.all(Radius.circular(fine ? 10 : 6)),
       ),
       textStyle: TextStyle(color: AppColors.text, fontSize: 12),
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: AppColors.card,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(12)),
+        borderRadius: BorderRadius.all(Radius.circular(fine ? 22 : 12)),
         side: BorderSide(color: AppColors.border),
       ),
     ),
     popupMenuTheme: PopupMenuThemeData(
-      color: AppColors.cardRaised,
+      // New: white (light) / raised (dark) menus with a soft shadow.
+      color: fine && AppColors.light ? AppColors.card : AppColors.cardRaised,
+      surfaceTintColor: Colors.transparent,
+      elevation: fine ? 8 : null,
+      shadowColor: fine ? const Color(0x331C1A27) : null,
       shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        borderRadius: BorderRadius.all(Radius.circular(fine ? 14 : 8)),
         side: BorderSide(color: AppColors.border),
       ),
       textStyle: TextStyle(color: AppColors.text, fontSize: 13),
@@ -261,15 +268,20 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.dark}) {
     inputDecorationTheme: InputDecorationTheme(
       isDense: true,
       filled: true,
-      fillColor: AppColors.background,
+      fillColor: fine && AppColors.light
+          ? AppColors.cardRaised.withValues(alpha: 0.5)
+          : AppColors.background,
       border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(fine ? 12 : 4),
         borderSide: BorderSide(color: AppColors.border),
       ),
       enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(fine ? 12 : 4),
         borderSide: BorderSide(color: AppColors.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: AppColors.textMuted),
+        borderRadius: BorderRadius.circular(fine ? 12 : 4),
+        borderSide: BorderSide(color: fine ? AppColors.accent : AppColors.textMuted),
       ),
     ),
     textSelectionTheme: TextSelectionThemeData(
