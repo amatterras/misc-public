@@ -12,9 +12,11 @@
 //  originals are not touched); each request's name is a hash of its
 //  content, so a share the system delivers twice is stored once.
 //
-//  Needs the App Group group.com.theapp.shared on this target and Runner
-//  (paid Apple Developer Program). Without it nothing is saved and the
-//  sheet says so. Compiled by the cloud build; not run on a device yet.
+//  Needs an App Group shared with Runner. Which name that has depends on how
+//  the install was signed (the declared group.com.theapp.shared with the
+//  Developer Program, a sideloader's own name otherwise); AppGroup.swift finds
+//  it. Without any, nothing is saved and the sheet says so, with what was
+//  tried. Compiled by the cloud build; not run on a device yet.
 //
 
 import CryptoKit
@@ -22,7 +24,6 @@ import UIKit
 import UniformTypeIdentifiers
 
 class ShareViewController: UIViewController {
-  private let appGroupIdentifier = "group.com.theapp.shared"
   private let maxFileBytes = 100 * 1024 * 1024
   private let maxTextChars = 200_000
   private var saved = 0
@@ -44,9 +45,16 @@ class ShareViewController: UIViewController {
       label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
       label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
       label.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
+      label.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
     ])
     if container == nil {
-      finish(message: "misc. cannot receive shared items on this install (App Group missing).")
+      // Nothing is faked: the error stays, now with what was asked for, so
+      // the cause (signing, not code) can be read off the screen.
+      NSLog("ShareExtension: \(AppGroup.resolution.summary)")
+      finish(
+        message: "misc. cannot receive shared items on this install (App Group missing).\n\n"
+          + AppGroup.resolution.summary,
+        after: 6)
       return
     }
     processSharedContent()
@@ -138,18 +146,17 @@ class ShareViewController: UIViewController {
     }
   }
 
-  private func finish(message: String) {
+  private func finish(message: String, after delay: Double = 0.8) {
     DispatchQueue.main.async {
       self.label.text = message
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
         self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
       }
     }
   }
 
-  private var container: URL? {
-    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier)
-  }
+  /// The App Group folder this install really has (see AppGroup.swift).
+  private var container: URL? { AppGroup.container }
 
   private static func hash(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined().prefix(32).description

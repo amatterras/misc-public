@@ -28,7 +28,7 @@ files (e.g. PDFs) are saved into the **Archive**.
   the App Group, or the import on a device is verified.
 
 ## What is still needed (nothing here is set up yet)
-1. **Apple Developer Program membership (paid, $99/year).** Free Apple IDs cannot use
+1. **For the route that always works: Apple Developer Program membership (paid, $99/year).** Free Apple IDs cannot use
    App Groups.
 2. In the Apple Developer portal, register the App Group **`group.com.theapp.shared`**.
 3. Turn on the **App Groups** capability, with that group, for all three App IDs:
@@ -45,9 +45,41 @@ files (e.g. PDFs) are saved into the **Archive**.
    `Runner.entitlements`, `TheAppWidget.entitlements`, `ShareExtension.entitlements`
    and the Swift files `AppDelegate.swift`, `TheAppWidget.swift`, `ShareViewController.swift`).
 
-## What happens without it (the free route)
-With the unsigned/ad-hoc IPA and a free Apple ID, the App Group does not exist at
-runtime: `containerURL(forSecurityApplicationGroupIdentifier:)` is nil, the extension
-shows "misc. cannot receive shared items on this install (App Group missing)" and
-saves nothing, and the app has no shared folder to read. Whether a sideloader keeps
-the entitlements is not verified. Use the free iOS Shortcut route in `../README_IOS.md`.
+## The App Group name depends on how the install was signed (2026-11-05)
+The project declares `group.com.theapp.shared` in all three `.entitlements`
+files, and that is the group a build signed with the Developer Program has
+(`ios-signed`). A free-Apple-ID sideloader does **not** keep it. Read from the
+source of `isideload` 0.3.7 (the signing library inside iLoader): it ignores the
+group in the IPA, registers `group.<new bundle id>.<team id>` instead (the bundle
+id also gets `.<team id>` appended) and signs the app and its extensions with
+that. The Swift code used to ask for the fixed name, the system answered "no
+such group", and the extension showed "App Group missing" although the install
+did have an App Group.
+
+Fix: `ios/Shared/AppGroup.swift` is compiled into Runner, ShareExtension and
+TheAppWidget. It asks the system, in a fixed order, for the declared name, the
+names a sideloader wrote into `Info.plist` (`ALTAppGroups`), the groups in the
+embedded provisioning profile, `group.<host bundle id>` and the declared name
+plus the team id, and uses the first the system accepts (the system returns
+nothing for a group the signature does not grant). All three targets run the
+same code, so they agree on one folder. If none is accepted nothing is faked:
+the extension still says "App Group missing" and now lists the names it asked
+for; the app writes the same line to its log ("Share inbox: ...").
+
+The cloud build now fails if the App Group entitlement is missing from, or
+differs between, the app and either extension in the packed IPA, and if the
+resolver is not in all three binaries (`codemagic.yaml`, step "Verify the App
+Group ...").
+
+**Still not verified (needs a device):** that iLoader's signature really grants
+the group to the *extension* (isideload embeds a provisioning profile only in
+the main app, and the same entitlements are used for all bundles; iOS may refuse
+an extension whose profile is missing). If the sheet still says "App Group
+missing" after this fix, the line under it shows which names were asked for and
+whether the host has a profile; send it. The route that always works is the
+`ios-signed` workflow (paid Developer Program).
+
+## What happens when no sideloader route grants a group
+The extension shows "misc. cannot receive shared items on this install (App Group
+missing)" with the names it asked for, and saves nothing; the app has no shared
+folder to read. The free iOS Shortcut route in `../README_IOS.md` still works.

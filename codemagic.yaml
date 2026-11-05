@@ -98,6 +98,28 @@ workflows:
           cd Signed
           zip -qry ../THEapp-with-widgets.ipa Payload
           ls -la ../THEapp-with-widgets.ipa
+      - name: Verify the App Group is inside the IPA (app AND both extensions)
+        script: |
+          set -e
+          # Fails the build if any of the three targets lacks the declared
+          # App Group, or if they disagree. Nothing is skipped: a missing
+          # entitlement here is exactly what shows up on the device as
+          # "App Group missing".
+          cd build/ios/iphoneos
+          rm -rf Verify && mkdir Verify
+          unzip -q THEapp-with-widgets.ipa -d Verify
+          APP=Verify/Payload/Runner.app
+          WANT=group.com.theapp.shared
+          for B in "$APP" "$APP/PlugIns/ShareExtension.appex" "$APP/PlugIns/TheAppWidget.appex"; do
+            codesign -d --entitlements :- "$B" > /tmp/ent.plist 2>/dev/null
+            GOT=$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.application-groups:0" /tmp/ent.plist)
+            echo "$B -> $GOT"
+            test "$GOT" = "$WANT" || { echo "App Group missing or different in $B"; exit 1; }
+          done
+          # The shared resolver must be compiled into all three binaries.
+          for B in "$APP/Runner" "$APP/PlugIns/ShareExtension.appex/ShareExtension" "$APP/PlugIns/TheAppWidget.appex/TheAppWidget"; do
+            strings -a "$B" | grep -q "THEAPP-APPGROUP-RESOLVER-1" || { echo "AppGroup resolver not found in $B"; exit 1; }
+          done
     artifacts:
       - build/ios/iphoneos/THEapp-unsigned.ipa
       - build/ios/iphoneos/THEapp-with-widgets.ipa
@@ -191,6 +213,28 @@ workflows:
           cd Signed
           zip -qry ../THEapp-with-widgets.ipa Payload
           ls -la ../THEapp-with-widgets.ipa
+      - name: Verify the App Group is inside the IPA (app AND both extensions)
+        script: |
+          set -e
+          # Fails the build if any of the three targets lacks the declared
+          # App Group, or if they disagree. Nothing is skipped: a missing
+          # entitlement here is exactly what shows up on the device as
+          # "App Group missing".
+          cd build/ios/iphoneos
+          rm -rf Verify && mkdir Verify
+          unzip -q THEapp-with-widgets.ipa -d Verify
+          APP=Verify/Payload/Runner.app
+          WANT=group.com.theapp.shared
+          for B in "$APP" "$APP/PlugIns/ShareExtension.appex" "$APP/PlugIns/TheAppWidget.appex"; do
+            codesign -d --entitlements :- "$B" > /tmp/ent.plist 2>/dev/null
+            GOT=$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.application-groups:0" /tmp/ent.plist)
+            echo "$B -> $GOT"
+            test "$GOT" = "$WANT" || { echo "App Group missing or different in $B"; exit 1; }
+          done
+          # The shared resolver must be compiled into all three binaries.
+          for B in "$APP/Runner" "$APP/PlugIns/ShareExtension.appex/ShareExtension" "$APP/PlugIns/TheAppWidget.appex/TheAppWidget"; do
+            strings -a "$B" | grep -q "THEAPP-APPGROUP-RESOLVER-1" || { echo "AppGroup resolver not found in $B"; exit 1; }
+          done
     artifacts:
       - build/ios/iphoneos/THEapp-unsigned.ipa
       - build/ios/iphoneos/THEapp-with-widgets.ipa
@@ -259,6 +303,28 @@ workflows:
           cd Signed
           zip -qry ../THEapp-iPhone-with-widgets.ipa Payload
           ls -la ../THEapp-iPhone-with-widgets.ipa
+      - name: Verify the App Group is inside the IPA (app AND both extensions)
+        script: |
+          set -e
+          # Fails the build if any of the three targets lacks the declared
+          # App Group, or if they disagree. Nothing is skipped: a missing
+          # entitlement here is exactly what shows up on the device as
+          # "App Group missing".
+          cd build/ios/iphoneos
+          rm -rf Verify && mkdir Verify
+          unzip -q THEapp-iPhone-with-widgets.ipa -d Verify
+          APP=Verify/Payload/Runner.app
+          WANT=group.com.theapp.shared
+          for B in "$APP" "$APP/PlugIns/ShareExtension.appex" "$APP/PlugIns/TheAppWidget.appex"; do
+            codesign -d --entitlements :- "$B" > /tmp/ent.plist 2>/dev/null
+            GOT=$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.application-groups:0" /tmp/ent.plist)
+            echo "$B -> $GOT"
+            test "$GOT" = "$WANT" || { echo "App Group missing or different in $B"; exit 1; }
+          done
+          # The shared resolver must be compiled into all three binaries.
+          for B in "$APP/Runner" "$APP/PlugIns/ShareExtension.appex/ShareExtension" "$APP/PlugIns/TheAppWidget.appex/TheAppWidget"; do
+            strings -a "$B" | grep -q "THEAPP-APPGROUP-RESOLVER-1" || { echo "AppGroup resolver not found in $B"; exit 1; }
+          done
     artifacts:
       - build/ios/iphoneos/THEapp-iPhone-unsigned.ipa
       - build/ios/iphoneos/THEapp-iPhone-with-widgets.ipa
@@ -311,6 +377,25 @@ workflows:
             | tee /tmp/flutter_build_ipa.log
           test "${PIPESTATUS[0]}" -eq 0
           ls -la build/ios/ipa/*.ipa
+      - name: Verify the App Group in the signed IPA (app AND both extensions)
+        script: |
+          set -e
+          # Each of the three targets must carry the group in its signature
+          # AND in its provisioning profile; otherwise the device would show
+          # "App Group missing". The build fails here rather than later.
+          IPA=$(ls build/ios/ipa/*.ipa | head -1)
+          rm -rf /tmp/verify && mkdir /tmp/verify
+          unzip -q "$IPA" -d /tmp/verify
+          APP=/tmp/verify/Payload/Runner.app
+          WANT=group.com.theapp.shared
+          for B in "$APP" "$APP/PlugIns/ShareExtension.appex" "$APP/PlugIns/TheAppWidget.appex"; do
+            codesign -d --entitlements :- "$B" > /tmp/ent.plist 2>/dev/null
+            SIGNED=$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.application-groups:0" /tmp/ent.plist)
+            security cms -D -i "$B/embedded.mobileprovision" > /tmp/prov.plist
+            PROFILE=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.security.application-groups:0" /tmp/prov.plist)
+            echo "$B  signature=$SIGNED  profile=$PROFILE"
+            test "$SIGNED" = "$WANT" && test "$PROFILE" = "$WANT" || { echo "App Group missing or different in $B"; exit 1; }
+          done
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/flutter_build_ipa.log

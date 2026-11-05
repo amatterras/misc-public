@@ -10,8 +10,6 @@
 import SwiftUI
 import WidgetKit
 
-private let appGroup = "group.com.theapp.shared"
-
 // MARK: snapshot
 
 struct SnapshotItem: Decodable, Hashable {
@@ -39,8 +37,7 @@ struct Snapshot: Decodable {
 
   static func load() -> Snapshot? {
     guard
-      let folder = FileManager.default.containerURL(
-        forSecurityApplicationGroupIdentifier: appGroup),
+      let folder = AppGroup.container,
       let data = try? Data(contentsOf: folder.appendingPathComponent("widget_snapshot.json")),
       let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
       snapshot.version == 1

@@ -20,6 +20,9 @@
 		D1A7E0000000000000000006 /* TheAppWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D1A7E0000000000000000004 /* TheAppWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D1A7E0000000000000000021 /* WidgetReload.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A7E0000000000000000020 /* WidgetReload.swift */; };
 		E5A7E0000000000000000005 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A7E0000000000000000001 /* ShareViewController.swift */; };
+		F6A7E0000000000000000002 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7E0000000000000000001 /* AppGroup.swift */; };
+		F6A7E0000000000000000003 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7E0000000000000000001 /* AppGroup.swift */; };
+		F6A7E0000000000000000004 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7E0000000000000000001 /* AppGroup.swift */; };
 		E5A7E0000000000000000006 /* ShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = E5A7E0000000000000000004 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -97,6 +100,7 @@
 		D1A7E0000000000000000019 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
 		D1A7E0000000000000000020 /* WidgetReload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetReload.swift; sourceTree = "<group>"; };
 		E5A7E0000000000000000001 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		F6A7E0000000000000000001 /* AppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroup.swift; sourceTree = "<group>"; };
 		E5A7E0000000000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E5A7E0000000000000000003 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
 		E5A7E0000000000000000004 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -157,6 +161,7 @@
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				D1A7E0000000000000000015 /* TheAppWidget */,
 				E5A7E0000000000000000015 /* ShareExtension */,
+				F6A7E0000000000000000005 /* Shared */,
 			);
 			sourceTree = "<group>";
 		};
@@ -197,6 +202,14 @@
 				D1A7E0000000000000000003 /* TheAppWidget.entitlements */,
 			);
 			path = TheAppWidget;
+			sourceTree = "<group>";
+		};
+		F6A7E0000000000000000005 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				F6A7E0000000000000000001 /* AppGroup.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		E5A7E0000000000000000015 /* ShareExtension */ = {
@@ -425,6 +438,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				D1A7E0000000000000000021 /* WidgetReload.swift in Sources */,
+				F6A7E0000000000000000002 /* AppGroup.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -433,6 +447,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D1A7E0000000000000000005 /* TheAppWidget.swift in Sources */,
+				F6A7E0000000000000000003 /* AppGroup.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -441,6 +456,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E5A7E0000000000000000005 /* ShareViewController.swift in Sources */,
+				F6A7E0000000000000000004 /* AppGroup.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

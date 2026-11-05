@@ -129,9 +129,16 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
   }
 
   /// Folder the Share Extension writes requests into (the App Group
-  /// container), or null when App Groups are not available — they need the
-  /// paid Apple Developer Program.
+  /// container), or null when this install has no App Group. Which group
+  /// that is depends on how it was signed; the native side finds it.
   Future<String?> sharedContainerPath() => _invoke<String>('sharedContainer');
+
+  /// Which App Group the native side is using and why (or, when there is
+  /// none, which names it asked for), for the log. Null off iOS.
+  Future<String?> sharedContainerSummary() async {
+    final status = await _invoke<Map<Object?, Object?>>('sharedContainerStatus');
+    return status?['summary']?.toString();
+  }
 
   /// The app's own folders as iOS reports them: `applicationSupport` (for
   /// THEapp's data) and `documents` (shown in the Files app). Needed because

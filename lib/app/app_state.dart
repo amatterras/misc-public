@@ -1933,6 +1933,10 @@ class AppState extends ChangeNotifier {
     _pencilTaps ??= ios.pencilDoubleTap.listen(onPencilDoubleTap);
     final shared = await ios.sharedContainerPath();
     _sharedInbox = shared == null ? null : SendToBridge(Directory(shared));
+    final summary = await ios.sharedContainerSummary();
+    if (summary != null) {
+      (shared == null ? AppLog.warn : AppLog.info)('Share inbox: $summary');
+    }
     await importSharedItems();
     await ios.listenForLinks((uri) async {
       if (completeOAuthRedirect(uri)) return; // a calendar sign-in

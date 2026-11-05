@@ -44,9 +44,10 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
 {
   static let shared = TheAppIosBridge()
 
-  /// Only usable with the paid Apple Developer Program; without it the
-  /// container is nil and the app simply has no Share Extension inbox.
-  static let appGroup = "group.com.theapp.shared"
+  /// The App Group folder shared with the Share Extension and the widgets,
+  /// under whatever name this install's signature granted (AppGroup.swift);
+  /// nil when it has none.
+  static var appGroupContainer: URL? { AppGroup.container }
 
   private var channel: FlutterMethodChannel?
   private var dartReady = false
@@ -99,9 +100,14 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       result(pendingLinks)
       pendingLinks = []
     case "sharedContainer":
-      result(
-        FileManager.default
-          .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup)?.path)
+      result(Self.appGroupContainer?.path)
+    case "sharedContainerStatus":
+      let r = AppGroup.resolution
+      result([
+        "identifier": r.identifier ?? "",
+        "source": r.source,
+        "summary": r.summary,
+      ])
     case "openUrl":
       guard let text = call.arguments as? String, let url = URL(string: text),
         ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "")
@@ -566,8 +572,7 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
   /// display-only data; false when there is no App Group to share it in.
   private func writeWidgetSnapshot(_ json: String?) -> Bool {
     guard let data = json?.data(using: .utf8),
-      let folder = FileManager.default.containerURL(
-        forSecurityApplicationGroupIdentifier: Self.appGroup)
+      let folder = Self.appGroupContainer
     else { return false }
     do {
       try data.write(
