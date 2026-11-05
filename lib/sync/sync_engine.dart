@@ -249,6 +249,7 @@ class SyncEngine {
       await _syncKeys(report);
       final state = await loadState();
       await _fillAttachmentHashes();
+      await sweepTransferLeftovers();
       await _push(state, report);
       await _purgeHubBlobs();
       await _pull(state, report);
@@ -707,6 +708,56 @@ class SyncEngine {
   }
 
   bool _attachmentsReconciled = false;
+
+  bool _swept = false;
+
+  /// Removes what interrupted transfers leave behind, once per run: partial
+  /// downloads in `incoming/` untouched for [partialDownloadKeep], and staged
+  /// uploads in `outbox/` that no pending upload refers to (a crash between
+  /// staging and noting it) untouched for a day. A download or upload that is
+  /// still wanted is never removed: a partial file this old is simply fetched
+  /// again, and a pending staged upload is kept as long as it is pending.
+  Future<void> sweepTransferLeftovers({
+    Duration partialDownloadKeep = const Duration(days: 7),
+    Duration strayUploadKeep = const Duration(days: 1),
+    bool force = false,
+  }) async {
+    if (_swept && !force) return;
+    _swept = true;
+    final root = workspace.root.path;
+    final sep = Platform.pathSeparator;
+    final now = DateTime.now();
+    Future<void> sweep(
+      String folder,
+      String suffix,
+      Duration older,
+      bool Function(String name) keep,
+    ) async {
+      final dir = Directory('$root$sep$folder');
+      if (!await dir.exists()) return;
+      await for (final f in dir.list()) {
+        if (f is! File) continue;
+        final name = f.uri.pathSegments.last;
+        if (!name.endsWith(suffix) || keep(name)) continue;
+        try {
+          if (now.difference(await f.lastModified()) > older) {
+            await f.delete();
+          }
+        } on FileSystemException {
+          // Busy or already gone: nothing to do.
+        }
+      }
+    }
+
+    final pending = {...(await _pendingTable()).values};
+    await sweep('incoming', '.dl', partialDownloadKeep, (_) => false);
+    await sweep(
+      'outbox',
+      '.up',
+      strayUploadKeep,
+      (name) => pending.contains(name.substring(0, name.length - 3)),
+    );
+  }
 
   /// Once per session: makes sure the hub has every photo this device has
   /// (e.g. after the hub lost its attachments folder), uploading any that

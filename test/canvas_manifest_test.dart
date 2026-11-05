@@ -424,6 +424,37 @@ void main() {
       }
     });
 
+    test('a canvas file restored from a backup copy (the copy keeps its older '
+        'modification time) is noticed', () async {
+      await rig.save('c1', items: {'a': 'version one'});
+      await rig.markSent();
+      await rig.engine.pendingVersions(rig.state);
+      final backup = File('${rig.dir.path}${sep}c1.backup')
+        ..writeAsBytesSync(rig.fileOf('c1').readAsBytesSync());
+      backup.setLastModifiedSync(
+        DateTime.now().subtract(const Duration(days: 3)),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await rig.save('c1', items: {'a': 'version two'}, restamp: {'a'});
+      await rig.markSent();
+      await rig.engine.pendingVersions(rig.state);
+      // The restore: the old bytes are copied over the live file, with the
+      // backup's (older) modification time, behind the app's back.
+      final live = rig.fileOf('c1');
+      backup.copySync(live.path);
+      live.setLastModifiedSync(backup.lastModifiedSync());
+      File('${live.path}.bak').existsSync()
+          ? File('${live.path}.bak').deleteSync()
+          : null;
+      await expectEquivalent('restored from a backup');
+      final pending = await rig.engine.pendingVersions(rig.state);
+      expect(
+        pending.keys,
+        contains('canvas_items/c1/a'),
+        reason: 'the restored (older) revision differs from what the hub has',
+      );
+    });
+
     test('a canvas moved to the trash and brought back', () async {
       await rig.save('c1', items: {'a': 'one'});
       await rig.markSent();
