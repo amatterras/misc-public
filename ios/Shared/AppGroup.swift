@@ -137,6 +137,9 @@ enum AppGroup {
           hostBundleId: hostId, hasProfile: profile != nil)
       }
     }
+    // Nothing the system accepts: say so in the log of whichever target this
+    // is (the app, the Share Extension or a widget), with what was asked for.
+    NSLog("\(tag) no App Group; asked for: \(tried.joined(separator: ", ")); app: \(hostId)")
     return Resolution(
       identifier: nil, container: nil, source: "none", tried: tried,
       hostBundleId: hostId, hasProfile: profile != nil)
