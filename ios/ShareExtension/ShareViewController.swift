@@ -152,10 +152,27 @@ final class ShareViewController: UIViewController {
       provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] value, _ in
         let url = (value as? URL) ?? (value as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
           ?? (value as? String).flatMap(URL.init(string:))
-        guard let self, let url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""), !url.host.isEmpty else {
-          completion(nil); return
+        guard let self, let url,
+          ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+          let host = url.host, !host.isEmpty
+        else {
+          completion(nil)
+          return
         }
-        completion(ShareDraft(id: Self.hash(Data(url.absoluteString.utf8)), kind: "url", title: webpageTitle?.isEmpty == false ? webpageTitle! : url.host, value: url.absoluteString, filename: nil, typeIdentifier: UTType.url.identifier, temporary: false, preview: url.absoluteString, thumbnail: nil))
+        let title = webpageTitle.flatMap { $0.isEmpty ? nil : $0 } ?? host
+        completion(
+          ShareDraft(
+            id: Self.hash(Data(url.absoluteString.utf8)),
+            kind: "url",
+            title: title,
+            value: url.absoluteString,
+            filename: nil,
+            typeIdentifier: UTType.url.identifier,
+            temporary: false,
+            preview: url.absoluteString,
+            thumbnail: nil
+          )
+        )
       }
       return
     }
