@@ -168,16 +168,44 @@ class HubServer {
       server._serve(http);
     }
     if (dailyBackups) {
-      unawaited(server._backup());
-      server._backupTimer = Timer.periodic(
-        const Duration(hours: 24),
-        (_) => server._backup(),
-      );
+      unawaited(server._backup().then((_) => server.compactIfNeeded()));
+      server._backupTimer = Timer.periodic(const Duration(hours: 24), (
+        _,
+      ) async {
+        await server._backup();
+        await server.compactIfNeeded();
+      });
     }
     server._log(
       'Hub listening on ${server.listening.join(', ')} (protocol $syncProtocolVersion)',
     );
     return server;
+  }
+
+  /// Rewrites the journal without superseded versions and old
+  /// acknowledgements when that is worth it (see HubStore.shouldCompact), after
+  /// a fresh backup, like the manual `compact`. Devices notice nothing: change
+  /// numbers and the hub id stay. Returns whether it compacted.
+  Future<bool> compactIfNeeded({int? minBytes, double? ratio}) async {
+    try {
+      if (!store.shouldCompact(
+        minBytes: minBytes ?? 16 * 1024 * 1024,
+        ratio: ratio ?? 3,
+      )) {
+        return false;
+      }
+      final before = store.stats.journalBytes;
+      await backups.create(); // never compact without a fresh backup
+      await store.compact();
+      _log(
+        'Journal compacted: ${before ~/ 1024} KB -> '
+        '${store.stats.journalBytes ~/ 1024} KB',
+      );
+      return true;
+    } catch (e) {
+      _log('Compaction FAILED: ${e.runtimeType}');
+      return false;
+    }
   }
 
   Future<void> _backup() async {

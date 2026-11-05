@@ -291,6 +291,31 @@ class HubStore {
   HubStats get stats =>
       HubStats(records: _latest.length, lastSeq: _seq, journalBytes: _length);
 
+  /// Bytes a compaction would keep: the current versions and the
+  /// acknowledgements still inside their retention (older ones are dropped).
+  int get keptBytes {
+    var n = 0;
+    for (final e in _latest.values) {
+      n += e.length + 1;
+    }
+    final cutoff = DateTime.now().toUtc().subtract(ackRetention);
+    for (final ack in _acks.values) {
+      final at = DateTime.tryParse(ack['at'] as String? ?? '');
+      if (at != null && at.isBefore(cutoff)) continue;
+      n += jsonEncode(ack).length + 1;
+    }
+    return n;
+  }
+
+  /// Whether the journal is mostly superseded versions and expired
+  /// acknowledgements, so rewriting it is worth the time: it must be at least
+  /// [minBytes] and more than [ratio] times what a compaction would keep.
+  /// Without this the journal only ever grows (every edit adds a version and
+  /// an acknowledgement) until someone runs `compact` by hand, and the hub
+  /// reads the whole journal at every start.
+  bool shouldCompact({int minBytes = 16 * 1024 * 1024, double ratio = 3}) =>
+      _length >= minBytes && _length > ratio * keptBytes;
+
   static Future<HubStore> open(Directory dir) async {
     final store = HubStore._(dir);
     await dir.create(recursive: true);
