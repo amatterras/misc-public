@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
-import '../../app/interface_version.dart';
 import '../../app/shell.dart';
 import '../../new_ui/new_components.dart';
 import '../../new_ui/new_tokens.dart';
@@ -496,7 +495,6 @@ class _CalendarPageState extends State<CalendarPage> {
     // Short windows (a phone held sideways) get tighter spacing.
     final short = MediaQuery.sizeOf(context).height < 480;
     final gap = short ? Space.xs : Space.md;
-    final isNew = s.interfaceVersion == InterfaceVersion.newDesign;
     final rest = <Widget>[
       ..._overLimitWarning(),
       SizedBox(height: gap),
@@ -535,21 +533,7 @@ class _CalendarPageState extends State<CalendarPage> {
               ),
       ),
     ];
-    if (!isNew) {
-      return Padding(
-        padding: EdgeInsets.fromLTRB(
-          Space.xl,
-          short ? Space.sm : Space.xl,
-          Space.xl,
-          0,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [_header(), ...rest],
-        ),
-      );
-    }
-    // New: the same top section as the Archive (see NewPageHeader), then
+    // The same top section as the Archive (see NewPageHeader), then
     // the very same calendar controls and grid.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -832,105 +816,6 @@ class _CalendarPageState extends State<CalendarPage> {
         ),
       ),
     ];
-  }
-
-  Widget _header() {
-    final start = s.calendarStart;
-    final end = addDays(start, s.calendarDays - 1);
-    final archived = ws.entries.all.where((e) => e.archived).length;
-    // Wraps onto two lines in narrower windows instead of overflowing.
-    return Wrap(
-      alignment: WrapAlignment.spaceBetween,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: Space.md,
-      runSpacing: Space.sm,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Icon(
-                Icons.calendar_today_outlined,
-                size: 18,
-                color: AppColors.textMuted,
-              ),
-            ),
-            const SizedBox(width: Space.md),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Calendar',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                  InkWell(
-                    onTap: _pickRange,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            '${formatShortDate(start)} – ${formatShortDate(end)} ${end.year}  ·  ${s.calendarDays} days',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.edit_calendar_outlined,
-                          size: 14,
-                          color: AppColors.textFaint,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        Wrap(
-          spacing: Space.sm,
-          runSpacing: Space.sm,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            _colorFilter(),
-            OutlinedButton.icon(
-              key: const ValueKey('calendar-tasks-toggle'),
-              onPressed: () => s.setCalendarTasksOpen(!s.calendarTasksOpen),
-              icon: Icon(
-                s.calendarTasksOpen
-                    ? Icons.keyboard_double_arrow_right
-                    : Icons.checklist,
-                size: 16,
-              ),
-              label: Text(s.calendarTasksOpen ? 'Hide tasks' : 'Tasks'),
-            ),
-            FilledButton.icon(
-              onPressed: () => _newEntry(),
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Quick Add'),
-            ),
-            OutlinedButton.icon(
-              onPressed: () => showArchive(context, s),
-              icon: const Icon(Icons.inventory_2_outlined, size: 16),
-              label: Text('Archive  $archived'),
-            ),
-          ],
-        ),
-      ],
-    );
   }
 
   Widget _colorFilter() {

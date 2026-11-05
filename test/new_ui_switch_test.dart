@@ -3,9 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_application_1/app/app_state.dart';
-import 'package:flutter_application_1/app/interface_version.dart';
 import 'package:flutter_application_1/app/shell.dart';
-import 'package:flutter_application_1/app/sidebar.dart';
 import 'package:flutter_application_1/app/top_bar.dart';
 import 'package:flutter_application_1/features/motivation/motivation_service.dart';
 import 'package:flutter_application_1/app/theme.dart';
@@ -13,7 +11,6 @@ import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/new_ui/new_sidebar.dart';
-import 'package:flutter_application_1/new_ui/new_tokens.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -55,72 +52,12 @@ void main() {
     state.dispose();
   }
 
-  test('stored values read as Original unless exactly "new"', () {
-    expect(InterfaceVersion.fromStored(null), InterfaceVersion.original);
-    expect(InterfaceVersion.fromStored('garbage'), InterfaceVersion.original);
-    expect(InterfaceVersion.fromStored(42), InterfaceVersion.original);
-    expect(InterfaceVersion.fromStored('original'), InterfaceVersion.original);
-    expect(InterfaceVersion.fromStored('new'), InterfaceVersion.newDesign);
-    for (final v in InterfaceVersion.values) {
-      expect(InterfaceVersion.fromStored(v.stored), v);
-    }
-  });
-
-  testWidgets('existing installs start on Original and can switch both ways', (
-    tester,
-  ) async {
+  testWidgets('the sidebar navigates, expands and hides', (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final state = makeState();
     await tester.runAsync(state.init);
-    final note = state.workspace.createNote(title: 'Kept note');
-
-    await tester.pumpWidget(TheApp(state: state));
-    await settle(tester);
-    expect(state.interfaceVersion, InterfaceVersion.original);
-    expect(find.byType(Sidebar), findsOneWidget);
-    expect(find.byType(NewSidebar), findsNothing);
-    expect(AppColors.newDesign, isFalse);
-    final originalBackground = AppColors.background;
-
-    final pageBefore = state.page;
-    await tester.runAsync(
-      () => state.setInterfaceVersion(InterfaceVersion.newDesign),
-    );
-    await settle(tester);
-    expect(find.byType(NewSidebar), findsOneWidget);
-    expect(find.byType(Sidebar), findsNothing);
-    // New has its own palette in every module, not Original's.
-    expect(AppColors.newDesign, isTrue);
-    expect(AppColors.accent, NewColors.accent);
-    // Nothing about the user's work changed.
-    expect(state.page, pageBefore);
-    expect(state.workspace.notes[note.id]?.displayTitle, 'Kept note');
-
-    await tester.runAsync(
-      () => state.setInterfaceVersion(InterfaceVersion.original),
-    );
-    await settle(tester);
-    expect(find.byType(Sidebar), findsOneWidget);
-    expect(find.byType(NewSidebar), findsNothing);
-    expect(AppColors.newDesign, isFalse);
-    expect(AppColors.background, originalBackground);
-    expect(state.workspace.notes[note.id]?.displayTitle, 'Kept note');
-    await close(tester, state);
-  });
-
-  testWidgets('the New sidebar uses the same navigation as Original', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final state = makeState();
-    await tester.runAsync(state.init);
-    await tester.runAsync(
-      () => state.setInterfaceVersion(InterfaceVersion.newDesign),
-    );
     await tester.pumpWidget(TheApp(state: state));
     await settle(tester);
 
@@ -142,7 +79,7 @@ void main() {
     expect(item.right, lessThanOrEqualTo(capsule.right - 1));
     expect(item.left, greaterThanOrEqualTo(capsule.left + 1));
 
-    // Same edge as Original's sidebar: the right.
+    // On the right edge.
     expect(
       tester.getCenter(find.byKey(const ValueKey('new-nav-notes'))).dx,
       greaterThan(1280 - 100),
@@ -186,16 +123,13 @@ void main() {
     ('820x1180 light', const Size(820, 1180), 'light'),
     ('844x390 dark', const Size(844, 390), 'dark'),
   ]) {
-    testWidgets('New layout has no overflow at $name', (tester) async {
+    testWidgets('the layout has no overflow at $name', (tester) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final state = makeState();
       await tester.runAsync(state.init);
       await tester.runAsync(() => state.setThemeMode(theme));
-      await tester.runAsync(
-        () => state.setInterfaceVersion(InterfaceVersion.newDesign),
-      );
       await tester.pumpWidget(TheApp(state: state));
       await settle(tester);
       for (final key in ['notes', 'calendar', 'links', 'browser', 'ai']) {
@@ -209,12 +143,7 @@ void main() {
     });
   }
 
-  for (final (label, version, width) in [
-    ('Original', InterfaceVersion.original, 1280.0),
-    ('Original compact', InterfaceVersion.original, 390.0),
-    ('New', InterfaceVersion.newDesign, 1280.0),
-    ('New narrow', InterfaceVersion.newDesign, 390.0),
-  ]) {
+  for (final (label, width) in [('wide', 1280.0), ('narrow', 390.0)]) {
     testWidgets('the greeting sits below the page bar ($label)', (
       tester,
     ) async {
@@ -223,7 +152,6 @@ void main() {
       addTearDown(tester.view.reset);
       final state = makeState();
       await tester.runAsync(state.init);
-      await tester.runAsync(() => state.setInterfaceVersion(version));
       final motivation = MotivationService(nextIndex: (_) => 0)
         ..loadFromSources(quotes, greetings);
       await tester.pumpWidget(
@@ -245,32 +173,4 @@ void main() {
       await close(tester, state);
     });
   }
-
-  testWidgets('the choice survives a restart; Original stays the default', (
-    tester,
-  ) async {
-    final first = makeState();
-    await tester.runAsync(first.init);
-    await tester.runAsync(
-      () => first.setInterfaceVersion(InterfaceVersion.newDesign),
-    );
-    await tester.runAsync(first.flush);
-    first.dispose();
-
-    final second = makeState();
-    await tester.runAsync(second.init);
-    expect(second.interfaceVersion, InterfaceVersion.newDesign);
-    await tester.runAsync(
-      () => second.setInterfaceVersion(InterfaceVersion.original),
-    );
-    await tester.runAsync(second.flush);
-    second.dispose();
-
-    final third = makeState();
-    await tester.runAsync(third.init);
-    expect(third.interfaceVersion, InterfaceVersion.original);
-    await tester.runAsync(third.flush);
-    third.dispose();
-    await tester.pump(const Duration(seconds: 9));
-  });
 }

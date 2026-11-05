@@ -9,7 +9,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_application_1/app/app_state.dart';
-import 'package:flutter_application_1/app/interface_version.dart';
 import 'package:flutter_application_1/app/shell.dart';
 import 'package:flutter_application_1/app/sidebar.dart';
 import 'package:flutter_application_1/app/theme.dart';
@@ -60,7 +59,6 @@ void main() {
   Future<AppState> boot(
     WidgetTester tester, {
     required Size size,
-    InterfaceVersion version = InterfaceVersion.newDesign,
     bool noCanvases = false,
   }) async {
     tester.view.physicalSize = size;
@@ -74,7 +72,6 @@ void main() {
       enableSendTo: false,
     )..capture.fetchPreviews = false;
     await tester.runAsync(state.init);
-    await tester.runAsync(() => state.setInterfaceVersion(version));
     return state;
   }
 
@@ -126,24 +123,6 @@ void main() {
     expect(find.text('Search notes'), findsOneWidget);
     expect(find.text('New'), findsOneWidget);
     expect(tester.takeException(), isNull);
-    await close(tester, s);
-  });
-
-  testWidgets('Original keeps its own Calendar and Notes headers', (
-    tester,
-  ) async {
-    final s = await boot(
-      tester,
-      size: const Size(1280, 900),
-      version: InterfaceVersion.original,
-    );
-    await tester.pumpWidget(TheApp(state: s));
-    await settle(tester);
-    for (final page in [AppPage.calendar, AppPage.notes, AppPage.links]) {
-      s.goTo(page);
-      await settle(tester);
-      expect(find.byType(NewPageHeader), findsNothing, reason: '$page');
-    }
     await close(tester, s);
   });
 
@@ -209,14 +188,9 @@ void main() {
   }
 
   // ── 3. the quote, bottom-right, in both interfaces ──────────────────────
-  for (final (label, version, width) in [
-    ('Original', InterfaceVersion.original, 1280.0),
-    ('New', InterfaceVersion.newDesign, 1280.0),
-    ('Original compact', InterfaceVersion.original, 390.0),
-    ('New narrow', InterfaceVersion.newDesign, 390.0),
-  ]) {
+  for (final (label, width) in [('wide', 1280.0), ('narrow', 390.0)]) {
     testWidgets('the quote sits quietly bottom-right ($label)', (tester) async {
-      final s = await boot(tester, size: Size(width, 844), version: version);
+      final s = await boot(tester, size: Size(width, 844));
       final motivation = MotivationService(nextIndex: (_) => 0)
         ..loadFromSources(quotes, greetings);
       await tester.pumpWidget(
@@ -305,17 +279,8 @@ void main() {
     return int.parse(text.replaceAll('%', ''));
   }
 
-  Future<AppState> openNotePage(
-    WidgetTester tester,
-    Size size,
-    InterfaceVersion version,
-  ) async {
-    final s = await boot(
-      tester,
-      size: size,
-      version: version,
-      noCanvases: true,
-    );
+  Future<AppState> openNotePage(WidgetTester tester, Size size) async {
+    final s = await boot(tester, size: size, noCanvases: true);
     final note = s.workspace.createNote(title: 'Zoom');
     await tester.runAsync(s.flush);
     await tester.pumpWidget(
@@ -336,11 +301,7 @@ void main() {
     tester,
   ) async {
     // A short window: the whole page needs a smaller zoom than Original's 40%.
-    final s = await openNotePage(
-      tester,
-      const Size(1000, 560),
-      InterfaceVersion.newDesign,
-    );
+    final s = await openNotePage(tester, const Size(1000, 560));
     final small = await zoomOutAll(tester);
     expect(small, lessThan(40), reason: 'whole page fits in a short window');
     expect(small, greaterThan(10), reason: 'but not unlimited');
@@ -366,24 +327,10 @@ void main() {
     tester,
   ) async {
     // A large, tall window: the page is not allowed to shrink to a speck.
-    final s = await openNotePage(
-      tester,
-      const Size(1600, 1500),
-      InterfaceVersion.newDesign,
-    );
+    final s = await openNotePage(tester, const Size(1600, 1500));
     final large = await zoomOutAll(tester);
     expect(large, greaterThan(40), reason: 'no tiny page on a big screen');
     expect(large, lessThan(100));
-    await close(tester, s);
-  });
-
-  testWidgets('Notes zoom-out in Original is unchanged (40%)', (tester) async {
-    final s = await openNotePage(
-      tester,
-      const Size(1000, 560),
-      InterfaceVersion.original,
-    );
-    expect(await zoomOutAll(tester), 40);
     await close(tester, s);
   });
 
@@ -458,49 +405,10 @@ void main() {
     s.dispose();
   });
 
-  testWidgets('the dots dialog has no size slider in Original', (tester) async {
-    final s = await boot(
-      tester,
-      size: const Size(1000, 800),
-      version: InterfaceVersion.original,
-    );
-    await tester.runAsync(() => s.createCanvas(title: 'Board', show: false));
-    await tester.runAsync(() => s.openCanvas(s.canvasList.first.id));
-    final c = s.canvas!;
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: buildAppTheme(),
-        home: Builder(
-          builder: (context) => TextButton(
-            onPressed: () => showDotOpacityDialog(context, c, s.setDotOpacity),
-            child: const Text('open'),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('dot-opacity-slider')), findsOneWidget);
-    expect(find.byKey(const ValueKey('dot-size-slider')), findsNothing);
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump(const Duration(seconds: 9));
-    await tester.runAsync(s.flush);
-    s.dispose();
-  });
-
   // ── 7. the canvas picker ────────────────────────────────────────────────
-  for (final (label, version, shown) in [
-    ('New', InterfaceVersion.newDesign, false),
-    ('Original', InterfaceVersion.original, true),
-  ]) {
-    testWidgets('the top-left canvas picker is gone in New ($label)', (
-      tester,
-    ) async {
-      final s = await boot(
-        tester,
-        size: const Size(1280, 800),
-        version: version,
-      );
+  {
+    testWidgets('the top-left canvas picker is gone', (tester) async {
+      final s = await boot(tester, size: const Size(1280, 800));
       await tester.runAsync(() => s.createCanvas(title: 'Board', show: true));
       await tester.pumpWidget(TheApp(state: s));
       for (var i = 0; i < 8; i++) {
@@ -511,30 +419,25 @@ void main() {
       }
       s.goTo(AppPage.canvas);
       await settle(tester);
-      expect(
-        find.byTooltip('Canvas options'),
-        shown ? findsOneWidget : findsNothing,
-      );
-      // The canvases and their data are untouched either way.
+      expect(find.byTooltip('Canvas options'), findsNothing);
+      // The canvases and their data are untouched.
       expect(s.canvasList.map((c) => c.title), contains('Board'));
-      if (!shown) {
-        // What the picker offered is in the command palette instead.
-        final labels = paletteCommands(
-          s,
-          quickAdd: (_) {},
-          search: (_) {},
-          settings: (_) {},
-          appSwitcher: (_) {},
-        ).map((c) => c.label);
-        expect(
-          labels,
-          containsAll([
-            'Rename this mindmap',
-            'Move this mindmap to a folder',
-            'Move this mindmap to trash',
-          ]),
-        );
-      }
+      // What the picker offered is in the command palette instead.
+      final labels = paletteCommands(
+        s,
+        quickAdd: (_) {},
+        search: (_) {},
+        settings: (_) {},
+        appSwitcher: (_) {},
+      ).map((c) => c.label);
+      expect(
+        labels,
+        containsAll([
+          'Rename this mindmap',
+          'Move this mindmap to a folder',
+          'Move this mindmap to trash',
+        ]),
+      );
       await close(tester, s);
     });
   }

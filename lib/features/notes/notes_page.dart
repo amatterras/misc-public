@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
-import '../../app/interface_version.dart';
 import '../../app/shell.dart';
 import '../../new_ui/new_components.dart';
 import '../../new_ui/new_tokens.dart';
@@ -175,17 +174,8 @@ class _NotesPageState extends State<NotesPage> {
     return ListView(
       padding: const EdgeInsets.all(Space.md),
       children: [
-        // New: the page title is in the header above the list instead.
-        if (s.interfaceVersion != InterfaceVersion.newDesign)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(10, 20, 10, 12),
-            child: Text(
-              'Notes',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-            ),
-          )
-        else
-          const SizedBox(height: Space.xl),
+        // The page title is in the header above the list.
+        const SizedBox(height: Space.xl),
         // Dropping a note on "All notes" takes it out of its folder.
         TransferTarget(
           state: s,
@@ -413,77 +403,7 @@ class _NotesPageState extends State<NotesPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (s.interfaceVersion == InterfaceVersion.newDesign)
-          _newHeader(context)
-        else
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              Space.lg,
-              32,
-              Space.lg,
-              Space.md,
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    style: const TextStyle(fontSize: 13),
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.search, size: 16),
-                      hintText: 'Search notes',
-                    ),
-                    onChanged: (v) => setState(() => _search = v),
-                  ),
-                ),
-                const SizedBox(width: Space.sm),
-                IconButton(
-                  onPressed: _importPdf,
-                  tooltip: 'Import a PDF as a note',
-                  icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                ),
-                PopupMenuButton<String>(
-                  key: const ValueKey('notes-more'),
-                  tooltip: 'More: import notes, find similar notes',
-                  icon: const Icon(Icons.more_horiz, size: 18),
-                  onSelected: (v) => v == 'import'
-                      ? showImportDialog(context, s)
-                      : showSimilarNotes(context, s),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
-                      value: 'import',
-                      child: Text(
-                        'Import notes (Obsidian, Notion, Apple Notes)…',
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'similar',
-                      child: Text('Find similar notes…'),
-                    ),
-                  ],
-                ),
-                IconButton(
-                  key: const ValueKey('notes-recently-deleted'),
-                  onPressed: () => showRecentlyDeleted(context, s),
-                  tooltip: 'Recently deleted',
-                  icon: const Icon(Icons.restore_from_trash_outlined, size: 18),
-                ),
-                const SizedBox(width: Space.sm),
-                // Icon only when the list column is narrow.
-                if (MediaQuery.sizeOf(context).width < 1000)
-                  IconButton.filled(
-                    onPressed: _newNote,
-                    tooltip: 'New note',
-                    icon: const Icon(Icons.add, size: 16),
-                  )
-                else
-                  FilledButton.icon(
-                    onPressed: _newNote,
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('New'),
-                  ),
-              ],
-            ),
-          ),
+        _newHeader(context),
         Expanded(
           // Dropping on the list (not on a note) makes a new note.
           child: TransferTarget(

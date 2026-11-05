@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 
 import 'app/app_state.dart';
 import 'app/build_info.dart';
-import 'app/interface_version.dart';
 import 'app/test_environment.dart';
 import 'app/shell.dart';
 import 'app/startup.dart';
@@ -286,17 +285,11 @@ class _TheAppState extends State<TheApp> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([
-        widget.state.themeModePreference,
-        widget.state.interfaceVersionListenable,
-      ]),
+      listenable: widget.state.themeModePreference,
       builder: (context, _) {
         final rawMode = widget.state.themeModePreference.value;
         final mode = ThemeMode.values.asNameMap()[rawMode] ?? ThemeMode.dark;
         AppColors.mode = mode;
-        // New interface: its own palette everywhere (see AppColors).
-        AppColors.newDesign =
-            widget.state.interfaceVersion == InterfaceVersion.newDesign;
         return MaterialApp(
           title: 'misc.',
           debugShowCheckedModeBanner: false,

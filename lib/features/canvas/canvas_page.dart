@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
-import '../../app/interface_version.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
@@ -849,14 +848,8 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       _focusNode.requestFocus();
                     },
                   ),
-                // New: no canvas picker in the corner. What it offered
-                // (rename, move to folder, trash) is in the command palette.
-                if (s.interfaceVersion != InterfaceVersion.newDesign)
-                  Positioned(
-                    left: Space.xl,
-                    top: Space.xl,
-                    child: _TitleChip(state: s, controller: c),
-                  ),
+                // No canvas picker in the corner. What it offered (rename,
+                // move to folder, trash) is in the command palette.
                 Positioned(
                   left: 0,
                   right: 0,
@@ -1195,69 +1188,6 @@ Future<void> runCanvasOption(
       action: 'Move to trash',
     );
     if (ok) await state.deleteCanvas(controller.id);
-  }
-}
-
-class _TitleChip extends StatelessWidget {
-  const _TitleChip({required this.state, required this.controller});
-
-  final AppState state;
-  final CanvasController controller;
-
-  Future<void> _onMenu(BuildContext context, String choice) =>
-      runCanvasOption(context, state, controller, choice);
-
-  @override
-  Widget build(BuildContext context) {
-    final folder = state.workspace.folderPath(controller.folderId);
-    return PopupMenuButton<String>(
-      tooltip: 'Canvas options',
-      position: PopupMenuPosition.under,
-      onSelected: (v) => _onMenu(context, v),
-      itemBuilder: (_) => const [
-        PopupMenuItem(value: 'rename', height: 36, child: Text('Rename')),
-        PopupMenuItem(
-          value: 'folder',
-          height: 36,
-          child: Text('Move to folder…'),
-        ),
-        PopupMenuItem(
-          value: 'delete',
-          height: 36,
-          child: Text('Move to trash'),
-        ),
-      ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              folder.isEmpty ? Icons.grid_view : Icons.folder_outlined,
-              size: 15,
-              color: AppColors.textMuted,
-            ),
-            const SizedBox(width: Space.sm),
-            if (folder.isNotEmpty)
-              Text(
-                '${folder.map((f) => f.name).join(' / ')} / ',
-                style: TextStyle(fontSize: 14, color: AppColors.textMuted),
-              ),
-            Text(
-              controller.title,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.expand_more, size: 16, color: AppColors.textFaint),
-          ],
-        ),
-      ),
-    );
   }
 }
 

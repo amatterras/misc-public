@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme.dart';
 
 /// Corner radius of groups; New is a little rounder than Original.
-double get _groupRadius => AppColors.newDesign ? 18 : 12;
+double get _groupRadius => 18;
 
 /// A category page: a large title, one line saying what is in it, and the
 /// groups below. Scrolls on its own.

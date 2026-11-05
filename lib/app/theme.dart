@@ -9,10 +9,6 @@ import 'dart:ui' show PlatformDispatcher;
 abstract final class AppColors {
   static ThemeMode mode = ThemeMode.dark;
 
-  /// True while the New interface is shown: every getter below then returns
-  /// the New palette (lib/new_ui/new_tokens.dart) instead of Original's.
-  /// Set by TheApp before it builds; Original never sets it.
-  static bool newDesign = false;
   static bool get light => switch (mode) {
     ThemeMode.light => true,
     ThemeMode.dark => false,
@@ -20,73 +16,28 @@ abstract final class AppColors {
       PlatformDispatcher.instance.platformBrightness == Brightness.light,
   };
 
-  // Provisional light palette: the repository history and current spec only
-  // record that light theme was postponed, with no recoverable prior values.
-  static const _darkBackground = Color(0xFF191A1D);
-  static const _darkSidebar = Color(0xFF222429);
-  static const _darkRaised = Color(0xFF303239);
-  static const _darkBorder = Color(0xFF41444A);
-  static const _darkText = Color(0xFFF5F3EF);
-  static const _darkMuted = Color(0xFFAAAEB6);
-  static const _lightBackground = Color(0xFFF4F2ED);
-  static const _lightCanvas = Color(0xFFFBFAF7);
-  static const _lightSidebar = Color(0xFFFFFFFF);
-  static const _lightRaised = Color(0xFFECE9E3);
-  static const _lightBorder = Color(0xFFC9C6BF);
-  static const _lightText = Color(0xFF202328);
-  static const _lightMuted = Color(0xFF5C6169);
-  static const _lightDisabled = Color(0xFF777C84);
-  static const _lightAccent = Color(0xFF456E8B);
-  static const _lightAccentSecondary = Color(0xFF56738A);
-  static const _lightSuccess = Color(0xFF34734F);
-  static const _lightWarm = Color(0xFF8A551A);
-  static const _lightDanger = Color(0xFFB42318);
-
-  static Color get background => newDesign ? NewColors.background : _background;
-  static Color get _background => light ? _lightBackground : _darkBackground;
-  static Color get canvas => newDesign ? NewColors.canvasPage : _canvas;
-  static Color get _canvas => light ? _lightCanvas : _darkBackground;
-  static Color get sidebar => newDesign ? NewColors.surface : _sidebar;
-  static Color get _sidebar => light ? _lightSidebar : _darkSidebar;
-  static Color get card => newDesign ? NewColors.surface : _card;
-  static Color get _card => light ? _lightSidebar : _darkSidebar;
-  static Color get cardRaised =>
-      newDesign ? NewColors.surfaceRaised : _cardRaised;
-  static Color get _cardRaised => light ? _lightRaised : _darkRaised;
-  static Color get border => newDesign ? NewColors.border : _border;
-  static Color get _border => light ? _lightBorder : _darkBorder;
-  static Color get hover => newDesign ? NewColors.hover : _hover;
-  static Color get _hover =>
-      light ? const Color(0x1A456E8B) : const Color(0x1A789BB5);
-  static Color get selected => newDesign ? NewColors.selected : _selected;
-  static Color get _selected => light ? const Color(0xFFDCE6ED) : _darkRaised;
-  static Color get text => newDesign ? NewColors.text : _text;
-  static Color get _text => light ? _lightText : _darkText;
-  static Color get textMuted => newDesign ? NewColors.textMuted : _textMuted;
-  static Color get _textMuted => light ? _lightMuted : _darkMuted;
-  static Color get textFaint => newDesign ? NewColors.textFaint : _textFaint;
-  static Color get _textFaint => light ? _lightDisabled : _darkMuted;
-  static Color get disabled => newDesign ? NewColors.textFaint : _disabled;
-  static Color get _disabled => light ? _lightDisabled : _darkMuted;
-  static Color get accent => newDesign ? NewColors.accent : _accent;
-  static Color get _accent => light ? _lightAccent : const Color(0xFF789BB5);
-  static Color get accentSecondary =>
-      newDesign ? NewColors.accentSecondary : _accentSecondary;
-  static Color get _accentSecondary =>
-      light ? _lightAccentSecondary : const Color(0xFF829CB5);
-  static Color get focus => newDesign ? NewColors.accent : _focus;
-  static Color get _focus => accent;
-  static Color get selection => newDesign ? NewColors.selection : _selection;
-  static Color get _selection =>
-      light ? const Color(0x55456E8B) : const Color(0x55789BB5);
-  static Color get success => newDesign ? NewColors.success : _success;
-  static Color get _success => light ? _lightSuccess : const Color(0xFF8FBFA9);
-  static Color get brand => newDesign ? NewColors.deepIndigo : _brand;
-  static Color get _brand => const Color(0xFF172943);
-  static Color get warm => newDesign ? NewColors.warm : _warm;
-  static Color get _warm => light ? _lightWarm : const Color(0xFFE5D5B8);
-  static Color get danger => newDesign ? NewColors.danger : _danger;
-  static Color get _danger => light ? _lightDanger : warm;
+  // Every colour comes from the New palette (lib/new_ui/new_tokens.dart),
+  // which follows the light/dark choice through [light].
+  static Color get background => NewColors.background;
+  static Color get canvas => NewColors.canvasPage;
+  static Color get sidebar => NewColors.surface;
+  static Color get card => NewColors.surface;
+  static Color get cardRaised => NewColors.surfaceRaised;
+  static Color get border => NewColors.border;
+  static Color get hover => NewColors.hover;
+  static Color get selected => NewColors.selected;
+  static Color get text => NewColors.text;
+  static Color get textMuted => NewColors.textMuted;
+  static Color get textFaint => NewColors.textFaint;
+  static Color get disabled => NewColors.textFaint;
+  static Color get accent => NewColors.accent;
+  static Color get accentSecondary => NewColors.accentSecondary;
+  static Color get focus => NewColors.accent;
+  static Color get selection => NewColors.selection;
+  static Color get success => NewColors.success;
+  static Color get brand => NewColors.deepIndigo;
+  static Color get warm => NewColors.warm;
+  static Color get danger => NewColors.danger;
 }
 
 /// Canonical ink choices shared by fineliner, brush, pencil, highlighter,
@@ -196,8 +147,7 @@ abstract final class Space {
 
 ThemeData buildAppTheme({Brightness brightness = Brightness.dark}) {
   final previousMode = AppColors.mode;
-  // New interface: rounder dialogs, menus and fields.
-  final fine = AppColors.newDesign;
+
   AppColors.mode = brightness == Brightness.light
       ? ThemeMode.light
       : ThemeMode.dark;
@@ -241,7 +191,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.dark}) {
       waitDuration: Duration(milliseconds: 400),
       decoration: BoxDecoration(
         color: AppColors.cardRaised,
-        borderRadius: BorderRadius.all(Radius.circular(fine ? 10 : 6)),
+        borderRadius: BorderRadius.all(Radius.circular(10)),
       ),
       textStyle: TextStyle(color: AppColors.text, fontSize: 12),
     ),
@@ -249,18 +199,18 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.dark}) {
       backgroundColor: AppColors.card,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(fine ? 22 : 12)),
+        borderRadius: BorderRadius.all(Radius.circular(22)),
         side: BorderSide(color: AppColors.border),
       ),
     ),
     popupMenuTheme: PopupMenuThemeData(
-      // New: white (light) / raised (dark) menus with a soft shadow.
-      color: fine && AppColors.light ? AppColors.card : AppColors.cardRaised,
+      // White (light) / raised (dark) menus with a soft shadow.
+      color: AppColors.light ? AppColors.card : AppColors.cardRaised,
       surfaceTintColor: Colors.transparent,
-      elevation: fine ? 8 : null,
-      shadowColor: fine ? const Color(0x331C1A27) : null,
+      elevation: 8,
+      shadowColor: const Color(0x331C1A27),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(fine ? 14 : 8)),
+        borderRadius: BorderRadius.all(Radius.circular(14)),
         side: BorderSide(color: AppColors.border),
       ),
       textStyle: TextStyle(color: AppColors.text, fontSize: 13),
@@ -268,20 +218,20 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.dark}) {
     inputDecorationTheme: InputDecorationTheme(
       isDense: true,
       filled: true,
-      fillColor: fine && AppColors.light
+      fillColor: AppColors.light
           ? AppColors.cardRaised.withValues(alpha: 0.5)
           : AppColors.background,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(fine ? 12 : 4),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: AppColors.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(fine ? 12 : 4),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: AppColors.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(fine ? 12 : 4),
-        borderSide: BorderSide(color: fine ? AppColors.accent : AppColors.textMuted),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppColors.accent),
       ),
     ),
     textSelectionTheme: TextSelectionThemeData(

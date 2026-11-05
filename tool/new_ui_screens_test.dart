@@ -14,7 +14,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/app/app_state.dart';
-import 'package:flutter_application_1/app/interface_version.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/models/object_library_models.dart';
@@ -262,13 +261,12 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   // ── seed folders for the real Windows window ─────────────────────────
-  for (final (name, theme, page, version, expanded) in [
+  for (final (name, theme, page, _, expanded) in [
     ('app-shot-archive-dark', 'dark', 'links', 'new', false),
     ('app-shot-archive-light', 'light', 'links', 'new', false),
     ('app-shot-r-calendar', 'dark', 'calendar', 'new', false),
     ('app-shot-r-notes', 'dark', 'notes', 'new', true),
     ('app-shot-r-canvas', 'dark', 'canvas', 'new', false),
-    ('app-shot-r-orig', 'dark', 'notes', 'original', false),
   ]) {
     test('seed $name', () async {
       final dir = Directory('$_testEnv\\$name');
@@ -287,11 +285,6 @@ void main() {
       final scratch = Directory.systemTemp.createTempSync('shot_img_');
       final s = await _open(dir);
       await _seed(s, scratch);
-      await s.setInterfaceVersion(
-        version == 'new'
-            ? InterfaceVersion.newDesign
-            : InterfaceVersion.original,
-      );
       await s.setThemeMode(theme);
       if (expanded) await s.settings.set('newSidebarExpanded', true);
       await s.settings.set('lastPage', page);
@@ -307,7 +300,6 @@ void main() {
     required String file,
     required Size size,
     required bool ios,
-    required InterfaceVersion version,
     required String theme,
     AppPage page = AppPage.notes,
     bool home = false,
@@ -331,7 +323,6 @@ void main() {
     await tester.runAsync(() async {
       await s.init();
       await _seed(s, scratch);
-      await s.setInterfaceVersion(version);
       await s.setThemeMode(theme);
       s.goTo(page);
     });
@@ -371,121 +362,80 @@ void main() {
 
   const phone = Size(390, 844);
   const ipad = Size(820, 1180);
-  const n = InterfaceVersion.newDesign;
-  const o = InterfaceVersion.original;
-  final jobs =
-      <(String, Size, bool, InterfaceVersion, String, AppPage, bool, bool?)>[
-        (
-          '10_new_iphone_home_dark.png',
-          phone,
-          true,
-          n,
-          'dark',
-          AppPage.notes,
-          true,
-          null,
-        ),
-        (
-          '11_new_iphone_home_light.png',
-          phone,
-          true,
-          n,
-          'light',
-          AppPage.notes,
-          true,
-          null,
-        ),
-        (
-          '12_new_iphone_archive_dark.png',
-          phone,
-          true,
-          n,
-          'dark',
-          AppPage.links,
-          false,
-          null,
-        ),
-        (
-          '13_new_iphone_notes_dark.png',
-          phone,
-          true,
-          n,
-          'dark',
-          AppPage.notes,
-          false,
-          null,
-        ),
-        (
-          '14_original_iphone_notes_dark.png',
-          phone,
-          true,
-          o,
-          'dark',
-          AppPage.notes,
-          false,
-          null,
-        ),
-        (
-          '20_new_ipad_archive_dark.png',
-          ipad,
-          true,
-          n,
-          'dark',
-          AppPage.links,
-          false,
-          null,
-        ),
-        (
-          '21_new_ipad_calendar_dark.png',
-          ipad,
-          true,
-          n,
-          'dark',
-          AppPage.calendar,
-          false,
-          null,
-        ),
-        (
-          '22_original_ipad_calendar_dark.png',
-          ipad,
-          true,
-          o,
-          'dark',
-          AppPage.calendar,
-          false,
-          null,
-        ),
-        (
-          '23_new_ipad_slideover_notes_dark.png',
-          Size(320, 900),
-          true,
-          n,
-          'dark',
-          AppPage.notes,
-          false,
-          false,
-        ),
-        (
-          '24_original_ipad_slideover_notes_dark.png',
-          Size(320, 900),
-          true,
-          o,
-          'dark',
-          AppPage.notes,
-          false,
-          false,
-        ),
-        (
-          '15_new_iphone_landscape_home_dark.png',
-          Size(844, 390),
-          true,
-          n,
-          'dark',
-          AppPage.notes,
-          true,
-          true,
-        ),
-      ];
+  final jobs = <(String, Size, bool, String, AppPage, bool, bool?)>[
+    (
+      '10_new_iphone_home_dark.png',
+      phone,
+      true,
+      'dark',
+      AppPage.notes,
+      true,
+      null,
+    ),
+    (
+      '11_new_iphone_home_light.png',
+      phone,
+      true,
+      'light',
+      AppPage.notes,
+      true,
+      null,
+    ),
+    (
+      '12_new_iphone_archive_dark.png',
+      phone,
+      true,
+      'dark',
+      AppPage.links,
+      false,
+      null,
+    ),
+    (
+      '13_new_iphone_notes_dark.png',
+      phone,
+      true,
+      'dark',
+      AppPage.notes,
+      false,
+      null,
+    ),
+    (
+      '20_new_ipad_archive_dark.png',
+      ipad,
+      true,
+      'dark',
+      AppPage.links,
+      false,
+      null,
+    ),
+    (
+      '21_new_ipad_calendar_dark.png',
+      ipad,
+      true,
+      'dark',
+      AppPage.calendar,
+      false,
+      null,
+    ),
+    (
+      '23_new_ipad_slideover_notes_dark.png',
+      Size(320, 900),
+      true,
+      'dark',
+      AppPage.notes,
+      false,
+      false,
+    ),
+    (
+      '15_new_iphone_landscape_home_dark.png',
+      Size(844, 390),
+      true,
+      'dark',
+      AppPage.notes,
+      true,
+      true,
+    ),
+  ];
   for (final j in jobs) {
     testWidgets('render ${j.$1}', (tester) async {
       await render(
@@ -493,11 +443,10 @@ void main() {
         file: j.$1,
         size: j.$2,
         ios: j.$3,
-        version: j.$4,
-        theme: j.$5,
-        page: j.$6,
-        home: j.$7,
-        phone: j.$8,
+        theme: j.$4,
+        page: j.$5,
+        home: j.$6,
+        phone: j.$7,
       );
     }, timeout: const Timeout(Duration(minutes: 3)));
   }

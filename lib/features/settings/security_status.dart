@@ -543,7 +543,7 @@ class _AreaCard extends StatelessWidget {
         key: ValueKey('security-area-${area.id}'),
         decoration: BoxDecoration(
           color: AppColors.card,
-          borderRadius: BorderRadius.circular(AppColors.newDesign ? 18 : 12),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: AppColors.border),
         ),
         child: Padding(

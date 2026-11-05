@@ -7,7 +7,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/app/app_state.dart';
-import 'package:flutter_application_1/app/interface_version.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/models/record.dart';
@@ -145,7 +144,6 @@ void main() {
   Future<AppState> boot(
     WidgetTester tester, {
     required Size size,
-    InterfaceVersion version = InterfaceVersion.newDesign,
     bool ios = false,
     bool? phone,
     bool forced = false,
@@ -167,7 +165,6 @@ void main() {
     )..capture.fetchPreviews = false;
     await tester.runAsync(() async {
       await state.init();
-      await state.setInterfaceVersion(version);
       await state.setThemeMode(theme);
       if (seed) {
         ws.createTask('Pay rent', dueDate: today);
@@ -227,32 +224,17 @@ void main() {
     await close(tester, state);
   });
 
-  testWidgets('an iPhone always gets it, also in landscape and on Original', (
-    tester,
-  ) async {
-    for (final (size, version) in const [
-      (Size(844, 390), InterfaceVersion.newDesign),
-      (Size(390, 844), InterfaceVersion.original),
-    ]) {
+  testWidgets('an iPhone always gets it, also in landscape', (tester) async {
+    for (final size in const [Size(844, 390), Size(390, 844)]) {
       final state = await boot(
         tester,
         size: size,
         ios: true,
         phone: true,
-        version: version,
         seed: false,
       );
       await open(tester, state);
-      expect(find.byType(PhoneShell), findsOneWidget, reason: '$size $version');
-      // The stored choice of this device is left alone; the phone just does
-      // not use it.
-      expect(state.interfaceVersion, InterfaceVersion.newDesign);
-      expect(
-        InterfaceVersion.fromStored(
-          state.settings.get<String>(InterfaceVersion.settingsKey),
-        ),
-        version,
-      );
+      expect(find.byType(PhoneShell), findsOneWidget, reason: '$size');
       await close(tester, state);
       dir.deleteSync(recursive: true);
       dir = Directory.systemTemp.createTempSync('theapp_phone_');
@@ -286,28 +268,6 @@ void main() {
       expect(find.byType(PhoneShell), findsNothing, reason: '$size');
       expect(find.byKey(const ValueKey('phone-tab-today')), findsNothing);
       expect(state.homeActive, isFalse);
-      await close(tester, state);
-      dir.deleteSync(recursive: true);
-      dir = Directory.systemTemp.createTempSync('theapp_phone_');
-    }
-  });
-
-  testWidgets('Original on Windows and iPad is untouched', (tester) async {
-    for (final (size, ios, phone) in const [
-      (Size(1280, 800), false, null),
-      (Size(820, 1180), true, false),
-    ]) {
-      final state = await boot(
-        tester,
-        size: size,
-        ios: ios,
-        phone: phone,
-        version: InterfaceVersion.original,
-        seed: false,
-      );
-      await open(tester, state);
-      expect(find.byType(PhoneShell), findsNothing);
-      expect(state.interfaceVersion, InterfaceVersion.original);
       await close(tester, state);
       dir.deleteSync(recursive: true);
       dir = Directory.systemTemp.createTempSync('theapp_phone_');
@@ -511,7 +471,6 @@ void main() {
     await tester.tap(find.text('Appearance'));
     await settle(tester, 12);
     expect(find.text('Theme'), findsOneWidget);
-    expect(find.byKey(const ValueKey('interface-version')), findsNothing);
     await close(tester, state);
   });
 

@@ -5,7 +5,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/app/app_state.dart';
-import 'package:flutter_application_1/app/interface_version.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/settings/settings_dialog.dart';
@@ -14,12 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/both_clocks.dart';
 
-Future<AppState> _boot(
-  WidgetTester tester,
-  Directory dir,
-  Size size, {
-  bool newInterface = false,
-}) async {
+Future<AppState> _boot(WidgetTester tester, Directory dir, Size size) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -32,11 +26,6 @@ Future<AppState> _boot(
   );
   state.capture.fetchPreviews = false;
   await tester.runAsync(state.init);
-  if (newInterface) {
-    await tester.runAsync(
-      () => state.setInterfaceVersion(InterfaceVersion.newDesign),
-    );
-  }
   await tester.pumpWidget(TheApp(state: state));
   await tester.pump();
   return state;
@@ -92,14 +81,23 @@ void main() {
       );
     }
     // Apple Pencil settings exist only on an iPhone/iPad.
-    expect(find.byKey(const ValueKey('settings-category-pencil')), findsNothing);
-    expect(find.byKey(const ValueKey('settings-page-appearance')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('settings-category-pencil')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('settings-page-appearance')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('theme-mode')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('settings-category-data')));
     await _settle(tester);
     expect(find.byKey(const ValueKey('settings-page-data')), findsOneWidget);
-    expect(find.byKey(const ValueKey('settings-page-appearance')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('settings-page-appearance')),
+      findsNothing,
+    );
     expect(find.text('Export all data'), findsOneWidget);
     expect(find.text('Import a backup file'), findsOneWidget);
 
@@ -117,10 +115,16 @@ void main() {
     showSettingsDialog(context, s);
     await _settle(tester);
 
-    expect(find.byKey(const ValueKey('settings-page-appearance')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('settings-page-appearance')),
+      findsNothing,
+    );
     await tester.tap(find.byKey(const ValueKey('settings-category-calendar')));
     await _settle(tester);
-    expect(find.byKey(const ValueKey('settings-page-calendar')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('settings-page-calendar')),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const ValueKey('settings-back')));
     await _settle(tester);
     expect(find.byKey(const ValueKey('settings-page-calendar')), findsNothing);
@@ -167,7 +171,11 @@ void main() {
       }
     }, what: 'The backup');
     final after = await tester.runAsync(() => s.workspace.backups.list());
-    expect(after!.length, before!.length + 1, reason: '${after.map((d) => d.path)}');
+    expect(
+      after!.length,
+      before!.length + 1,
+      reason: '${after.map((d) => d.path)}',
+    );
     expect(
       after.any((d) => d.path.endsWith('-manual')),
       isTrue,
@@ -183,12 +191,7 @@ void main() {
   testWidgets('New: pages keep the full window width (no sidebar column)', (
     tester,
   ) async {
-    final s = await _boot(
-      tester,
-      dir,
-      const Size(1280, 900),
-      newInterface: true,
-    );
+    final s = await _boot(tester, dir, const Size(1280, 900));
     await _settle(tester);
     final viewport = tester.getSize(
       find.byKey(const ValueKey('page-content-viewport')),

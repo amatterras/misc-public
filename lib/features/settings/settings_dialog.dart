@@ -12,7 +12,6 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'privacy_summary.dart';
 import '../../app/app_state.dart';
 import '../../app/build_info.dart';
-import '../../app/interface_version.dart';
 import '../../app/test_environment.dart';
 import '../../app/theme.dart';
 import '../../data/storage/app_log.dart';
@@ -132,7 +131,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     final width = math.min(880.0, screen.width - 32);
     final height = math.min(640.0, screen.height - 48);
     final wide = width >= 640;
-    final radius = BorderRadius.circular(AppColors.newDesign ? 24 : 14);
+    final radius = BorderRadius.circular(24);
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       backgroundColor: AppColors.background,
@@ -319,17 +318,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               if (mounted) setState(() {});
             },
           ),
-          if (!PhoneProfile.active)
-            SettingsSegmentRow<InterfaceVersion>(
-              key: const ValueKey('interface-version'),
-              title: 'Interface',
-              value: s.interfaceVersion,
-              options: [for (final v in InterfaceVersion.values) (v, v.label)],
-              onChanged: (choice) async {
-                await s.setInterfaceVersion(choice);
-                if (mounted) setState(() {});
-              },
-            ),
         ],
       ),
       SettingsGroup(
@@ -907,7 +895,7 @@ class _RailItemState extends State<_RailItem> {
                   : _hover
                   ? AppColors.hover
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(AppColors.newDesign ? 12 : 8),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               children: [

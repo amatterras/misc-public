@@ -14,7 +14,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
-import '../../app/interface_version.dart';
 import '../../app/page_windows.dart';
 import '../../app/shell.dart' show WorkspaceBuilder;
 import '../../app/theme.dart';
@@ -84,9 +83,6 @@ class _NotePageState extends State<NotePage> {
       touchFirst ? (DeviceIdiom.isPhone ? 62.0 : 52.0) : 37.8;
 
   double _minZoomFor(BoxConstraints box, NotebookLayout? layout, double fit) {
-    if (s.interfaceVersion != InterfaceVersion.newDesign) {
-      return originalMinZoom;
-    }
     var tallest = NotebookLayout.plainHeight;
     if (layout != null) {
       tallest = 0;

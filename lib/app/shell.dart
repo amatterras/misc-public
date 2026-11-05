@@ -15,7 +15,6 @@ import '../features/capture/capture_service.dart';
 import '../features/notes/notes_page.dart';
 import '../features/palette/app_switcher.dart';
 import '../features/palette/command_palette.dart';
-import '../features/library/library_page.dart';
 import '../features/motivation/motivation_service.dart';
 import '../features/settings/recovery_section.dart' show offerRecoveryCodeOnce;
 import '../features/search/search_dialog.dart';
@@ -26,7 +25,6 @@ import '../new_ui/new_archive_page.dart';
 import '../phone/phone_profile.dart';
 import '../phone/phone_shell.dart';
 import '../new_ui/new_sidebar.dart';
-import 'interface_version.dart';
 import 'page_host.dart';
 import 'quote_footer.dart';
 import 'page_windows.dart';
@@ -240,13 +238,9 @@ class _AppShellState extends State<AppShell> {
         child: ListenableBuilder(
           listenable: Listenable.merge([state, state.windows]),
           builder: (context, _) {
-            final width = MediaQuery.sizeOf(context).width;
-            final isCompact = width < 640;
-            // New interface on an iPhone: its own layout with Home.
             // The shell follows the device, the width only adapts it: an
             // iPhone always gets the phone layout (with Home); an iPad never
             // does, however narrow its window is.
-            final isNew = state.interfaceVersion == InterfaceVersion.newDesign;
             final phone = PhoneProfile.active;
             final windows = state.windows;
             windows.titleOf ??= (p) => pageTitle(state, p);
@@ -287,11 +281,7 @@ class _AppShellState extends State<AppShell> {
                                 ),
                                 page(
                                   AppPage.links,
-                                  () =>
-                                      state.interfaceVersion ==
-                                          InterfaceVersion.newDesign
-                                      ? NewArchivePage(state: state)
-                                      : LibraryPage(state: state),
+                                  () => NewArchivePage(state: state),
                                 ),
                                 page(
                                   AppPage.calendar,
@@ -344,46 +334,14 @@ class _AppShellState extends State<AppShell> {
                     SizedBox.expand(
                       child: PhoneShell(state: state, motivation: _motivation),
                     )
-                  else if (isCompact && !isNew)
-                    SafeArea(
-                      bottom: false,
-                      child: Column(
-                        children: [
-                          ListenableBuilder(
-                            listenable: state.workspace.changes,
-                            builder: (context, _) =>
-                                _CompactTopBar(state: state),
-                          ),
-                          Expanded(child: mainContent),
-                          ListenableBuilder(
-                            listenable: state.workspace.changes,
-                            builder: (context, _) =>
-                                _CompactBottomNav(state: state),
-                          ),
-                        ],
-                      ),
-                    )
-                  else if (isNew)
-                    // New interface (Windows, iPad, any width): same pages,
-                    // floating sidebar; narrow windows get its compact form.
+                  else
+                    // Windows and iPad, any width: the floating sidebar;
+                    // narrow windows get its compact form.
                     SizedBox.expand(
                       child: NewSidebarLayout(state: state, child: mainContent),
-                    )
-                  else
-                    Row(
-                      children: [
-                        Expanded(child: mainContent),
-                        Sidebar(state: state),
-                      ],
                     ),
-                  _Toast(
-                    state: state,
-                    bottomOffset: (isCompact && !isNew) || phone ? 72 : 28,
-                  ),
-                  _TransferBar(
-                    state: state,
-                    bottomOffset: (isCompact && !isNew) || phone ? 120 : 76,
-                  ),
+                  _Toast(state: state, bottomOffset: phone ? 72 : 28),
+                  _TransferBar(state: state, bottomOffset: phone ? 120 : 76),
                   // The phone shows the greeting itself, as a line on Today.
                   if (!phone)
                     ListenableBuilder(
@@ -392,10 +350,7 @@ class _AppShellState extends State<AppShell> {
                           ? Positioned(
                               // Below the page bar (and the phone's own
                               // top bar), not on top of it.
-                              top:
-                                  TopBar.height +
-                                  10 +
-                                  ((isCompact && !isNew) || phone ? 48 : 0),
+                              top: TopBar.height + 10,
                               left: 16,
                               child: _GreetingWindow(service: _motivation),
                             )
@@ -409,149 +364,6 @@ class _AppShellState extends State<AppShell> {
               ),
             );
           },
-        ),
-      ),
-    );
-  }
-}
-
-class _CompactTopBar extends StatelessWidget {
-  const _CompactTopBar({required this.state});
-
-  final AppState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final pageTitle = switch (state.page) {
-      AppPage.canvas => state.canvas?.title ?? 'mindmap',
-      AppPage.notes => 'notes',
-      AppPage.links => 'archive',
-      AppPage.calendar || AppPage.tasks => 'calendar',
-      AppPage.browser => 'safari',
-      AppPage.ai => 'ai',
-    };
-
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: Space.md),
-      decoration: BoxDecoration(
-        color: AppColors.sidebar,
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
-      child: Row(
-        children: [
-          Flexible(
-            child: Text(
-              pageTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.text,
-              ),
-            ),
-          ),
-          const SizedBox(width: Space.sm),
-          if (state.syncPaired)
-            Tooltip(
-              message: state.syncStatus,
-              child: Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: state.syncing ? AppColors.accent : AppColors.success,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-          const Spacer(),
-          IconButton(
-            icon: Icon(
-              Icons.add_circle_outline,
-              size: 22,
-              color: AppColors.accent,
-            ),
-            tooltip: 'Quick Add',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-            onPressed: () => openQuickAdd(context, state),
-          ),
-          IconButton(
-            icon: Icon(
-              Icons.settings_outlined,
-              size: 20,
-              color: AppColors.textMuted,
-            ),
-            tooltip: 'Settings',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-            onPressed: () => showSettingsDialog(context, state),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CompactBottomNav extends StatelessWidget {
-  const _CompactBottomNav({required this.state});
-
-  final AppState state;
-
-  @override
-  Widget build(BuildContext context) {
-    const items = appDestinations;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.sidebar,
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: 54,
-              child: Row(
-                children: [
-                  for (final (page, icon, label) in items)
-                    Expanded(
-                      child: InkWell(
-                        onTap: () => state.goTo(page),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              icon,
-                              size: 22,
-                              color: state.page == page
-                                  ? AppColors.accent
-                                  : AppColors.textMuted,
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              label,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: state.page == page
-                                    ? FontWeight.w600
-                                    : FontWeight.normal,
-                                color: state.page == page
-                                    ? AppColors.accent
-                                    : AppColors.textMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );

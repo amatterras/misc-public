@@ -5,7 +5,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/app/app_state.dart';
-import 'package:flutter_application_1/app/interface_version.dart';
 import 'package:flutter_application_1/data/models/object_library_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/features/capture/send_to.dart';
@@ -39,9 +38,6 @@ void main() {
       enableSendTo: false,
     )..capture.fetchPreviews = false;
     await tester.runAsync(state.init);
-    await tester.runAsync(
-      () => state.setInterfaceVersion(InterfaceVersion.newDesign),
-    );
     return state;
   }
 
@@ -323,20 +319,6 @@ void main() {
     await settle(tester);
     expect(find.byKey(const ValueKey('archive-results')), findsOneWidget);
     expect(find.text('Travel note 2'), findsWidgets);
-    await close(tester, s);
-  });
-
-  testWidgets('Original keeps the existing Archive page', (tester) async {
-    final s = await boot(tester);
-    await tester.runAsync(
-      () => s.setInterfaceVersion(InterfaceVersion.original),
-    );
-    await tester.pumpWidget(TheApp(state: s));
-    await settle(tester);
-    s.goTo(AppPage.links);
-    await settle(tester);
-    expect(find.byType(NewArchivePage), findsNothing);
-    expect(find.byType(LibraryPage), findsOneWidget);
     await close(tester, s);
   });
 

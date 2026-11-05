@@ -13,7 +13,6 @@ double _ratio(Color a, Color b) {
 
 void main() {
   tearDown(() {
-    AppColors.newDesign = false;
     AppColors.mode = ThemeMode.dark;
   });
 
@@ -39,15 +38,13 @@ void main() {
     expect(NewColors.accent, const Color(0xFF789BB5));
   });
 
-  test('AppColors returns the New palette only while New is active', () {
-    AppColors.mode = ThemeMode.dark;
-    final original = AppColors.sidebar;
-    AppColors.newDesign = true;
-    expect(AppColors.sidebar, NewColors.surface);
-    expect(AppColors.accent, NewColors.accent);
-    expect(AppColors.text, NewColors.text);
-    AppColors.newDesign = false;
-    expect(AppColors.sidebar, original);
+  test('AppColors returns the New palette', () {
+    for (final mode in [ThemeMode.dark, ThemeMode.light]) {
+      AppColors.mode = mode;
+      expect(AppColors.sidebar, NewColors.surface);
+      expect(AppColors.accent, NewColors.accent);
+      expect(AppColors.text, NewColors.text);
+    }
   });
 
   test('the semantic category colours are not touched', () {

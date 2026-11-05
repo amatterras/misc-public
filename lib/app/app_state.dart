@@ -71,8 +71,6 @@ import '../features/vault/vault_page.dart';
 import '../features/vault/vault_service.dart';
 import 'canvas_ops.dart';
 import 'floating_windows.dart';
-import 'interface_version.dart';
-import '../phone/phone_profile.dart';
 import 'page_windows.dart';
 import 'test_environment.dart';
 
@@ -205,31 +203,6 @@ class AppState extends ChangeNotifier {
   bool _sidebarCollapsed = false;
   bool get sidebarCollapsed => _sidebarCollapsed;
 
-  InterfaceVersion _interfaceVersion = InterfaceVersion.original;
-
-  /// Which interface is shown (Settings → Appearance → Interface Version).
-  ///
-  /// The iPhone interface (lib/phone) is built on the New palette, so on an
-  /// iPhone this is always [InterfaceVersion.newDesign]; the stored choice is
-  /// kept untouched for this device. Windows and iPad follow the choice.
-  InterfaceVersion get interfaceVersion =>
-      PhoneProfile.active ? InterfaceVersion.newDesign : _interfaceVersion;
-
-  /// Lets the app root restyle (theme + palette) when the version changes
-  /// without rebuilding for every unrelated state change.
-  final ValueNotifier<InterfaceVersion> interfaceVersionListenable =
-      ValueNotifier(InterfaceVersion.original);
-
-  /// Switches the interface at once and remembers it on this device. Only
-  /// the presentation changes; no data, page or open document is touched.
-  Future<void> setInterfaceVersion(InterfaceVersion version) async {
-    if (version == _interfaceVersion) return;
-    _interfaceVersion = version;
-    interfaceVersionListenable.value = version;
-    notifyListeners();
-    await settings.set(InterfaceVersion.settingsKey, version.stored);
-  }
-
   /// The New sidebar can be hidden completely (a small handle brings it
   /// back). Separate from [sidebarCollapsed], which belongs to Original.
   bool _newSidebarHidden = false;
@@ -332,10 +305,6 @@ class AppState extends ChangeNotifier {
     step('Loading your data');
     await workspace.load();
     _sidebarCollapsed = settings.get<bool>('sidebarCollapsed') ?? false;
-    _interfaceVersion = InterfaceVersion.fromStored(
-      settings.get<String>(InterfaceVersion.settingsKey),
-    );
-    interfaceVersionListenable.value = _interfaceVersion;
     _newSidebarHidden = settings.get<bool>('newSidebarHidden') ?? false;
     _newSidebarExpanded = settings.get<bool>('newSidebarExpanded') ?? false;
     _calendarTasksOpen = settings.get<bool>('calendarTasksOpen') ?? false;
@@ -3525,7 +3494,6 @@ class AppState extends ChangeNotifier {
     sendTo.dispose();
     library.dispose();
     themeModePreference.dispose();
-    interfaceVersionListenable.dispose();
     timer.dispose();
     _canvas?.dispose();
     _links?.dispose();
