@@ -41,6 +41,8 @@ import '../platform/ios_bridge.dart';
 import '../platform/input_hints.dart';
 import '../platform/platform.dart' as native;
 import '../widgets/date_prefs.dart';
+import '../data/models/unknown_fields.dart' show unknownFields;
+import '../sync/conflict_resolver.dart';
 import '../sync/peer_controller.dart';
 import '../sync/device_keys.dart' show DeviceKeyPair;
 import '../sync/e2ee.dart';
@@ -1638,6 +1640,7 @@ class AppState extends ChangeNotifier {
       final report = await _dataLock.run(engine.syncOnce);
       lastSynced = DateTime.now();
       _clearNeedsPairing();
+      _announceConflicts();
       _lastResult = report.conflicts > 0
           ? 'Synced — ${report.conflicts} conflict(s) kept for review'
           : 'Synced';
@@ -2955,6 +2958,91 @@ class AppState extends ChangeNotifier {
     }
     _canvasRefs[id] = (c!, 1);
     return c;
+  }
+
+  // ------------------------------------------------------- sync conflicts --
+
+  /// Settles sync conflicts (see sync/conflict_resolver.dart).
+  late final ConflictResolver conflictResolver = ConflictResolver(this);
+
+  /// Conflicts waiting for the user (settled ones are not counted).
+  int get openConflictCount =>
+      workspace.conflicts.all.where((c) => !c.isResolved).length;
+
+  /// How many open conflicts the user was last told about by a toast, so a
+  /// sync tells about new ones, not the same ones again.
+  int _announcedConflicts = 0;
+
+  /// After a sync: says once when new conflicts need a decision. The
+  /// persistent notice (shell) stays until they are settled.
+  void _announceConflicts() {
+    final n = openConflictCount;
+    if (n > _announcedConflicts) {
+      showToast(
+        n == 1
+            ? 'A sync conflict needs your decision — both versions are kept.'
+            : '$n sync conflicts need your decision — both versions are '
+                  'kept.',
+      );
+    }
+    _announcedConflicts = n;
+  }
+
+  /// The controller of mindmap/notebook [id] if it is open in an editor.
+  CanvasController? liveCanvas(String id) => _SyncBridge(this)._open(id);
+
+  /// The item [itemId] of canvas [canvasId] as it syncs now, or null.
+  Future<Map<String, dynamic>?> canvasItemJson(
+    String canvasId,
+    String itemId,
+  ) async {
+    final live = liveCanvas(canvasId);
+    if (live != null) return live.itemJson(itemId);
+    final doc = await canvases.load(canvasId);
+    if (doc == null) return null;
+    final item = doc.items.where((i) => i.id == itemId).firstOrNull;
+    return item == null ? null : doc.itemJson(item);
+  }
+
+  /// Puts [json] in place of item [itemId] on canvas [canvasId] (null
+  /// deletes it) as a new edit, so it syncs and wins on every device. Works
+  /// on an open canvas through its editor, otherwise on the saved file.
+  /// False when the canvas or the item cannot be read here.
+  Future<bool> restoreCanvasItem(
+    String canvasId,
+    String itemId,
+    Map<String, dynamic>? json,
+  ) async {
+    CanvasItem? item;
+    if (json != null) {
+      try {
+        item = CanvasItem.fromJson(json);
+      } catch (_) {
+        return false; // from a newer app version
+      }
+    }
+    var c = liveCanvas(canvasId);
+    var acquired = false;
+    if (c == null) {
+      c = await acquireCanvas(canvasId);
+      acquired = c != null;
+    }
+    if (c == null) return false;
+    try {
+      if (item == null) {
+        c.removeItemById(itemId);
+      } else {
+        c.restoreItem(
+          item,
+          unknownFields: unknownFields(json!, item.toJson().keys),
+        );
+      }
+      await c.flush();
+    } finally {
+      if (acquired) await releaseCanvas(canvasId);
+    }
+    _editedLocally();
+    return true;
   }
 
   Future<void> releaseCanvas(String id) async {

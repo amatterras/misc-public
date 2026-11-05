@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'conflict_review.dart';
 import 'devices_section.dart';
 import '../../app/app_state.dart';
 import '../../app/maintenance.dart';
@@ -206,7 +207,7 @@ class _SyncSectionState extends State<SyncSection> {
             ],
           );
         }
-        final conflicts = s.workspace.conflicts.length;
+        final conflicts = s.openConflictCount;
         final last = s.lastSynced;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,7 +293,7 @@ class _SyncSectionState extends State<SyncSection> {
                   OutlinedButton.icon(
                     onPressed: () => showConflictsDialog(context, s),
                     icon: const Icon(Icons.call_split, size: 16),
-                    label: Text('Review $conflicts conflict(s)'),
+                    label: Text('Review $conflicts conflict${conflicts == 1 ? '' : 's'}'),
                   ),
                 TextButton(
                   onPressed: () async {
@@ -323,99 +324,10 @@ class _SyncSectionState extends State<SyncSection> {
   }
 }
 
-const _reasons = {
-  'concurrent_edit': 'Edited on two devices at the same time',
-  'edited_after_delete': 'Edited on one device after being deleted on another',
-  'deleted_here_edited_elsewhere':
-      'Deleted on one device but edited on another (the edit was kept)',
-};
-
-/// Lists preserved versions from sync conflicts. "Use this version" makes
-/// it the current one (as a normal edit, so it syncs); "Dismiss" removes
-/// the preserved copy.
-Future<void> showConflictsDialog(BuildContext context, AppState state) {
-  return showDialog<void>(
-    context: context,
-    builder: (context) => ListenableBuilder(
-      listenable: state.workspace.conflicts,
-      builder: (context, _) {
-        final ws = state.workspace;
-        final list = ws.conflicts.all.toList()
-          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-        return AlertDialog(
-          title: const Text('Sync conflicts', style: TextStyle(fontSize: 16)),
-          content: SizedBox(
-            width: 560,
-            height: 420,
-            child: list.isEmpty
-                ? Center(
-                    child: Text(
-                      'No conflicts.',
-                      style: TextStyle(color: AppColors.textFaint),
-                    ),
-                  )
-                : ListView(
-                    children: [
-                      for (final c in list)
-                        ListTile(
-                          title: Text(
-                            '${c.collection.replaceAll('_', ' ')}: '
-                            '${(c.otherData?['title'] ?? c.otherData?['name'] ?? c.otherData?['text'] ?? c.recordId).toString().split('\n').first}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            '${_reasons[c.reason] ?? c.reason} · other version: '
-                            '${c.otherDeleted ? 'deleted' : 'kept here'}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textFaint,
-                            ),
-                          ),
-                          trailing: Wrap(
-                            spacing: 4,
-                            children: [
-                              if (ws.syncCollections.containsKey(
-                                    c.collection,
-                                  ) &&
-                                  c.collection != 'conflicts')
-                                TextButton(
-                                  onPressed: () {
-                                    final target =
-                                        ws.syncCollections[c.collection]!;
-                                    if (c.otherDeleted || c.otherData == null) {
-                                      target.remove(c.recordId);
-                                    } else {
-                                      target.put(target.fromJson(c.otherData!));
-                                    }
-                                    ws.conflicts.remove(c.id);
-                                    state.showToast(
-                                      'Restored the other version.',
-                                    );
-                                  },
-                                  child: const Text('Use this version'),
-                                ),
-                              TextButton(
-                                onPressed: () => ws.conflicts.remove(c.id),
-                                child: const Text('Dismiss'),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    ),
-  );
-}
+/// Lists the preserved versions from sync conflicts, with an explicit choice
+/// for each (see conflict_review.dart).
+Future<void> showConflictsDialog(BuildContext context, AppState state) =>
+    showConflictReview(context, state);
 
 /// The three steps of connecting, in plain words.
 class _ConnectGuide extends StatelessWidget {

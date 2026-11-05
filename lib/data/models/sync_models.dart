@@ -22,8 +22,54 @@ class SyncConflict implements Record {
   Map<String, dynamic>? get otherData =>
       data['otherData'] as Map<String, dynamic>?;
 
+  /// The version the hub kept (the winner) and who made it.
+  String? get keptRev => data['keptRev'] as String?;
+  String? get keptDevice => data['keptDevice'] as String?;
+  bool get keptDeleted => data['keptDeleted'] as bool? ?? false;
+
+  /// The preserved version's revision and device.
+  String? get otherRev => data['otherRev'] as String?;
+  String? get otherDevice => data['otherDevice'] as String?;
+
   @override
   DateTime get updatedAt => parseDate(data['at']) ?? DateTime.now();
+
+  /// How the user settled this conflict, or null while it is still open.
+  /// Both versions stay inside the record after settling (`otherData`, and
+  /// `replaced` when the other version was put in place), so a settling can
+  /// be taken back until the record is pruned.
+  Map<String, dynamic>? get resolution =>
+      (data['resolved'] as Map?)?.cast<String, dynamic>();
+  bool get isResolved => resolution != null;
+
+  /// `kept_current` or `used_other`.
+  String? get choice => resolution?['choice'] as String?;
+  DateTime? get resolvedAt => parseDate(resolution?['at']);
+
+  /// The version that was current before `used_other` replaced it.
+  Map<String, dynamic>? get replacedData =>
+      (resolution?['replaced'] as Map?)?.cast<String, dynamic>();
+  bool get replacedWasDeleted => resolution?['replacedDeleted'] == true;
+
+  /// This conflict, settled. [replaced] is the version that [choice]
+  /// `used_other` put out of place (null if it did not exist).
+  SyncConflict settled(
+    String choice, {
+    required DateTime at,
+    Map<String, dynamic>? replaced,
+    bool replacedDeleted = false,
+  }) => SyncConflict({
+    ...data,
+    'resolved': {
+      'choice': choice,
+      'at': at.toUtc().toIso8601String(),
+      'replaced': ?replaced,
+      if (replacedDeleted) 'replacedDeleted': true,
+    },
+  });
+
+  /// This conflict, open again (a settling that was taken back).
+  SyncConflict reopened() => SyncConflict({...data}..remove('resolved'));
 
   @override
   Map<String, dynamic> toJson() => data;

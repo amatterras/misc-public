@@ -587,6 +587,49 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Puts [item] in place of the item with the same id (or adds it, if that
+  /// item is gone): settling a sync conflict in favour of the other device's
+  /// version. One undo step; the item is saved and synced as a new edit, so
+  /// it wins over both earlier versions on every device.
+  void restoreItem(CanvasItem item, {Map<String, dynamic>? unknownFields}) {
+    endEditing();
+    if (unknownFields == null || unknownFields.isEmpty) {
+      _itemUnknownFields.remove(item.id);
+    } else {
+      _itemUnknownFields[item.id] = {...unknownFields};
+    }
+    _marksChanged.add(item.id);
+    final index = _items.indexWhere((i) => i.id == item.id);
+    _commit(
+      index < 0
+          ? [..._items, item]
+          : ([..._items]..[index] = item),
+    );
+    notifyListeners();
+  }
+
+  /// Removes the item with [id] (settling a conflict in favour of a deletion).
+  /// One undo step.
+  void removeItemById(String id) {
+    if (!_items.any((i) => i.id == id)) return;
+    endEditing();
+    _commit([
+      for (final i in _items)
+        if (i.id != id) i,
+    ]);
+    _selection = Set.unmodifiable(_selection.where((s) => s != id));
+    notifyListeners();
+  }
+
+  /// The current version of the item [id] as it syncs (with fields this
+  /// version does not know), or null.
+  Map<String, dynamic>? itemJson(String id) {
+    final i = _items.where((i) => i.id == id).firstOrNull;
+    if (i == null) return null;
+    final unknown = _itemUnknownFields[id];
+    return unknown == null ? i.toJson() : {...i.toJson(), ...unknown};
+  }
+
   /// Locks the selection, or unlocks it if every selected item is locked.
   void toggleLockSelection() {
     final allLocked = _selection.isNotEmpty && _selection.every(isLocked);

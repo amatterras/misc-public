@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 
 import '../data/models/library_models.dart';
+import 'conflict_notice.dart';
 import '../data/models/task_models.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/canvas/canvas_page.dart';
@@ -403,6 +404,7 @@ class _AppShellState extends State<AppShell> {
                   if (TestEnvironment.active) const _TestDataBanner(),
                   _UnsavedNotice(state: state),
                   _ReminderNotice(state: state),
+                  ConflictNotice(state: state),
                 ],
               ),
             );
