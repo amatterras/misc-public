@@ -346,9 +346,12 @@ class _ConnectGuide extends StatelessWidget {
       ),
       (
         'Start the hub on the PC',
-        'Run "thehub serve" once (or "thehub startup enable" to start it '
-            'with Windows). For an iPhone/iPad away from home, install '
-            'Tailscale on both (free; SYNC_ARCHITECTURE.md §17).',
+        'Run "thehub startup enable" once: it builds the hub program if '
+            'needed and starts it, without a window, every time you sign in '
+            'to Windows ("thehub startup status" shows whether it is running). '
+            'THEapp also runs the hub itself while it is open. For an '
+            'iPhone/iPad away from home, install Tailscale on both (free; '
+            'SYNC_ARCHITECTURE.md §17).',
       ),
       (
         mobile ? 'Pair this iPhone/iPad' : 'Pair this PC',

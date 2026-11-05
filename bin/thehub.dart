@@ -18,6 +18,7 @@ import 'package:flutter_application_1/hub/hub_mirror.dart';
 import 'package:flutter_application_1/hub/hub_host.dart'
     show detectTailscaleAddress;
 import 'package:flutter_application_1/hub/hub_server.dart';
+import 'package:flutter_application_1/hub/hub_startup.dart';
 import 'package:flutter_application_1/hub/hosted_hub.dart';
 import 'package:flutter_application_1/sync/secret_store.dart';
 
@@ -41,7 +42,7 @@ Future<void> main(List<String> args) async {
   try {
     switch (args.first) {
       case 'serve':
-        await _serve(dir, options);
+        await _serve(dir, options, args);
       case 'status':
         await _status(dir);
       case 'stop':
@@ -97,7 +98,11 @@ Future<void> main(List<String> args) async {
           'Live data was not touched. See SYNC_ARCHITECTURE.md §14 to switch to it.',
         );
       case 'startup':
-        await _startup(options.positional.firstOrNull ?? 'status');
+        await _startup(
+          options.positional.firstOrNull ?? 'status',
+          options,
+          customData: options.value('--data') != null ? dir : null,
+        );
       case 'mirror-pair':
         await _mirrorPair(options);
       case 'mirror-run':
@@ -161,12 +166,13 @@ void _usage() => stdout.writeln('''
 misc. sync hub
 
   serve [--port N] [--private-host ADDRESS|auto] [--data DIR]
-        [--tls-cert FILE --tls-key FILE]
+        [--tls-cert FILE --tls-key FILE] [--background yes]
         Run the hub. Listens on 127.0.0.1 (this PC only). --private-host also
         listens on that private/Tailscale address of this PC. Plain http is
         only used on this PC and on Tailscale: a home-network address needs
         HTTPS, so give the hub a certificate (--tls-cert/--tls-key, PEM).
-        Ctrl+C stops it.
+        Ctrl+C stops it. --background yes starts it without a window and
+        returns at once (this is what the sign-in start uses).
   status                 Is it running? Records, devices, memory use.
   stop                   Stop a running hub.
   pair                   Make a one-time pairing code for a new device.
@@ -175,6 +181,9 @@ misc. sync hub
   compact                Shrink the journal (makes a backup first).
   restore-to <backup> <emptyDir>   Restore a backup into a NEW folder.
   startup enable|disable|status    Start the hub at Windows sign-in (optional).
+        enable builds the hub program first if it is missing or out of date,
+        and can be run again at any time (it changes nothing if all is set).
+        status shows what is registered and whether a hub is running now.
 Read-only mirror (e.g. on a second machine; always its OWN folder):
   mirror-pair --hub <URL> --code <CODE> --data <DIR>   Pair once (code from "pair").
   mirror-run --data <DIR> [--reseed] [--repair]
@@ -213,11 +222,18 @@ class _Options {
 
 File _runFile(Directory dir) => File('${dir.path}${_sep}hub.json');
 
-Future<void> _serve(Directory dir, _Options options) async {
+Future<void> _serve(Directory dir, _Options options, List<String> args) async {
   final existing = await _running(dir);
   if (existing != null) {
     stderr.writeln('The hub is already running (pid ${existing['pid']}).');
     exitCode = 1;
+    return;
+  }
+  // --background yes: start a copy of this program that has no console
+  // window, wait until it answers, and leave. The copy does the real work.
+  if (options.value('--background') == 'yes' &&
+      Platform.environment['THEAPP_HUB_CHILD'] != '1') {
+    await _startInBackground(dir, args);
     return;
   }
   final log = _HubLog(dir);
@@ -277,6 +293,57 @@ Future<void> _serve(Directory dir, _Options options) async {
   watch.cancel();
   await sub.cancel();
   if (await _runFile(dir).exists()) await _runFile(dir).delete();
+}
+
+/// Starts `serve` again as a detached process without a console window, and
+/// returns once that hub answers (or says why it did not).
+Future<void> _startInBackground(Directory dir, List<String> args) async {
+  final childArgs = <String>[];
+  for (var i = 0; i < args.length; i++) {
+    if (args[i] == '--background') {
+      i++; // its value
+      continue;
+    }
+    childArgs.add(args[i]);
+  }
+  final running = Platform.resolvedExecutable;
+  final viaDart =
+      running.toLowerCase().endsWith('dart.exe') ||
+      running.toLowerCase().endsWith('${_sep}dart');
+  final commandArgs = viaDart
+      ? ['run', Platform.script.toFilePath(), ...childArgs]
+      : childArgs;
+  final log = _HubLog(dir);
+  log.write('Starting the hub in the background');
+  try {
+    await Process.start(
+      running,
+      commandArgs,
+      mode: ProcessStartMode.detached,
+      environment: {...Platform.environment, 'THEAPP_HUB_CHILD': '1'},
+    );
+  } on ProcessException catch (e) {
+    stderr.writeln('Could not start the hub: ${e.message}');
+    log.write('Could not start the hub: ${e.message}');
+    exitCode = 1;
+    return;
+  }
+  for (var i = 0; i < 150; i++) {
+    final info = await _running(dir);
+    if (info != null) {
+      stdout.writeln(
+        'Hub started in the background (pid ${info['pid']}, '
+        '${(info['listening'] as List).join(', ')}).',
+      );
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  stderr.writeln(
+    'The hub did not answer within 30 seconds. See ${dir.path}${_sep}logs${_sep}hub.log.',
+  );
+  log.write('The background hub did not answer within 30 seconds');
+  exitCode = 1;
 }
 
 /// The running hub's info, or null.
@@ -356,51 +423,92 @@ Future<void> _status(Directory dir) async {
   stdout.writeln('Data folder: ${dir.path}');
 }
 
-/// Optional start at Windows sign-in: a shortcut in the user's Startup
-/// folder (no admin rights, nothing else changed). `disable` removes it.
-Future<void> _startup(String action) async {
+/// Start at Windows sign-in (see hub/hub_startup.dart): a shortcut in the
+/// user's Startup folder, no admin rights. Everything it needs (the compiled
+/// hub program) is built on the way. Safe to repeat.
+Future<void> _startup(
+  String action,
+  _Options options, {
+  Directory? customData,
+}) async {
   if (!Platform.isWindows) throw const _UsageError('startup is Windows-only');
-  final startupDir =
-      '${Platform.environment['APPDATA']}\\Microsoft\\Windows\\Start Menu\\Programs\\Startup';
-  final lnk = File('$startupDir\\THEapp hub.lnk');
-  switch (action) {
-    case 'status':
-      stdout.writeln(
-        lnk.existsSync()
-            ? 'Starts at sign-in: yes ($startupDir)'
-            : 'Starts at sign-in: no',
-      );
-    case 'disable':
-      if (lnk.existsSync()) lnk.deleteSync();
-      stdout.writeln('The hub will no longer start at sign-in.');
-    case 'enable':
-      final exe = File(
-        '${File(Platform.script.toFilePath()).parent.parent.path}\\build\\hub\\thehub.exe',
-      );
-      if (!exe.existsSync()) {
-        throw _UsageError(
-          'build the hub first: dart compile exe bin/thehub.dart -o ${exe.path}',
+  final script = Platform.script.toFilePath();
+  final compiled = !script.toLowerCase().endsWith('.dart');
+  final exe = File(Platform.resolvedExecutable);
+  final startup = HubStartup(
+    // THEAPP_STARTUP_DIR exists so tests can redirect the Startup folder.
+    startupDir: Platform.environment['THEAPP_STARTUP_DIR'] != null
+        ? Directory(Platform.environment['THEAPP_STARTUP_DIR']!)
+        : HubStartup.defaultStartupDirectory(),
+    // bin/thehub.dart lives in the project; a compiled program has no
+    // project around it, so it only registers itself.
+    projectRoot: compiled ? exe.parent : File(script).parent.parent,
+    exe: compiled ? exe : null,
+    hubDir: customData,
+    extraArguments: customData == null ? const [] : ['--data', customData.path],
+  );
+  try {
+    switch (action) {
+      case 'status':
+        final s = await startup.status();
+        if (!s.registered) {
+          stdout.writeln('Not registered: the hub does not start at sign-in.');
+          stdout.writeln('Turn it on with: startup enable');
+        } else if (s.shortcut == null) {
+          stdout.writeln(
+            'Registered, but the shortcut could not be read: ${s.shortcutPath}',
+          );
+          stdout.writeln('Repair it with: startup enable');
+        } else {
+          stdout.writeln('Registered: starts at sign-in (${s.shortcutPath}).');
+          stdout.writeln('Program: ${s.shortcut!.target}');
+          stdout.writeln('Command: ${s.shortcut!.arguments}');
+          if (s.broken) {
+            stdout.writeln(
+              'WARNING: that program is missing, so nothing would start. '
+              'Repair it with: startup enable',
+            );
+          }
+        }
+        if (s.hubRunning) {
+          stdout.writeln('The hub is running now (pid ${s.hubPid}).');
+        } else {
+          stdout.writeln(
+            'The hub is not running now. Start it with: serve --background yes',
+          );
+        }
+        if (s.logFile != null && s.logFile!.existsSync()) {
+          stdout.writeln('Log: ${s.logFile!.path}');
+          if (s.lastLogLine != null) {
+            stdout.writeln('Last entry: ${s.lastLogLine}');
+          }
+        }
+      case 'disable':
+        stdout.writeln(
+          await startup.disable()
+              ? 'The hub will no longer start at sign-in.'
+              : 'It was not set to start at sign-in; nothing changed.',
         );
-      }
-      String q(String s) => s.replaceAll("'", "''");
-      final script =
-          "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('${q(lnk.path)}'); "
-          "\$s.TargetPath = '${q(exe.path)}'; \$s.Arguments = 'serve --private-host auto'; "
-          "\$s.WindowStyle = 7; \$s.Description = 'misc. sync hub'; \$s.Save()";
-      final r = await Process.run('powershell', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        script,
-      ]);
-      if (r.exitCode != 0 || !lnk.existsSync()) {
-        throw const _AdminError('Could not create the shortcut.');
-      }
-      stdout.writeln(
-        'The hub will start (minimised) when you sign in. Undo with: startup disable',
-      );
-    default:
-      throw _UsageError('startup $action?');
+      case 'enable':
+        final r = await startup.enable(
+          rebuild: options.value('--rebuild') == 'yes',
+        );
+        if (r.built) {
+          stdout.writeln('Built the hub program: ${startup.exe.path}');
+        }
+        stdout.writeln(switch (r.change) {
+          StartupChange.created => 'The hub will start (without a window) when you sign in. Undo: startup disable',
+          StartupChange.updated =>
+            'Updated the sign-in start (it pointed somewhere else).',
+          StartupChange.unchanged =>
+            'Already set up to start at sign-in; nothing changed.',
+        });
+        stdout.writeln('Check any time with: startup status');
+      default:
+        throw _UsageError('startup $action?');
+    }
+  } on HubStartupException catch (e) {
+    throw _AdminError(e.message);
   }
 }
 
