@@ -1,4 +1,5 @@
 import '../models/canvas_models.dart';
+import '../storage/app_log.dart';
 import '../storage/json_file_store.dart';
 
 /// What the UI needs from canvas storage.
@@ -33,25 +34,32 @@ class FileCanvasRepository implements CanvasRepository {
     for (final id in await store.list(_collection)) {
       final json = await store.read(_collection, id);
       if (json == null) continue;
-      final text = StringBuffer();
-      for (final item in json['items'] as List? ?? const []) {
-        if (item is Map && item['type'] == 'text') {
-          text.writeln(item['text']);
+      try {
+        final text = StringBuffer();
+        for (final item in json['items'] as List? ?? const []) {
+          if (item is Map && item['type'] == 'text') {
+            text.writeln(item['text']);
+          }
         }
+        summaries.add(
+          CanvasSummary(
+            id: json['id'] as String,
+            title: json['title'] as String,
+            updatedAt: DateTime.parse(json['updatedAt'] as String).toLocal(),
+            folderId: json['folderId'] as String?,
+            searchText: text.toString(),
+            isNotebook: isNotebookId(id, json['kind'] as String?),
+            isLinksBoard: isLinksBoardId(id, json['kind'] as String?),
+            isCalendarInk: isCalendarInkId(id, json['kind'] as String?),
+            isComponents: isComponentsId(id, json['kind'] as String?),
+          ),
+        );
+      } catch (e) {
+        // A canvas file that is readable JSON but not a canvas (a missing or
+        // wrongly typed field, for example from a damaged disk) is left out
+        // of the list instead of making the whole list, and every sync, fail.
+        AppLog.warn('Canvas $id is not a valid canvas and was left out ($e)');
       }
-      summaries.add(
-        CanvasSummary(
-          id: json['id'] as String,
-          title: json['title'] as String,
-          updatedAt: DateTime.parse(json['updatedAt'] as String).toLocal(),
-          folderId: json['folderId'] as String?,
-          searchText: text.toString(),
-          isNotebook: isNotebookId(id, json['kind'] as String?),
-          isLinksBoard: isLinksBoardId(id, json['kind'] as String?),
-          isCalendarInk: isCalendarInkId(id, json['kind'] as String?),
-          isComponents: isComponentsId(id, json['kind'] as String?),
-        ),
-      );
     }
     summaries.sort(
       (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),

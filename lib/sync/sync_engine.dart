@@ -20,6 +20,7 @@ import '../data/storage/app_log.dart';
 import '../data/storage/storage_encryption.dart'
     show DecryptionFailure, FileCipher;
 import '../data/workspace.dart';
+import 'canvas_manifest.dart';
 import 'canvas_merge.dart';
 import 'device_keys.dart';
 import 'e2ee.dart';
@@ -255,8 +256,7 @@ class SyncEngine {
       await _ensureHubSealed(state, report);
       AppLog.info('Sync: $report');
       return report;
-    } finally {
-    }
+    } finally {}
   }
 
   void _checkHub(SyncState state, String hubId, int lastSeq) {
@@ -275,8 +275,39 @@ class SyncEngine {
 
   // ------------------------------------------------------ local versions --
 
-  /// Every local record version (rev + data) that syncs, by key.
+  /// Every local record version (rev + data) that syncs, by key. This reads
+  /// EVERY canvas: it is the reference ("full scan") that the incremental path
+  /// [pendingVersions] must always agree with, and what the one-time
+  /// end-to-end upgrade uses.
   Future<Map<String, SyncChange>> localVersions() async {
+    final out = _recordVersions();
+    for (final id in await _canvasIds()) {
+      final doc = await _loadCanvas(id);
+      if (doc != null) out.addAll(_canvasChanges(doc));
+    }
+    out.addAll(_deletedCanvasChanges());
+    return out;
+  }
+
+  /// The ids of the canvases to look at (every readable canvas file).
+  Future<List<String>> _canvasIds() async {
+    final repo = canvases;
+    if (repo is FileCanvasRepository) return repo.store.list('canvases');
+    return [for (final c in await repo.listCanvases()) c.id];
+  }
+
+  /// A canvas that cannot be read is skipped (and logged) instead of
+  /// failing every sync: one damaged file must not stop all the others.
+  Future<CanvasDocument?> _loadCanvas(String id) async {
+    try {
+      return await canvases.load(id);
+    } catch (e) {
+      AppLog.warn('Sync: canvas $id could not be read and was skipped ($e)');
+      return null;
+    }
+  }
+
+  Map<String, SyncChange> _recordVersions() {
     final out = <String, SyncChange>{};
     for (final MapEntry(key: name, value: collection)
         in workspace.syncCollections.entries) {
@@ -293,55 +324,114 @@ class SyncEngine {
         );
       }
     }
-    for (final summary in await canvases.listCanvases()) {
-      final doc = await canvases.load(summary.id);
-      if (doc == null) continue;
-      if (doc.metaRev != null) {
-        out['canvases/${doc.id}'] = SyncChange(
-          collection: 'canvases',
-          id: doc.id,
-          rev: doc.metaRev!,
-          deleted: false,
-          data: canvasMetaData(
-            doc.title,
-            doc.folderId,
-            doc.items,
-            doc.metaUnknownFields,
-            doc.kind,
-            doc.pageBackgrounds,
-          ),
-        );
-      }
-      for (final item in doc.items) {
-        final rev = doc.itemRevs[item.id];
-        if (rev == null) continue;
-        out['canvas_items/${doc.id}/${item.id}'] = SyncChange(
-          collection: 'canvas_items',
-          id: '${doc.id}/${item.id}',
-          rev: rev,
-          deleted: false,
-          data: doc.itemJson(item),
-        );
-      }
-      for (final t in doc.tombstones.entries) {
-        out['canvas_items/${doc.id}/${t.key}'] = SyncChange(
-          collection: 'canvas_items',
-          id: '${doc.id}/${t.key}',
-          rev: t.value,
-          deleted: true,
-        );
-      }
-    }
-    for (final t in workspace.canvasTombstones.entries) {
-      out['canvases/${t.key}'] = SyncChange(
+    return out;
+  }
+
+  /// The versions inside one canvas: its title/folder/order record, each
+  /// item that has a stamp, and its item tombstones.
+  Map<String, SyncChange> _canvasChanges(CanvasDocument doc) {
+    final out = <String, SyncChange>{};
+    if (doc.metaRev != null) {
+      out['canvases/${doc.id}'] = SyncChange(
         collection: 'canvases',
-        id: t.key,
+        id: doc.id,
+        rev: doc.metaRev!,
+        deleted: false,
+        data: canvasMetaData(
+          doc.title,
+          doc.folderId,
+          doc.items,
+          doc.metaUnknownFields,
+          doc.kind,
+          doc.pageBackgrounds,
+        ),
+      );
+    }
+    for (final item in doc.items) {
+      final rev = doc.itemRevs[item.id];
+      if (rev == null) continue;
+      out['canvas_items/${doc.id}/${item.id}'] = SyncChange(
+        collection: 'canvas_items',
+        id: '${doc.id}/${item.id}',
+        rev: rev,
+        deleted: false,
+        data: doc.itemJson(item),
+      );
+    }
+    for (final t in doc.tombstones.entries) {
+      out['canvas_items/${doc.id}/${t.key}'] = SyncChange(
+        collection: 'canvas_items',
+        id: '${doc.id}/${t.key}',
         rev: t.value,
         deleted: true,
       );
     }
     return out;
   }
+
+  Map<String, SyncChange> _deletedCanvasChanges() => {
+    for (final t in workspace.canvasTombstones.entries)
+      'canvases/${t.key}': SyncChange(
+        collection: 'canvases',
+        id: t.key,
+        rev: t.value,
+        deleted: true,
+      ),
+  };
+
+  // ------------------------------------------------------- pending changes --
+
+  static final Expando<CanvasManifest> _manifests = Expando<CanvasManifest>();
+
+  /// The revision cache for this workspace's canvases (shared by every
+  /// engine of the workspace), or null when the canvases are not plain files
+  /// (then every cycle reads them all, as before).
+  CanvasManifest? get canvasManifest {
+    final repo = canvases;
+    if (repo is! FileCanvasRepository) return null;
+    return _manifests[workspace] ??= CanvasManifest(
+      store: repo.store,
+      metaStore: workspace.store,
+      load: _loadCanvas,
+    );
+  }
+
+  /// Only what differs from what the remote last confirmed, by key: the
+  /// result of a full scan filtered by `state.base`, found without reading
+  /// canvases that cannot have changed.
+  Future<Map<String, SyncChange>> pendingVersions(SyncState state) async {
+    final manifest = canvasManifest;
+    if (manifest == null) return pendingVersionsFullScan(state);
+    // A cache is only believed after it was checked against the files:
+    // when it is new (first cycle of this run) and then once a day.
+    if (manifest.dueForVerify) await manifest.verify();
+    final view = await manifest.refresh();
+    final all = _recordVersions();
+    for (final entry in view.values) {
+      if (!entry.hasPending(state.base)) continue;
+      final doc = await _loadCanvas(entry.id);
+      if (doc != null) all.addAll(_canvasChanges(doc));
+    }
+    all.addAll(_deletedCanvasChanges());
+    return _differing(all, state);
+  }
+
+  /// The same answer, by reading every canvas (the reference).
+  Future<Map<String, SyncChange>> pendingVersionsFullScan(
+    SyncState state,
+  ) async => _differing(await localVersions(), state);
+
+  Map<String, SyncChange> _differing(
+    Map<String, SyncChange> all,
+    SyncState state,
+  ) => {
+    for (final e in all.entries)
+      if (state.base[e.key] != e.value.rev) e.key: e.value,
+  };
+
+  /// Checks the manifest against every canvas file and repairs it; returns
+  /// how many entries were wrong (0 normally).
+  Future<int> verifyManifest() async => await canvasManifest?.verify() ?? 0;
 
   // ---------------------------------------------------------------- push --
 
@@ -350,10 +440,9 @@ class SyncEngine {
     // older backup), so "pending" is judged against the right hub.
     final probe = await client.pull(state.cursor, limit: 1);
     _checkHub(state, probe.hubId, probe.lastSeq);
-    final local = await localVersions();
+    final local = await pendingVersions(state);
     final pending = <SyncChange>[];
     for (final c in local.values) {
-      if (state.base[c.key] == c.rev) continue;
       if (c.data != null &&
           utf8.encode(jsonEncode(c.data)).length > maxRecordBytes) {
         // Too large for the hub: keep it here, report it, and let every

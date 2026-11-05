@@ -96,6 +96,49 @@ class JsonFileStore {
   /// Pending writes per file, so writes to the same file never overlap.
   final Map<String, Future<void>> _pending = {};
 
+  final List<void Function(String collection, String id)> _writeListeners = [];
+
+  /// Tells [listener] after every write, delete or move to the trash made
+  /// through this store (it is called when the change is on disk, or has
+  /// failed: either way the file may have changed, so a cache of it must not
+  /// be trusted). Used by caches such as the canvas manifest.
+  void addWriteListener(void Function(String collection, String id) listener) {
+    _writeListeners.add(listener);
+  }
+
+  void _changed(String collection, String id) {
+    for (final l in List.of(_writeListeners)) {
+      try {
+        l(collection, id);
+      } catch (_) {
+        // A faulty listener must never break a save.
+      }
+    }
+  }
+
+  /// A cheap description of the files behind a document (size and
+  /// modification time of the file and of its previous-version copy), or null
+  /// if neither exists. Changes whenever either file is rewritten, so a cache
+  /// that keeps this beside what it read can tell, without reading, whether
+  /// the document may have changed.
+  Future<String?> fingerprint(String collection, String id) async {
+    final file = _file(collection, id);
+    String part(FileStat s) => s.type == FileSystemEntityType.notFound
+        ? '-'
+        : '${s.size}@${s.modified.microsecondsSinceEpoch}';
+    try {
+      final main = await file.stat();
+      final bak = await File('${file.path}.bak').stat();
+      if (main.type == FileSystemEntityType.notFound &&
+          bak.type == FileSystemEntityType.notFound) {
+        return null;
+      }
+      return 'm:${part(main)}|b:${part(bak)}';
+    } on FileSystemException {
+      return null;
+    }
+  }
+
   /// When true, writes are ignored (used while restoring a backup so no
   /// pending autosave can overwrite the restored files).
   bool readOnly = false;
@@ -114,6 +157,7 @@ class JsonFileStore {
     _pending[file.path] = next;
     return next.whenComplete(() {
       if (identical(_pending[file.path], next)) _pending.remove(file.path);
+      _changed(collection, id);
     });
   }
 
@@ -244,6 +288,7 @@ class JsonFileStore {
         AppLog.warn(message);
         // Put the good copy back as the main file straight away.
         await _retry(() => _copy(bak, file));
+        _changed(collection, id);
       }
       return backup;
     }
@@ -335,12 +380,16 @@ class JsonFileStore {
   Future<void> delete(String collection, String id) async {
     await _pending[_file(collection, id).path]?.catchError((_) {});
     final file = _file(collection, id);
-    for (final f in [
-      file,
-      File('${file.path}.bak'),
-      File('${file.path}.tmp'),
-    ]) {
-      if (await f.exists()) await _retry(f.delete);
+    try {
+      for (final f in [
+        file,
+        File('${file.path}.bak'),
+        File('${file.path}.tmp'),
+      ]) {
+        if (await f.exists()) await _retry(f.delete);
+      }
+    } finally {
+      _changed(collection, id);
     }
   }
 
@@ -352,8 +401,14 @@ class JsonFileStore {
     );
     await trash.create(recursive: true);
     final stamp = DateTime.now().millisecondsSinceEpoch;
-    await file.rename('${trash.path}${Platform.pathSeparator}$id-$stamp.json');
-    final bak = File('${file.path}.bak');
-    if (await bak.exists()) await bak.delete();
+    try {
+      await file.rename(
+        '${trash.path}${Platform.pathSeparator}$id-$stamp.json',
+      );
+      final bak = File('${file.path}.bak');
+      if (await bak.exists()) await bak.delete();
+    } finally {
+      _changed(collection, id);
+    }
   }
 }
