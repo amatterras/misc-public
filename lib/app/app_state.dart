@@ -502,6 +502,10 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Tests: starts the 10-second job (as the Windows app does at start-up)
+  /// after [runMaintenance] and [maintenanceInterval] were set.
+  void startMaintenanceForTests() => _startMaintenance();
+
   void _startMaintenance() {
     if (!runMaintenance || maintenance != null) return;
     // Edits count for the backup even when this device is not paired.
@@ -552,6 +556,12 @@ class AppState extends ChangeNotifier {
   Future<bool> _syncTick() async {
     final s = _scheduler;
     if (s == null || !syncEnabled || syncNeedsPairing) return false;
+    if (s.connection == SyncConnection.blocked) {
+      // The hub refuses for a reason waiting does not fix: ask again calmly
+      // (the scheduler's own pause), not every 10 seconds.
+      s.request();
+      throw JobProblem(_lastResult);
+    }
     final before = s.lastSuccess;
     await s.syncNow();
     if (s.lastSuccess == before) {

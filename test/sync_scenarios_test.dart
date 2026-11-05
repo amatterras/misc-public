@@ -418,6 +418,38 @@ void main() {
     });
   });
 
+  // -------------------------------------------- a refusal waiting cannot fix
+  group('4c. a hub that refuses for a lasting reason', () {
+    test('the PC does not ask again every 10 seconds, says why, and recovers '
+        'by itself when the cause goes away', () async {
+      final pc = await rig.device('pc');
+      pc.s.runMaintenance = true; // the Windows 10-second job
+      pc.s.maintenanceInterval = const Duration(milliseconds: 100);
+      pc.s.startMaintenanceForTests();
+      pc.proxy.refuseWith = (status: 426, code: 'protocol_mismatch');
+      pc.s.workspace.createNote(title: 'Edit while refused');
+      await until(
+        () => pc.s.syncConnection == SyncConnection.blocked,
+        what: 'blocked',
+      );
+      expect(pc.s.syncStatus, isNot(startsWith('Synced')));
+      expect(pc.s.syncStatus, isNot(contains('live')));
+      final before = pc.proxy.requests;
+      await Future<void>.delayed(const Duration(seconds: 4));
+      // 40 job ticks happened; a refusal is asked again after the scheduler's
+      // pause (15 s), not on every tick.
+      expect(pc.proxy.requests - before, lessThanOrEqualTo(6));
+      // "Sync now" is never held back, and a cure is noticed at once.
+      pc.proxy.refuseWith = null;
+      await pc.s.syncNow();
+      await until(
+        () => pc.s.syncStatus.startsWith('Synced'),
+        what: 'recovered',
+      );
+      expect(pc.s.syncConnection, isNot(SyncConnection.blocked));
+    });
+  });
+
   // ------------------------------------------------- data that cannot sync
   group('4b. a record that can never sync', () {
     test('is reported (never plain "Synced"), stays on the device, and does '

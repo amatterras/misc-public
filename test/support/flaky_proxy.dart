@@ -27,6 +27,10 @@ class FlakyProxy {
   /// Answer every data request with 401.
   bool refuseAuth = false;
 
+  /// Answer every data request with this status and error code (for example
+  /// 426 / protocol_mismatch: a refusal that waiting does not fix).
+  ({int status, String code})? refuseWith;
+
   /// Requests that reached the proxy (all kinds).
   int requests = 0;
 
@@ -68,6 +72,16 @@ class FlakyProxy {
       r.response.statusCode = 401;
       r.response.headers.contentType = ContentType.json;
       r.response.write('{"error":"unauthorized","message":"Not accepted."}');
+      await r.response.close();
+      return;
+    }
+    final forced = refuseWith;
+    if (forced != null && r.uri.path != '/v1/status') {
+      r.response.statusCode = forced.status;
+      r.response.headers.contentType = ContentType.json;
+      r.response.write(
+        '{"error":"${forced.code}","message":"Refused for a test."}',
+      );
       await r.response.close();
       return;
     }
