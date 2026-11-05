@@ -371,8 +371,9 @@ class LibraryRepository {
     final space = workspace.librarySpaces[spaceId];
     if (space == null ||
         space.kind != LibrarySpaceKind.regular ||
-        workspace.libraryObjects[objectId] == null)
+        workspace.libraryObjects[objectId] == null) {
       return;
+    }
     final id = '$spaceId.$objectId';
     workspace.libraryRelations.put(
       LibraryRelation(
@@ -467,8 +468,9 @@ class LibraryRepository {
             .where((r) => r.objectId == objectId && r.kind == 'tag')
             .toList()) {
       final id = CustomTag.idOfAssetRef(r.targetId);
-      if (id != null && !tagIds.contains(id))
+      if (id != null && !tagIds.contains(id)) {
         workspace.libraryRelations.remove(r.id);
+      }
     }
     for (final id in tagIds) {
       if (workspace.customTags[id] == null) continue;
@@ -557,8 +559,9 @@ class LibraryRepository {
 
   LibrarySearchResult search(String raw) {
     final parsed = LibraryQuery.parse(raw);
-    if (parsed.error != null)
+    if (parsed.error != null) {
       return LibrarySearchResult(const [], parsed.error!);
+    }
     final byId = {for (final o in objects) o.id: o};
     final rows = workspace.libraryIndex.all.where(
       (r) => byId.containsKey(r.objectId),
@@ -572,23 +575,27 @@ class LibraryRepository {
                     parsed.entity!.toLowerCase(),
                   ) ??
                   false) ==
-              false)
+              false) {
         continue;
+      }
       if (parsed.domain != null &&
           (Uri.tryParse(o.sourceUrl ?? '')?.host
                       .toLowerCase()
                       .endsWith(parsed.domain!.toLowerCase()) ??
                   false) ==
-              false)
+              false) {
         continue;
+      }
       if (parsed.since != null && o.createdAt.isBefore(parsed.since!)) continue;
       if (parsed.color != null &&
           '${o.metadata['color'] ?? ''}'.toLowerCase() !=
-              parsed.color!.toLowerCase())
+              parsed.color!.toLowerCase()) {
         continue;
+      }
       final lower = row.text.toLowerCase();
-      if (parsed.tag != null && !lower.contains(parsed.tag!.toLowerCase()))
+      if (parsed.tag != null && !lower.contains(parsed.tag!.toLowerCase())) {
         continue;
+      }
       if (parsed.space != null) {
         final requested = workspace.librarySpaces.all
             .where(
@@ -608,14 +615,16 @@ class LibraryRepository {
           continue;
         }
         if (requested.kind == LibrarySpaceKind.smart &&
-            !search(requested.query).items.any((item) => item.id == o.id))
+            !search(requested.query).items.any((item) => item.id == o.id)) {
           continue;
+        }
       }
       if (parsed.excluded.any(lower.contains)) continue;
       final terms = parsed.terms;
       final hit = terms.where(lower.contains).length;
-      if (terms.isNotEmpty && (parsed.anyTerm ? hit == 0 : hit < terms.length))
+      if (terms.isNotEmpty && (parsed.anyTerm ? hit == 0 : hit < terms.length)) {
         continue;
+      }
       found.add((o, hit));
     }
     found.sort(
@@ -631,8 +640,9 @@ class LibraryRepository {
     final uri = Uri.tryParse(raw.trim());
     if (uri == null ||
         !(uri.isScheme('http') || uri.isScheme('https')) ||
-        uri.host.isEmpty)
+        uri.host.isEmpty) {
       return null;
+    }
     if (uri.userInfo.isNotEmpty) return null;
     final host = uri.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
     final path = uri.path.isEmpty ? '/' : uri.path;
@@ -709,8 +719,9 @@ class LibraryQuery {
           type = LibraryObjectType.values
               .where((e) => e.name == value.toLowerCase())
               .firstOrNull;
-          if (type == null)
+          if (type == null) {
             return LibraryQuery(error: 'Unknown object type "$value".');
+          }
         case 'object':
           entity = value;
         case 'tag':
@@ -723,8 +734,9 @@ class LibraryQuery {
           color = value;
         case 'after':
           since = DateTime.tryParse(value);
-          if (since == null)
+          if (since == null) {
             return LibraryQuery(error: 'Use after:YYYY-MM-DD.');
+          }
         default:
           return LibraryQuery(error: 'Unknown filter "$key:".');
       }
