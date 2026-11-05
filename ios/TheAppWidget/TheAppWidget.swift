@@ -82,7 +82,10 @@ struct Provider: TimelineProvider {
     let now = Date()
     // THEapp asks for a reload on every change; the extra entry at
     // midnight moves "Tomorrow" to "Today" even if the app is not opened.
-    let midnight = Calendar.current.startOfDay(for: now).addingTimeInterval(24 * 3600 + 5)
+    let calendar = Calendar.autoupdatingCurrent
+    let startOfToday = calendar.startOfDay(for: now)
+    let midnight = (calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? now)
+      .addingTimeInterval(5)
     completion(
       Timeline(
         entries: [entry(at: now, preview: false), entry(at: midnight, preview: false)],

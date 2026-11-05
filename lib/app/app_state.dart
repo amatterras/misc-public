@@ -1,4 +1,5 @@
 import '../search/workspace_search.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -1316,6 +1317,10 @@ class AppState extends ChangeNotifier {
     unawaited(peerSync.startIfEnabled());
     // iOS shows its bars again after the app was in the background.
     if (immersive) applyImmersive(true);
+    // Timers are suspended while iOS backgrounds the process. Reconcile the
+    // shared snapshot before returning, then the collection listeners cover
+    // any changes delivered by the catch-up sync below.
+    await updateWidgets();
     await importSharedItems();
     _startCalendarSyncSchedule();
     unawaited(syncCalendarAccounts());
@@ -1882,7 +1887,10 @@ class AppState extends ChangeNotifier {
 
   Timer? _widgetTimer;
   Timer? _widgetMidnight;
+  Timer? _widgetRetry;
   String? _lastWidgetJson;
+  Future<bool>? _widgetWrite;
+  Duration _widgetRetryDelay = const Duration(seconds: 5);
 
   /// How long changes are collected before the widgets are updated.
   static Duration widgetDelay = const Duration(seconds: 2);
@@ -1912,14 +1920,50 @@ class AppState extends ChangeNotifier {
   /// Writes a fresh snapshot if it changed (and again after midnight,
   /// when "tomorrow" becomes "today"). Returns false if not written.
   Future<bool> updateWidgets({DateTime? now}) async {
+    final activeWrite = _widgetWrite;
+    if (activeWrite != null) {
+      // A second mutation can arrive while rendering handwriting or writing
+      // the shared snapshot. Queue another pass rather than racing an older
+      // snapshot over a newer one.
+      _scheduleWidgetUpdate();
+      return activeWrite;
+    }
+    final write = _updateWidgets(now: now);
+    _widgetWrite = write;
+    try {
+      return await write;
+    } finally {
+      if (identical(_widgetWrite, write)) _widgetWrite = null;
+    }
+  }
+
+  Future<bool> _updateWidgets({DateTime? now}) async {
     final ios = this.ios;
     if (ios == null) return false;
     final at = now ?? DateTime.now();
     _widgetMidnight?.cancel();
+    final tomorrow = DateTime(at.year, at.month, at.day + 1);
     _widgetMidnight = Timer(
-      addDays(dateOnly(at), 1).difference(at) + const Duration(seconds: 5),
+      tomorrow.difference(at) + const Duration(seconds: 5),
       () => unawaited(updateWidgets()),
     );
+    // The widgets are a view of committed local data. This also ensures an
+    // incoming sync is persisted before it becomes visible to WidgetKit.
+    try {
+      await Future.wait([
+        workspace.tasks.flush(),
+        workspace.entries.flush(),
+        workspace.projects.flush(),
+      ]);
+    } catch (e, s) {
+      AppLog.error(
+        'Could not commit calendar data for the home-screen widgets',
+        e,
+        s,
+      );
+      _scheduleWidgetRetry();
+      return false;
+    }
     final snapshot = WidgetSnapshot.build(workspace, at);
     final ink = calendarInk;
     if (ink != null) {
@@ -1937,13 +1981,29 @@ class AppState extends ChangeNotifier {
     final key = json.replaceFirst(RegExp(r'"generatedAt":"[^"]*"'), '');
     if (key == _lastWidgetJson) return false;
     try {
-      if (!await ios.writeWidgetSnapshot(json)) return false;
+      if (!await ios.writeWidgetSnapshot(json)) {
+        _scheduleWidgetRetry();
+        return false;
+      }
     } catch (e, s) {
       AppLog.error('Could not update the home-screen widgets', e, s);
+      _scheduleWidgetRetry();
       return false;
     }
     _lastWidgetJson = key;
+    _widgetRetry?.cancel();
+    _widgetRetry = null;
+    _widgetRetryDelay = const Duration(seconds: 5);
     return true;
+  }
+
+  void _scheduleWidgetRetry() {
+    if (_disposed || ios == null || _widgetRetry?.isActive == true) return;
+    final delay = _widgetRetryDelay;
+    _widgetRetryDelay = Duration(
+      seconds: (_widgetRetryDelay.inSeconds * 2).clamp(5, 300),
+    );
+    _widgetRetry = Timer(delay, () => unawaited(updateWidgets()));
   }
 
   /// Opens what a widget was tapped on (`theapp://open?task=…` or
