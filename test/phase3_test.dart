@@ -498,11 +498,30 @@ void main() {
       for (final f in [
         'ios/TheAppWidget/TheAppWidget.entitlements',
         'ios/Runner/Runner.entitlements',
-        'ios/TheAppWidget/TheAppWidget.swift',
-        'ios/Runner/AppDelegate.swift',
+        'ios/ShareExtension/ShareExtension.entitlements',
+        // The name lives in one shared file (see AppGroup.swift).
+        'ios/Shared/AppGroup.swift',
       ]) {
         expect(read(f), contains(group), reason: f);
       }
+      // All three targets use that one resolver (never a hard-coded name),
+      // so the app, the extension and the widgets agree on one folder, and
+      // all three compile it.
+      for (final f in [
+        'ios/TheAppWidget/TheAppWidget.swift',
+        'ios/Runner/AppDelegate.swift',
+        'ios/ShareExtension/ShareViewController.swift',
+      ]) {
+        final source = read(f);
+        expect(source, contains('AppGroup.'), reason: f);
+        expect(source, isNot(contains('"$group"')), reason: f);
+      }
+      expect(
+        RegExp('AppGroup.swift in Sources').allMatches(project).length,
+        greaterThanOrEqualTo(3),
+        reason: 'AppGroup.swift must be in the Runner, widget and share '
+            'extension source phases',
+      );
       final swift = read('ios/TheAppWidget/TheAppWidget.swift');
       // Reads the same file and fields the Dart side writes.
       expect(swift, contains('widget_snapshot.json'));
