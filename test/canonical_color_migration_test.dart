@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/app/theme.dart';
+import 'package:flutter_application_1/new_ui/new_tokens.dart';
 import 'package:flutter_application_1/data/migrations/canonical_color_migration.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
@@ -106,17 +107,43 @@ void main() {
     'semantic palettes stay separate and global text contrast is strong',
     () {
       int hex(Color color) => color.toARGB32();
+      double contrast(Color a, Color b) {
+        final la = a.computeLuminance() + .05;
+        final lb = b.computeLuminance() + .05;
+        return la > lb ? la / lb : lb / la;
+      }
+
+      // The interface has one palette (the New one); the ink, tag, category
+      // and calendar palettes below are separate and never follow it. The
+      // dark identity colours are kept exactly, and text stays readable in
+      // both themes.
+      for (final mode in [ThemeMode.dark, ThemeMode.light]) {
+        AppColors.mode = mode;
+        expect(AppColors.background, NewColors.background);
+        expect(AppColors.card, NewColors.surface);
+        expect(AppColors.cardRaised, NewColors.surfaceRaised);
+        expect(AppColors.border, NewColors.border);
+        expect(AppColors.text, NewColors.text);
+        expect(AppColors.accent, NewColors.accent);
+        expect(
+          contrast(AppColors.text, AppColors.background),
+          greaterThan(7),
+          reason: '$mode text on the page',
+        );
+        expect(
+          contrast(AppColors.text, AppColors.card),
+          greaterThan(7),
+          reason: '$mode text on cards',
+        );
+        expect(
+          contrast(AppColors.textMuted, AppColors.background),
+          greaterThan(4.5),
+          reason: '$mode muted text',
+        );
+      }
+      AppColors.mode = ThemeMode.dark;
       expect(hex(AppColors.background), 0xFF191A1D);
-      expect(hex(AppColors.card), 0xFF222429);
-      expect(hex(AppColors.cardRaised), 0xFF303239);
-      expect(hex(AppColors.border), 0xFF41444A);
-      expect(hex(AppColors.text), 0xFFF5F3EF);
-      expect(hex(AppColors.textMuted), 0xFFAAAEB6);
       expect(hex(AppColors.accent), 0xFF789BB5);
-      expect(hex(AppColors.accentSecondary), 0xFF829CB5);
-      expect(hex(AppColors.success), 0xFF8FBFA9);
-      expect(hex(AppColors.brand), 0xFF172943);
-      expect(hex(AppColors.warm), 0xFFE5D5B8);
       expect(InkColors.all.map(hex), [
         0xFFE3E5E8,
         0xFF789BB5,

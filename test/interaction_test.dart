@@ -22,6 +22,7 @@ import 'package:flutter_application_1/platform/windows_native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/both_clocks.dart';
+import 'support/nav.dart';
 
 /// A real 4x3 PNG, drawn with Flutter (so it decodes everywhere).
 Future<Uint8List> makePng() async {
@@ -107,17 +108,14 @@ class Harness {
   /// inside calendar.
   Future<void> nav(String label) async {
     if (label == 'Tasks') {
-      await tester.tap(find.text('calendar').last);
+      await tapNav(tester, 'calendar');
       await tester.pump();
       final toggle = find.byKey(const ValueKey('calendar-tasks-toggle'));
       if (find.text('Hide tasks').evaluate().isEmpty) {
         await tester.tap(toggle);
       }
     } else {
-      final name =
-          const {'Canvas': 'mindmap', 'Links': 'archive'}[label] ??
-          label.toLowerCase();
-      await tester.tap(find.text(name).last);
+      await tapNav(tester, label);
     }
     await tester.pump();
     await tester.pump();

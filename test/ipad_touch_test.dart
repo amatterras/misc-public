@@ -16,6 +16,8 @@ import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/canvas/canvas_controller.dart';
 import 'package:flutter_application_1/features/canvas/canvas_page.dart';
+import 'package:flutter_application_1/features/palette/command_palette.dart';
+import 'package:flutter_application_1/new_ui/new_sidebar.dart';
 import 'package:flutter_application_1/features/settings/settings_dialog.dart';
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/platform/ios_bridge.dart';
@@ -35,6 +37,15 @@ class _RecordingState extends AppState {
 
   @override
   Future<void> deleteCanvas(String id) async => deleted.add(id);
+}
+
+/// Moves a mouse pointer onto the widget with [key] (shows its hover label).
+Future<void> hover(WidgetTester tester, String key) async {
+  final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+  await mouse.addPointer(location: Offset.zero);
+  addTearDown(mouse.removePointer);
+  await mouse.moveTo(tester.getCenter(find.byKey(ValueKey(key))));
+  await tester.pump(const Duration(milliseconds: 400));
 }
 
 Future<AppState> bootIpad(
@@ -221,26 +232,42 @@ void main() {
   });
 
   group('menus without right-click', () {
-    testWidgets('the sidebar lists no canvases; the title menu is the way', (
-      tester,
-    ) async {
+    testWidgets('the sidebar lists no canvases and there is no corner picker; '
+        'the canvas options are in the command palette', (tester) async {
       final s = await bootIpad(tester, dir);
       s.goTo(AppPage.canvas);
       await settle(tester);
       final title = s.canvasList.first.title;
-      // Only the title chip carries the name now (no sidebar entry to hold).
-      expect(find.text(title), findsOneWidget);
-      await tester.tap(find.byTooltip('Canvas options'));
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
-      expect(find.text('Rename'), findsOneWidget);
-      expect(find.text('Move to trash'), findsOneWidget);
-      await tester.tapAt(const Offset(5, 5)); // close the menu
-      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.descendant(
+          of: find.byType(NewSidebar),
+          matching: find.text(title),
+        ),
+        findsNothing,
+        reason: 'the sidebar holds destinations, not canvases',
+      );
+      expect(find.byTooltip('Canvas options'), findsNothing);
+      // What the old corner picker offered, reachable by touch: the palette
+      // button is in the sidebar, and the commands are there.
+      final labels = paletteCommands(
+        s,
+        quickAdd: (_) {},
+        search: (_) {},
+        settings: (_) {},
+        appSwitcher: (_) {},
+      ).map((c) => c.label);
+      expect(
+        labels,
+        containsAll([
+          'Rename this mindmap',
+          'Move this mindmap to a folder',
+          'Move this mindmap to trash',
+        ]),
+      );
       await shutDown(tester, s);
     });
 
-    testWidgets('a canvas can be moved to trash from its title menu', (
+    testWidgets('a canvas can be moved to trash from the command palette', (
       tester,
     ) async {
       final s = await bootIpad(tester, dir, recording: true);
@@ -249,10 +276,15 @@ void main() {
       await settle(tester);
       final id = s.canvas!.id;
 
-      await tester.tap(find.byTooltip('Canvas options'));
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1)); // menu fully open
-      await tester.tap(find.text('Move to trash'));
+      final trash = paletteCommands(
+        s,
+        quickAdd: (_) {},
+        search: (_) {},
+        settings: (_) {},
+        appSwitcher: (_) {},
+      ).firstWhere((c) => c.label == 'Move this mindmap to trash');
+      final context = tester.element(find.byType(Scaffold).first);
+      trash.run(context);
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
       expect(find.textContaining('to trash?'), findsOneWidget);
@@ -330,8 +362,11 @@ void main() {
 
       s.goTo(AppPage.notes);
       await settle(tester);
-      expect(find.text('Quick Add'), findsWidgets);
-      expect(find.textContaining('Ctrl+N'), findsNothing);
+      // The sidebar's Quick Add shows its name on hover; on a touch device it
+      // never mentions a key.
+      await hover(tester, 'new-quick-add');
+      expect(find.text('Quick Add'), findsOneWidget);
+      expect(find.textContaining('Ctrl'), findsNothing);
 
       final context = tester.element(find.byType(Scaffold).first);
       unawaited(
@@ -352,6 +387,8 @@ void main() {
     final s = await bootIpad(tester, dir);
     s.goTo(AppPage.canvas);
     await settle(tester);
+    await hover(tester, 'new-quick-add');
+    expect(find.text('Quick Add  Ctrl N'), findsOneWidget);
     expect(find.text('Ctrl K'), findsNothing, reason: 'no search entry');
     expect(find.text('Saved on this PC'), findsOneWidget);
     await shutDown(tester, s);

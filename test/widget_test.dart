@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/app/shell.dart';
+import 'package:flutter_application_1/app/sidebar.dart' show appDestinations;
 import 'package:flutter_application_1/app/theme.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
@@ -23,6 +24,7 @@ import 'package:flutter_application_1/sync/hlc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/both_clocks.dart';
+import 'support/nav.dart';
 
 /// Boots the real app on a temporary data folder.
 Future<AppState> boot(WidgetTester tester, Directory dir) async {
@@ -84,9 +86,18 @@ void main() {
     final s = await boot(tester, dir);
     // There is no Home page or start-page button any more.
     expect(find.byKey(const ValueKey('sidebar-start-page')), findsNothing);
-    // Exactly the four destinations, in order and spelling.
+    // The destinations, in order and spelling (the sidebar shows icons; the
+    // names are in the one list every navigation surface uses).
+    expect([for (final d in appDestinations) d.$3], [
+      'mindmap',
+      'notes',
+      'calendar',
+      'archive',
+      'safari',
+      'ai',
+    ]);
     for (final label in ['mindmap', 'notes', 'archive', 'calendar']) {
-      await tester.tap(find.text(label).last);
+      await tapNav(tester, label);
       await tester.pump();
     }
     expect(s.page, AppPage.calendar);
@@ -140,7 +151,7 @@ void main() {
   ) async {
     addTearDown(tester.view.reset);
     final s = await boot(tester, dir);
-    await tester.tap(find.text('mindmap').last);
+    await tapNav(tester, 'mindmap');
     await tester.pump();
     await tester.pump();
     final view = find.byType(CanvasView);
@@ -173,7 +184,7 @@ void main() {
   ) async {
     addTearDown(tester.view.reset);
     var s = await boot(tester, dir);
-    await tester.tap(find.text('mindmap').last);
+    await tapNav(tester, 'mindmap');
     await tester.pump();
     await tester.pump();
     final before = s.canvas!.items.length;
@@ -343,7 +354,7 @@ void main() {
       endDate: addDays(start, 1),
     );
     ws.saveEntry(e);
-    await tester.tap(find.text('calendar').last);
+    await tapNav(tester, 'calendar');
     await tester.pump();
     expect(find.text('Dentist'), findsOneWidget);
 
@@ -574,7 +585,7 @@ void main() {
         ),
       );
     }
-    await tester.tap(find.text('calendar').last);
+    await tapNav(tester, 'calendar');
     await tester.pump();
     await tester.tap(find.text('Habits').first);
     await tester.pump();
@@ -605,7 +616,7 @@ void main() {
         ).toJson(),
       );
     }
-    await tester.tap(find.text('calendar').last);
+    await tapNav(tester, 'calendar');
     await tester.pump();
     await tester.pump();
     final warning = find.byKey(const ValueKey('over-limit-warning'));

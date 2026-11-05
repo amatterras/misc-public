@@ -258,6 +258,11 @@ void main() {
       s.goTo(AppPage.links);
       await tester.pump();
       await tester.pump();
+      // The Archive opens on its layered landing; "Whole Look" is the view
+      // with every item and the category / tag filters.
+      await tester.tap(find.byKey(const ValueKey('archive-whole-look')));
+      await tester.pump();
+      await tester.pump();
       expect(find.text('One'), findsOne);
       expect(find.text('Two'), findsOne);
 

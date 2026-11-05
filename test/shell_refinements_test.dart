@@ -5,7 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/app/floating_windows.dart';
 import 'package:flutter_application_1/app/page_windows.dart';
-import 'package:flutter_application_1/app/sidebar.dart';
+import 'package:flutter_application_1/app/sidebar.dart' show appDestinations;
+import 'package:flutter_application_1/new_ui/new_sidebar.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/main.dart';
@@ -82,10 +83,26 @@ void main() {
     final note = ws.createNote(title: 'First note');
     await tester.pumpWidget(TheApp(state: state));
     await settle(tester);
-    Finder inSidebar(String text) =>
-        find.descendant(of: find.byType(Sidebar), matching: find.text(text));
+    Finder inSidebar(String text) => find.descendant(
+      of: find.byType(NewSidebar),
+      matching: find.text(text),
+    );
 
-    // The six destinations and Quick Add stay.
+    // Compact (icons only): the six destinations and Quick Add are there.
+    for (final (page, _, _) in appDestinations) {
+      expect(
+        find.byKey(ValueKey('new-nav-${page.name}')),
+        findsOneWidget,
+        reason: page.name,
+      );
+    }
+    expect(find.byKey(const ValueKey('new-quick-add')), findsOneWidget);
+    expect(inSidebar('mindmap'), findsNothing, reason: 'icons only');
+
+    // Expanded: their names, and still no Commands, no App switcher, no
+    // canvas / recent-note / favorite lists (and no way to open them).
+    await tester.tap(find.byKey(const ValueKey('new-nav-expand')));
+    await settle(tester);
     for (final label in const [
       'mindmap',
       'notes',
@@ -97,8 +114,6 @@ void main() {
     ]) {
       expect(inSidebar(label), findsOneWidget, reason: label);
     }
-    // No Commands, no App switcher, no canvas / recent-note / favorite lists
-    // (and no way to open them).
     expect(inSidebar('Commands'), findsNothing);
     expect(find.byTooltip('App switcher'), findsNothing);
     expect(inSidebar('First board'), findsNothing);
@@ -113,11 +128,11 @@ void main() {
     expect(state.workspace.notes[note.id], isNotNull);
     expect(state.canvasList.map((c) => c.title), contains('First board'));
 
-    // Collapsed: only icons, still no switcher.
-    state.toggleSidebar();
+    // Compact again: only icons, still no switcher.
+    await tester.tap(find.byKey(const ValueKey('new-nav-expand')));
     await settle(tester);
     expect(find.byTooltip('App switcher'), findsNothing);
-    expect(find.byTooltip('mindmap'), findsOneWidget);
+    expect(inSidebar('mindmap'), findsNothing);
 
     await tester.runAsync(state.flush);
     await tester.pumpWidget(const SizedBox());
