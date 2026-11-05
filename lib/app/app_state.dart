@@ -1033,7 +1033,9 @@ class AppState extends ChangeNotifier {
       case SyncConnection.paused:
         AppLog.info('Sync: paused on the hub');
       case SyncConnection.blocked:
-        AppLog.warn('Sync: the hub refuses this device\'s sync; see the status');
+        AppLog.warn(
+          'Sync: the hub refuses this device\'s sync; see the status',
+        );
       default:
         break;
     }
@@ -1086,6 +1088,13 @@ class AppState extends ChangeNotifier {
     AppLog.info('Sync: the hub accepts this device again');
     _scheduler?.start();
   }
+
+  /// How many sync cycles have run (successful or not) since the app started.
+  int syncCycles = 0;
+
+  /// Failed attempts of the sync connection since it was set up (it only
+  /// ever grows; the retry pause is what keeps it slow while offline).
+  int get syncFailures => _scheduler?.failuresTotal ?? 0;
 
   /// Any record changed here: sync soon. (Changes written by a running sync
   /// only ask for one more cycle, so they do not show as "waiting".)
@@ -1581,6 +1590,11 @@ class AppState extends ChangeNotifier {
             'it is back. Will retry.',
       // The hub answers but refuses: say why, never "live".
       SyncConnection.blocked => '$_lastResult — your changes are saved here.',
+      // Not running (the app is in the background, or sync stopped): never
+      // "Synced".
+      SyncConnection.stopped =>
+        'Sync is not running right now — your changes are saved here and '
+            'sync when it starts again.',
       _ when s.pendingLocal => 'Changes waiting to sync…',
       SyncConnection.live => '$_lastResult · live',
       _ => _lastResult,
@@ -1604,6 +1618,7 @@ class AppState extends ChangeNotifier {
     final engine = _sync;
     if (engine == null) return;
     syncing = true;
+    syncCycles++;
     notifyListeners();
     try {
       final report = await _dataLock.run(engine.syncOnce);

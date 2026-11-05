@@ -52,7 +52,14 @@ class SyncScheduler {
     this.onChange,
     this.onError,
     this.onBlocked,
+    this.blockedRetryBase = const Duration(seconds: 15),
   });
+
+  /// While the hub refuses sync for a reason waiting does not fix, every
+  /// request except an explicit "Sync now" waits at least this long (doubling
+  /// to at most about 8 minutes), so a refusal is retried calmly, never in a
+  /// storm.
+  final Duration blockedRetryBase;
 
   /// Told about a failure that waiting cannot fix: `unauthorized` (this
   /// device was removed or the hub was replaced; the scheduler has stopped
@@ -123,6 +130,19 @@ class SyncScheduler {
 
   /// Consecutive failures of the live connection (for the retry pause).
   int get failures => _failures;
+
+  /// Every failed attempt (of the live connection or of a cycle) since this
+  /// scheduler was made: only ever grows.
+  int failuresTotal = 0;
+
+  DateTime? _lastBlockedAt;
+  int _blockedStreak = 0;
+
+  Duration _blockedBackoff() {
+    final ms = blockedRetryBase.inMilliseconds * (1 << min(_blockedStreak, 5));
+    return Duration(milliseconds: min(ms, 8 * 60 * 1000));
+  }
+
   bool get scheduled => !_stopped && (_fallback?.isActive ?? false);
 
   void _set(SyncConnection c) {
@@ -181,8 +201,15 @@ class SyncScheduler {
       _again = true; // runs right after the current one
       return;
     }
+    var wait = delay ?? debounce;
+    final at = _lastBlockedAt;
+    if (connection == SyncConnection.blocked && at != null) {
+      // Refused for a reason that waiting does not fix: ask again calmly.
+      final remaining = _blockedBackoff() - DateTime.now().difference(at);
+      if (remaining > wait) wait = remaining;
+    }
     _debounce?.cancel();
-    _debounce = Timer(delay ?? debounce, _runNow);
+    _debounce = Timer(wait, _runNow);
   }
 
   /// Runs a cycle now (Settings → Sync now) and waits for it.
@@ -209,6 +236,8 @@ class SyncScheduler {
       await run();
       lastSuccess = DateTime.now();
       _lastBlockedCode = null;
+      _lastBlockedAt = null;
+      _blockedStreak = 0;
       if (connection == SyncConnection.offline ||
           connection == SyncConnection.paused ||
           connection == SyncConnection.blocked) {
@@ -222,6 +251,7 @@ class SyncScheduler {
         onChange?.call();
       }
     } on SyncFailure catch (e, s) {
+      failuresTotal++;
       // Nothing pending is lost: unsent changes go out on the next cycle.
       if (!_stopped) {
         if (e.code == 'sync_paused') {
@@ -236,6 +266,17 @@ class SyncScheduler {
       }
       onError?.call(e, s);
     } catch (e, s) {
+      // Something unexpected (a bug, unreadable data): never "live", and
+      // never retried in a tight loop.
+      failuresTotal++;
+      if (!_stopped) {
+        _blocked(
+          const SyncFailure(
+            'unexpected',
+            'Sync hit an unexpected error (see the log).',
+          ),
+        );
+      }
       onError?.call(e, s);
     } finally {
       _running = false;
@@ -263,6 +304,8 @@ class SyncScheduler {
   /// such instead of "live"; the slow timer keeps trying and a success
   /// clears it.
   void _blocked(SyncFailure e) {
+    _blockedStreak++;
+    _lastBlockedAt = DateTime.now();
     _set(SyncConnection.blocked);
     if (_lastBlockedCode != e.code) {
       _lastBlockedCode = e.code;
@@ -335,6 +378,7 @@ class SyncScheduler {
           continue;
         }
         _failures++;
+        failuresTotal++;
         if (e.retryable) {
           _set(SyncConnection.offline);
         } else {
@@ -344,6 +388,7 @@ class SyncScheduler {
       } catch (_) {
         if (_stopped || generation != _generation) return;
         _failures++;
+        failuresTotal++;
         _set(SyncConnection.offline);
         await _pause(_backoff());
       }
