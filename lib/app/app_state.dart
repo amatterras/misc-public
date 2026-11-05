@@ -426,6 +426,15 @@ class AppState extends ChangeNotifier {
       Timer(const Duration(seconds: 1), () => showToast(recoveries.join('  ')));
     }
     await _startHubHost(step);
+    // A conflict settling that an interruption stopped half way is finished
+    // before sync starts, so both versions and the resolution state are
+    // consistent when they travel; old settled conflicts are pruned.
+    try {
+      await conflictResolver.recoverInterrupted();
+      conflictResolver.pruneSettled();
+    } catch (e, s) {
+      AppLog.error('Conflict recovery failed', e, s);
+    }
     step('Starting sync');
     await _startSyncIfPaired();
     // Replies that were being written when the app closed are marked

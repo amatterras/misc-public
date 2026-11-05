@@ -256,6 +256,17 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
                       ),
                     ],
                   ),
+                if (sides != null && sides.editedSince)
+                  Padding(
+                    key: ValueKey('edited-since-${c.id}'),
+                    padding: const EdgeInsets.only(top: Space.xs),
+                    child: Text(
+                      'The current version was changed again after this '
+                      'conflict. Using the other version replaces that newer '
+                      'work (it stays saved under "Settled").',
+                      style: TextStyle(fontSize: 12, color: AppColors.warm),
+                    ),
+                  ),
                 const SizedBox(height: Space.sm),
                 Wrap(
                   spacing: Space.sm,

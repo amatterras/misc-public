@@ -8,28 +8,43 @@ class SyncConflict implements Record {
 
   final Map<String, dynamic> data;
 
+  // Every getter tolerates a record of an unexpected shape (written by a
+  // newer app, damaged, or malformed): the conflict is then still listed and
+  // its content kept, never a crash.
+  String _str(String key) {
+    final v = data[key];
+    return v is String ? v : '';
+  }
+
+  String? _strOrNull(String key) {
+    final v = data[key];
+    return v is String ? v : null;
+  }
+
   @override
   String get id => data['id'] as String;
 
   /// Kind of record, e.g. `notes` or `canvas_items`.
-  String get collection => data['collection'] as String? ?? '';
-  String get recordId => data['recordId'] as String? ?? '';
+  String get collection => _str('collection');
+  String get recordId => _str('recordId');
 
   /// `concurrent_edit`, `edited_after_delete` or
   /// `deleted_here_edited_elsewhere`.
-  String get reason => data['reason'] as String? ?? '';
-  bool get otherDeleted => data['otherDeleted'] as bool? ?? false;
-  Map<String, dynamic>? get otherData =>
-      data['otherData'] as Map<String, dynamic>?;
+  String get reason => _str('reason');
+  bool get otherDeleted => data['otherDeleted'] == true;
+  Map<String, dynamic>? get otherData {
+    final v = data['otherData'];
+    return v is Map ? v.cast<String, dynamic>() : null;
+  }
 
   /// The version the hub kept (the winner) and who made it.
-  String? get keptRev => data['keptRev'] as String?;
-  String? get keptDevice => data['keptDevice'] as String?;
-  bool get keptDeleted => data['keptDeleted'] as bool? ?? false;
+  String? get keptRev => _strOrNull('keptRev');
+  String? get keptDevice => _strOrNull('keptDevice');
+  bool get keptDeleted => data['keptDeleted'] == true;
 
   /// The preserved version's revision and device.
-  String? get otherRev => data['otherRev'] as String?;
-  String? get otherDevice => data['otherDevice'] as String?;
+  String? get otherRev => _strOrNull('otherRev');
+  String? get otherDevice => _strOrNull('otherDevice');
 
   @override
   DateTime get updatedAt => parseDate(data['at']) ?? DateTime.now();
@@ -38,26 +53,40 @@ class SyncConflict implements Record {
   /// Both versions stay inside the record after settling (`otherData`, and
   /// `replaced` when the other version was put in place), so a settling can
   /// be taken back until the record is pruned.
-  Map<String, dynamic>? get resolution =>
-      (data['resolved'] as Map?)?.cast<String, dynamic>();
+  Map<String, dynamic>? get resolution {
+    final v = data['resolved'];
+    return v is Map ? v.cast<String, dynamic>() : null;
+  }
+
   bool get isResolved => resolution != null;
 
   /// `kept_current` or `used_other`.
   String? get choice => resolution?['choice'] as String?;
   DateTime? get resolvedAt => parseDate(resolution?['at']);
 
+  /// A settling that was started but not finished (the app was interrupted
+  /// between recording the intent and putting the version in place, or
+  /// between taking it back and re-opening the conflict).
+  bool get isApplying => resolution?['applying'] == true;
+  bool get isUndoing => resolution?['undoing'] == true;
+
   /// The version that was current before `used_other` replaced it.
-  Map<String, dynamic>? get replacedData =>
-      (resolution?['replaced'] as Map?)?.cast<String, dynamic>();
+  Map<String, dynamic>? get replacedData {
+    final v = resolution?['replaced'];
+    return v is Map ? v.cast<String, dynamic>() : null;
+  }
+
   bool get replacedWasDeleted => resolution?['replacedDeleted'] == true;
 
   /// This conflict, settled. [replaced] is the version that [choice]
-  /// `used_other` put out of place (null if it did not exist).
+  /// `used_other` puts out of place (null if it did not exist). [applying]
+  /// marks the intent as recorded but not yet carried out.
   SyncConflict settled(
     String choice, {
     required DateTime at,
     Map<String, dynamic>? replaced,
     bool replacedDeleted = false,
+    bool applying = false,
   }) => SyncConflict({
     ...data,
     'resolved': {
@@ -65,8 +94,19 @@ class SyncConflict implements Record {
       'at': at.toUtc().toIso8601String(),
       'replaced': ?replaced,
       if (replacedDeleted) 'replacedDeleted': true,
+      if (applying) 'applying': true,
     },
   });
+
+  /// The same settled conflict with its "in progress" marks changed.
+  SyncConflict withProgress({bool applying = false, bool undoing = false}) {
+    final r = {...?resolution}
+      ..remove('applying')
+      ..remove('undoing');
+    if (applying) r['applying'] = true;
+    if (undoing) r['undoing'] = true;
+    return SyncConflict({...data, 'resolved': r});
+  }
 
   /// This conflict, open again (a settling that was taken back).
   SyncConflict reopened() => SyncConflict({...data}..remove('resolved'));
