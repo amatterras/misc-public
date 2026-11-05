@@ -824,3 +824,103 @@ and [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md)):
 - An ordinary deletion is unchanged: undoable from "recently deleted", and an old copy can still bring the record back. **Delete for good** (Settings → Storage → Recently deleted) is different: the record leaves active storage and "recently deleted" (and, for a note, its saved versions); links that shared it are revoked and blanked; attachment files nothing else uses are deleted; every copy in the app's backups and saved copies is removed (with a tombstone in its place; manifests rewritten, retention untouched); the previous-version copies (`.bak`) of the live files are refreshed.
 - A permanent **purge mark** (`purges/<collection>.<id>`, sealed like any record) syncs to every device and the hub. The hub **refuses any later write of that record from any device, whatever its revision**, refuses to undo the mark, adds its own tombstone, rewrites its journal without the record's old versions, removes them from every hub backup, and removes the sealed attachment copies the record alone used. Another device that still has the record loses it when the mark arrives; a restored backup or an old copy cannot bring it back because the mark and the hub's lock outlive them.
 - **What this is not:** forensic erasure. Disks, wear levelling, journaling and the operating system may keep traces; a copy the user exported or made outside THEapp, a link someone already read, and a device that is switched off are out of reach until it syncs. AI chats that quoted the item are not edited. The words in the app say so.
+
+---
+
+# Reliability pass (2026-11-05)
+
+## 22.1 Hub start at sign-in: checked, NOT working
+Inspected on this PC (nothing was rebooted, so a start after a reboot was not
+tested): the Startup folder holds only `desktop.ini`; no `HKCU\...\Run` entry,
+no scheduled task and no `build\hub\thehub.exe` exist; `thehub startup enable`
+refuses to run without that exe, and §15 asks the user to compile it by hand
+first. So after a reboot nothing starts the hub until THEapp itself is opened
+(§20: the hub then runs inside THEapp). While THEapp is closed the iPad cannot
+sync. Not changed in this pass (out of scope); open item.
+
+## 22.2 iPad / device disconnection (done)
+- `SyncScheduler.onBlocked`: a 401 from the live wait or from a cycle stops
+  the scheduler and tells the app once (before, only a cycle did; the app
+  kept saying "Synced" and nothing retried on an iPad).
+- `SyncConnection.blocked`: a refusal that waiting does not fix (for example a
+  version mismatch) is shown as such, never as "… · live"; a later success
+  clears it.
+- `start()` forgets old failures (the first retry after the app returns to
+  the front is immediate, not up to 30 s later).
+- "Pairing required" is no longer final: coming back to the front, "Sync now"
+  and Settings → Sync → "Check again" look once more; a hub that accepts the
+  device again (for example the right hub after a wrong one answered on the
+  same address) clears it. A really removed device stays "pairing required".
+- Tests: `test/sync_recovery_test.dart`.
+
+## 22.3 Conflicts (done)
+- A notice on every page while conflicts wait; one message when new ones
+  arrive; Settings → Sync keeps the button.
+- The review window shows the current and the other version side by side;
+  opening it changes nothing. "Keep current" and "Use other" both settle the
+  conflict and keep both versions inside it; "Undo" (under Settled) takes a
+  settling back; settled conflicts are pruned after 90 days, open ones never.
+- Mindmap/notebook item conflicts can now be restored (before: dismiss only).
+  `CanvasController.restoreItem` / `removeItemById` stamp a new revision, so
+  the choice syncs like any edit. Conflicts on a canvas's title / item order
+  / PDF pages (`canvases`) are shown and can be kept, not restored (pages are
+  merged automatically already).
+- Tests: `test/conflict_resolution_test.dart`.
+
+## 22.4 Cost of a sync cycle (measured) and a proposal (NOT implemented)
+`tool/sync_bench_test.dart` (run: `flutter test tool/sync_bench_test.dart`;
+real hub on 127.0.0.1, one device, data at rest not encrypted, so real times
+are higher). Medians of 5 cycles in which nothing changed:
+
+| Data | Idle cycle | of which `localVersions()` | Cycle after 1 item changed |
+|---|---|---|---|
+| 100 items (5 notes) | 46 ms | 19 ms | 108 ms |
+| 2.5k items, 2.6 MB | 111 ms | 91 ms | 310 ms |
+| 10k items, 10.5 MB | 419 ms | 417 ms | 737 ms |
+| 2.5k items, 39 MB on disk | 368 ms | 379 ms | 406 ms |
+| 10k items, 157 MB on disk | 1601 ms | 1307 ms | 1377 ms |
+
+First full sync: 0.4 s / 2.4 s / 13 s / 4 s / 15 s. The cost of "nothing
+changed" grows linearly with the total size of all canvas files, because every
+cycle reads and parses every canvas (`SyncEngine.localVersions`, which also
+keeps every item's data in memory) just to learn their revisions. The PC runs
+a cycle every 10 s and after every edit.
+
+Proposal: a **revision manifest** (cache, never the source of truth).
+1. `sync/canvas_manifest.json` (stored like the other sync files, so at-rest
+   encryption applies): per canvas id → `{metaRev, itemRevs, tombstones,
+   file size, file mtime}`. No item data.
+2. Written by `canvases.save` / `delete` with the file, so it follows every
+   write the app makes (edits, remote changes applied by sync, migrations).
+3. A cycle `stat`s each canvas file (no read). A file whose size/mtime differ
+   from the manifest, or a new/missing file (restore, import, another
+   process), is re-read and its entry refreshed. A missing or damaged
+   manifest is rebuilt by the full scan that exists today. Pending = revisions
+   differ from `state.base`, exactly as now; only canvases with something
+   pending are loaded for their data.
+4. Updates: the save writes new revisions into the entry. Deletions:
+   item tombstones are in the entry; a deleted canvas drops it (and the stat
+   pass notices a missing file). Offline edits: nothing is queued separately,
+   pending is derived from revisions as before, so a lost manifest loses no
+   edit. Conflicts: unchanged, since the hub decides from revisions and the
+   incoming-change check (`isPending`) still reads the live revisions of the
+   canvases that actually receive changes.
+5. Safety net: a full re-verification (manifest vs full scan) at start, after
+   any restore/import/migration and once a day, logged if it ever differs;
+   the full scan stays the fallback and the one-time end-to-end upgrade keeps
+   using it.
+6. Proof required before shipping: a property test that after random
+   sequences of edits, deletions, remote applications, offline periods,
+   restores and externally replaced files the manifest-based pending set
+   equals the full-scan pending set.
+Smaller, independent step: the 10-second tick runs a full cycle even when the
+live connection already reports changes; skipping it when nothing is pending
+and the hub's change number has not moved would remove the idle cost on the PC.
+
+## 22.5 Found, not fixed: a saved mindmap edit does not ask for a sync
+`AppState._saveCanvas` (mindmaps) does not tell the scheduler (note pages and
+the Archive board do, in `saveDocument`). Measured: after a mindmap edit was
+saved, the device did not show "changes waiting" and the hub had not received
+the item 3 s later. Mindmap edits therefore wait for a timer: up to 10 s on
+the PC, up to 60 s on an iPad (no 10-second job there). A one-line change
+(`_editedLocally()` after the save) with a regression test would fix it.
