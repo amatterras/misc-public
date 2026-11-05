@@ -829,7 +829,7 @@ and [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md)):
 
 # Reliability pass (2026-11-05)
 
-## 22.1 Hub start at sign-in: checked, NOT working
+## 22.1 Hub start at sign-in: checked, was NOT working (fixed in 23.3)
 Inspected on this PC (nothing was rebooted, so a start after a reboot was not
 tested): the Startup folder holds only `desktop.ini`; no `HKCU\...\Run` entry,
 no scheduled task and no `build\hub\thehub.exe` exist; `thehub startup enable`
@@ -867,7 +867,7 @@ sync. Not changed in this pass (out of scope); open item.
   merged automatically already).
 - Tests: `test/conflict_resolution_test.dart`.
 
-## 22.4 Cost of a sync cycle (measured) and a proposal (NOT implemented)
+## 22.4 Cost of a sync cycle (measured) and the proposal (implemented in 23.2)
 `tool/sync_bench_test.dart` (run: `flutter test tool/sync_bench_test.dart`;
 real hub on 127.0.0.1, one device, data at rest not encrypted, so real times
 are higher). Medians of 5 cycles in which nothing changed:
@@ -917,10 +917,82 @@ Smaller, independent step: the 10-second tick runs a full cycle even when the
 live connection already reports changes; skipping it when nothing is pending
 and the hub's change number has not moved would remove the idle cost on the PC.
 
-## 22.5 Found, not fixed: a saved mindmap edit does not ask for a sync
+## 22.5 A saved mindmap edit did not ask for a sync (fixed in 23.1)
 `AppState._saveCanvas` (mindmaps) does not tell the scheduler (note pages and
 the Archive board do, in `saveDocument`). Measured: after a mindmap edit was
 saved, the device did not show "changes waiting" and the hub had not received
 the item 3 s later. Mindmap edits therefore wait for a timer: up to 10 s on
 the PC, up to 60 s on an iPad (no 10-second job there). A one-line change
 (`_editedLocally()` after the save) with a regression test would fix it.
+
+## 23. Second reliability pass (2026-11-05): fixes, tests, measurements
+
+### 23.1 A saved mindmap edit asks for a sync
+`AppState._saveCanvas` now calls `_editedLocally()`. Measured: save -> hub 355 ms
+on the iPad configuration (before: waited for a timer, up to 60 s). The
+scheduler's 300 ms pause batches rapid saves (30 saves, a handful of cycles).
+
+### 23.2 Incremental change detection (the manifest)
+`lib/sync/canvas_manifest.dart`. A cache of each canvas's revisions plus a
+fingerprint (size and modification time of the file and its previous copy);
+never the source of truth. An entry is believed only while the fingerprint
+matches AND nothing wrote the file through `JsonFileStore` since (write
+listener); a missing, damaged, foreign, stale or older manifest only means
+"read that canvas again". It is verified against every file when new and once
+a day. Writes are atomic (the store's temp file + rename). `SyncEngine.pendingVersions`
+reads only canvases with something pending; `pendingVersionsFullScan` is the
+reference it must equal: `test/canvas_manifest_test.dart` runs 12 random
+sequences x 70 steps of every kind of change and compares after each step.
+A canvas file that cannot be read no longer fails every sync (skipped and logged).
+
+Benchmark (`flutter test tool/sync_bench_test.dart`, this PC, data not encrypted):
+
+| Data | Idle cycle before -> after | 1 item changed before -> after |
+|---|---|---|
+| 100 items | 46 -> 29 ms | 108 -> 110 ms |
+| 2.5k items, 2.6 MB | 111 -> 29 ms | 310 -> 87 ms |
+| 10k items, 10.5 MB | 419 -> 86 ms | 737 -> 172 ms |
+| 2.5k items, 39 MB on disk | 368 -> 32 ms | 406 -> 84 ms |
+| 10k items, 157 MB on disk | 1601 -> 72 ms | 1377 -> 160 ms |
+
+### 23.3 Hub at Windows sign-in
+`lib/hub/hub_startup.dart`, `thehub startup enable|disable|status`, `thehub serve
+--background yes`. `enable` builds `thehub.exe` itself (the documented manual
+compile failed on a fresh checkout: the output folder did not exist), registers
+a Startup-folder shortcut (idempotent, updates a moved or damaged one, handles
+spaces and apostrophes, leaves nothing on failure), and the hub then runs
+without a window, independently of THEapp (THEapp's own host recognises it as
+external). `status` shows what is registered, whether its program exists,
+whether a hub answers, and the log. Tests: `test/hub_startup_test.dart` (16),
+including the real compiled program started the way a sign-in starts it, killed
+and started again. NOT verified: that Windows runs the shortcut at the next
+sign-in (needs a sign-out/reboot). It is not registered on this PC by the change.
+
+### 23.4 Connection state
+- Unexpected errors and refusals that waiting does not fix are `blocked`, never
+  "live"; while blocked every request except "Sync now" is throttled (15 s,
+  doubling to about 8 min), including the Windows 10-second job.
+- A stopped scheduler (app in the background) says sync is not running, not "Synced".
+- A cycle with problems says "Some changes could not sync: ...", not "Synced (...)".
+- Scenario lab `test/support/sync_rig.dart` + `test/sync_scenarios_test.dart`
+  (19 scenarios): real hub, production AppState devices (PC or iPad
+  configuration), controllable networks; every step of the old manual checklist.
+
+### 23.5 Conflicts
+Settling records its intent (both versions inside the conflict record) and saves
+it BEFORE touching the record; `recoverInterrupted` finishes an unfinished one at
+start-up. Malformed conflict records are listed and kept. A settled conflict
+cannot be settled again. `test/conflict_robustness_test.dart` (14).
+
+### 23.6 Other fixes from the audit
+- The hub compacts its journal itself (after a backup, when it is at least 16 MB
+  and over 3x what a compaction would keep); before, it only ever grew.
+- Stale partial downloads (7 days) and stray staged uploads (1 day) are swept.
+- Pairing-code expiry and the wrong-code throttle share one replaceable clock
+  (tested without waiting).
+
+### 23.7 Not verifiable here
+Real iPhone/iPad behaviour (suspension by iOS, the Share Extension on a device),
+Windows running the sign-in shortcut after a reboot, Tailscale across networks,
+real-service AI answers. The iOS build is checked in Codemagic (compiles, App
+Group entitlement in all three targets); it is not run on a device.
