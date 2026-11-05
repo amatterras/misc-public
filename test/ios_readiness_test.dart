@@ -283,8 +283,12 @@ void main() {
     final shared = Directory('${root.path}${sep}group');
     final requests = Directory('${shared.path}${sep}inbox_requests')
       ..createSync(recursive: true);
-    File('${requests.path}${sep}big.json')
-        .writeAsStringSync(jsonEncode({'type': 'text', 'value': 'x' * 50000}));
+    File('${requests.path}${sep}big.json').writeAsStringSync(
+      jsonEncode({
+        'type': 'text',
+        'value': 'x' * (CaptureService.maxInboundText + 1),
+      }),
+    );
     messenger.setMockMethodCallHandler(
       channel,
       (call) async => call.method == 'sharedContainer' ? shared.path : null,

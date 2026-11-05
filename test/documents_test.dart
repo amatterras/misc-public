@@ -97,28 +97,31 @@ void main() {
     s.dispose();
   });
 
-  test('picker and Send to accept PDFs and skip other files', () async {
-    final s = await start([]);
-    final txt = File('${dir.path}${sep}readme.txt')..writeAsStringSync('x');
-    s.capture.pickDocumentFiles = () => [
-      pdf.path,
-      txt.path,
-      '${dir.path}${sep}gone.pdf',
-    ];
-    final picked = await s.capture.pickDocuments();
-    expect(picked.map((a) => a.label), ['Lecture notes.pdf']);
+  test(
+    'picker and Send to accept supported documents and skip missing files',
+    () async {
+      final s = await start([]);
+      final txt = File('${dir.path}${sep}readme.txt')..writeAsStringSync('x');
+      s.capture.pickDocumentFiles = () => [
+        pdf.path,
+        txt.path,
+        '${dir.path}${sep}gone.pdf',
+      ];
+      final picked = await s.capture.pickDocuments();
+      expect(picked.map((a) => a.label), ['Lecture notes.pdf', 'readme.txt']);
 
-    final bridge = SendToBridge(Directory('${dir.path}${sep}sendto'));
-    await bridge.forward([pdf.path]);
-    expect(await bridge.processRequests(s.capture), 1);
-    final saved = s.library.objects.single;
-    expect(saved.type, LibraryObjectType.document);
-    expect(
-      s.workspace.assets[saved.attachmentIds.single]?.kind,
-      AssetKind.document,
-    );
-    s.dispose();
-  });
+      final bridge = SendToBridge(Directory('${dir.path}${sep}sendto'));
+      await bridge.forward([pdf.path]);
+      expect(await bridge.processRequests(s.capture), 1);
+      final saved = s.library.objects.single;
+      expect(saved.type, LibraryObjectType.document);
+      expect(
+        s.workspace.assets[saved.attachmentIds.single]?.kind,
+        AssetKind.document,
+      );
+      s.dispose();
+    },
+  );
 
   test('double-clicking a PDF card opens the stored copy', () async {
     final opened = <String>[];

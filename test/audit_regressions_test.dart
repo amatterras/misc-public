@@ -102,7 +102,9 @@ void main() {
     });
 
     test('untrusted text is capped; other schemes are ignored', () async {
-      final items = await capture.captureInbound(text: 'x' * 50000);
+      final items = await capture.captureInbound(
+        text: 'x' * (CaptureService.maxInboundText + 1),
+      );
       expect(items.single.text!.length, CaptureService.maxInboundText);
 
       final bridge = SendToBridge(dir);
