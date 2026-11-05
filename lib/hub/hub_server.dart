@@ -1102,7 +1102,7 @@ document.title=j.t;h.textContent=j.t;out.textContent=j.b;
 
   Future<void> _peerJoin(HttpRequest r) async {
     final remote = r.connectionInfo?.remoteAddress.address ?? '?';
-    final now = DateTime.now();
+    final now = auth.clock();
     final recent = (_failedPairing[remote] ?? [])
       ..removeWhere((t) => now.difference(t) > const Duration(minutes: 10));
     if (recent.length >= 5) {
@@ -1140,7 +1140,7 @@ document.title=j.t;h.textContent=j.t;out.textContent=j.b;
 
   Future<void> _register(HttpRequest r) async {
     final remote = r.connectionInfo?.remoteAddress.address ?? '?';
-    final now = DateTime.now();
+    final now = auth.clock();
     final recent = (_failedPairing[remote] ?? [])
       ..removeWhere((t) => now.difference(t) > const Duration(minutes: 10));
     if (recent.length >= 5) {

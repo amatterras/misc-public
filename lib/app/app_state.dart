@@ -1644,7 +1644,10 @@ class AppState extends ChangeNotifier {
           ? 'Synced — ${report.conflicts} conflict(s) kept for review'
           : 'Synced';
       if (report.problems.isNotEmpty) {
-        _lastResult += ' (${report.problems.first})';
+        // Something could not be sent or read: never plain "Synced".
+        _lastResult =
+            'Some changes could not sync: ${report.problems.first}'
+            '${report.problems.length > 1 ? ' (+${report.problems.length - 1} more)' : ''}';
       }
       await _refreshList();
     } on SyncFailure catch (e) {

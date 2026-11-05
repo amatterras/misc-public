@@ -77,6 +77,10 @@ class HubDevice {
 class HubAuth {
   HubAuth._(this.dir);
 
+  /// The time the pairing codes and the wrong-code window are judged by
+  /// (replaceable in tests, so expiry needs no waiting).
+  DateTime Function() clock = DateTime.now;
+
   static const pairingLifetime = Duration(minutes: 10);
 
   /// Letters and digits that can't be confused when read aloud or typed.
@@ -174,7 +178,7 @@ class HubAuth {
   /// Remembers that [d] was just heard from (and saves, at most a minute
   /// apart, so reading the list never needs a disk write per request).
   void _seen(HubDevice d) {
-    final now = DateTime.now();
+    final now = clock();
     final last = d.lastSeen;
     if (last != null && now.difference(last) < const Duration(minutes: 1)) {
       return;
@@ -200,7 +204,7 @@ class HubAuth {
   /// A new one-time pairing code, shown to the user on the PC.
   String createPairingCode() {
     _pairing.removeWhere(
-      (p) => DateTime.now().isAfter(p['expires'] as DateTime),
+      (p) => clock().isAfter(p['expires'] as DateTime),
     );
     final code = List.generate(
       8,
@@ -208,7 +212,7 @@ class HubAuth {
     ).join();
     _pairing.add({
       'hash': hash(code),
-      'expires': DateTime.now().add(pairingLifetime),
+      'expires': clock().add(pairingLifetime),
     });
     return code;
   }
@@ -234,11 +238,11 @@ class HubAuth {
       throw const ProtocolException('bad_request', 'Invalid pairing offer.');
     }
     _pairing.removeWhere(
-      (p) => DateTime.now().isAfter(p['expires'] as DateTime),
+      (p) => clock().isAfter(p['expires'] as DateTime),
     );
     _pairing.add({
       'hash': hash(registerCode.toUpperCase()),
-      'expires': DateTime.now().add(pairingLifetime),
+      'expires': clock().add(pairingLifetime),
       'wrappedKey': wrappedKey,
       'readOnly': readOnly,
     });
@@ -248,7 +252,7 @@ class HubAuth {
   /// key of a pairing offer, once. Null for a wrong or expired code.
   String? redeemPairingOffer(String registerCode) {
     final h = hash(registerCode.trim().toUpperCase());
-    final now = DateTime.now();
+    final now = clock();
     final match = _pairing
         .where(
           (p) =>
@@ -284,7 +288,7 @@ class HubAuth {
       throw const ProtocolException('bad_request', 'Invalid device id.');
     }
     final h = hash(code.trim().toUpperCase());
-    final now = DateTime.now();
+    final now = clock();
     final match = _pairing
         .where(
           (p) =>
@@ -312,7 +316,7 @@ class HubAuth {
           ? deviceId
           : (cleanName.length > 60 ? cleanName.substring(0, 60) : cleanName),
       tokenHash: hash(token),
-      createdAt: DateTime.now(),
+      createdAt: clock(),
       readOnly: readOnly || forceReadOnly || deviceId.startsWith('mirror'),
     );
     await _save();

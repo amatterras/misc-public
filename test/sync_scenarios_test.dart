@@ -86,6 +86,40 @@ void main() {
     });
 
     test(
+      'an expired code is refused with a message and changes nothing; a fresh '
+      'one works; the throttle after wrong codes ends with time',
+      () async {
+        final ipad = await rig.device('ipad', ipad: true, pair: false);
+        final url = 'http://127.0.0.1:${ipad.proxy.port}';
+        final stale = keyedPairingCode(rig.hub.auth);
+        // Eleven minutes later the code (valid for ten) is no good.
+        rig.hub.auth.clock = () =>
+            DateTime.now().add(const Duration(minutes: 11));
+        final expired = await ipad.s.pairWithHub(url, stale);
+        expect(expired, isNotNull);
+        expect(ipad.s.syncPaired, isFalse);
+        expect(ipad.s.syncConnection, SyncConnection.stopped);
+        // Wrong codes are throttled ...
+        rig.hub.auth.clock = DateTime.now;
+        for (var i = 0; i < 6; i++) {
+          await ipad.s.pairWithHub(url, 'WRONGCODE$i');
+        }
+        final throttled = await ipad.s.pairWithHub(
+          url,
+          keyedPairingCode(rig.hub.auth),
+        );
+        expect(throttled, isNotNull, reason: 'blocked for a while');
+        // ... and the throttle ends: later, a fresh code works.
+        rig.hub.auth.clock = () =>
+            DateTime.now().add(const Duration(minutes: 11));
+        final fresh = keyedPairingCode(rig.hub.auth);
+        expect(await ipad.s.pairWithHub(url, fresh), isNull);
+        rig.hub.auth.clock = DateTime.now;
+        expect(ipad.s.syncPaired, isTrue);
+      },
+    );
+
+    test(
       'an address that cannot be reached is a message, not a crash',
       () async {
         final ipad = await rig.device('ipad', ipad: true, pair: false);
@@ -381,6 +415,32 @@ void main() {
       final before = ipad.proxy.requests;
       await Future<void>.delayed(const Duration(seconds: 4));
       expect(ipad.proxy.requests - before, lessThanOrEqualTo(2));
+    });
+  });
+
+  // ------------------------------------------------- data that cannot sync
+  group('4b. a record that can never sync', () {
+    test('is reported (never plain "Synced"), stays on the device, and does '
+        'not block the other changes', () async {
+      final pc = await rig.device('pc');
+      final other = await rig.device('other', ipad: true);
+      final huge = pc.s.workspace.createNote(
+        title: 'Too large',
+        body: 'x' * (1100 * 1024), // over the 1 MB record limit
+      );
+      final small = pc.s.workspace.createNote(title: 'Small', body: 'ok');
+      await until(
+        () => other.s.workspace.notes[small.id] != null,
+        what: 'the small note on the other device',
+      );
+      await until(
+        () => pc.s.syncStatus.startsWith('Some changes could not sync'),
+        what: 'an honest status',
+      );
+      expect(pc.s.syncStatus, contains('too large'));
+      expect(pc.s.syncStatus, isNot(startsWith('Synced')));
+      expect(pc.s.workspace.notes[huge.id], isNotNull, reason: 'kept here');
+      expect(other.s.workspace.notes[huge.id], isNull);
     });
   });
 
