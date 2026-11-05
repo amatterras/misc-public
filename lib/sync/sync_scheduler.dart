@@ -34,6 +34,11 @@ enum SyncConnection {
   /// Sync is paused on the PC (its switch is off). Local edits are kept
   /// and go out once it is turned on again.
   paused,
+
+  /// The hub answered but refuses this device's sync for a reason that waiting
+  /// does not fix (for example an app version it does not accept). Local
+  /// edits are kept; the cause is shown, and a later success clears it.
+  blocked,
 }
 
 class SyncScheduler {
@@ -46,7 +51,13 @@ class SyncScheduler {
     this.waitSeconds = 25,
     this.onChange,
     this.onError,
+    this.onBlocked,
   });
+
+  /// Told about a failure that waiting cannot fix: `unauthorized` (this
+  /// device was removed or the hub was replaced; the scheduler has stopped
+  /// itself) or any other non-retryable failure (it keeps trying slowly).
+  final void Function(SyncFailure failure)? onBlocked;
 
   /// Told about a failed cycle (to show and log it).
   final void Function(Object error, StackTrace stack)? onError;
@@ -82,6 +93,10 @@ class SyncScheduler {
   int _generation = 0;
   int _failures = 0;
 
+  /// The code last reported through [onBlocked] (so one cause is reported
+  /// once, not once per cycle).
+  String? _lastBlockedCode;
+
   /// Counts local edits, so a cycle clears [pendingLocal] only if no edit
   /// arrived after it began (requests from the hub do not count).
   int _edits = 0;
@@ -105,6 +120,9 @@ class SyncScheduler {
   final _random = Random();
 
   bool get running => _running;
+
+  /// Consecutive failures of the live connection (for the retry pause).
+  int get failures => _failures;
   bool get scheduled => !_stopped && (_fallback?.isActive ?? false);
 
   void _set(SyncConnection c) {
@@ -117,6 +135,11 @@ class SyncScheduler {
     if (!_stopped) return;
     _stopped = false;
     _generation++;
+    // A new start (the app came back to the front, or the device was just
+    // paired) is a fresh attempt: failures from before must not stretch the
+    // first retry.
+    _failures = 0;
+    _lastBlockedCode = null;
     _fallback = Timer.periodic(fallback, (_) => request(Duration.zero));
     _set(SyncConnection.polling);
     request(const Duration(seconds: 1)); // catch up after start
@@ -185,8 +208,10 @@ class SyncScheduler {
     try {
       await run();
       lastSuccess = DateTime.now();
+      _lastBlockedCode = null;
       if (connection == SyncConnection.offline ||
-          connection == SyncConnection.paused) {
+          connection == SyncConnection.paused ||
+          connection == SyncConnection.blocked) {
         // The hub answered: say so, and end the live loop's back-off.
         _set(_liveSupported ? SyncConnection.live : SyncConnection.polling);
         _wakeLive();
@@ -201,8 +226,12 @@ class SyncScheduler {
       if (!_stopped) {
         if (e.code == 'sync_paused') {
           _set(SyncConnection.paused);
+        } else if (e.code == 'unauthorized') {
+          _unauthorized(e);
         } else if (e.retryable) {
           _set(SyncConnection.offline);
+        } else {
+          _blocked(e);
         }
       }
       onError?.call(e, s);
@@ -216,6 +245,28 @@ class SyncScheduler {
         _again = false;
         request(debounce);
       }
+    }
+  }
+
+  /// The hub does not know this device (removed, or another hub answers):
+  /// trying again cannot help, so everything stops and the app is told. The
+  /// app decides when to look again (coming back to the front, "Sync now").
+  void _unauthorized(SyncFailure e) {
+    stop();
+    if (_lastBlockedCode != e.code) {
+      _lastBlockedCode = e.code;
+      onBlocked?.call(e);
+    }
+  }
+
+  /// A refusal that waiting does not fix (not a lost connection): shown as
+  /// such instead of "live"; the slow timer keeps trying and a success
+  /// clears it.
+  void _blocked(SyncFailure e) {
+    _set(SyncConnection.blocked);
+    if (_lastBlockedCode != e.code) {
+      _lastBlockedCode = e.code;
+      onBlocked?.call(e);
     }
   }
 
@@ -258,7 +309,9 @@ class SyncScheduler {
         final reconnected = connection != SyncConnection.live;
         _failures = 0;
         _liveSupported = true;
-        _set(SyncConnection.live);
+        // A hub that answers the wait but refuses the sync stays "blocked"
+        // until a cycle really succeeds.
+        if (connection != SyncConnection.blocked) _set(SyncConnection.live);
         // Newer changes, a restored hub (lower number), or back after an
         // outage: pull now.
         if (r.lastSeq != since || reconnected) request(Duration.zero);
@@ -270,7 +323,7 @@ class SyncScheduler {
           return;
         }
         if (e.code == 'unauthorized') {
-          stop();
+          _unauthorized(e);
           return;
         }
         if (e.code == 'sync_paused') {
@@ -282,7 +335,11 @@ class SyncScheduler {
           continue;
         }
         _failures++;
-        _set(SyncConnection.offline);
+        if (e.retryable) {
+          _set(SyncConnection.offline);
+        } else {
+          _blocked(e);
+        }
         await _pause(_backoff());
       } catch (_) {
         if (_stopped || generation != _generation) return;

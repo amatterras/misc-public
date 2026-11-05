@@ -220,6 +220,31 @@ class _SyncSectionState extends State<SyncSection> {
               'Hub: ${s.hubUrl}',
               style: TextStyle(fontSize: 12, color: AppColors.textFaint),
             ),
+            if (s.syncNeedsPairing)
+              Padding(
+                key: const ValueKey('reauthorize-notice'),
+                padding: const EdgeInsets.only(top: Space.sm),
+                child: Wrap(
+                  spacing: Space.sm,
+                  runSpacing: Space.xs,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      'Sync is stopped: the hub does not accept this device. '
+                      'Your changes are kept here.',
+                      style: TextStyle(fontSize: 12, color: AppColors.danger),
+                    ),
+                    // The hub that answered may have been the wrong one: this
+                    // looks again, and a hub that accepts the device clears
+                    // the state by itself.
+                    OutlinedButton(
+                      key: const ValueKey('reauthorize-check'),
+                      onPressed: s.syncing ? null : s.syncNow,
+                      child: const Text('Check again'),
+                    ),
+                  ],
+                ),
+              ),
             if (s.maintenance case final m?)
               MaintenanceStatusView(state: s, m: m),
             if (s.peerSync.isSupported) PeerSyncRow(state: s),

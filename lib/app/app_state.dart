@@ -1030,6 +1030,7 @@ class AppState extends ChangeNotifier {
       onError: (e, s) {
         if (e is! SyncFailure) AppLog.error('Sync error', e, s);
       },
+      onBlocked: _syncBlocked,
     );
     // The Windows switch (Settings → Sync) may have paused sync.
     if (syncEnabled) _scheduler!.start();
@@ -1060,9 +1061,59 @@ class AppState extends ChangeNotifier {
         AppLog.info('Sync: connected again (${c.name})');
       case SyncConnection.paused:
         AppLog.info('Sync: paused on the hub');
+      case SyncConnection.blocked:
+        AppLog.warn('Sync: the hub refuses this device\'s sync; see the status');
       default:
         break;
     }
+  }
+
+  /// The scheduler reports a failure that waiting does not fix, whichever
+  /// connection it surfaced on (the live wait or a sync cycle).
+  void _syncBlocked(SyncFailure e) {
+    if (e.code == 'unauthorized') {
+      _markNeedsPairing();
+    } else {
+      _lastResult = e.message;
+      AppLog.warn('Sync blocked: ${e.code}');
+      _updateSyncStatus();
+      notifyListeners();
+    }
+  }
+
+  /// Removed with `thehub revoke`, or another hub answers: retrying cannot
+  /// help. Nothing local is lost; unsent changes stay queued and go out
+  /// after pairing again. Safe to call more than once for the same cause.
+  void _markNeedsPairing() {
+    _scheduler?.stop();
+    final already = syncNeedsPairing;
+    syncNeedsPairing = true;
+    syncStatus =
+        'This hub no longer accepts this device (it was removed, or the '
+        'hub was reset). Your data here is safe. Disconnect, then pair '
+        'again with a new code.';
+    if (!already) {
+      AppLog.warn('Sync stopped: device not accepted by the hub');
+    }
+    // Said once, not on every retry; the status page shows it always.
+    if (notifyGate.allow('device-authorization')) {
+      showToast(
+        'This device needs to be authorized again before sync can '
+        'resume. Your data here is safe. Settings → Sync & Devices.',
+      );
+    }
+    notifyListeners();
+  }
+
+  /// A cycle succeeded while the app believed pairing was required: the hub
+  /// accepts this device again (for example the right hub came back after a
+  /// wrong one answered on the same address).
+  void _clearNeedsPairing() {
+    if (!syncNeedsPairing) return;
+    syncNeedsPairing = false;
+    notifyGate.resolved('device-authorization');
+    AppLog.info('Sync: the hub accepts this device again');
+    _scheduler?.start();
   }
 
   /// Any record changed here: sync soon. (Changes written by a running sync
@@ -1266,7 +1317,14 @@ class AppState extends ChangeNotifier {
     // Timers and the live connection stop in the background (iOS): start
     // again and catch up.
     final s = _scheduler;
-    if (s == null || syncNeedsPairing || !syncEnabled) return;
+    if (s == null || !syncEnabled) return;
+    if (syncNeedsPairing) {
+      // "Pairing required" is a verdict from an earlier moment (the hub
+      // that answered then may have been the wrong one): look once more.
+      // A real removal is answered the same way again and stays as it is.
+      await s.syncNow();
+      return;
+    }
     s.start();
     final last = lastSynced;
     if (last != null && DateTime.now().difference(last) < resumeSyncAfter) {
@@ -1522,7 +1580,8 @@ class AppState extends ChangeNotifier {
   /// Syncs now (Settings → Sync now) and waits for it.
   Future<void> syncNow() async {
     final s = _scheduler;
-    if (s == null || syncNeedsPairing || !syncEnabled) return;
+    // Also from "pairing required": a cycle that succeeds clears it.
+    if (s == null || !syncEnabled) return;
     await s.syncNow();
   }
 
@@ -1549,6 +1608,8 @@ class AppState extends ChangeNotifier {
       SyncConnection.offline =>
         'Hub not reachable — your changes are saved here and will sync when '
             'it is back. Will retry.',
+      // The hub answers but refuses: say why, never "live".
+      SyncConnection.blocked => '$_lastResult — your changes are saved here.',
       _ when s.pendingLocal => 'Changes waiting to sync…',
       SyncConnection.live => '$_lastResult · live',
       _ => _lastResult,
@@ -1576,6 +1637,7 @@ class AppState extends ChangeNotifier {
     try {
       final report = await _dataLock.run(engine.syncOnce);
       lastSynced = DateTime.now();
+      _clearNeedsPairing();
       _lastResult = report.conflicts > 0
           ? 'Synced — ${report.conflicts} conflict(s) kept for review'
           : 'Synced';
@@ -1586,22 +1648,8 @@ class AppState extends ChangeNotifier {
     } on SyncFailure catch (e) {
       if (e.code == 'unauthorized') {
         // Removed with `thehub revoke`, or the hub was replaced: retrying
-        // cannot help. Nothing local is lost; unsent changes stay queued
-        // and go out after pairing again.
-        _scheduler?.stop();
-        syncNeedsPairing = true;
-        syncStatus =
-            'This hub no longer accepts this device (it was removed, or the '
-            'hub was reset). Your data here is safe. Disconnect, then pair '
-            'again with a new code.';
-        AppLog.warn('Sync stopped: device not accepted by the hub');
-        // Said once, not on every retry; the status page shows it always.
-        if (notifyGate.allow('device-authorization')) {
-          showToast(
-            'This device needs to be authorized again before sync can '
-            'resume. Your data here is safe. Settings → Sync & Devices.',
-          );
-        }
+        // cannot help (see [_markNeedsPairing]).
+        _markNeedsPairing();
       } else {
         _lastResult = e.retryable ? '${e.message} Will retry.' : e.message;
         if (!e.retryable) AppLog.warn('Sync stopped: ${e.code}');

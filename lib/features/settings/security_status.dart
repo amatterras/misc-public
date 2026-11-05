@@ -227,18 +227,26 @@ List<SecurityArea> securityAreas(SecurityFacts f) {
       ),
     );
   } else if (f.connection == SyncConnection.offline ||
-      f.connection == SyncConnection.paused) {
+      f.connection == SyncConnection.paused ||
+      f.connection == SyncConnection.blocked) {
     out.add(
       SecurityArea(
         'sync',
         'Hub synchronization',
         SecurityStatus.syncPaused,
-        f.connection == SyncConnection.paused
-            ? 'Sync is paused on the PC. Your local changes are safe and '
-                  'will synchronize automatically when it is back on.'
-            : 'The hub is currently unavailable. Your local changes are safe '
-                  'and will synchronize automatically when the connection '
-                  'returns.',
+        switch (f.connection) {
+          SyncConnection.paused =>
+            'Sync is paused on the PC. Your local changes are safe and '
+                'will synchronize automatically when it is back on.',
+          SyncConnection.blocked =>
+            'The hub answers but refuses this device for now (see Settings → '
+                'Sync for the reason). Your local changes are safe and are '
+                'kept; sync resumes once the cause is fixed.',
+          _ =>
+            'The hub is currently unavailable. Your local changes are safe '
+                'and will synchronize automatically when the connection '
+                'returns.',
+        },
       ),
     );
   } else {
