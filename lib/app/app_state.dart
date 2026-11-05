@@ -1105,6 +1105,10 @@ class AppState extends ChangeNotifier {
     syncing ? s.request() : s.localChange();
   }
 
+  /// Only for tests of the iPhone/iPad configuration, whose hub is on this
+  /// same machine: allows a 127.0.0.1 hub address, which a real iPad refuses.
+  bool allowLoopbackHubForTests = false;
+
   /// Pairs this app with a hub using a code from `thehub pair`. Returns an
   /// error message, or null on success.
   Future<String?> pairWithHub(String url, String code) async {
@@ -1118,7 +1122,9 @@ class AppState extends ChangeNotifier {
       return 'The hub address must be this PC (http://127.0.0.1:47710), your home network (https://) or Tailscale.';
     }
     // On iPhone/iPad, 127.0.0.1 is the iPad itself; the hub runs on the PC.
-    if (ios != null && isLoopbackHubUrl(uri)) {
+    // (Tests of the iOS configuration run a hub on this very machine, so they
+    // may switch the check off: [allowLoopbackHubForTests].)
+    if (ios != null && isLoopbackHubUrl(uri) && !allowLoopbackHubForTests) {
       return 'On iPhone/iPad, 127.0.0.1 is this device, not your PC. Enter '
           'the PC’s Tailscale address, e.g. http://100.x.y.z:47710.';
     }
@@ -2877,6 +2883,10 @@ class AppState extends ChangeNotifier {
 
   Future<void> _saveCanvas(CanvasDocument doc) async {
     await canvases.save(doc);
+    // A saved mindmap edit asks for a sync by itself (canvas files are not
+    // workspace records, so they do not tell the scheduler on their own).
+    // Rapid saves are batched by the scheduler's short pause.
+    _editedLocally();
     final index = _canvasList.indexWhere((c) => c.id == doc.id);
     final text = [
       for (final i in doc.items)
