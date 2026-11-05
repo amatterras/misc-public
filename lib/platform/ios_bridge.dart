@@ -136,7 +136,9 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
   /// Which App Group the native side is using and why (or, when there is
   /// none, which names it asked for), for the log. Null off iOS.
   Future<String?> sharedContainerSummary() async {
-    final status = await _invoke<Map<Object?, Object?>>('sharedContainerStatus');
+    final status = await _invoke<Map<Object?, Object?>>(
+      'sharedContainerStatus',
+    );
     return status?['summary']?.toString();
   }
 
@@ -209,6 +211,11 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
   /// there is no App Group (it needs a signing that grants one).
   Future<bool> writeWidgetSnapshot(String json) async =>
       await _invoke<bool>('widgetSnapshot', json) ?? false;
+
+  /// Publishes the canonical Archive category tags for the native share
+  /// extension. The extension only reads this App Group catalog.
+  Future<bool> writeShareTagCatalog(String json) async =>
+      await _invoke<bool>('shareTagCatalog', json) ?? false;
 
   // ---- direct device sync: Bonjour on the local network ----
 

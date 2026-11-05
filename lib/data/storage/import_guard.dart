@@ -12,8 +12,8 @@ import 'dart:io';
 abstract final class ImportGuard {
   /// Largest picture or document kept. Bigger files are refused, not
   /// truncated.
-  static const maxImageBytes = 64 * 1024 * 1024;
-  static const maxDocumentBytes = 256 * 1024 * 1024;
+  static const maxImageBytes = 320 * 1024 * 1024;
+  static const maxDocumentBytes = 320 * 1024 * 1024;
 
   /// Whether [head] (the first bytes of a file, at least 12 and up to 1024)
   /// has the signature of the kind of file [extension] names (pictures: any
@@ -59,10 +59,17 @@ abstract final class ImportGuard {
   /// Why [file] must not be imported as [extension], or null if it may be.
   /// Reads at most the first kilobyte.
   static Future<String?> problemWith(File file, String extension) async {
-    final isPdf = extension.toLowerCase() == 'pdf';
+    final isImage = const {
+      'png',
+      'jpg',
+      'jpeg',
+      'gif',
+      'webp',
+      'bmp',
+    }.contains(extension.toLowerCase());
     final length = await file.length();
     if (length == 0) return 'The file is empty.';
-    if (length > (isPdf ? maxDocumentBytes : maxImageBytes)) {
+    if (length > (isImage ? maxImageBytes : maxDocumentBytes)) {
       return 'The file is too large.';
     }
     final head = <int>[];

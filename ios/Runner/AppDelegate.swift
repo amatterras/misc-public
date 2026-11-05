@@ -130,6 +130,8 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       shareFile(call.arguments as? String, result)
     case "widgetSnapshot":
       result(writeWidgetSnapshot(call.arguments as? String))
+    case "shareTagCatalog":
+      result(writeShareTagCatalog(call.arguments as? String))
     case "enablePencilSqueeze":
       result(installPencilInteraction())
     case "deviceModel":
@@ -582,6 +584,21 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     }
     WidgetReload.all()
     return true
+  }
+
+  /// The extension has no access to Flutter or the Archive database. Publish
+  /// the canonical tag names/colors from the app as a small atomic catalog.
+  private func writeShareTagCatalog(_ json: String?) -> Bool {
+    guard let data = json?.data(using: .utf8),
+      let folder = Self.appGroupContainer,
+      let tags = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+      !tags.isEmpty,
+      tags.allSatisfy({ $0["id"] is String && $0["name"] is String && $0["color"] is NSNumber })
+    else { return false }
+    do {
+      try data.write(to: folder.appendingPathComponent("archive_share_tags.json"), options: .atomic)
+      return true
+    } catch { return false }
   }
 
   private func scheduleReminders(_ items: [[String: Any]], _ result: @escaping FlutterResult) {

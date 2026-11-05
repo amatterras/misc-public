@@ -1320,7 +1320,8 @@ class AppState extends ChangeNotifier {
     // Timers are suspended while iOS backgrounds the process. Reconcile the
     // shared snapshot before returning, then the collection listeners cover
     // any changes delivered by the catch-up sync below.
-    await updateWidgets();
+    await updateWidgets(force: true);
+    await _publishShareTagCatalog();
     await importSharedItems();
     _startCalendarSyncSchedule();
     unawaited(syncCalendarAccounts());
@@ -1898,7 +1899,12 @@ class AppState extends ChangeNotifier {
   /// Keeps the iPhone/iPad widgets' snapshot (today and tomorrow) up to
   /// date. The snapshot is derived display data only; see [WidgetSnapshot].
   void _startWidgets() {
-    for (final c in [workspace.tasks, workspace.entries, workspace.projects]) {
+    for (final c in [
+      workspace.tasks,
+      workspace.entries,
+      workspace.externalEvents,
+      workspace.projects,
+    ]) {
       c.addListener(_scheduleWidgetUpdate);
     }
     unawaited(updateWidgets());
@@ -1919,7 +1925,7 @@ class AppState extends ChangeNotifier {
 
   /// Writes a fresh snapshot if it changed (and again after midnight,
   /// when "tomorrow" becomes "today"). Returns false if not written.
-  Future<bool> updateWidgets({DateTime? now}) async {
+  Future<bool> updateWidgets({DateTime? now, bool force = false}) async {
     final activeWrite = _widgetWrite;
     if (activeWrite != null) {
       // A second mutation can arrive while rendering handwriting or writing
@@ -1928,7 +1934,7 @@ class AppState extends ChangeNotifier {
       _scheduleWidgetUpdate();
       return activeWrite;
     }
-    final write = _updateWidgets(now: now);
+    final write = _updateWidgets(now: now, force: force);
     _widgetWrite = write;
     try {
       return await write;
@@ -1937,7 +1943,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> _updateWidgets({DateTime? now}) async {
+  Future<bool> _updateWidgets({DateTime? now, required bool force}) async {
     final ios = this.ios;
     if (ios == null) return false;
     final at = now ?? DateTime.now();
@@ -1953,6 +1959,7 @@ class AppState extends ChangeNotifier {
       await Future.wait([
         workspace.tasks.flush(),
         workspace.entries.flush(),
+        workspace.externalEvents.flush(),
         workspace.projects.flush(),
       ]);
     } catch (e, s) {
@@ -1979,7 +1986,7 @@ class AppState extends ChangeNotifier {
     final json = jsonEncode(snapshot);
     // generatedAt changes every time; compare the rest.
     final key = json.replaceFirst(RegExp(r'"generatedAt":"[^"]*"'), '');
-    if (key == _lastWidgetJson) return false;
+    if (!force && key == _lastWidgetJson) return false;
     try {
       if (!await ios.writeWidgetSnapshot(json)) {
         _scheduleWidgetRetry();
@@ -2054,6 +2061,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> _startIosCapture(IosBridge ios) async {
     _pencilTaps ??= ios.pencilDoubleTap.listen(onPencilDoubleTap);
+    await _publishShareTagCatalog();
     final shared = await ios.sharedContainerPath();
     _sharedInbox = shared == null ? null : SendToBridge(Directory(shared));
     final summary = await ios.sharedContainerSummary();
@@ -2070,6 +2078,22 @@ class AppState extends ChangeNotifier {
       await workspace.flush();
       showToast('Added $saved item(s) to the Archive');
     });
+  }
+
+  Future<void> _publishShareTagCatalog() async {
+    final ios = this.ios;
+    if (ios == null) return;
+    final tagCatalog = jsonEncode([
+      for (final tag in LinkTag.values)
+        {'id': tag.id, 'name': tag.label, 'color': tag.color.toARGB32()},
+    ]);
+    try {
+      if (!await ios.writeShareTagCatalog(tagCatalog)) {
+        AppLog.warn('Share extension tag catalog could not be refreshed');
+      }
+    } catch (e, s) {
+      AppLog.error('Could not refresh the share extension tag catalog', e, s);
+    }
   }
 
   /// `theapp://capture?url=…&to=links[&tags=resource,projects]` (e.g. an
@@ -2100,8 +2124,19 @@ class AppState extends ChangeNotifier {
   /// Imports items shared through the Share Extension (at start and when
   /// the app comes back to the front). Returns how many were added.
   Future<int> importSharedItems() async {
-    final count = await _sharedInbox?.processRequests(capture) ?? 0;
-    if (count > 0) showToast('Added $count shared item(s) to the Archive');
+    final inbox = _sharedInbox;
+    final count = await inbox?.processRequests(capture) ?? 0;
+    final failed = inbox?.failedCount ?? 0;
+    if (failed > 0) {
+      final reason = inbox?.lastFailure;
+      showToast(
+        count == 0
+            ? 'A shared item could not be saved: ${reason ?? 'unsupported or damaged content.'}'
+            : 'Added $count item(s); another shared item could not be saved: ${reason ?? 'unsupported content.'}',
+      );
+    } else if (count > 0) {
+      showToast('Added $count shared item(s) to the Archive');
+    }
     return count;
   }
 
@@ -3590,7 +3625,13 @@ class AppState extends ChangeNotifier {
     if (_listeningForEdits) workspace.changes.removeListener(_editedLocally);
     _widgetTimer?.cancel();
     _widgetMidnight?.cancel();
-    for (final c in [workspace.tasks, workspace.entries, workspace.projects]) {
+    _widgetRetry?.cancel();
+    for (final c in [
+      workspace.tasks,
+      workspace.entries,
+      workspace.externalEvents,
+      workspace.projects,
+    ]) {
       c.removeListener(_scheduleWidgetUpdate);
     }
     _reminderTimer?.cancel();

@@ -1,6 +1,7 @@
 // New Archive: layered collection cards over the existing library data,
 // the 2/5 preview state, Whole Look (the existing all-items page), colours,
 // pinning/ordering, selection and swipe actions.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/data/models/object_library_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/features/capture/send_to.dart';
+import 'package:flutter_application_1/features/links/link_tags.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/library/library_page.dart';
 import 'package:flutter_application_1/main.dart';
@@ -330,6 +332,108 @@ void main() {
 // which the New Archive then shows. The Swift extension itself needs a Mac /
 // the cloud build to compile and a device to run: not verified here.
 void shareTests() {
+  testWidgets(
+    'shared original files persist in the Archive with source metadata',
+    (tester) async {
+      final dir = Directory.systemTemp.createTempSync('theapp_share_file_');
+      addTearDown(() {
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      final ws = Workspace(dir);
+      final s = AppState(
+        canvases: FileCanvasRepository(ws.store),
+        settings: SettingsRepository(ws.store),
+        workspace: ws,
+        enableSendTo: false,
+      )..capture.fetchPreviews = false;
+      await tester.runAsync(s.init);
+      final bridge = SendToBridge(dir);
+      final files = Directory('${dir.path}${Platform.pathSeparator}inbox_files')
+        ..createSync(recursive: true);
+      final original =
+          File('${files.path}${Platform.pathSeparator}original.png')
+            ..writeAsBytesSync(
+              base64Decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/eN8AAAAASUVORK5CYII=',
+              ),
+            );
+      final originalBytes = original.readAsBytesSync();
+      await tester.runAsync(() => bridge.requestsDir.create(recursive: true));
+      File('${bridge.requestsDir.path}/original.json').writeAsStringSync(
+        jsonEncode({
+          'type': 'file',
+          'value': original.path,
+          'temporary': true,
+          'filename': 'original.png',
+          'typeIdentifier': 'public.png',
+          'source': 'ios_share_sheet',
+          'tagId': 'resource',
+        }),
+      );
+      await tester.runAsync(() => bridge.processRequests(s.capture));
+      final object = s.library.objects.single;
+      expect(object.type, LibraryObjectType.image);
+      expect(object.metadata['filename'], 'original.png');
+      expect(object.metadata['typeIdentifier'], 'public.png');
+      expect(object.metadata['source'], 'ios_share_sheet');
+      expect(s.library.categoriesOf(object.id), {LinkTag.resource.id});
+      final asset = ws.assets[object.attachmentIds.single]!;
+      expect(
+        await tester.runAsync(() => ws.attachments.readBytes(asset.file!)),
+        originalBytes,
+      );
+      await tester.runAsync(s.flush);
+      s.dispose();
+      await tester.pump(const Duration(seconds: 9));
+    },
+  );
+
+  testWidgets(
+    'share imports preserve the URL, title and exactly one selected tag',
+    (tester) async {
+      final dir = Directory.systemTemp.createTempSync('theapp_share_tag_');
+      addTearDown(() {
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      final ws = Workspace(dir);
+      final s = AppState(
+        canvases: FileCanvasRepository(ws.store),
+        settings: SettingsRepository(ws.store),
+        workspace: ws,
+        enableSendTo: false,
+      )..capture.fetchPreviews = false;
+      await tester.runAsync(s.init);
+      final bridge = SendToBridge(dir);
+      await tester.runAsync(() => bridge.requestsDir.create(recursive: true));
+      File('${bridge.requestsDir.path}/chosen-tag.json').writeAsStringSync(
+        '{"type":"url","value":"https://example.com/story?x=1",'
+        '"url":"https://example.com/story?x=1","title":"A story",'
+        '"tagId":"projects"}',
+      );
+      await tester.runAsync(() => bridge.processRequests(s.capture));
+      final item = s.library.objects.single;
+      expect(item.type, LibraryObjectType.website);
+      expect(item.sourceUrl, 'https://example.com/story?x=1');
+      expect(item.title, 'A story');
+      expect(s.library.categoriesOf(item.id), {LinkTag.projects.id});
+      File('${bridge.requestsDir.path}/same-url-new-tag.json')
+          .writeAsStringSync(
+            '{"type":"url","value":"https://example.com/story?x=1",'
+            '"title":"A story","tagId":"resource"}',
+          );
+      await tester.runAsync(() => bridge.processRequests(s.capture));
+      expect(s.library.objects, hasLength(1));
+      expect(s.library.categoriesOf(item.id), {LinkTag.resource.id});
+      await tester.runAsync(s.flush);
+      s.dispose();
+      await tester.pump(const Duration(seconds: 9));
+    },
+  );
+
   testWidgets('shared text ends up in the New Archive', (tester) async {
     final dir = Directory.systemTemp.createTempSync('theapp_share_');
     addTearDown(() {

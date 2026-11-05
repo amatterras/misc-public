@@ -618,10 +618,52 @@ class Workspace {
     return _imageAsset(name);
   }
 
-  /// File types kept as documents (opened in the default viewer).
-  static const documentExtensions = {'pdf'};
+  /// File types retained as Archive documents. Quick Look opens the formats
+  /// supported by iOS; all listed originals remain byte-for-byte attachments.
+  static const documentExtensions = {
+    'pdf',
+    'doc',
+    'docx',
+    'xls',
+    'xlsx',
+    'ppt',
+    'pptx',
+    'rtf',
+    'txt',
+    'md',
+    'csv',
+    'epub',
+    'pages',
+    'numbers',
+    'key',
+    'zip',
+    'mov',
+    'mp4',
+    'm4v',
+    'avi',
+    'mkv',
+    'mp3',
+    'm4a',
+    'wav',
+    'aac',
+    'heic',
+    'heif',
+    'json',
+    'xml',
+    'html',
+    'htm',
+    'eml',
+    'ics',
+    'vcf',
+    'psd',
+    'ai',
+    'tar',
+    'gz',
+    '7z',
+  };
 
-  /// Copies a PDF into the attachments and records it by its file name.
+  /// Copies a supported document/media file into attachments and records it
+  /// by its original filename.
   Future<Asset> documentAssetFromFile(File file) async {
     final ext = AttachmentStore.extensionOf(file.path);
     if (!documentExtensions.contains(ext)) {

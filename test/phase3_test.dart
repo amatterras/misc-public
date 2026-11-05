@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
+import 'package:flutter_application_1/data/models/calendar_sync_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/models/library_models.dart';
 import 'package:flutter_application_1/data/models/object_library_models.dart';
@@ -319,15 +320,22 @@ void main() {
       await ws.load();
     });
 
-    CalendarEntry event(String name, DateTime day, {int? at}) => CalendarEntry(
+    CalendarEntry event(
+      String name,
+      DateTime day, {
+      int? at,
+      int? duration,
+      CalendarCategory category = CalendarCategory.events,
+    }) => CalendarEntry(
       id: newId(),
-      category: CalendarCategory.events,
+      category: category,
       name: name,
       createdAt: now,
       updatedAt: now,
       startDate: day,
       startMinutes: at,
-      colorIndex: 2,
+      durationMinutes: duration,
+      colorIndex: category.index,
     );
 
     test('today and tomorrow with tasks, events, times and done state', () {
@@ -353,6 +361,7 @@ void main() {
       ]);
       expect(items[0]['kind'], 'event');
       expect(items[0]['time'], '09:30');
+      expect(items[0]['durationMinutes'], isNull);
       expect(items[1]['time'], '14:00');
       expect(items[1]['link'], 'theapp://open?task=${t.id}');
       expect(items[0]['link'], 'theapp://open?day=2026-10-23');
@@ -361,6 +370,63 @@ void main() {
       // Valid JSON for the Swift side.
       expect(() => jsonEncode(snap), returnsNormally);
     });
+
+    test(
+      'habit completion, event duration, and synced reminders are serialized',
+      () {
+        final habit = event(
+          'Morning walk',
+          today,
+          at: 8 * 60,
+          duration: 30,
+          category: CalendarCategory.habits,
+        );
+        ws.saveEntry(habit);
+        ws.toggleEntryCompletion(habit.id, today);
+        final external = ExternalEvent(
+          id: ExternalEvent.idFor('google', 'calendar', 'event'),
+          provider: 'google',
+          calendarId: 'calendar',
+          remoteId: 'event',
+          title: 'Remote reminder',
+          start: DateTime(2026, 10, 23, 13),
+          end: DateTime(2026, 10, 23, 14, 30),
+          updatedAt: now,
+        );
+        ws.externalEvents.put(external);
+
+        List<Map<String, Object?>> items() {
+          final day =
+              (WidgetSnapshot.build(ws, now)['days']! as List).first as Map;
+          return (day['items'] as List).cast<Map<String, Object?>>();
+        }
+
+        var serialized = items();
+        final habitItem = serialized.singleWhere(
+          (item) => item['title'] == 'Morning walk',
+        );
+        expect(habitItem['done'], isTrue);
+        expect(habitItem['durationMinutes'], 30);
+        final reminder = serialized.singleWhere(
+          (item) => item['title'] == 'Remote reminder',
+        );
+        expect(reminder['durationMinutes'], 90);
+
+        ws.toggleEntryCompletion(habit.id, today);
+        serialized = items();
+        expect(
+          serialized.singleWhere(
+            (item) => item['title'] == 'Morning walk',
+          )['done'],
+          isFalse,
+        );
+        ws.externalEvents.remove(external.id);
+        expect(
+          items().any((item) => item['title'] == 'Remote reminder'),
+          isFalse,
+        );
+      },
+    );
 
     test('a busy day keeps 12 items and the full count for "+N more"', () {
       for (var i = 0; i < 20; i++) {
@@ -454,9 +520,15 @@ void main() {
       written.clear();
       expect(await s.updateWidgets(now: at), isTrue);
       expect(await s.updateWidgets(now: at), isFalse, reason: 'no change');
+      expect(
+        await s.updateWidgets(now: at, force: true),
+        isTrue,
+        reason:
+            'foreground recovery repairs missing or damaged shared snapshots',
+      );
       s.workspace.createTask('New', dueDate: DateTime(2031, 3, 3));
       expect(await s.updateWidgets(now: at), isTrue);
-      expect(written, hasLength(2));
+      expect(written, hasLength(3));
       final last = jsonDecode(written.last) as Map<String, dynamic>;
       expect((last['days'] as List).first['total'], 1);
       s.dispose();
@@ -470,6 +542,72 @@ void main() {
       expect(s.workspace.tasks.all, hasLength(1));
       s.dispose();
     });
+
+    test(
+      'calendar edits, deletions, habits, and synced reminders are written',
+      () async {
+        final s = await appState(ios: IosBridge());
+        final at = DateTime(2031, 3, 3, 10);
+        written.clear();
+        final eventId = newId();
+        s.workspace.saveEntry(
+          CalendarEntry(
+            id: eventId,
+            category: CalendarCategory.events,
+            name: 'Planning',
+            createdAt: at,
+            updatedAt: at,
+            startDate: DateTime(2031, 3, 3),
+            startMinutes: 600,
+            durationMinutes: 45,
+          ),
+        );
+        expect(await s.updateWidgets(now: at), isTrue);
+        var snapshot = jsonDecode(written.last) as Map<String, dynamic>;
+        var items = ((snapshot['days'] as List).first as Map)['items'] as List;
+        expect((items.single as Map)['title'], 'Planning');
+        expect((items.single as Map)['durationMinutes'], 45);
+
+        s.workspace.saveEntry(
+          s.workspace.entries[eventId]!.copyWith(
+            name: 'Planning revised',
+            startMinutes: () => 660,
+            durationMinutes: () => 90,
+          ),
+        );
+        expect(await s.updateWidgets(now: at), isTrue);
+        snapshot = jsonDecode(written.last) as Map<String, dynamic>;
+        items = ((snapshot['days'] as List).first as Map)['items'] as List;
+        expect((items.single as Map)['title'], 'Planning revised');
+        expect((items.single as Map)['time'], '11:00');
+        expect((items.single as Map)['durationMinutes'], 90);
+
+        s.workspace.entries.remove(eventId);
+        final remote = ExternalEvent(
+          id: ExternalEvent.idFor('google', 'calendar', 'remote'),
+          provider: 'google',
+          calendarId: 'calendar',
+          remoteId: 'remote',
+          title: 'Synced appointment',
+          start: DateTime(2031, 3, 3, 12),
+          end: DateTime(2031, 3, 3, 13),
+          updatedAt: at,
+        );
+        // The remote record has already been applied to local storage here.
+        s.workspace.externalEvents.put(remote);
+        expect(await s.updateWidgets(now: at), isTrue);
+        snapshot = jsonDecode(written.last) as Map<String, dynamic>;
+        items = ((snapshot['days'] as List).first as Map)['items'] as List;
+        expect(items.map((item) => (item as Map)['title']), [
+          'Synced appointment',
+        ]);
+        s.workspace.externalEvents.remove(remote.id);
+        expect(await s.updateWidgets(now: at), isTrue);
+        snapshot = jsonDecode(written.last) as Map<String, dynamic>;
+        expect(((snapshot['days'] as List).first as Map)['total'], 0);
+        s.dispose();
+      },
+    );
 
     test('Windows (no iOS bridge): no snapshot', () async {
       final s = await appState();
@@ -524,7 +662,8 @@ void main() {
       expect(
         RegExp('AppGroup.swift in Sources').allMatches(project).length,
         greaterThanOrEqualTo(3),
-        reason: 'AppGroup.swift must be in the Runner, widget and share '
+        reason:
+            'AppGroup.swift must be in the Runner, widget and share '
             'extension source phases',
       );
       final swift = read('ios/TheAppWidget/TheAppWidget.swift');

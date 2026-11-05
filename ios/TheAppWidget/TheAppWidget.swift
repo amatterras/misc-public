@@ -16,6 +16,7 @@ struct SnapshotItem: Decodable, Hashable {
   let kind: String
   let title: String
   let time: String?
+  let durationMinutes: Int?
   let done: Bool
   let color: UInt32
   let link: String
@@ -104,11 +105,13 @@ struct Provider: TimelineProvider {
       date: "", title: "Today", link: "theapp://open", total: 3,
       items: [
         SnapshotItem(
-          kind: "event", title: "Team meeting", time: "09:30", done: false,
-          color: 0xFF4D_8FD6, link: "theapp://open"),
+          kind: "event", title: "Team meeting", time: "09:30",
+          durationMinutes: 60, done: false, color: 0xFF4D_8FD6,
+          link: "theapp://open"),
         SnapshotItem(
-          kind: "task", title: "Buy groceries", time: nil, done: false,
-          color: 0xFF79_B85A, link: "theapp://open"),
+          kind: "task", title: "Buy groceries", time: nil,
+          durationMinutes: nil, done: false, color: 0xFF79_B85A,
+          link: "theapp://open"),
       ], ink: nil),
     SnapshotDay(date: "", title: "Tomorrow", link: "theapp://open", total: 0, items: [], ink: nil),
   ]
@@ -145,6 +148,11 @@ struct ItemRow: View {
         if let time = item.time {
           Text(time)
             .font(.system(size: 11, weight: .medium).monospacedDigit())
+            .foregroundColor(.secondary)
+        }
+        if let duration = item.durationMinutes, duration > 0 {
+          Text("\(duration)m")
+            .font(.system(size: 10, weight: .medium).monospacedDigit())
             .foregroundColor(.secondary)
         }
         Text(item.title)

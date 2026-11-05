@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../../data/models/canvas_models.dart' show newId;
 import '../../data/models/library_models.dart';
 import 'capture_service.dart';
+import '../links/link_tags.dart';
 
 /// Windows "Send to → THEapp" support.
 ///
@@ -151,12 +152,16 @@ class SendToBridge {
   }
 
   bool _busy = false;
+  int failedCount = 0;
+  String? lastFailure;
 
   /// Turns pending request files into Archive objects (Inbox items when there
   /// is no library, as in tests).
   Future<int> processRequests(CaptureService capture) async {
     if (_busy || !await requestsDir.exists()) return 0;
     _busy = true;
+    failedCount = 0;
+    lastFailure = null;
     var count = 0;
     try {
       await for (final entity in requestsDir.list()) {
@@ -189,14 +194,44 @@ class SendToBridge {
             // The Archive keeps one object per link, file or text (repeats
             // of the same request reuse it), so a retried request adds no
             // duplicate.
-            final saved = switch (json['type']) {
-              'file' => await capture.captureToArchive(files: [value]),
-              'url' => await capture.captureToArchive(url: value),
-              _ => await capture.captureToArchive(text: value),
+            final category = json['tagId'];
+            final categories =
+                category is String && LinkTag.byId(category) != null
+                ? {category}
+                : <String>{};
+            final title = json['title'] is String
+                ? json['title'] as String
+                : null;
+            final metadata = <String, Object?>{
+              if (json['filename'] is String) 'filename': json['filename'],
+              if (json['typeIdentifier'] is String)
+                'typeIdentifier': json['typeIdentifier'],
+              if (json['source'] is String) 'source': json['source'],
             };
-            // Not an image or document: keep the path as text.
+            final saved = switch (json['type']) {
+              'file' => await capture.captureToArchive(
+                files: [value],
+                categories: categories,
+                title: title,
+                metadata: metadata,
+              ),
+              'url' => await capture.captureToArchive(
+                url: (json['url'] as String?) ?? value,
+                categories: categories,
+                title: title,
+                metadata: metadata,
+              ),
+              _ => await capture.captureToArchive(
+                text: value,
+                categories: categories,
+                title: title,
+                metadata: metadata,
+              ),
+            };
             if (saved == 0 && json['type'] == 'file') {
-              await capture.captureToArchive(text: value);
+              throw const FormatException(
+                'Unsupported or invalid shared file; staged original kept for recovery.',
+              );
             }
           } else {
             switch (json['type']) {
@@ -211,6 +246,11 @@ class SendToBridge {
                   );
                 }
                 if (assets.isEmpty) {
+                  if (json['temporary'] == true) {
+                    throw const FormatException(
+                      'Unsupported or invalid shared file; staged original kept for recovery.',
+                    );
+                  }
                   // Not an image: keep the path as text so nothing is lost.
                   ws.inbox.put(
                     InboxItem(id: itemId(), text: value, createdAt: now),
@@ -244,7 +284,11 @@ class SendToBridge {
             await copy.delete();
           }
         } catch (e) {
-          debugPrint('Bad send-to request ${entity.path}: $e');
+          failedCount++;
+          lastFailure = e is FormatException
+              ? e.message
+              : 'A shared item could not be read or stored.';
+          debugPrint('A shared item could not be imported: $lastFailure');
           await entity.rename('${entity.path}.failed');
         }
       }

@@ -67,7 +67,17 @@ class WidgetSnapshot {
               EntryOnDay(:final entry) => _time(entry.startMinutes),
               ExternalOnDay(:final event) => _time(event.startMinutes),
             },
-            'done': item is TaskOnDay && item.task.done,
+            'durationMinutes': switch (item) {
+              TaskOnDay() => null,
+              EntryOnDay(:final entry) => entry.durationMinutes,
+              ExternalOnDay(:final event) =>
+                event.end.difference(event.start).inMinutes,
+            },
+            'done': switch (item) {
+              TaskOnDay(:final task) => task.done,
+              EntryOnDay(:final entry) => entry.isCheckedOn(day),
+              ExternalOnDay() => false,
+            },
             'color': switch (item) {
               EntryOnDay(:final entry) => calendarCategoryColor(entry.category),
               TaskOnDay() ||

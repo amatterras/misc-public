@@ -40,6 +40,7 @@ class LibraryRepository {
     String? content,
     String? description,
     List<String> attachmentIds = const [],
+    String? thumbnailId,
     Map<String, dynamic> metadata = const {},
     String? spaceId,
   }) async {
@@ -82,6 +83,7 @@ class LibraryRepository {
             content: content,
             description: description,
             attachmentIds: attachmentIds,
+            thumbnailId: thumbnailId,
             metadata: metadata,
             contentHash: hash,
             createdAt: now,
@@ -622,7 +624,8 @@ class LibraryRepository {
       if (parsed.excluded.any(lower.contains)) continue;
       final terms = parsed.terms;
       final hit = terms.where(lower.contains).length;
-      if (terms.isNotEmpty && (parsed.anyTerm ? hit == 0 : hit < terms.length)) {
+      if (terms.isNotEmpty &&
+          (parsed.anyTerm ? hit == 0 : hit < terms.length)) {
         continue;
       }
       found.add((o, hit));

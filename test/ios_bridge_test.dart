@@ -10,6 +10,7 @@ import 'package:flutter_application_1/data/models/library_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/capture/capture_service.dart';
+import 'package:flutter_application_1/features/links/link_tags.dart';
 import 'package:flutter_application_1/platform/ios_bridge.dart';
 import 'package:flutter_application_1/sync/secret_store.dart';
 import 'package:flutter_application_1/data/models/object_library_models.dart';
@@ -117,12 +118,21 @@ void main() {
       }),
     );
     answers['sharedContainer'] = (_) => shared.path;
+    answers['shareTagCatalog'] = (_) => true;
     answers['initialLinks'] = (_) => [
       'theapp://capture?text=${Uri.encodeQueryComponent('launch note')}',
       'theapp://capture?text=second',
     ];
 
     final state = await start();
+    final catalogCall = calls.singleWhere(
+      (call) => call.method == 'shareTagCatalog',
+    );
+    final catalog = jsonDecode(catalogCall.arguments as String) as List;
+    expect(
+      catalog.map((tag) => (tag as Map)['id']).toSet(),
+      LinkTag.values.map((tag) => tag.id).toSet(),
+    );
     expect(
       state.library.objects.map((o) => o.content),
       containsAll(['launch note', 'second']),

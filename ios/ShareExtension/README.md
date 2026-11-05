@@ -1,16 +1,20 @@
 # iOS Share Extension — implemented, NOT verified on a device
 
-"Add to misc." in the iPhone/iPad share sheet. Shared links, text, photos and
-files (e.g. PDFs) are saved into the **Archive**.
+"Add to THEapp" in the iPhone/iPad share sheet. The extension stages durable
+import requests in the App Group. When THEapp next opens, its existing import
+pipeline creates Archive records and queues them for normal synchronization.
 
 ## What exists (code)
-- `ShareViewController.swift`: receives a URL, plain text, an image (stored as
-  JPEG), or a file (copied). Items over 100 MB or 200 000 characters are skipped
-  and the sheet says so. Each item becomes a small request file in the App Group
-  folder `group.com.theapp.shared/inbox_requests/` (copies in `inbox_files/`),
-  named by a hash of its content, so a share delivered twice is stored once.
-  The extension has no network access and puts nothing into notes, AI or the cloud.
-- `Info.plist`: the extension shows for URLs, text, images, PDFs and files.
+- `ShareViewController.swift`: native SwiftUI review popup; reads URL, text,
+  image, video and supported file representations, previews each item, requires
+  exactly one existing Archive category tag, then stages request JSON atomically
+  under `inbox_requests/` and original file bytes under `inbox_files/`. Filename
+  and UTI are carried through as Archive metadata.
+- THEapp publishes the canonical tag catalog from `LinkTag` to the App Group.
+  Rotating messages are empty until supplied; add them to `THEappShareMessages`
+  in `Info.plist` or a shared `share_messages.json` file.
+- `Info.plist`: activation rules include URLs, text, images, media, content and
+  files.
 - `ShareExtension.entitlements`: declares the App Group.
 - The Xcode project already contains the `ShareExtension` target
   (`com.amaterasu.theapp.share`), embedded in Runner. Nothing has to be added by hand.
@@ -20,12 +24,11 @@ files (e.g. PDFs) are saved into the **Archive**.
   website item, text a note, a photo/PDF an image/document item. Repeats add no duplicate.
 
 ## What has been verified
-- **Windows only, the app side:** parsing, Archive object creation and de-duplication,
-  with request files in exactly the extension's format (automated tests, including
-  `test/new_archive_test.dart`).
-- The Swift code compiled once in the Codemagic cloud build.
-- **Never run** on an iPhone, iPad or simulator. Nothing about the share sheet itself,
-  the App Group, or the import on a device is verified.
+- Dart importer/Archive tests run on Windows, including selected tag and URL/title
+  preservation.
+- The native extension, App Group entitlement signing and share-sheet behavior
+  have not been compiled or run in this session; `xcodebuild` is unavailable on
+  this Windows machine.
 
 ## What is still needed (nothing here is set up yet)
 1. **For the route that always works: Apple Developer Program membership (paid, $99/year).** Free Apple IDs cannot use

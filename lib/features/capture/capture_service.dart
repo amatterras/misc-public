@@ -268,7 +268,7 @@ class CaptureService {
 
   /// Longest text accepted from outside the app (a link can be opened by any
   /// web page, so this is untrusted input).
-  static const maxInboundText = 20000;
+  static const maxInboundText = 200000;
 
   /// Puts content shared from outside the app into the Inbox: one item for a
   /// link, one for any text (also when it came with a link), and one per
@@ -281,6 +281,7 @@ class CaptureService {
   Future<bool> saveAssetToArchive(
     Asset asset, {
     Set<String> categories = const {},
+    Map<String, Object?> metadata = const {},
   }) async {
     final library = libraryRepository;
     if (library == null) return false;
@@ -298,7 +299,8 @@ class CaptureService {
           : LibraryObjectType.document,
       title: stored.label,
       attachmentIds: [stored.id],
-      metadata: {'legacyAssetId': stored.id},
+      thumbnailId: stored.kind == AssetKind.image ? stored.id : null,
+      metadata: {'legacyAssetId': stored.id, ...metadata},
     );
     for (final c in categories) {
       await library.setCategory(object.id, c, true);
@@ -314,6 +316,7 @@ class CaptureService {
     String? title,
     List<String> files = const [],
     Set<String> categories = const {},
+    Map<String, Object?> metadata = const {},
   }) async {
     final library = libraryRepository;
     if (library == null) return 0;
@@ -326,6 +329,12 @@ class CaptureService {
     if (bodyText == cleanUrl || bodyText == url?.trim()) bodyText = '';
     var saved = 0;
     Future<void> label(LibraryObject o) async {
+      if (categories.length == 1) {
+        for (final existing
+            in library.categoriesOf(o.id).difference(categories)) {
+          await library.setCategory(o.id, existing, false);
+        }
+      }
       for (final c in categories) {
         await library.setCategory(o.id, c, true);
       }
@@ -338,6 +347,7 @@ class CaptureService {
           type: LibraryObjectType.website,
           sourceUrl: cleanUrl,
           title: title ?? Uri.parse(cleanUrl).host,
+          metadata: metadata,
         ),
       );
     }
@@ -347,6 +357,7 @@ class CaptureService {
           type: LibraryObjectType.note,
           title: title ?? 'Shared note',
           content: bodyText,
+          metadata: metadata,
         ),
       );
     }
@@ -355,7 +366,13 @@ class CaptureService {
         ...await imagesFromFiles(files),
         ...await documentsFromFiles(files),
       ]) {
-        if (await saveAssetToArchive(asset, categories: categories)) saved++;
+        if (await saveAssetToArchive(
+          asset,
+          categories: categories,
+          metadata: metadata,
+        )) {
+          saved++;
+        }
       }
     }
     return saved;
