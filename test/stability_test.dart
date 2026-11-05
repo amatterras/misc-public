@@ -169,14 +169,23 @@ void main() {
       },
     );
 
-    test('a live other process with a fresh heartbeat is detected', () async {
-      final other = await Process.start('ping', ['-n', '6', '127.0.0.1']);
-      addTearDown(other.kill);
-      File(p('instance.json')).writeAsStringSync(
-        jsonEncode({'pid': other.pid, 'at': DateTime.now().toIso8601String()}),
-      );
-      expect(await SendToBridge(dir).isAnotherInstanceRunning(), isTrue);
-    }, skip: !Platform.isWindows);
+    test(
+      'a live other process with a fresh heartbeat is detected',
+      () async {
+        final other = await Process.start('ping', ['-n', '6', '127.0.0.1']);
+        addTearDown(other.kill);
+        File(p('instance.json')).writeAsStringSync(
+          jsonEncode({
+            'pid': other.pid,
+            'at': DateTime.now().toIso8601String(),
+          }),
+        );
+        expect(await SendToBridge(dir).isAnotherInstanceRunning(), isTrue);
+      },
+      skip: Platform.isWindows
+          ? false
+          : 'Uses the Windows ping program to start a second process',
+    );
 
     test('an old heartbeat is ignored', () async {
       File(p('instance.json')).writeAsStringSync(

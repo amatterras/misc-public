@@ -471,7 +471,9 @@ void main() {
         reason: 'the newer note was offered again',
       );
     },
-    skip: !Platform.isWindows,
+    skip: Platform.isWindows
+        ? false
+        : 'Copies the backup with the Windows xcopy program',
   );
 
   test('newer record kinds reach the other device; the vault stays '

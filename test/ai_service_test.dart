@@ -636,6 +636,102 @@ void main() {
       },
     );
   });
+
+  group('the live-service check, against a fake service of each provider', () {
+    // tool/ai_real_service_check.dart runs this same sequence against a real
+    // service (it needs a key or a local model, so it is not part of the
+    // suite). Here the sequence is proven against fakes, for every provider:
+    // the connection test, then a streamed answer.
+    test('Ollama', () async {
+      ai.handlers.addAll([
+        json({
+          'models': [
+            {'name': 'llama3.2:latest'},
+          ],
+        }),
+        json({
+          'message': {'content': 'OK'},
+        }),
+        status(
+          200,
+          body:
+              '{"message":{"content":"1 2 "}}\n{"message":{"content":"3 4 5"}}\n'
+              '{"done":true}\n',
+        ),
+      ]);
+      final client = OllamaClient(ai.url, 'llama3.2');
+      final report = await testAiConnection(client, 'llama3.2');
+      expect(report.ok, isTrue, reason: report.steps.join('\n'));
+      final pieces = await client.stream(const [
+        AiMessage('user', 'Count from 1 to 5, separated by spaces.'),
+      ]).toList();
+      expect(pieces.join(), contains('3'));
+    });
+
+    test('OpenAI-compatible', () async {
+      ai.handlers.addAll([
+        json({
+          'data': [
+            {'id': 'gpt-6-luna'},
+          ],
+        }),
+        json({
+          'choices': [
+            {
+              'message': {'content': 'OK'},
+            },
+          ],
+        }),
+        sse([
+          'data: {"choices":[{"delta":{"content":"1 2 "}}]}',
+          'data: {"choices":[{"delta":{"content":"3 4 5"}}]}',
+          'data: [DONE]',
+        ]),
+      ]);
+      final client = OpenAiCompatibleClient(ai.url, 'gpt-6-luna', _key);
+      final report = await testAiConnection(client, 'gpt-6-luna');
+      expect(report.ok, isTrue, reason: report.steps.join('\n'));
+      final pieces = await client.stream(const [
+        AiMessage('user', 'Count from 1 to 5, separated by spaces.'),
+      ]).toList();
+      expect(pieces.join(), contains('3'));
+      expect(report.steps.join(), isNot(contains(_key)));
+    });
+
+    test('Gemini', () async {
+      const key = 'AIzaTESTKEY-0123456789abcdefghij';
+      ai.handlers.addAll([
+        json({
+          'models': [
+            {'name': 'models/gemini-2.5-flash'},
+          ],
+        }),
+        json({
+          'candidates': [
+            {
+              'content': {
+                'parts': [
+                  {'text': 'OK'},
+                ],
+              },
+            },
+          ],
+        }),
+        sse([
+          'data: {"candidates":[{"content":{"parts":[{"text":"1 2 "}]}}]}',
+          'data: {"candidates":[{"content":{"parts":[{"text":"3 4 5"}]}}]}',
+        ]),
+      ]);
+      final client = GeminiClient(ai.url, 'gemini-2.5-flash', key);
+      final report = await testAiConnection(client, 'gemini-2.5-flash');
+      expect(report.ok, isTrue, reason: report.steps.join('\n'));
+      final pieces = await client.stream(const [
+        AiMessage('user', 'Count from 1 to 5, separated by spaces.'),
+      ]).toList();
+      expect(pieces.join(), contains('3'));
+      expect(report.steps.join(), isNot(contains(key)));
+    });
+  });
 }
 
 AiSettings _settings(Map<String, Object?> values) =>
