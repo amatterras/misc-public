@@ -15,6 +15,7 @@ import '../features/ai/ai_chat_page.dart';
 import '../features/browser/browser_page.dart';
 import '../features/motivation/motivation_service.dart';
 import '../features/notes/note_page.dart' show openNotePage;
+import '../new_ui/new_components.dart' show BrandPlus;
 import '../new_ui/new_tokens.dart';
 import 'phone_archive.dart';
 import 'phone_calendar.dart';
@@ -368,19 +369,8 @@ class PhoneDock extends StatelessWidget {
                     width: 62,
                     height: PhoneSpace.dockHeight,
                     child: Center(
-                      child: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: NewColors.text,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.add_rounded,
-                          size: 24,
-                          color: NewColors.background,
-                        ),
-                      ),
+                      // The same "+" as Quick Add on iPad and Windows.
+                      child: BrandPlus(),
                     ),
                   ),
                 ),

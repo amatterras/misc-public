@@ -5,6 +5,69 @@ import 'package:flutter/material.dart';
 
 import 'new_tokens.dart';
 
+/// The brand "+": a brand-gradient capsule with a white plus and a warm coral
+/// glow. THE one definition: Quick Add on Windows/iPad and "New" on the
+/// iPhone are both this widget, so they cannot drift apart. It only draws; the
+/// caller owns the tap, the hover and the label.
+class BrandPlus extends StatelessWidget {
+  const BrandPlus({
+    super.key,
+    this.width = 40,
+    this.height = 40,
+    this.hovered = false,
+    this.label,
+  });
+
+  final double width;
+  final double height;
+
+  /// Brighter, larger glow while the pointer is over it (pointer devices).
+  final bool hovered;
+
+  /// Shown beside the plus when there is room (the expanded sidebar).
+  final String? label;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: NewMotion.quick,
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        gradient: NewGradients.brand,
+        borderRadius: BorderRadius.circular(NewRadii.capsule),
+        boxShadow: [
+          BoxShadow(
+            color: NewColors.warmCoral.withValues(alpha: hovered ? 0.5 : 0.28),
+            blurRadius: hovered ? 14 : 8,
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.add, size: 22, color: Colors.white),
+          if (label != null) ...[
+            const SizedBox(width: NewSpace.xs),
+            Flexible(
+              child: Text(
+                label!,
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// A rounded surface with a hairline border: the basis of New cards.
 class NewCard extends StatelessWidget {
   const NewCard({

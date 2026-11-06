@@ -13,6 +13,7 @@ import '../app/shell.dart' show openQuickAdd;
 import '../app/sidebar.dart' show Sidebar, appDestinations;
 import '../features/settings/settings_dialog.dart';
 import '../platform/input_hints.dart';
+import 'new_components.dart' show BrandPlus;
 import 'new_tokens.dart';
 
 /// Places [child] (the page area) with the floating sidebar over its right
@@ -312,43 +313,10 @@ class _QuickAddButton extends StatelessWidget {
       builder: (context, hovered) => GestureDetector(
         key: const ValueKey('new-quick-add'),
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: NewMotion.quick,
+        child: BrandPlus(
           width: expanded ? NewSizes.capsuleExpandedWidth - 24 : 40,
-          height: 40,
-          decoration: BoxDecoration(
-            gradient: NewGradients.brand,
-            borderRadius: BorderRadius.circular(NewRadii.capsule),
-            boxShadow: [
-              BoxShadow(
-                color: NewColors.warmCoral.withValues(
-                  alpha: hovered ? 0.5 : 0.28,
-                ),
-                blurRadius: hovered ? 14 : 8,
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.add, size: 22, color: Colors.white),
-              if (expanded) ...[
-                const SizedBox(width: NewSpace.xs),
-                const Flexible(
-                  child: Text(
-                    'Quick Add',
-                    maxLines: 1,
-                    overflow: TextOverflow.clip,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
+          hovered: hovered,
+          label: expanded ? 'Quick Add' : null,
         ),
       ),
     );
