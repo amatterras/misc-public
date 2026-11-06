@@ -414,7 +414,7 @@ void main() {
     await close(tester, state);
   });
 
-  testWidgets('Archive: folders as an index, a folder opens as a list', (
+  testWidgets('Archive: every item is a folder; a folder opens as a list', (
     tester,
   ) async {
     final state = await boot(tester, size: iphone, ios: true, phone: true);

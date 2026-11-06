@@ -1,9 +1,10 @@
 import 'dart:async';
 
-// Archive on the phone: a table of contents. The newest saved things run in a
-// strip of pictures on top; the folders follow as an index, each with its own
-// colour as a thin rule. A folder opens as a list. Same library records as the
-// full Archive (reachable under More).
+// Archive on the phone: every saved item is a folder (phone_folder_card.dart):
+// a tab with its Archive tag, a picture of what was saved, its title and
+// source. Your own folders sit above as a row of tabs and open as a list of
+// the same folder cards. Same library records as the full Archive (reachable
+// under More); nothing is stored differently.
 import 'package:flutter/material.dart';
 
 import '../app/app_state.dart';
@@ -11,10 +12,9 @@ import '../data/models/object_library_models.dart';
 import '../features/capture/sorting.dart';
 import '../new_ui/archive_model.dart';
 import '../features/library/library_page.dart' show LibraryPage;
-import '../new_ui/new_archive_page.dart'
-    show archiveIconOf, archiveImageOf, archiveMetaOf;
 import '../new_ui/new_folder_colors.dart' show NewFolderColors;
 import '../new_ui/new_tokens.dart';
+import 'phone_folder_card.dart';
 import 'phone_more.dart';
 import 'phone_page.dart';
 import 'phone_tokens.dart';
@@ -102,36 +102,40 @@ class _PhoneArchiveState extends State<PhoneArchive> {
               if (found.isEmpty)
                 const SliverToBoxAdapter(child: EmptyNote('Nothing matches.'))
               else
-                SliverList.builder(
-                  itemCount: found.length,
-                  itemBuilder: (context, i) =>
-                      ArchiveItemRow(state: s, object: found[i]),
-                ),
+                _cards(found),
             ] else ...[
-              if (recent.isNotEmpty) ...[
+              if (collections.isNotEmpty) ...[
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
                       PhoneSpace.margin,
-                      22,
+                      20,
                       PhoneSpace.margin,
                       10,
                     ),
-                    child: Eyebrow('Recently saved'),
+                    child: Eyebrow('Folders'),
                   ),
                 ),
                 SliverToBoxAdapter(
                   child: SizedBox(
-                    height: 150,
+                    height: 40,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(
                         horizontal: PhoneSpace.margin,
                       ),
-                      itemCount: recent.length > 12 ? 12 : recent.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 10),
-                      itemBuilder: (context, i) =>
-                          _RecentTile(state: s, object: recent[i]),
+                      itemCount: collections.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
+                      itemBuilder: (context, i) => _FolderTab(
+                        collection: collections[i],
+                        onTap: () => pushPhone<void>(
+                          context,
+                          PhoneFolderPage(
+                            state: s,
+                            collectionId: collections[i].id,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -140,14 +144,14 @@ class _PhoneArchiveState extends State<PhoneArchive> {
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(
                     PhoneSpace.margin,
-                    28,
+                    24,
                     PhoneSpace.margin,
-                    4,
+                    12,
                   ),
-                  child: Eyebrow('Folders'),
+                  child: Eyebrow('Saved'),
                 ),
               ),
-              if (collections.isEmpty)
+              if (recent.isEmpty)
                 const SliverToBoxAdapter(
                   child: EmptyNote(
                     'Nothing saved yet.',
@@ -155,20 +159,7 @@ class _PhoneArchiveState extends State<PhoneArchive> {
                   ),
                 )
               else
-                SliverList.builder(
-                  itemCount: collections.length,
-                  itemBuilder: (context, i) => _FolderRow(
-                    state: s,
-                    collection: collections[i],
-                    onTap: () => pushPhone<void>(
-                      context,
-                      PhoneFolderPage(
-                        state: s,
-                        collectionId: collections[i].id,
-                      ),
-                    ),
-                  ),
-                ),
+                _cards(recent),
             ],
             const SliverToBoxAdapter(child: SizedBox(height: 28)),
           ],
@@ -176,6 +167,12 @@ class _PhoneArchiveState extends State<PhoneArchive> {
       },
     );
   }
+
+  /// One folder per saved item, built lazily as they scroll into view.
+  Widget _cards(List<LibraryObject> items) => SliverList.builder(
+    itemCount: items.length,
+    itemBuilder: (context, i) => _itemCard(context, s, items[i]),
+  );
 
   Widget _searchField() => Padding(
     padding: const EdgeInsets.fromLTRB(
@@ -225,55 +222,50 @@ class _PhoneArchiveState extends State<PhoneArchive> {
   );
 }
 
-/// A picture, or the title set on a tint of the folder's colour.
-class _RecentTile extends StatelessWidget {
-  const _RecentTile({required this.state, required this.object});
+/// A saved item as a folder; the same one everywhere in the phone Archive.
+Widget _itemCard(BuildContext context, AppState s, LibraryObject o) =>
+    ScrollDepth(
+      key: ValueKey('archive-item-${o.id}'),
+      child: ArchiveFolderCard(
+        state: s,
+        object: o,
+        onTap: () => openPhoneArchiveItem(context, s, o.id),
+        onLongPress: () => showSortSheet(context, s, o),
+      ),
+    );
 
-  final AppState state;
-  final LibraryObject object;
+/// One of your folders, as a tab in the row above the saved items.
+class _FolderTab extends StatelessWidget {
+  const _FolderTab({required this.collection, required this.onTap});
+
+  final ArchiveCollection collection;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final image = archiveImageOf(state, object);
-    final paper = Color.lerp(
-      NewColors.surfaceSecondary,
-      NewColors.accent,
-      0.12,
-    )!;
+    final color =
+        NewFolderColors.byId(collection.space?.colorId)?.color ??
+        NewColors.textFaint;
     return Press(
-      onTap: () => openPhoneArchiveItem(context, state, object.id),
-      child: SizedBox(
-        width: 112,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: image != null
-              ? Image(image: image, fit: BoxFit.cover, width: 112, height: 150)
-              : ColoredBox(
-                  color: paper,
-                  child: Padding(
-                    padding: const EdgeInsets.all(11),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          archiveIconOf(object),
-                          size: 18,
-                          color: NewColors.textFaint,
-                        ),
-                        const Spacer(),
-                        Text(
-                          object.title.isEmpty ? 'Untitled' : object.title,
-                          maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
-                          style: PhoneType.row.copyWith(
-                            fontSize: 14,
-                            height: 1.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: Color.lerp(NewColors.surface, color, 0.16),
+          border: Border(top: BorderSide(color: color, width: 3)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          children: [
+            Text(
+              collection.name,
+              maxLines: 1,
+              style: PhoneType.row.copyWith(fontSize: 14),
+            ),
+            const SizedBox(width: 8),
+            Text('${collection.total}', style: PhoneType.meta),
+          ],
         ),
       ),
     );
@@ -401,108 +393,47 @@ class PhoneFolderPage extends StatelessWidget {
                     hint: 'Save something into it from the + or a share sheet.',
                   ),
                 )
-              : ListView(
+              : ListView.builder(
                   padding: const EdgeInsets.only(bottom: 32),
-                  children: [
-                    if (color != null)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          PhoneSpace.margin,
-                          0,
-                          PhoneSpace.margin,
-                          0,
-                        ),
-                        child: Container(height: 3, color: color),
-                      ),
-                    for (final f in subfolders)
-                      _FolderRow(
+                  itemCount:
+                      (color != null ? 1 : 0) +
+                      subfolders.length +
+                      collection.items.length,
+                  itemBuilder: (context, i) {
+                    if (color != null) {
+                      if (i == 0) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            PhoneSpace.margin,
+                            0,
+                            PhoneSpace.margin,
+                            12,
+                          ),
+                          child: Container(height: 3, color: color),
+                        );
+                      }
+                      i -= 1;
+                    }
+                    if (i < subfolders.length) {
+                      final f = subfolders[i];
+                      return _FolderRow(
                         state: state,
                         collection: ArchiveModel.collection(state.library, f),
                         onTap: () => pushPhone<void>(
                           context,
                           PhoneFolderPage(state: state, collectionId: f.id),
                         ),
-                      ),
-                    for (final o in collection.items)
-                      ArchiveItemRow(state: state, object: o),
-                  ],
+                      );
+                    }
+                    return _itemCard(
+                      context,
+                      state,
+                      collection.items[i - subfolders.length],
+                    );
+                  },
                 ),
         );
       },
-    );
-  }
-}
-
-class ArchiveItemRow extends StatelessWidget {
-  const ArchiveItemRow({super.key, required this.state, required this.object});
-
-  final AppState state;
-  final LibraryObject object;
-
-  @override
-  Widget build(BuildContext context) {
-    final image = archiveImageOf(state, object);
-    final when = object.lastSavedAt ?? object.createdAt;
-    final sorter = CaptureSorter(state.workspace, state.library);
-    final sort = sorter.stateOf(object.id);
-    return Press(
-      onTap: () => openPhoneArchiveItem(context, state, object.id),
-      onLongPress: () => showSortSheet(context, state, object),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: PhoneSpace.margin,
-              vertical: 13,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: SizedBox(
-                    width: 58,
-                    height: 58,
-                    child: image != null
-                        ? Image(image: image, fit: BoxFit.cover)
-                        : ColoredBox(
-                            color: NewColors.surfaceSecondary,
-                            child: Icon(
-                              archiveIconOf(object),
-                              size: 22,
-                              color: NewColors.textFaint,
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        object.title.isEmpty ? 'Untitled' : object.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: PhoneType.row.copyWith(fontSize: 16),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '${archiveMetaOf(object)} · ${relativeDay(when)}'
-                        '${sort == CaptureState.converted || sort == CaptureState.archived ? ' · ${sort.label}' : ''}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: PhoneType.meta,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Hairline(inset: PhoneSpace.margin + 72),
-        ],
-      ),
     );
   }
 }
