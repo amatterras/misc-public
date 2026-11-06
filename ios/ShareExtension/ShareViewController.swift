@@ -404,7 +404,10 @@ private struct PopupMetrics {
     let tall = max(container.height - 2 * Self.margin, 1)
     // 68% of the width, but not narrower than 260pt when the screen allows it.
     let popupWidth = min(max(container.width * 0.68, min(260, room)), room)
-    let popupHeight = min(container.height * 0.55, tall)
+    // 55% of the height, but never shorter than 400pt when there is room: on an
+    // iPad iOS hosts the extension in a smaller sheet, and 55% of that would
+    // not hold the content.
+    let popupHeight = min(max(container.height * 0.55, min(400, tall)), tall)
     let wanted = container.height / 2 + container.height * 0.04
     width = popupWidth
     height = popupHeight

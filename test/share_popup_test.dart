@@ -54,6 +54,8 @@ void main() {
     expect(view, contains('container.width * 0.68'));
     expect(view, contains('container.height * 0.55'));
     expect(view, contains('static let margin: CGFloat = 16'));
+    // iPad: the same popup, sized inside the smaller sheet iOS hosts it in
+    expect(view, contains('min(400, tall)'));
     expect(view, contains('static let radius: CGFloat = 24'));
     // the overlay is its own layer; the popup is positioned, not stretched
     expect(view, contains('.position(x: metrics.centerX'));
