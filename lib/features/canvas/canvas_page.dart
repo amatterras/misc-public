@@ -810,6 +810,9 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                                   child: CustomPaint(
                                     painter: CanvasPainter(
                                       c,
+                                      lightTheme:
+                                          Theme.of(context).brightness ==
+                                          Brightness.light,
                                       itemOpacityFor: (item) =>
                                           item.id == welcomeGuideItemId &&
                                               _welcomeFading

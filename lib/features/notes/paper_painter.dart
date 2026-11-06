@@ -2,12 +2,19 @@
 // at the page's own corner, so the pattern lines up on every page.
 import 'package:flutter/material.dart';
 
+import '../../app/background_palette.dart';
 import '../../data/models/paper.dart';
 
 class PaperPainter extends CustomPainter {
-  const PaperPainter(this.paper, {this.scale = 1});
+  PaperPainter(NotePaper stored, {this.scale = 1, bool? light})
+    : light = BackgroundPalette.isLight(light),
+      paper = BackgroundPalette.paperFor(stored, light: light),
+      _stored = stored;
 
+  /// What is drawn: the stored paper as seen in the current theme.
   final NotePaper paper;
+  final NotePaper _stored;
+  final bool light;
 
   /// Screen pixels per page unit.
   final double scale;
@@ -76,5 +83,5 @@ class PaperPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(PaperPainter old) =>
-      old.paper != paper || old.scale != scale;
+      old._stored != _stored || old.light != light || old.scale != scale;
 }

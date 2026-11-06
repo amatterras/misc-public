@@ -44,6 +44,10 @@ class _PaperDialogState extends State<_PaperDialog> {
   Widget build(BuildContext context) {
     final p = _paper;
     final split = p.template == PaperTemplate.splitGridDots;
+    // In the light theme the page is white and the lines black (see
+    // BackgroundPalette), so the dark colour choices are not offered there;
+    // they are kept and apply again in the dark theme.
+    final light = Theme.of(context).brightness == Brightness.light;
     return AlertDialog(
       title: const Text('Paper', style: TextStyle(fontSize: 16)),
       content: SizedBox(
@@ -82,19 +86,31 @@ class _PaperDialogState extends State<_PaperDialog> {
                 p.lineOpacity,
                 (v) => _set(p.copyWith(lineOpacity: v)),
               ),
-              _swatches(
-                'Line color',
-                paperLineColors,
-                p.lineColor,
-                (c) => _set(p.copyWith(lineColor: c)),
-              ),
-              const SizedBox(height: Space.sm),
-              _swatches(
-                'Page color',
-                paperBackgroundColors,
-                p.background,
-                (c) => _set(p.copyWith(background: c)),
-              ),
+              if (light)
+                Padding(
+                  padding: const EdgeInsets.only(top: Space.sm),
+                  child: Text(
+                    'In the light theme the page is white and the lines are '
+                    'black.',
+                    key: const ValueKey('paper-light-note'),
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  ),
+                )
+              else ...[
+                _swatches(
+                  'Line color',
+                  paperLineColors,
+                  p.lineColor,
+                  (c) => _set(p.copyWith(lineColor: c)),
+                ),
+                const SizedBox(height: Space.sm),
+                _swatches(
+                  'Page color',
+                  paperBackgroundColors,
+                  p.background,
+                  (c) => _set(p.copyWith(background: c)),
+                ),
+              ],
               if (split) ...[
                 const SizedBox(height: Space.md),
                 _heading('Dots (right 3/5)'),
@@ -109,19 +125,21 @@ class _PaperDialogState extends State<_PaperDialog> {
                   p.dotOpacity,
                   (v) => _set(p.copyWith(dotOpacity: v)),
                 ),
-                _swatches(
-                  'Dot color',
-                  paperLineColors,
-                  p.dotColor,
-                  (c) => _set(p.copyWith(dotColor: c)),
-                ),
-                const SizedBox(height: Space.sm),
-                _swatches(
-                  'Page color',
-                  paperBackgroundColors,
-                  p.dotBackground,
-                  (c) => _set(p.copyWith(dotBackground: c)),
-                ),
+                if (!light) ...[
+                  _swatches(
+                    'Dot color',
+                    paperLineColors,
+                    p.dotColor,
+                    (c) => _set(p.copyWith(dotColor: c)),
+                  ),
+                  const SizedBox(height: Space.sm),
+                  _swatches(
+                    'Page color',
+                    paperBackgroundColors,
+                    p.dotBackground,
+                    (c) => _set(p.copyWith(dotBackground: c)),
+                  ),
+                ],
               ],
             ],
           ),

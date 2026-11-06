@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../app/background_palette.dart';
 import '../../app/theme.dart';
 import '../../app/canvas_ops.dart' show canvasLinkTarget;
 import '../../data/models/canvas_models.dart';
@@ -24,9 +25,15 @@ class CanvasPainter extends CustomPainter {
     this.itemOpacity = const {},
     this.itemOpacityFor,
     Listenable? repaint,
-  }) : super(repaint: repaint ?? controller);
+    bool? lightTheme,
+  }) : light = BackgroundPalette.isLight(lightTheme),
+       super(repaint: repaint ?? controller);
 
   final CanvasController controller;
+
+  /// The theme the background dots are drawn for (black dots on the light
+  /// canvas, white on the dark one); see BackgroundPalette.
+  final bool light;
 
   /// Notebook page: only this world rectangle is drawn, at [pageScale],
   /// with no grid (the page widget draws the paper). Null for a canvas.
@@ -176,7 +183,7 @@ class CanvasPainter extends CustomPainter {
       ui.PointMode.points,
       points,
       Paint()
-        ..color = const Color(0xFFFFFFFF)
+        ..color = BackgroundPalette.dot(light: light)
             .withValues(alpha: controller.dotOpacity)
         ..strokeWidth = controller.dotSize
         ..strokeCap = StrokeCap.round,
@@ -568,6 +575,7 @@ class CanvasPainter extends CustomPainter {
       oldDelegate.controller != controller ||
       oldDelegate.page != page ||
       oldDelegate.pageScale != pageScale ||
+      oldDelegate.light != light ||
       oldDelegate.itemOpacityFor != itemOpacityFor ||
       oldDelegate.itemOpacity.length != itemOpacity.length ||
       oldDelegate.itemOpacity.entries.any(

@@ -729,6 +729,7 @@ class _NotePageState extends State<NotePage> {
                       s.workspace.notes[widget.noteId]?.paperOrDefault ??
                           const NotePaper(),
                       scale: scale,
+                      light: Theme.of(context).brightness == Brightness.light,
                     ),
                   ),
                   if (background != null)
