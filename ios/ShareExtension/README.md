@@ -11,8 +11,15 @@ pipeline creates Archive records and queues them for normal synchronization.
   under `inbox_requests/` and original file bytes under `inbox_files/`. Filename
   and UTI are carried through as Archive metadata.
 - THEapp publishes the canonical tag catalog from `LinkTag` to the App Group.
-  Rotating messages are empty until supplied; add them to `THEappShareMessages`
-  in `Info.plist` or a shared `share_messages.json` file.
+  The greeting on the popup is picked at random, once per sharing session, from
+  the 120 owner-supplied sentences in `ShareGreetings.swift` (shown verbatim;
+  `test/fixtures/share_greetings.txt` guards the list).
+- The popup is a floating window (~68% x 55% of the area iOS gives the
+  extension, centred a little below the middle, 16 pt minimum margin, 24 pt
+  corners) over a separate dimmed full-screen layer: `misc.` label, the
+  greeting, ONE glass container (link above, existing Archive tags below, one
+  selectable), and a `done.` button outside it. All text is SF Pro Bold, white.
+  iOS owns the sheet the extension is hosted in; see `PopupMetrics`.
 - `Info.plist`: activation rules include URLs, text, images, media, content and
   files.
 - `ShareExtension.entitlements`: declares the App Group.

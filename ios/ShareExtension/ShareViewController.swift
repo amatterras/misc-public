@@ -28,9 +28,11 @@ private final class ShareModel: ObservableObject {
   @Published var selectedTag: String?
   @Published var loading = true
   @Published var saving = false
-  @Published var message: String?
+  /// Set once the request files are durably written; blocks any further save.
+  @Published var finished = false
   @Published var error: String?
-  @Published var rotationMessage = ""
+  /// Chosen once in viewDidLoad; no UI update re-rolls it.
+  @Published var greeting = ""
   @Published var unsupportedCount = 0
 }
 
@@ -42,8 +44,11 @@ final class ShareViewController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .clear
+    model.greeting = ShareGreetings.random()
     let host = UIHostingController(rootView: SharePopup(model: model, onSave: { [weak self] in
       self?.save()
+    }, onCancel: { [weak self] in
+      self?.cancel()
     }))
     addChild(host)
     host.view.backgroundColor = .clear
@@ -62,7 +67,6 @@ final class ShareViewController: UIViewController {
       return
     }
     loadTagCatalog(from: container)
-    loadRotatingMessage(from: container)
     collectSharedContent()
   }
 
@@ -77,27 +81,10 @@ final class ShareViewController: UIViewController {
     model.tags = tags
   }
 
-  // Message files are intentionally user supplied. An empty file/list hides
-  // this slot; no product copy is invented here.
-  private func loadRotatingMessage(from container: URL) {
-    let catalog = container.appendingPathComponent("share_messages.json")
-    let configured = Bundle.main.object(forInfoDictionaryKey: "THEappShareMessages") as? [String] ?? []
-    let messages: [String]
-    if let data = try? Data(contentsOf: catalog),
-      let shared = try? JSONDecoder().decode([String].self, from: data), !shared.isEmpty {
-      messages = shared
-    } else {
-      messages = configured
-    }
-    guard !messages.isEmpty else { return }
-    let stateFile = container.appendingPathComponent("share_message_state.json")
-    let previous = (try? Data(contentsOf: stateFile))
-      .flatMap { try? JSONDecoder().decode(Int.self, from: $0) } ?? -1
-    let next = (previous + 1) % messages.count
-    model.rotationMessage = messages[next]
-    if let state = try? JSONEncoder().encode(next) {
-      try? state.write(to: stateFile, options: .atomic)
-    }
+  private func cancel() {
+    guard !model.saving, !model.finished else { return }
+    extensionContext?.cancelRequest(
+      withError: NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError))
   }
 
   private func collectSharedContent() {
@@ -277,7 +264,7 @@ final class ShareViewController: UIViewController {
   }
 
   private func save() {
-    guard !model.saving else { return }
+    guard !model.saving, !model.finished else { return }
     guard !model.drafts.isEmpty else { model.error = "There is no supported content to save."; return }
     guard let tag = model.tags.first(where: { $0.id == model.selectedTag }) else {
       model.error = "Choose one existing Archive tag before saving."; return
@@ -304,11 +291,11 @@ final class ShareViewController: UIViewController {
       guard let self else { return }
       self.model.saving = false
       if failed.isEmpty {
-        self.model.message = "Saved \(saved) item\(saved == 1 ? "" : "s") to Archive."
-          + (self.model.unsupportedCount == 0 ? "" : " \(self.model.unsupportedCount) other attachment(s) could not be read and were not saved.")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-          self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
-        }
+        // Every request file is on disk and verified: close the whole sheet and
+        // return to the app the user came from.
+        self.model.finished = true
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
       } else {
         self.model.error = "Saved \(saved) of \(self.model.drafts.count). The rest remain available to retry. " + failed.joined(separator: " ")
       }
@@ -398,28 +385,275 @@ private enum ShareError: LocalizedError {
   var errorDescription: String? { if case .storage(let message) = self { return message }; return "Unable to save this item." }
 }
 
+// MARK: popup
+
+/// Where the floating window sits inside the area iOS gives the extension.
+/// About 68% x 55% of it, centred, a little below the middle, and never closer
+/// than `margin` to any edge (small screens shrink it instead of clipping it).
+private struct PopupMetrics {
+  static let margin: CGFloat = 16
+  static let radius: CGFloat = 24
+
+  let width: CGFloat
+  let height: CGFloat
+  let centerX: CGFloat
+  let centerY: CGFloat
+
+  init(container: CGSize) {
+    let room = max(container.width - 2 * Self.margin, 1)
+    let tall = max(container.height - 2 * Self.margin, 1)
+    // 68% of the width, but not narrower than 260pt when the screen allows it.
+    let popupWidth = min(max(container.width * 0.68, min(260, room)), room)
+    let popupHeight = min(container.height * 0.55, tall)
+    let wanted = container.height / 2 + container.height * 0.04
+    width = popupWidth
+    height = popupHeight
+    centerX = container.width / 2
+    centerY = min(wanted, container.height - Self.margin - popupHeight / 2)
+  }
+}
+
+private extension Font {
+  /// Every word in the popup: SF Pro, bold.
+  static func share(_ size: CGFloat) -> Font { .system(size: size, weight: .bold) }
+}
+
 private struct SharePopup: View {
   @ObservedObject var model: ShareModel
   let onSave: () -> Void
+  let onCancel: () -> Void
+
+  private var canSave: Bool {
+    !model.loading && !model.saving && !model.finished && !model.drafts.isEmpty
+      && !model.tags.isEmpty && model.selectedTag != nil
+  }
 
   var body: some View {
-    ZStack {
-      LinearGradient(colors: [Color(red: 0.99, green: 0.72, blue: 0.61), Color(red: 0.57, green: 0.53, blue: 0.91), Color(red: 0.12, green: 0.12, blue: 0.22)], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
-      VStack(alignment: .leading, spacing: 14) {
-        HStack { Text("THEapp").font(.system(size: 16, weight: .bold, design: .rounded)); Spacer(); Text("ARCHIVE").font(.system(size: 10, weight: .semibold, design: .rounded)).tracking(1.4).opacity(0.75) }
-        if !model.rotationMessage.isEmpty { Text(model.rotationMessage).font(.system(size: 13, weight: .medium)).lineLimit(2).foregroundStyle(.white.opacity(0.88)) }
-        if model.loading { ProgressView("Reading shared content…").tint(.white).frame(maxWidth: .infinity, alignment: .leading) }
-        else if !model.drafts.isEmpty {
-          ScrollView { VStack(spacing: 7) { ForEach(model.drafts) { draft in HStack(spacing: 10) { if let image = draft.thumbnail { Image(uiImage: image).resizable().scaledToFill().frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 7)) } else { Image(systemName: draft.kind == "url" ? "link" : draft.kind == "text" ? "text.alignleft" : "doc.fill").frame(width: 24) }; VStack(alignment: .leading, spacing: 2) { Text(draft.title).font(.system(size: 13, weight: .semibold)).lineLimit(1); Text(draft.preview).font(.system(size: 11)).lineLimit(2).foregroundStyle(.white.opacity(0.7)) } }.padding(10).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12)) } } }
-          Text("Choose one Archive tag").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.8))
-          ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) { ForEach(model.tags) { tag in Button { model.selectedTag = tag.id } label: { HStack(spacing: 6) { Circle().fill(Color(argb: tag.color)).frame(width: 8, height: 8); Text(tag.name).font(.system(size: 12, weight: .semibold)) }.padding(.horizontal, 11).padding(.vertical, 8).background(model.selectedTag == tag.id ? .white.opacity(0.3) : .white.opacity(0.1), in: Capsule()).overlay(Capsule().stroke(.white.opacity(model.selectedTag == tag.id ? 0.85 : 0.15))) }.buttonStyle(.plain) } } }
-        }
-        if let error = model.error { Text(error).font(.system(size: 12)).foregroundStyle(Color(red: 1, green: 0.84, blue: 0.78)) }
-        if let message = model.message { Label(message, systemImage: "checkmark.circle.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(red: 0.75, green: 1, blue: 0.86)) }
-        Button(action: onSave) { HStack { Spacer(); if model.saving { ProgressView().tint(.black) } else { Text("Save to Archive").font(.system(size: 15, weight: .bold)) }; Spacer() }.padding(.vertical, 13).foregroundStyle(Color(red: 0.15, green: 0.12, blue: 0.2)).background(.white, in: RoundedRectangle(cornerRadius: 14)) }.buttonStyle(.plain).disabled(model.loading || model.saving || model.drafts.isEmpty || model.selectedTag == nil || !model.errorIsRecoverable)
-      }.padding(20).foregroundStyle(.white).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24)).overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.28))).padding(18)
+    GeometryReader { proxy in
+      let metrics = PopupMetrics(container: proxy.size)
+      ZStack {
+        // The overlay is its own full-screen layer; the popup never is.
+        Color.black.opacity(0.4)
+          .ignoresSafeArea()
+          .contentShape(Rectangle())
+          .onTapGesture { onCancel() }
+        popup
+          .frame(width: metrics.width, height: metrics.height)
+          .position(x: metrics.centerX, y: metrics.centerY)
+      }
+      .frame(width: proxy.size.width, height: proxy.size.height)
     }
-    .preferredColorScheme(.dark)
+    .environment(\.colorScheme, .dark)
+  }
+
+  private var popup: some View {
+    ZStack {
+      AuroraBackdrop()
+      VStack(spacing: 0) {
+        HStack {
+          Text("misc.").font(.share(13)).foregroundColor(.white)
+          Spacer()
+        }
+        Spacer(minLength: 10)
+        Text(model.greeting)
+          .font(.share(22))
+          .foregroundColor(.white)
+          .multilineTextAlignment(.center)
+          .minimumScaleFactor(0.7)
+          .lineLimit(3)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: .infinity)
+        Spacer(minLength: 14)
+        glassContainer
+        if let error = model.error {
+          Text(error)
+            .font(.share(11))
+            .foregroundColor(.white)
+            .multilineTextAlignment(.center)
+            .lineLimit(4)
+            .padding(.top, 8)
+        }
+        Spacer(minLength: 10)
+        doneButton
+      }
+      .padding(18)
+    }
+    .clipShape(RoundedRectangle(cornerRadius: PopupMetrics.radius, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: PopupMetrics.radius, style: .continuous)
+        .stroke(Color.white.opacity(0.2), lineWidth: 1))
+    .shadow(color: Color.black.opacity(0.35), radius: 16, x: 0, y: 8)
+  }
+
+  // ONE continuous glass surface: the link on top, the tags below it.
+  private var glassContainer: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      linkSection
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+      Rectangle().fill(Color.white.opacity(0.22)).frame(height: 1)
+      tagSection
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .background(
+      RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Material.ultraThinMaterial)
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 18, style: .continuous)
+        .stroke(Color.white.opacity(0.28), lineWidth: 1))
+    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+  }
+
+  private var linkSection: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      if model.loading {
+        ProgressView().tint(.white)
+      } else if let first = model.drafts.first {
+        Text(Self.shown(first))
+          .font(.share(14))
+          .foregroundColor(.white)
+          .lineLimit(first.kind == "url" ? 1 : 2)
+          .truncationMode(first.kind == "url" ? .middle : .tail)
+        if model.drafts.count > 1 {
+          Text("+\(model.drafts.count - 1) more")
+            .font(.share(11))
+            .foregroundColor(.white)
+        }
+      } else {
+        // Nothing readable was shared; the reason is printed under the card.
+        Color.clear.frame(height: 18)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  /// What is written on screen. The saved value is always draft.value, the full
+  /// original URL; only this display text drops the scheme.
+  private static func shown(_ draft: ShareDraft) -> String {
+    guard draft.kind == "url" else { return draft.title }
+    var text = draft.value
+    for scheme in ["https://", "http://"] where text.lowercased().hasPrefix(scheme) {
+      text = String(text.dropFirst(scheme.count))
+      break
+    }
+    if text.hasSuffix("/") { text.removeLast() }
+    return text
+  }
+
+  private var tagSection: some View {
+    ScrollView(.vertical, showsIndicators: false) {
+      LazyVGrid(
+        columns: [GridItem(.adaptive(minimum: 76), spacing: 8)],
+        alignment: .leading,
+        spacing: 8
+      ) {
+        ForEach(model.tags) { tag in
+          let selected = model.selectedTag == tag.id
+          Button {
+            if !model.saving && !model.finished { model.selectedTag = tag.id }
+          } label: {
+            HStack(spacing: 5) {
+              if selected {
+                Image(systemName: "checkmark")
+                  .font(.system(size: 9, weight: .bold))
+                  .foregroundColor(.white)
+              } else {
+                Circle().fill(Color(argb: tag.color)).frame(width: 7, height: 7)
+              }
+              Text(tag.name)
+                .font(.share(12))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            }
+            .padding(.vertical, 7)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity)
+            .background(
+              RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(selected ? 0.3 : 0))
+            )
+            .overlay(
+              RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(selected ? 0.95 : 0.25), lineWidth: selected ? 1.5 : 1)
+            )
+          }
+          .buttonStyle(.plain)
+          .accessibilityAddTraits(selected ? .isSelected : [])
+        }
+      }
+      .padding(12)
+    }
+  }
+
+  // Outside the glass, small and quiet.
+  private var doneButton: some View {
+    Button(action: onSave) {
+      ZStack {
+        if model.saving {
+          ProgressView().tint(.white)
+        } else {
+          Text("done.").font(.share(15)).foregroundColor(.white)
+        }
+      }
+      .frame(minWidth: 64, minHeight: 20)
+      .padding(.horizontal, 14)
+      .padding(.vertical, 8)
+      .background(Capsule().fill(Color.white.opacity(0.14)))
+      .overlay(Capsule().stroke(Color.white.opacity(0.35), lineWidth: 1))
+    }
+    .buttonStyle(.plain)
+    .disabled(!canSave)
+    .opacity(canSave || model.saving ? 1 : 0.45)
+    .frame(maxWidth: .infinity)
+  }
+}
+
+/// The reference photograph, redrawn: a deep blue wash, a violet glow in the
+/// upper left, and two soft lavender-to-teal orbs in the lower half.
+private struct AuroraBackdrop: View {
+  var body: some View {
+    GeometryReader { proxy in
+      let w = proxy.size.width
+      let h = proxy.size.height
+      ZStack {
+        LinearGradient(
+          colors: [
+            Color(red: 0.28, green: 0.33, blue: 0.62),
+            Color(red: 0.16, green: 0.42, blue: 0.58),
+            Color(red: 0.08, green: 0.22, blue: 0.40),
+          ],
+          startPoint: .top, endPoint: .bottom)
+        RadialGradient(
+          colors: [Color(red: 0.68, green: 0.46, blue: 0.80), Color(red: 0.68, green: 0.46, blue: 0.80).opacity(0)],
+          center: UnitPoint(x: 0.0, y: 0.2), startRadius: 0, endRadius: w * 0.95)
+        RadialGradient(
+          colors: [Color(red: 0.25, green: 0.62, blue: 0.66).opacity(0.7), Color(red: 0.25, green: 0.62, blue: 0.66).opacity(0)],
+          center: UnitPoint(x: 1.0, y: 0.55), startRadius: 0, endRadius: w * 0.8)
+        orb(width: w * 0.62, height: h * 0.32)
+          .position(x: w * 0.3, y: h * 0.78)
+        orb(width: w * 0.5, height: h * 0.26)
+          .position(x: w * 0.7, y: h * 0.62)
+      }
+      .frame(width: w, height: h)
+      .clipped()
+    }
+  }
+
+  private func orb(width: CGFloat, height: CGFloat) -> some View {
+    Ellipse()
+      .fill(
+        LinearGradient(
+          colors: [
+            Color(red: 0.64, green: 0.60, blue: 0.92),
+            Color(red: 0.20, green: 0.58, blue: 0.64),
+            Color(red: 0.12, green: 0.42, blue: 0.60).opacity(0.2),
+          ],
+          startPoint: .top, endPoint: .bottom)
+      )
+      .frame(width: width, height: height)
+      .opacity(0.85)
+      .blur(radius: 12)
   }
 }
 
