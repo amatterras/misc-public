@@ -6,7 +6,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/data/models/object_library_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
