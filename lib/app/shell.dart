@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import '../data/models/library_models.dart';
 import 'conflict_notice.dart';
@@ -342,20 +343,30 @@ class _AppShellState extends State<AppShell> {
                     ),
                   _Toast(state: state, bottomOffset: phone ? 72 : 28),
                   _TransferBar(state: state, bottomOffset: phone ? 120 : 76),
-                  // The phone shows the greeting itself, as a line on Today.
-                  if (!phone)
-                    ListenableBuilder(
-                      listenable: _motivation,
-                      builder: (context, _) => _motivation.greetingVisible
-                          ? Positioned(
-                              // Below the page bar (and the phone's own
-                              // top bar), not on top of it.
-                              top: TopBar.height + 10,
-                              left: 16,
-                              child: _GreetingWindow(service: _motivation),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
+                  // The same welcome window on every interface (Windows, iPad
+                  // and iPhone): one greeting, one source (MotivationService).
+                  ListenableBuilder(
+                    listenable: _motivation,
+                    builder: (context, _) => _motivation.greetingVisible
+                        ? Positioned(
+                            // Below the page bar, not on top of it. The
+                            // phone has no page bar: it sits below the status
+                            // bar / notch instead.
+                            top: phone
+                                ? MediaQuery.paddingOf(context).top + 10
+                                : TopBar.height + 10,
+                            left: 16,
+                            child: _GreetingWindow(
+                              service: _motivation,
+                              // Never wider than the screen on a phone.
+                              width: math.min(
+                                340,
+                                MediaQuery.sizeOf(context).width - 32,
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                   if (TestEnvironment.active) const _TestDataBanner(),
                   _UnsavedNotice(state: state),
                   _ReminderNotice(state: state),
@@ -371,9 +382,10 @@ class _AppShellState extends State<AppShell> {
 }
 
 class _GreetingWindow extends StatefulWidget {
-  const _GreetingWindow({required this.service});
+  const _GreetingWindow({required this.service, this.width = 340});
 
   final MotivationService service;
+  final double width;
 
   @override
   State<_GreetingWindow> createState() => _GreetingWindowState();
@@ -439,7 +451,7 @@ class _GreetingWindowState extends State<_GreetingWindow> {
             color: AppColors.cardRaised,
             borderRadius: BorderRadius.circular(10),
             child: Container(
-              width: 340,
+              width: widget.width,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),

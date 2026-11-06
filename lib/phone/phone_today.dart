@@ -111,8 +111,6 @@ class _PhoneTodayState extends State<PhoneToday> {
                   ],
                 ),
               ),
-              if (isToday && widget.motivation.greetingVisible)
-                SliverToBoxAdapter(child: _greeting()),
               SliverToBoxAdapter(child: _weekStrip()),
               SliverToBoxAdapter(child: _summary(agenda, isToday)),
               SliverToBoxAdapter(
@@ -135,39 +133,6 @@ class _PhoneTodayState extends State<PhoneToday> {
       },
     );
   }
-
-  Widget _greeting() => Padding(
-    padding: const EdgeInsets.fromLTRB(
-      PhoneSpace.margin,
-      0,
-      PhoneSpace.margin - 8,
-      8,
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              widget.motivation.greeting ?? '',
-              key: const ValueKey('phone-greeting'),
-              style: PhoneType.body.copyWith(
-                fontSize: 16,
-                color: NewColors.text.withValues(alpha: 0.82),
-              ),
-            ),
-          ),
-        ),
-        GlyphButton(
-          icon: Icons.close_rounded,
-          label: 'Dismiss greeting',
-          size: 18,
-          onTap: widget.motivation.dismissGreeting,
-        ),
-      ],
-    ),
-  );
 
   Widget _weekStrip() => SizedBox(
     height: 78,
