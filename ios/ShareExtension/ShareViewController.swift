@@ -41,6 +41,20 @@ final class ShareViewController: UIViewController {
   private let maxFileBytes: Int64 = 300 * 1024 * 1024
   private let maxTextChars = 200_000
 
+  // iOS presents a custom share extension as a modal sheet; with the default
+  // style that sheet is an opaque system card (the black full-screen surface).
+  // Over-full-screen keeps the app the user is sharing from visible behind us,
+  // so the floating popup is the only thing THEapp draws.
+  override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
+    super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
+    modalPresentationStyle = .overFullScreen
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    modalPresentationStyle = .overFullScreen
+  }
+
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .clear
@@ -52,6 +66,8 @@ final class ShareViewController: UIViewController {
     }))
     addChild(host)
     host.view.backgroundColor = .clear
+    host.view.isOpaque = false
+    view.isOpaque = false
     host.view.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(host.view)
     NSLayoutConstraint.activate([
@@ -388,7 +404,7 @@ private enum ShareError: LocalizedError {
 // MARK: popup
 
 /// Where the floating window sits inside the area iOS gives the extension.
-/// About 68% x 55% of it, centred, a little below the middle, and never closer
+/// About 74% x 60% of it, centred, a little below the middle, and never closer
 /// than `margin` to any edge (small screens shrink it instead of clipping it).
 private struct PopupMetrics {
   static let margin: CGFloat = 16
@@ -402,12 +418,11 @@ private struct PopupMetrics {
   init(container: CGSize) {
     let room = max(container.width - 2 * Self.margin, 1)
     let tall = max(container.height - 2 * Self.margin, 1)
-    // 68% of the width, but not narrower than 260pt when the screen allows it.
-    let popupWidth = min(max(container.width * 0.68, min(260, room)), room)
-    // 55% of the height, but never shorter than 400pt when there is room: on an
-    // iPad iOS hosts the extension in a smaller sheet, and 55% of that would
-    // not hold the content.
-    let popupHeight = min(max(container.height * 0.55, min(400, tall)), tall)
+    // 74% of the width, but not narrower than 280pt when the screen allows it.
+    let popupWidth = min(max(container.width * 0.74, min(280, room)), room)
+    // 60% of the height, but never shorter than 430pt when there is room, so
+    // the content always fits.
+    let popupHeight = min(max(container.height * 0.60, min(430, tall)), tall)
     let wanted = container.height / 2 + container.height * 0.04
     width = popupWidth
     height = popupHeight
@@ -435,8 +450,9 @@ private struct SharePopup: View {
     GeometryReader { proxy in
       let metrics = PopupMetrics(container: proxy.size)
       ZStack {
-        // The overlay is its own full-screen layer; the popup never is.
-        Color.black.opacity(0.4)
+        // No dimming or background of our own: this layer is fully transparent
+        // and only catches taps outside the popup (tap outside = cancel).
+        Color.clear
           .ignoresSafeArea()
           .contentShape(Rectangle())
           .onTapGesture { onCancel() }
@@ -451,7 +467,7 @@ private struct SharePopup: View {
 
   private var popup: some View {
     ZStack {
-      AuroraBackdrop()
+      PhotoBackdrop()
       VStack(spacing: 0) {
         HStack {
           Text("misc.").font(.share(13)).foregroundColor(.white)
@@ -612,51 +628,27 @@ private struct SharePopup: View {
   }
 }
 
-/// The reference photograph, redrawn: a deep blue wash, a violet glow in the
-/// upper left, and two soft lavender-to-teal orbs in the lower half.
-private struct AuroraBackdrop: View {
+/// The supplied reference photograph itself (SharePopupBackground.webp, the
+/// exact file, unedited), filling the popup. The colour wash underneath only
+/// shows if the image could not be loaded, so the popup is never blank.
+private struct PhotoBackdrop: View {
+  private static let photo: UIImage? = Bundle.main
+    .path(forResource: "SharePopupBackground", ofType: "webp")
+    .flatMap { UIImage(contentsOfFile: $0) }
+
   var body: some View {
     GeometryReader { proxy in
-      let w = proxy.size.width
-      let h = proxy.size.height
       ZStack {
-        LinearGradient(
-          colors: [
-            Color(red: 0.28, green: 0.33, blue: 0.62),
-            Color(red: 0.16, green: 0.42, blue: 0.58),
-            Color(red: 0.08, green: 0.22, blue: 0.40),
-          ],
-          startPoint: .top, endPoint: .bottom)
-        RadialGradient(
-          colors: [Color(red: 0.68, green: 0.46, blue: 0.80), Color(red: 0.68, green: 0.46, blue: 0.80).opacity(0)],
-          center: UnitPoint(x: 0.0, y: 0.2), startRadius: 0, endRadius: w * 0.95)
-        RadialGradient(
-          colors: [Color(red: 0.25, green: 0.62, blue: 0.66).opacity(0.7), Color(red: 0.25, green: 0.62, blue: 0.66).opacity(0)],
-          center: UnitPoint(x: 1.0, y: 0.55), startRadius: 0, endRadius: w * 0.8)
-        orb(width: w * 0.62, height: h * 0.32)
-          .position(x: w * 0.3, y: h * 0.78)
-        orb(width: w * 0.5, height: h * 0.26)
-          .position(x: w * 0.7, y: h * 0.62)
+        Color(red: 0.12, green: 0.30, blue: 0.48)
+        if let photo = Self.photo {
+          Image(uiImage: photo)
+            .resizable()
+            .scaledToFill()
+        }
       }
-      .frame(width: w, height: h)
+      .frame(width: proxy.size.width, height: proxy.size.height)
       .clipped()
     }
-  }
-
-  private func orb(width: CGFloat, height: CGFloat) -> some View {
-    Ellipse()
-      .fill(
-        LinearGradient(
-          colors: [
-            Color(red: 0.64, green: 0.60, blue: 0.92),
-            Color(red: 0.20, green: 0.58, blue: 0.64),
-            Color(red: 0.12, green: 0.42, blue: 0.60).opacity(0.2),
-          ],
-          startPoint: .top, endPoint: .bottom)
-      )
-      .frame(width: width, height: height)
-      .opacity(0.85)
-      .blur(radius: 12)
   }
 }
 
