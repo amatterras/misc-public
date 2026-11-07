@@ -7,6 +7,7 @@
 // page, divided by hairlines, with one gradient moment per screen.
 import 'package:flutter/material.dart';
 
+import '../app/design_tokens.dart';
 import '../new_ui/new_tokens.dart';
 
 abstract final class PhoneSpace {
@@ -57,7 +58,7 @@ abstract final class PhoneType {
   );
 
   static TextStyle get meta => TextStyle(
-    fontSize: 12.5,
+    fontSize: AppType.sizeBodySmall,
     height: 1.3,
     letterSpacing: 0,
     color: NewColors.textFaint,
@@ -65,7 +66,7 @@ abstract final class PhoneType {
 
   /// Small capitals above things: "OVERDUE", "TUESDAY".
   static TextStyle get eyebrow => TextStyle(
-    fontSize: 11,
+    fontSize: AppType.sizeMeta,
     fontWeight: FontWeight.w700,
     letterSpacing: 1.5,
     height: 1.2,
@@ -74,7 +75,7 @@ abstract final class PhoneType {
 
   /// Clock times and counts: digits keep their width.
   static TextStyle get time => TextStyle(
-    fontSize: 13.5,
+    fontSize: AppType.sizeBodySmall,
     fontWeight: FontWeight.w500,
     height: 1.25,
     letterSpacing: 0.1,
@@ -84,14 +85,14 @@ abstract final class PhoneType {
 
   /// The dock labels.
   static TextStyle get dock => const TextStyle(
-    fontSize: 12.5,
+    fontSize: AppType.sizeBodySmall,
     fontWeight: FontWeight.w600,
     letterSpacing: -0.1,
     height: 1.1,
   );
 
   static TextStyle get numeral => TextStyle(
-    fontSize: 16,
+    fontSize: AppType.sizeHeading,
     fontWeight: FontWeight.w500,
     height: 1.1,
     color: NewColors.text,

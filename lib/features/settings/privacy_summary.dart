@@ -252,7 +252,7 @@ class PrivacySummary extends StatelessWidget {
                     Text(
                       l.topic,
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: AppType.sizeBodySmall,
                         fontWeight: FontWeight.w600,
                         color: l.warn ? AppColors.danger : null,
                       ),
@@ -260,7 +260,7 @@ class PrivacySummary extends StatelessWidget {
                     Text(
                       l.text,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: AppType.sizeLabel,
                         height: 1.4,
                         color: AppColors.textMuted,
                       ),
@@ -271,7 +271,10 @@ class PrivacySummary extends StatelessWidget {
             Text(
               'This describes what the app does, not an independent security '
               'review.',
-              style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+              style: TextStyle(
+                fontSize: AppType.sizeMeta,
+                color: AppColors.textFaint,
+              ),
             ),
           ],
         );

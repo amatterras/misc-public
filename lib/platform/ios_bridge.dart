@@ -10,6 +10,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../features/ink/native_ink.dart';
 import '../sync/secret_store.dart';
 import 'file_protection.dart';
 
@@ -119,8 +120,20 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
       'unavailable';
 
   /// Asks iOS to report Pencil squeezes. False if not possible yet.
+  ///
+  /// Also switches on full-rate Pencil capture (every coalesced sample and
+  /// UIKit's predicted tip, see lib/features/ink/native_ink.dart). Every
+  /// writing surface calls this when it opens, so capture is on wherever
+  /// ink can be written. An older native build without it just answers
+  /// "not implemented" and ink keeps using Flutter's events.
   Future<bool> enablePencilSqueeze() async {
     _ensureHandler();
+    NativeInk.instance.install();
+    try {
+      await _invoke<bool>('enableInkCapture');
+    } on Exception {
+      // Older native side: nothing to switch on.
+    }
     try {
       return await _invoke<bool>('enablePencilSqueeze') ?? false;
     } on Exception {

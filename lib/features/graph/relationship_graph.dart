@@ -203,8 +203,11 @@ List<Offset> forceLayout(
 Color graphColor(GraphKind k) => switch (k) {
   GraphKind.note => const Color(0xFF789BB5),
   GraphKind.canvas => const Color(0xFF8FBFA9),
-  GraphKind.task => const Color(0xFFE5D5B8),
-  GraphKind.project => const Color(0xFFF5F3EF),
+  // Pale in dark, deepened in light so nodes stay visible on the page.
+  GraphKind.task =>
+    AppColors.light ? const Color(0xFFA9844C) : const Color(0xFFE5D5B8),
+  GraphKind.project =>
+    AppColors.light ? const Color(0xFF5D5A6B) : const Color(0xFFF5F3EF),
   GraphKind.entry => CalendarCategoryColors.reminderEvent,
   GraphKind.resource => const Color(0xFFAAAEB6),
 };
@@ -286,7 +289,10 @@ class _GraphViewState extends State<GraphView> {
             children: [
               for (final k in GraphKind.values)
                 FilterChip(
-                  label: Text(k.name, style: const TextStyle(fontSize: 11)),
+                  label: Text(
+                    k.name,
+                    style: const TextStyle(fontSize: AppType.sizeMeta),
+                  ),
                   avatar: CircleAvatar(
                     backgroundColor: graphColor(k),
                     radius: 5,
@@ -393,7 +399,10 @@ class _GraphPainter extends CustomPainter {
             text: n.label.length > 32
                 ? '${n.label.substring(0, 32)}…'
                 : n.label,
-            style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: AppType.sizeMeta,
+              color: AppColors.textMuted,
+            ),
           ),
           textDirection: TextDirection.ltr,
         )..layout();

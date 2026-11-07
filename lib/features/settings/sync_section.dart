@@ -1,4 +1,5 @@
 import 'peer_sync_row.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -107,7 +108,10 @@ class _SyncSectionState extends State<SyncSection> {
                   padding: const EdgeInsets.only(bottom: Space.sm),
                   child: Text(
                     s.syncStatus,
-                    style: TextStyle(fontSize: 13, color: AppColors.danger),
+                    style: TextStyle(
+                      fontSize: AppType.sizeBodySmall,
+                      color: AppColors.danger,
+                    ),
                   ),
                 ),
               _ConnectGuide(mobile: mobile),
@@ -128,7 +132,7 @@ class _SyncSectionState extends State<SyncSection> {
                   child: SelectableText(
                     _shownCode!,
                     key: const ValueKey('local-pair-result'),
-                    style: const TextStyle(fontSize: 12),
+                    style: const TextStyle(fontSize: AppType.sizeLabel),
                   ),
                 ),
               const SizedBox(height: Space.sm),
@@ -136,7 +140,7 @@ class _SyncSectionState extends State<SyncSection> {
               if (MediaQuery.sizeOf(context).width < 640) ...[
                 TextField(
                   controller: _url,
-                  style: const TextStyle(fontSize: 13),
+                  style: const TextStyle(fontSize: AppType.sizeBodySmall),
                   decoration: const InputDecoration(
                     labelText: 'Hub address',
                     hintText: 'http://100.x.y.z:47710',
@@ -150,7 +154,7 @@ class _SyncSectionState extends State<SyncSection> {
                     Expanded(
                       child: TextField(
                         controller: _url,
-                        style: const TextStyle(fontSize: 13),
+                        style: const TextStyle(fontSize: AppType.sizeBodySmall),
                         decoration: const InputDecoration(
                           labelText: 'Hub address',
                           hintText: 'http://100.x.y.z:47710',
@@ -164,7 +168,7 @@ class _SyncSectionState extends State<SyncSection> {
                       width: 150,
                       child: TextField(
                         controller: _code,
-                        style: const TextStyle(fontSize: 13),
+                        style: const TextStyle(fontSize: AppType.sizeBodySmall),
                         decoration: const InputDecoration(
                           labelText: 'Pairing code',
                         ),
@@ -191,7 +195,10 @@ class _SyncSectionState extends State<SyncSection> {
                       'This address is refused: plain http:// over a network '
                       'could be read by others on it. Use https://, this PC '
                       '(127.0.0.1) or a Tailscale address (100.x.y.z).',
-                      style: TextStyle(fontSize: 12, color: AppColors.danger),
+                      style: TextStyle(
+                        fontSize: AppType.sizeLabel,
+                        color: AppColors.danger,
+                      ),
                     ),
                   );
                 },
@@ -201,7 +208,10 @@ class _SyncSectionState extends State<SyncSection> {
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
                     _error!,
-                    style: TextStyle(fontSize: 12, color: AppColors.danger),
+                    style: TextStyle(
+                      fontSize: AppType.sizeLabel,
+                      color: AppColors.danger,
+                    ),
                   ),
                 ),
             ],
@@ -215,11 +225,14 @@ class _SyncSectionState extends State<SyncSection> {
             Text(
               '${s.syncing ? 'Syncing…' : s.syncStatus}'
               '${last == null ? '' : '  ·  last ${TimeOfDay.fromDateTime(last).format(context)}'}',
-              style: const TextStyle(fontSize: 13),
+              style: const TextStyle(fontSize: AppType.sizeBodySmall),
             ),
             Text(
               'Hub: ${s.hubUrl}',
-              style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+              style: TextStyle(
+                fontSize: AppType.sizeLabel,
+                color: AppColors.textFaint,
+              ),
             ),
             if (s.syncNeedsPairing)
               Padding(
@@ -233,7 +246,10 @@ class _SyncSectionState extends State<SyncSection> {
                     Text(
                       'Sync is stopped: the hub does not accept this device. '
                       'Your changes are kept here.',
-                      style: TextStyle(fontSize: 12, color: AppColors.danger),
+                      style: TextStyle(
+                        fontSize: AppType.sizeLabel,
+                        color: AppColors.danger,
+                      ),
                     ),
                     // The hub that answered may have been the wrong one: this
                     // looks again, and a hub that accepts the device clears
@@ -270,12 +286,15 @@ class _SyncSectionState extends State<SyncSection> {
                       },
                 title: const Text(
                   'Sync between devices',
-                  style: TextStyle(fontSize: 14),
+                  style: TextStyle(fontSize: AppType.sizeBody),
                 ),
                 subtitle: Text(
                   'Off pauses syncing on every device. Nothing is deleted: '
                   'changes are kept and sync when it is turned back on.',
-                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.textFaint,
+                  ),
                 ),
               ),
             const SizedBox(height: Space.sm),
@@ -293,7 +312,9 @@ class _SyncSectionState extends State<SyncSection> {
                   OutlinedButton.icon(
                     onPressed: () => showConflictsDialog(context, s),
                     icon: const Icon(Icons.call_split, size: 16),
-                    label: Text('Review $conflicts conflict${conflicts == 1 ? '' : 's'}'),
+                    label: Text(
+                      'Review $conflicts conflict${conflicts == 1 ? '' : 's'}',
+                    ),
                   ),
                 TextButton(
                   onPressed: () async {
@@ -375,7 +396,10 @@ class _ConnectGuide extends StatelessWidget {
                 CircleAvatar(
                   radius: 10,
                   backgroundColor: AppColors.card,
-                  child: Text('${i + 1}', style: const TextStyle(fontSize: 11)),
+                  child: Text(
+                    '${i + 1}',
+                    style: const TextStyle(fontSize: AppType.sizeMeta),
+                  ),
                 ),
                 const SizedBox(width: Space.sm),
                 Expanded(
@@ -389,7 +413,10 @@ class _ConnectGuide extends StatelessWidget {
                         TextSpan(text: text),
                       ],
                     ),
-                    style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+                    style: TextStyle(
+                      fontSize: AppType.sizeBodySmall,
+                      color: AppColors.textMuted,
+                    ),
                   ),
                 ),
               ],
@@ -432,12 +459,12 @@ class _HostedFormState extends State<_HostedForm> {
     tilePadding: EdgeInsets.zero,
     title: const Text(
       'Or use a hosted sync service',
-      style: TextStyle(fontSize: 13),
+      style: TextStyle(fontSize: AppType.sizeBodySmall),
     ),
     subtitle: Text(
       'A server run for you (e.g. one you deployed from deploy/hosted). '
       'Your data is stored there; misc. keeps working offline.',
-      style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+      style: TextStyle(fontSize: AppType.sizeMeta, color: AppColors.textFaint),
     ),
     children: [
       TextField(
@@ -467,7 +494,10 @@ class _HostedFormState extends State<_HostedForm> {
           padding: const EdgeInsets.only(top: 4),
           child: Text(
             _error!,
-            style: TextStyle(fontSize: 12, color: AppColors.danger),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.danger,
+            ),
           ),
         ),
       Align(
@@ -529,7 +559,10 @@ class MaintenanceStatusView extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: m,
     builder: (context, _) {
-      final small = TextStyle(fontSize: 12, color: AppColors.textMuted);
+      final small = TextStyle(
+        fontSize: AppType.sizeLabel,
+        color: AppColors.textMuted,
+      );
       final host = state.hubHost;
       final failing = [
         for (final j in m.jobs)
@@ -565,7 +598,10 @@ class MaintenanceStatusView extends StatelessWidget {
               Text(
                 '${j.label ?? j.name} failed at ${_time(j.lastErrorAt)}: '
                 '${j.lastError} — retrying every 10 s',
-                style: TextStyle(fontSize: 12, color: AppColors.warm),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.warm,
+                ),
               ),
           ],
         ),

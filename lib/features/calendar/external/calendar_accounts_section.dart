@@ -79,7 +79,10 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
     final connected = _connected[key] ?? false;
     final busy = _busy.contains(key);
     final last = a.lastSuccess;
-    final small = TextStyle(fontSize: 12, color: AppColors.textFaint);
+    final small = TextStyle(
+      fontSize: AppType.sizeLabel,
+      color: AppColors.textFaint,
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: Space.md),
       child: Column(
@@ -167,7 +170,7 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
               }),
               title: const Text(
                 'Also send my Reminder/Event entries there',
-                style: TextStyle(fontSize: 13),
+                style: TextStyle(fontSize: AppType.sizeBodySmall),
               ),
               subtitle: Text(
                 'misc. entries sync both ways. Provider-created events are '
@@ -182,7 +185,13 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
               style: small,
             ),
           if (_error[key] case final e?)
-            Text(e, style: TextStyle(fontSize: 12, color: AppColors.warm)),
+            Text(
+              e,
+              style: TextStyle(
+                fontSize: AppType.sizeLabel,
+                color: AppColors.warm,
+              ),
+            ),
         ],
       ),
     );
@@ -207,7 +216,10 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
         'Optional. Uses your own Google Cloud / Microsoft app registration '
         '(set up once; see the setup notes). You sign in on the provider\'s '
         'own page; misc. never sees your password.',
-        style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+        style: TextStyle(
+          fontSize: AppType.sizeLabel,
+          color: AppColors.textFaint,
+        ),
       ),
       const SizedBox(height: Space.sm),
       _account('google', 'Google Calendar', [

@@ -54,12 +54,12 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
   Future<void> _showActivity(BuildContext context) {
     final ai = widget.state.ai;
     final list = ai.activity.reversed.toList();
-    return showDialog<void>(
+    return showAppDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text(
           'What was sent to AI',
-          style: TextStyle(fontSize: 16),
+          style: TextStyle(fontSize: AppType.sizeHeading),
         ),
         content: SizedBox(
           width: 460,
@@ -72,7 +72,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
                       'Only a record of each request is kept here (on this '
                       'device), not what was in it.',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: AppType.sizeLabel,
                         color: AppColors.textFaint,
                       ),
                     ),
@@ -87,7 +87,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
                           '(${e['model']}) · ${e['chars']} characters'
                           '${(e['images'] ?? 0) == 0 ? '' : ' · ${e['images']} picture(s)'}'
                           '${(e['sources'] as List?)?.isNotEmpty ?? false ? ' · ${(e['sources'] as List).join(', ')}' : ''}',
-                          style: const TextStyle(fontSize: 11),
+                          style: const TextStyle(fontSize: AppType.sizeMeta),
                         ),
                       ),
                   ],
@@ -138,7 +138,10 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final small = TextStyle(fontSize: 12, color: AppColors.textFaint);
+    final small = TextStyle(
+      fontSize: AppType.sizeLabel,
+      color: AppColors.textFaint,
+    );
     return Column(
       key: const ValueKey('ai-settings'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -148,7 +151,10 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
           contentPadding: EdgeInsets.zero,
           value: ai.enabled,
           onChanged: (v) => _change(() => ai.setEnabled(v)),
-          title: const Text('Use AI', style: TextStyle(fontSize: 14)),
+          title: const Text(
+            'Use AI',
+            style: TextStyle(fontSize: AppType.sizeBody),
+          ),
           subtitle: Text(
             'Off: nothing is ever sent. On: still only what you attach and '
             'send yourself from the AI window.',
@@ -191,7 +197,10 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
               child: Text(
                 'This address is not this PC: what you send leaves the PC. '
                 'Search by meaning is off for addresses outside this PC.',
-                style: TextStyle(fontSize: 12, color: AppColors.warm),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.warm,
+                ),
               ),
             ),
           TextField(
@@ -205,7 +214,10 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 warning,
-                style: TextStyle(fontSize: 12, color: AppColors.warm),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.warm,
+                ),
               ),
             ),
           const SizedBox(height: Space.sm),
@@ -229,7 +241,10 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
                 'Get a key at aistudio.google.com (Google may charge for use '
                 'beyond its free tier). The key is stored protected on this '
                 'device only.',
-                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textFaint,
+                ),
               ),
             ),
           if (ai.provider.needsKey)
@@ -278,7 +293,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
           const SizedBox(height: Space.sm),
           Text(
             'Most text sent at once: ${ai.maxContextChars} characters',
-            style: const TextStyle(fontSize: 13),
+            style: const TextStyle(fontSize: AppType.sizeBodySmall),
           ),
           Slider(
             value: ai.maxContextChars.toDouble(),
@@ -293,10 +308,13 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
             onChanged: (v) => _change(() => ai.setAllowImages(v)),
             title: const Text(
               'Pictures may be sent (mindmap selections, photos)',
-              style: TextStyle(fontSize: 13),
+              style: TextStyle(fontSize: AppType.sizeBodySmall),
             ),
           ),
-          Text('Content the AI may be given:', style: TextStyle(fontSize: 13)),
+          Text(
+            'Content the AI may be given:',
+            style: TextStyle(fontSize: AppType.sizeBodySmall),
+          ),
           for (final source in AiSource.values)
             CheckboxListTile(
               dense: true,

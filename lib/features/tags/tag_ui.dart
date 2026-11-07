@@ -29,7 +29,7 @@ class TagChip extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: small ? 6 : 8, vertical: 2),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.md),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -63,7 +63,7 @@ Future<Set<String>?> showTagPicker(
   AppState s, {
   required Set<String> selected,
   required String what,
-}) => showDialog<Set<String>>(
+}) => showAppDialog<Set<String>>(
   context: context,
   builder: (_) => _TagPicker(state: s, selected: selected, what: what),
 );
@@ -141,10 +141,13 @@ class _TagPickerState extends State<_TagPicker> {
         final problem = s.workspace.renameTag(tag.id, name);
         setState(() => _problem = problem);
       case 'color':
-        final color = await showDialog<int>(
+        final color = await showAppDialog<int>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Tag colour', style: TextStyle(fontSize: 16)),
+            title: const Text(
+              'Tag colour',
+              style: TextStyle(fontSize: AppType.sizeHeading),
+            ),
             content: _Palette(
               value: tag.color,
               onPick: (c) => Navigator.pop(context, c),
@@ -173,7 +176,7 @@ class _TagPickerState extends State<_TagPicker> {
     return AlertDialog(
       title: Text(
         'Tags for ${widget.what}',
-        style: const TextStyle(fontSize: 16),
+        style: const TextStyle(fontSize: AppType.sizeHeading),
       ),
       content: SizedBox(
         width: 380,
@@ -185,7 +188,10 @@ class _TagPickerState extends State<_TagPicker> {
               if (tags.isEmpty)
                 Text(
                   'No tags yet. Make one below.',
-                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.textFaint,
+                  ),
                 ),
               Wrap(
                 spacing: 6,
@@ -216,7 +222,10 @@ class _TagPickerState extends State<_TagPicker> {
                   child: Text(
                     'Right-click or press and hold a tag to rename, recolour '
                     'or delete it.',
-                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                    style: TextStyle(
+                      fontSize: AppType.sizeMeta,
+                      color: AppColors.textFaint,
+                    ),
                   ),
                 ),
               const Divider(height: 24),
@@ -248,7 +257,10 @@ class _TagPickerState extends State<_TagPicker> {
                 Text(
                   _problem!,
                   key: const ValueKey('tag-problem'),
-                  style: TextStyle(fontSize: 12, color: AppColors.warm),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.warm,
+                  ),
                 ),
             ],
           ),

@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../data/models/calendar_models.dart';
 import '../data/models/canvas_models.dart' show newId;
@@ -388,7 +389,7 @@ class AgendaRow extends StatelessWidget {
                                   Text(
                                     formatClock(end % (24 * 60)),
                                     style: PhoneType.time.copyWith(
-                                      fontSize: 12,
+                                      fontSize: AppType.sizeLabel,
                                       color: NewColors.textFaint,
                                     ),
                                   ),

@@ -1262,14 +1262,18 @@ class TransferSource extends StatelessWidget {
     final preview = Material(
       color: AppColors.cardRaised,
       elevation: 6,
-      borderRadius: BorderRadius.circular(8),
+      shadowColor: AppElevation.shadowColor,
+      borderRadius: BorderRadius.circular(AppRadii.sm),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child:
             feedback ??
             Text(
               'Drag ${data.label}',
-              style: TextStyle(fontSize: 13, color: AppColors.text),
+              style: TextStyle(
+                fontSize: AppType.sizeBodySmall,
+                color: AppColors.text,
+              ),
             ),
       ),
     );
@@ -1334,7 +1338,7 @@ class TransferTarget extends StatelessWidget {
             : rejected.isNotEmpty
             ? Border.all(color: AppColors.danger, width: 1.5)
             : null,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
       ),
       child: child,
     ),

@@ -3,6 +3,7 @@
 // of what is in it, and when it was touched. A note opens on its own page.
 import 'package:flutter/material.dart';
 
+import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../data/models/library_models.dart';
 import '../features/notes/note_page.dart' show openNotePage;
@@ -344,7 +345,7 @@ class _NoteRow extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: PhoneType.body.copyWith(
-                    fontSize: 14.5,
+                    fontSize: AppType.sizeBody,
                     color: text.isEmpty
                         ? NewColors.textFaint
                         : NewColors.textMuted,
@@ -356,7 +357,7 @@ class _NoteRow extends StatelessWidget {
                     child: Text(
                       folder!.toUpperCase(),
                       style: PhoneType.eyebrow.copyWith(
-                        fontSize: 10,
+                        fontSize: AppType.sizeMicro,
                         letterSpacing: 1.2,
                       ),
                     ),

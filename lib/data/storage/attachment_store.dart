@@ -67,7 +67,9 @@ class AttachmentStore {
     final target = fileFor(name);
     final tmp = File('${target.path}.tmp');
     final c = cipher;
-    final out = c == null ? bytes : c.encrypt(bytes);
+    // Large files are encrypted on a background isolate (never freezes
+    // the UI).
+    final out = c == null ? bytes : await c.encryptAsync(bytes);
     await FileProtection.whenUnlocked(() async {
       await tmp.writeAsBytes(out, flush: true);
       await tmp.rename(target.path);

@@ -81,11 +81,14 @@ class _VaultPageState extends State<VaultPage> {
     }
   }
 
-  Future<void> _showRecovery(String code) => showDialog<void>(
+  Future<void> _showRecovery(String code) => showAppDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (context) => AlertDialog(
-      title: const Text('Your recovery code', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'Your recovery code',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -100,7 +103,7 @@ class _VaultPageState extends State<VaultPage> {
             'Write it down and keep it somewhere safe, away from this '
             'device. It is shown only now. Without the password or this '
             'code, nobody (not even misc.) can open the vault.',
-            style: TextStyle(fontSize: 12),
+            style: TextStyle(fontSize: AppType.sizeLabel),
           ),
         ],
       ),
@@ -145,7 +148,10 @@ class _VaultPageState extends State<VaultPage> {
               : _recovering
               ? 'Open with the recovery code'
               : 'The vault is locked',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          style: const TextStyle(
+            fontSize: AppType.sizeHeading,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: Space.sm),
         Text(
@@ -157,7 +163,10 @@ class _VaultPageState extends State<VaultPage> {
                     'sync first so both use the same one.'
               : 'Locks itself after ${VaultService.idleLimit.inMinutes} '
                     'minutes without use and when misc. is hidden.',
-          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          style: TextStyle(
+            fontSize: AppType.sizeLabel,
+            color: AppColors.textMuted,
+          ),
         ),
         const SizedBox(height: Space.md),
         if (_recovering)
@@ -174,7 +183,7 @@ class _VaultPageState extends State<VaultPage> {
             key: const ValueKey('vault-password2'),
           ),
         if (_error != null)
-          Text(_error!, style: const TextStyle(color: Colors.orange)),
+          Text(_error!, style: TextStyle(color: AppColors.warm)),
         const SizedBox(height: Space.sm),
         Row(
           children: [
@@ -310,7 +319,7 @@ class _VaultPageState extends State<VaultPage> {
           ],
         ),
         if (_error != null)
-          Text(_error!, style: const TextStyle(color: Colors.orange)),
+          Text(_error!, style: TextStyle(color: AppColors.warm)),
         const Divider(height: 1),
         Expanded(
           child: list.isEmpty

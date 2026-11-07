@@ -3,6 +3,7 @@
 // is always an existing action.
 import 'package:flutter/material.dart';
 
+import '../app/design_tokens.dart';
 import 'new_tokens.dart';
 
 /// The brand "+": a brand-gradient capsule with a white plus and a warm coral
@@ -56,7 +57,7 @@ class BrandPlus extends StatelessWidget {
                 overflow: TextOverflow.clip,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 13,
+                  fontSize: AppType.sizeBodySmall,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -128,7 +129,7 @@ class NewPill extends StatelessWidget {
         child: Text(
           text,
           style: NewText.label.copyWith(
-            fontSize: 11,
+            fontSize: AppType.sizeMeta,
             color: textColor ?? NewColors.accent,
           ),
         ),
@@ -229,7 +230,7 @@ class NewSearchField extends StatelessWidget {
     return TextField(
       controller: controller,
       onChanged: onChanged,
-      style: TextStyle(color: NewColors.text, fontSize: 14),
+      style: TextStyle(color: NewColors.text, fontSize: AppType.sizeBody),
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: TextStyle(color: NewColors.textFaint),
@@ -280,7 +281,7 @@ class NewHeaderButton extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontSize: 13,
+            fontSize: AppType.sizeBodySmall,
             fontWeight: FontWeight.w600,
             color: color,
           ),

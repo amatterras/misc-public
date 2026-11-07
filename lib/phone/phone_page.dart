@@ -2,6 +2,7 @@
 // desktop page). One slim bar with a Back arrow, nothing else of its own.
 import 'package:flutter/material.dart';
 
+import '../app/design_tokens.dart';
 import '../new_ui/new_tokens.dart';
 import 'phone_tokens.dart';
 import 'phone_widgets.dart';
@@ -55,7 +56,9 @@ class PhonePage extends StatelessWidget {
                           eyebrow!.toUpperCase(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: PhoneType.eyebrow.copyWith(fontSize: 10),
+                          style: PhoneType.eyebrow.copyWith(
+                            fontSize: AppType.sizeMicro,
+                          ),
                         ),
                       Text(
                         title,

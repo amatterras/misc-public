@@ -7,11 +7,14 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/design_tokens.dart';
 import '../../app/app_state.dart';
+import '../../app/popups.dart';
 import '../../data/models/record.dart';
 import '../../platform/input_hints.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
+import '../ink/native_ink.dart';
 import '../ink/pen_sizes.dart';
 import '../ink/stroke_geometry.dart';
 
@@ -142,6 +145,15 @@ class _DayInkLayerState extends State<DayInkLayer> {
   late CalendarInkArbiter _own = CalendarInkArbiter(widget.controller);
   CalendarInkArbiter get _arbiter => widget.arbiter ?? _own;
 
+  /// Every Apple Pencil sample for the stroke being written (iPad).
+  final PencilFeed _pencilFeed = PencilFeed();
+
+  @override
+  void dispose() {
+    _pencilFeed.end();
+    super.dispose();
+  }
+
   @override
   void didUpdateWidget(DayInkLayer old) {
     super.didUpdateWidget(old);
@@ -188,9 +200,28 @@ class _DayInkLayerState extends State<DayInkLayer> {
                 : 0.5,
             timeStamp: e.timeStamp,
           );
+          final pointer = e.pointer;
+          _pencilFeed.begin(
+            e,
+            move: (local, pressure, timeStamp) {
+              if (!_arbiter.owns(pointer)) return;
+              c.pointerMove(
+                screen(local),
+                pressure: pressure,
+                timeStamp: timeStamp,
+              );
+            },
+            predict: (local) {
+              if (_arbiter.owns(pointer)) {
+                c.setPredictedPoint(local == null ? null : screen(local));
+              }
+            },
+          );
         },
         onPointerMove: (e) {
           if (!_arbiter.owns(e.pointer)) return;
+          // Native Pencil samples may already have delivered this moment.
+          if (!_pencilFeed.flutterMove(e)) return;
           c.pointerMove(
             screen(e.localPosition),
             pressure: e.kind == PointerDeviceKind.stylus
@@ -202,12 +233,19 @@ class _DayInkLayerState extends State<DayInkLayer> {
         onPointerUp: (e) {
           final owned = _arbiter.owns(e.pointer);
           _arbiter.release(e.pointer);
-          if (owned) c.pointerUp();
+          if (owned) {
+            _pencilFeed.end();
+            c.pointerUp(screen: screen(e.localPosition), timeStamp: e.timeStamp);
+          }
         },
         onPointerCancel: (e) {
           final owned = _arbiter.owns(e.pointer);
           _arbiter.release(e.pointer);
-          if (owned) c.pointerCancel();
+          if (owned) {
+            _pencilFeed.end();
+            // Pencil writing interrupted by the system is kept.
+            c.pointerCancel(keepInk: e.kind == PointerDeviceKind.stylus);
+          }
         },
         child: paint,
       );
@@ -269,13 +307,16 @@ Future<void> showPenWidthDialog(
   BuildContext context,
   AppState state,
   CanvasController ink,
-) => showDialog<void>(
+) => showAppDialog<void>(
   context: context,
   builder: (context) => StatefulBuilder(
     builder: (context, setState) {
       final width = ink.penWidth;
       return AlertDialog(
-        title: const Text('Pen thickness', style: TextStyle(fontSize: 16)),
+        title: const Text(
+          'Pen thickness',
+          style: TextStyle(fontSize: AppType.sizeHeading),
+        ),
         content: SizedBox(
           width: 300,
           child: Column(
@@ -313,7 +354,7 @@ Future<void> showPenWidthDialog(
                       visualDensity: VisualDensity.compact,
                       label: Text(
                         '$size',
-                        style: const TextStyle(fontSize: 11),
+                        style: const TextStyle(fontSize: AppType.sizeMeta),
                       ),
                       selected: width == size,
                       onSelected: (_) {
@@ -326,7 +367,7 @@ Future<void> showPenWidthDialog(
               ),
               Text(
                 '${width.toStringAsFixed(1)} · new strokes only',
-                style: const TextStyle(fontSize: 12),
+                style: const TextStyle(fontSize: AppType.sizeLabel),
               ),
             ],
           ),

@@ -3,6 +3,7 @@ import 'dart:ui' show PointMode;
 
 import 'package:flutter/material.dart';
 
+import '../../app/background_palette.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../platform/input_hints.dart';
@@ -320,7 +321,7 @@ class CanvasContextBar extends StatelessWidget {
                 height: (width / 2.5).clamp(4.0, 14.0),
                 decoration: BoxDecoration(
                   color: c.highlighterColor,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(AppRadii.xs),
                 ),
               ),
             ),
@@ -360,7 +361,7 @@ class CanvasContextBar extends StatelessWidget {
               icon: Text(
                 entry.key,
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: AppType.sizeLabel,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -644,7 +645,7 @@ class _ColorMenu extends StatelessWidget {
               height: 3,
               decoration: BoxDecoration(
                 color: current ?? AppColors.textFaint,
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: BorderRadius.circular(AppRadii.xs),
               ),
             ),
           ],
@@ -666,15 +667,9 @@ class ToolPanel extends StatelessWidget {
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.md),
         border: Border.all(color: AppColors.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x66000000),
-            blurRadius: 16,
-            offset: Offset(0, 4),
-          ),
-        ],
+        boxShadow: AppElevation.floating,
       ),
       child: horizontal
           ? SingleChildScrollView(
@@ -726,9 +721,9 @@ class ToolButton extends StatelessWidget {
       preferBelow: false,
       child: Material(
         color: active ? AppColors.selected : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
           hoverColor: AppColors.hover,
           onTap: onPressed,
           onDoubleTap: onDoubleTap,
@@ -782,7 +777,7 @@ class _Swatch extends StatelessWidget {
         selected: active,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadii.md),
           child: Padding(
             padding: const EdgeInsets.all(5),
             child: Container(
@@ -836,7 +831,7 @@ class _EraserPainter extends CustomPainter {
     canvas.rotate(-0.7);
     final body = RRect.fromRectAndRadius(
       Rect.fromCenter(center: Offset.zero, width: 14, height: 8),
-      const Radius.circular(2),
+      const Radius.circular(AppRadii.xs),
     );
     canvas.drawRRect(body, paint);
     canvas.drawLine(const Offset(-1, -4), const Offset(-1, 4), paint);
@@ -928,11 +923,14 @@ Future<void> showDotOpacityDialog(
   CanvasController c,
   Future<void> Function(CanvasController c, double value) save, {
   Future<void> Function(CanvasController c, double value)? saveSize,
-}) => showDialog<void>(
+}) => showAppDialog<void>(
   context: context,
   builder: (context) => StatefulBuilder(
     builder: (context, setState) => AlertDialog(
-      title: const Text('Background dots', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'Background dots',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       content: SizedBox(
         width: 300,
         child: Column(
@@ -946,17 +944,24 @@ Future<void> showDotOpacityDialog(
               width: double.infinity,
               decoration: BoxDecoration(
                 color: AppColors.canvas,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadii.sm),
                 border: Border.all(color: AppColors.border),
               ),
               child: CustomPaint(
-                painter: _DotPreviewPainter(c.dotOpacity, c.dotSize),
+                painter: _DotPreviewPainter(
+                  c.dotOpacity,
+                  c.dotSize,
+                  BackgroundPalette.dot(),
+                ),
               ),
             ),
             const SizedBox(height: Space.md),
             Text(
               'Visibility',
-              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: AppType.sizeLabel,
+                color: AppColors.textMuted,
+              ),
             ),
             Slider(
               key: const ValueKey('dot-opacity-slider'),
@@ -973,13 +978,16 @@ Future<void> showDotOpacityDialog(
               '${(c.dotOpacity * 100).round()}% · '
               '${c.dotOpacity <= 0.03 ? 'nearly invisible' : 'visible'}',
               key: const ValueKey('dot-opacity-value'),
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(fontSize: AppType.sizeLabel),
             ),
             if (saveSize != null) ...[
               const SizedBox(height: Space.md),
               Text(
                 'Size',
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textMuted,
+                ),
               ),
               Slider(
                 key: const ValueKey('dot-size-slider'),
@@ -995,7 +1003,7 @@ Future<void> showDotOpacityDialog(
               Text(
                 '${c.dotSize.toStringAsFixed(1)} px',
                 key: const ValueKey('dot-size-value'),
-                style: const TextStyle(fontSize: 12),
+                style: const TextStyle(fontSize: AppType.sizeLabel),
               ),
             ],
           ],
@@ -1025,10 +1033,13 @@ Future<void> showDotOpacityDialog(
 );
 
 class _DotPreviewPainter extends CustomPainter {
-  _DotPreviewPainter(this.opacity, this.size);
+  _DotPreviewPainter(this.opacity, this.size, this.color);
 
   final double opacity;
   final double size;
+
+  /// The canvas dot colour of the current theme (same as the Mindmap).
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size box) {
@@ -1041,7 +1052,7 @@ class _DotPreviewPainter extends CustomPainter {
       PointMode.points,
       points,
       Paint()
-        ..color = const Color(0xFFFFFFFF).withValues(alpha: opacity)
+        ..color = color.withValues(alpha: opacity)
         ..strokeWidth = size
         ..strokeCap = StrokeCap.round,
     );
@@ -1049,7 +1060,7 @@ class _DotPreviewPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DotPreviewPainter old) =>
-      old.opacity != opacity || old.size != size;
+      old.opacity != opacity || old.size != size || old.color != color;
 }
 
 /// A tool strip that can be folded away with its own handle. Folding only
@@ -1103,8 +1114,8 @@ class CollapsibleBar extends StatelessWidget {
       ),
     );
     final body = AnimatedSize(
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeOut,
+      duration: AppMotion.quick,
+      curve: AppMotion.standard,
       alignment: vertical ? Alignment.topCenter : Alignment.centerLeft,
       child: collapsed ? const SizedBox.shrink() : child,
     );

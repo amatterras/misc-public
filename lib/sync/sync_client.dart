@@ -741,23 +741,33 @@ class SyncClient {
   /// Uploads [file] as attachment [sha]. Large files go up in pieces and
   /// continue from what the hub already holds after an interruption.
   /// [onProgress] gets (bytes the hub has, total).
-  Future<void> upload(
+  ///
+  /// [shouldPause] is asked between pieces (never before the first one of
+  /// this call, so every call makes progress): when it says yes, the upload
+  /// stops there and returns false. The hub keeps what it received and the
+  /// next call continues from it. Returns true once the hub holds the whole,
+  /// checked file.
+  Future<bool> upload(
     String sha,
     File file, {
     void Function(int sent, int total)? onProgress,
+    bool Function()? shouldPause,
   }) async {
     final total = await file.length();
     if (total <= uploadChunkBytes) {
       await _uploadWhole(sha, file);
       onProgress?.call(total, total);
-      return;
+      return true;
     }
     var offset = await partialBytes(sha);
     if (offset == null) {
       onProgress?.call(total, total);
-      return; // the hub has it all
+      return true; // the hub has it all
     }
+    var pieces = 0;
     while (offset! < total) {
+      if (pieces > 0 && (shouldPause?.call() ?? false)) return false;
+      pieces++;
       final end = (offset + uploadChunkBytes).clamp(0, total);
       final req = await _open('PUT', '/v1/attachments/$sha');
       req.headers
@@ -788,7 +798,7 @@ class SyncClient {
           // send the whole file the old way.
           await _uploadWhole(sha, file);
           onProgress?.call(total, total);
-          return;
+          return true;
         }
         if (res.statusCode != 200) {
           throw SyncFailure(
@@ -800,7 +810,7 @@ class SyncClient {
         final complete = (jsonDecode(body) as Map)['complete'] == true;
         offset = end;
         onProgress?.call(offset, total);
-        if (complete) return;
+        if (complete) return true;
       } on SocketException {
         throw const SyncFailure(
           'offline',
@@ -830,6 +840,7 @@ class SyncClient {
         retryable: true,
       );
     }
+    return true;
   }
 
   Future<void> _uploadWhole(String sha, File file) async {
@@ -853,11 +864,18 @@ class SyncClient {
   /// against its size and SHA-256, then moved into place. A damaged or wrong
   /// download never reaches [target]. Memory use is one network chunk at a
   /// time, whatever the file size.
-  Future<void> download(
+  ///
+  /// [shouldPause] is asked after each received piece once at least
+  /// [pauseAfterBytes] arrived in this call: when it says yes, the download
+  /// stops, the partial file is kept (the next call continues from it), and
+  /// false is returned. True means [target] holds the complete, checked file.
+  Future<bool> download(
     String sha,
     int? size,
     File target, {
     void Function(int received, int? total)? onProgress,
+    bool Function()? shouldPause,
+    int pauseAfterBytes = 1024 * 1024,
   }) async {
     final tmp = File('${target.path}.download');
     await target.parent.create(recursive: true);
@@ -877,7 +895,14 @@ class SyncClient {
         await res.drain<void>();
         await tmp.delete();
         have = 0;
-        return await download(sha, size, target, onProgress: onProgress);
+        return await download(
+          sha,
+          size,
+          target,
+          onProgress: onProgress,
+          shouldPause: shouldPause,
+          pauseAfterBytes: pauseAfterBytes,
+        );
       }
       if (res.statusCode != 200 && res.statusCode != 206) {
         await res.drain<void>();
@@ -901,6 +926,13 @@ class SyncClient {
         // 200: the whole file (a hub without ranges, or a fresh start).
         sink = tmp.openWrite();
       }
+      final startedAt = received;
+      var paused = false;
+      // Pausing is only safe when the hub can continue from the partial
+      // file; a hub without ranges would start over every time.
+      final resumable =
+          res.statusCode == 206 ||
+          res.headers.value(HttpHeaders.acceptRangesHeader) == 'bytes';
       await for (final chunk in res.timeout(timeout)) {
         received += chunk.length;
         if (received > maxAttachmentBytes) {
@@ -912,8 +944,21 @@ class SyncClient {
         hasher.add(chunk);
         sink.add(chunk);
         onProgress?.call(received, size);
+        if (resumable &&
+            received - startedAt >= pauseAfterBytes &&
+            (size == null || received < size) &&
+            (shouldPause?.call() ?? false)) {
+          paused = true;
+          break; // ends the request; what arrived stays in the partial file
+        }
       }
       await sink.flush();
+      if (paused) {
+        await sink.close();
+        sink = null;
+        keepPartial = true;
+        return false;
+      }
       await sink.close();
       sink = null;
       hasher.close();
@@ -926,6 +971,7 @@ class SyncClient {
         );
       }
       await tmp.rename(target.path);
+      return true;
     } on SocketException {
       keepPartial = true;
       throw const SyncFailure(

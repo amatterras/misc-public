@@ -8,6 +8,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
+import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../app/shell.dart' show openQuickAdd;
 import '../app/sidebar.dart' show Sidebar, appDestinations;
@@ -216,7 +217,10 @@ class NewSidebar extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: NewSpace.xs),
                   child: Text(
                     state.timer.label,
-                    style: TextStyle(fontSize: 10, color: NewColors.textMuted),
+                    style: TextStyle(
+                      fontSize: AppType.sizeMicro,
+                      color: NewColors.textMuted,
+                    ),
                   ),
                 ),
               _NavItem(
@@ -374,7 +378,7 @@ class _NavItem extends StatelessWidget {
                       decoration: const BoxDecoration(
                         gradient: NewGradients.brand,
                         borderRadius: BorderRadius.horizontal(
-                          left: Radius.circular(3),
+                          left: Radius.circular(AppRadii.xs),
                         ),
                       ),
                     ),
@@ -414,7 +418,7 @@ class _NavItem extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: AppType.sizeBodySmall,
                               fontWeight: active
                                   ? FontWeight.w600
                                   : FontWeight.w400,

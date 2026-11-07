@@ -226,7 +226,7 @@ class _PdfPageViewerState extends State<PdfPageViewer> {
                         ),
                         label: Text(
                           _service.titleOf(r.from),
-                          style: const TextStyle(fontSize: 12),
+                          style: const TextStyle(fontSize: AppType.sizeLabel),
                         ),
                         onPressed: () {
                           Navigator.of(context).pop();

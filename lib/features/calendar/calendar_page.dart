@@ -14,6 +14,7 @@ import '../../data/models/record.dart';
 import '../../data/workspace.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
+import '../tasks/estimate_label.dart';
 import '../tasks/tasks_page.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_toolbar.dart' show EraserPanel;
@@ -269,7 +270,7 @@ class _CalendarPageState extends State<CalendarPage> {
       );
       final notes = TextEditingController(text: suggestion.notes);
       try {
-        final approved = await showDialog<bool>(
+        final approved = await showAppDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Review handwriting'),
@@ -334,7 +335,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       recognized.trim(),
                       style: TextStyle(
                         color: AppColors.textMuted,
-                        fontSize: 12,
+                        fontSize: AppType.sizeLabel,
                       ),
                     ),
                   ],
@@ -621,7 +622,10 @@ class _CalendarPageState extends State<CalendarPage> {
             for (final c in CalendarView.values)
               ButtonSegment(
                 value: c,
-                label: Text(c.label, style: const TextStyle(fontSize: 12)),
+                label: Text(
+                  c.label,
+                  style: const TextStyle(fontSize: AppType.sizeLabel),
+                ),
               ),
           ],
           selected: {v},
@@ -721,7 +725,10 @@ class _CalendarPageState extends State<CalendarPage> {
           Text(
             v.title(_anchor),
             key: const ValueKey('calendar-view-title'),
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              fontSize: AppType.sizeBody,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ],
@@ -796,7 +803,7 @@ class _CalendarPageState extends State<CalendarPage> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: AppColors.warm.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
           border: Border.all(color: AppColors.warm.withValues(alpha: 0.5)),
         ),
         child: Row(
@@ -809,7 +816,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 'another device. Nothing was archived; archive entries until '
                 'each category has $max again. New entries there are paused '
                 'until then.',
-                style: const TextStyle(fontSize: 13),
+                style: const TextStyle(fontSize: AppType.sizeBodySmall),
               ),
             ),
           ],
@@ -823,7 +830,7 @@ class _CalendarPageState extends State<CalendarPage> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: Row(
@@ -892,9 +899,9 @@ class _CalendarPageState extends State<CalendarPage> {
         padding: const EdgeInsets.only(right: 4),
         child: Material(
           color: active ? AppColors.text : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
           child: InkWell(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.sm),
             onTap: onTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -914,7 +921,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   Text(
                     label,
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: AppType.sizeBodySmall,
                       fontWeight: FontWeight.w500,
                       color: active
                           ? AppColors.background
@@ -932,12 +939,12 @@ class _CalendarPageState extends State<CalendarPage> {
                         color: active
                             ? AppColors.background.withValues(alpha: 0.15)
                             : AppColors.cardRaised,
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(AppRadii.xs),
                       ),
                       child: Text(
                         count,
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: AppType.sizeMeta,
                           color: active
                               ? AppColors.background
                               : AppColors.textMuted,
@@ -965,7 +972,7 @@ class _CalendarPageState extends State<CalendarPage> {
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               color: AppColors.card,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadii.md),
               border: Border.all(color: AppColors.border),
             ),
             child: Row(
@@ -996,14 +1003,20 @@ class _CalendarPageState extends State<CalendarPage> {
             children: [
               Text(
                 'Show',
-                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textFaint,
+                ),
               ),
               const SizedBox(width: 6),
               for (final c in CalendarCategory.values)
                 Padding(
                   padding: const EdgeInsets.only(left: 4),
                   child: FilterChip(
-                    label: Text(c.label, style: const TextStyle(fontSize: 12)),
+                    label: Text(
+                      c.label,
+                      style: const TextStyle(fontSize: AppType.sizeLabel),
+                    ),
                     selected: _shown.contains(c),
                     showCheckmark: false,
                     visualDensity: VisualDensity.compact,
@@ -1014,7 +1027,10 @@ class _CalendarPageState extends State<CalendarPage> {
               Padding(
                 padding: const EdgeInsets.only(left: 4),
                 child: FilterChip(
-                  label: const Text('Tasks', style: TextStyle(fontSize: 12)),
+                  label: const Text(
+                    'Tasks',
+                    style: TextStyle(fontSize: AppType.sizeLabel),
+                  ),
                   selected: _showTasks,
                   showCheckmark: false,
                   visualDensity: VisualDensity.compact,
@@ -1047,7 +1063,7 @@ class _CalendarPageState extends State<CalendarPage> {
       onPointerUp: (e) => _arbiter?.release(e.pointer),
       onPointerCancel: (e) => _arbiter?.release(e.pointer),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.md),
         child: ColoredBox(
           color: AppColors.canvas,
           child: InteractiveViewer(
@@ -1202,7 +1218,7 @@ class DayCell extends StatelessWidget {
                           child: Text(
                             formatShortDate(day).split(' ').first,
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: AppType.sizeMeta,
                               color: AppColors.textMuted,
                             ),
                           ),
@@ -1230,7 +1246,7 @@ class DayCell extends StatelessWidget {
                       Text(
                         weekdayShort(day).toUpperCase(),
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: AppType.sizeMicro,
                           color: AppColors.textFaint,
                           letterSpacing: 0.5,
                         ),
@@ -1245,7 +1261,7 @@ class DayCell extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: AppType.sizeMeta,
                           color: AppColors.textMuted,
                         ),
                       ),
@@ -1268,7 +1284,7 @@ class DayCell extends StatelessWidget {
                     Text(
                       '+${items.length - maxLabels} more',
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: AppType.sizeMicro,
                         color: AppColors.textFaint,
                       ),
                     ),
@@ -1318,8 +1334,14 @@ class DayLabel extends StatelessWidget {
             ? null
             : '${(event.startMinutes! ~/ 60).toString().padLeft(2, '0')}:${(event.startMinutes! % 60).toString().padLeft(2, '0')}',
     };
-    const labelStyle = TextStyle(fontSize: 12, fontWeight: FontWeight.w500);
-    final timeStyle = TextStyle(fontSize: 10, color: AppColors.textMuted);
+    const labelStyle = TextStyle(
+      fontSize: AppType.sizeLabel,
+      fontWeight: FontWeight.w500,
+    );
+    final timeStyle = TextStyle(
+      fontSize: AppType.sizeMicro,
+      color: AppColors.textMuted,
+    );
     final label = LayoutBuilder(
       builder: (context, constraints) {
         final limit = constraints.maxWidth.isFinite
@@ -1358,7 +1380,7 @@ class DayLabel extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 5),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.16),
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(AppRadii.xs),
           ),
           child: Row(
             children: [
@@ -1528,7 +1550,7 @@ class _DayPanelState extends State<DayPanel> {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.md),
         border: Border.all(color: AppColors.border),
       ),
       child: ListView(
@@ -1540,7 +1562,7 @@ class _DayPanelState extends State<DayPanel> {
                 child: Text(
                   formatLongDate(day),
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: AppType.sizeHeading,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1584,7 +1606,10 @@ class _DayPanelState extends State<DayPanel> {
           if (items.isEmpty)
             Text(
               'Nothing on this day.',
-              style: TextStyle(fontSize: 13, color: AppColors.textFaint),
+              style: TextStyle(
+                fontSize: AppType.sizeBodySmall,
+                color: AppColors.textFaint,
+              ),
             ),
           for (final item in items) _itemRow(item),
           const SizedBox(height: Space.sm),
@@ -1595,7 +1620,10 @@ class _DayPanelState extends State<DayPanel> {
               for (final c in CalendarCategory.values)
                 ActionChip(
                   avatar: const Icon(Icons.add, size: 14),
-                  label: Text(c.label, style: const TextStyle(fontSize: 12)),
+                  label: Text(
+                    c.label,
+                    style: const TextStyle(fontSize: AppType.sizeLabel),
+                  ),
                   tooltip: ws.hasRoomIn(c)
                       ? 'New ${c.label} entry on this day'
                       : '${c.label} is full (5 active)',
@@ -1616,7 +1644,7 @@ class _DayPanelState extends State<DayPanel> {
                     avatar: const Icon(Icons.menu_book_outlined, size: 14),
                     label: Text(
                       'Log pages: ${r.name}',
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(fontSize: AppType.sizeLabel),
                     ),
                     onPressed: () => _logReading(r),
                   ),
@@ -1627,7 +1655,7 @@ class _DayPanelState extends State<DayPanel> {
           Text(
             'DAY NOTE',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: AppType.sizeMeta,
               letterSpacing: 0.6,
               color: AppColors.textFaint,
             ),
@@ -1637,7 +1665,7 @@ class _DayPanelState extends State<DayPanel> {
             controller: _text,
             minLines: 3,
             maxLines: 10,
-            style: const TextStyle(fontSize: 13),
+            style: const TextStyle(fontSize: AppType.sizeBodySmall),
             decoration: const InputDecoration(
               hintText: 'Anything about this day…',
             ),
@@ -1649,7 +1677,7 @@ class _DayPanelState extends State<DayPanel> {
               Text(
                 'ATTACHED',
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: AppType.sizeMeta,
                   letterSpacing: 0.6,
                   color: AppColors.textFaint,
                 ),
@@ -1736,7 +1764,10 @@ class _DayPanelState extends State<DayPanel> {
               ?entry.timeLabel,
               if (entry.description.isNotEmpty) entry.description,
             ].join(' · '),
-            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(
+              fontSize: AppType.sizeMeta,
+              color: AppColors.textFaint,
+            ),
           ),
           trailing: GhostIconButton(
             icon: Icons.edit_outlined,
@@ -1762,9 +1793,23 @@ class _DayPanelState extends State<DayPanel> {
                   )
                 : null,
           ),
-          subtitle: Text(
-            'Task (from Tasks)',
-            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+          subtitle: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  'Task (from Tasks)',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: AppType.sizeMeta,
+                    color: AppColors.textFaint,
+                  ),
+                ),
+              ),
+              if (task.estimateMinutes != null) ...[
+                const SizedBox(width: 8),
+                EstimateLabel(task: task),
+              ],
+            ],
           ),
           trailing: GhostIconButton(
             icon: Icons.open_in_new,
@@ -1790,7 +1835,10 @@ class _DayPanelState extends State<DayPanel> {
                     '${(event.startMinutes! % 60).toString().padLeft(2, '0')}',
               if (event.location.isNotEmpty) event.location,
             ].join(' · '),
-            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(
+              fontSize: AppType.sizeMeta,
+              color: AppColors.textFaint,
+            ),
           ),
           trailing: event.link.isEmpty
               ? null
@@ -1834,7 +1882,10 @@ class CategoryView extends StatelessWidget {
           children: [
             Text(
               '$countedEntries of ${CalendarEntry.maxActivePerCategory} active',
-              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: AppType.sizeBodySmall,
+                color: AppColors.textMuted,
+              ),
             ),
             const Spacer(),
             if (full)
@@ -1842,7 +1893,10 @@ class CategoryView extends StatelessWidget {
                 padding: EdgeInsets.only(right: Space.md),
                 child: Text(
                   'Full — archive an entry to add another.',
-                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.textFaint,
+                  ),
                 ),
               ),
             FilledButton.icon(
@@ -1858,7 +1912,7 @@ class CategoryView extends StatelessWidget {
             padding: const EdgeInsets.all(Space.md),
             decoration: BoxDecoration(
               color: AppColors.warm.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadii.sm),
               border: Border.all(color: AppColors.warm.withValues(alpha: 0.5)),
             ),
             child: Text(
@@ -1866,7 +1920,7 @@ class CategoryView extends StatelessWidget {
               '${CalendarEntry.maxActivePerCategory}) because changes from several '
               'devices were combined. Nothing was archived automatically — please '
               'archive ${countedEntries - CalendarEntry.maxActivePerCategory}.',
-              style: const TextStyle(fontSize: 13),
+              style: const TextStyle(fontSize: AppType.sizeBodySmall),
             ),
           ),
         const SizedBox(height: Space.lg),
@@ -1918,19 +1972,25 @@ class EntryCard extends StatelessWidget {
               e.readingPlanDetached
                   ? 'Detached daily page · ${formatLongDate(e.readingPlanDate!)}'
                   : 'Daily page · ${formatLongDate(e.readingPlanDate!)}',
-              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: AppType.sizeLabel,
+                color: AppColors.textMuted,
+              ),
             ),
           if (e.readingPlanId == null &&
               e.readingPlanStartDate != null &&
               e.readingPlanEndDate != null)
             Text(
               'Daily plan · ${formatShortDate(e.readingPlanStartDate!)} – ${formatShortDate(e.readingPlanEndDate!)} (inclusive)',
-              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: AppType.sizeLabel,
+                color: AppColors.textMuted,
+              ),
             ),
           const SizedBox(height: 8),
           if (progress != null) ...[
             ClipRRect(
-              borderRadius: BorderRadius.circular(3),
+              borderRadius: BorderRadius.circular(AppRadii.xs),
               child: LinearProgressIndicator(
                 value: progress,
                 color: color,
@@ -1944,11 +2004,17 @@ class EntryCard extends StatelessWidget {
             total == null
                 ? 'Page ${e.currentPage}'
                 : 'Page ${e.currentPage} of $total',
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.textMuted,
+            ),
           ),
           Text(
             '${e.readingLog.length} reading days logged',
-            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(
+              fontSize: AppType.sizeMeta,
+              color: AppColors.textFaint,
+            ),
           ),
         ]);
         final target = e.targetPagesPerDay;
@@ -1968,14 +2034,20 @@ class EntryCard extends StatelessWidget {
                     ? 'Reading goal complete'
                     : 'Goal: ${estimate.daysLabel} · '
                           'finish ${formatShortDate(estimate.completionDate!)}',
-                style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeMeta,
+                  color: AppColors.textFaint,
+                ),
               ),
             );
           } on ArgumentError {
             details.add(
               Text(
                 'Reading goal needs correction',
-                style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeMeta,
+                  color: AppColors.textFaint,
+                ),
               ),
             );
           }
@@ -1993,7 +2065,7 @@ class EntryCard extends StatelessWidget {
                 ? 'Choose time to schedule'
                 : 'At ${e.timeLabel}',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: AppType.sizeLabel,
               color: e.needsTimeConfiguration
                   ? AppColors.warm
                   : AppColors.textMuted,
@@ -2006,7 +2078,10 @@ class EntryCard extends StatelessWidget {
                     for (var d = 1; d <= 7; d++)
                       if (e.weekdays.contains(d)) weekdayLetters[d - 1],
                   ].join(' '),
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.textMuted,
+            ),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -2023,7 +2098,7 @@ class EntryCard extends StatelessWidget {
                       height: 14,
                       decoration: BoxDecoration(
                         color: e.isCheckedOn(d) ? color : AppColors.cardRaised,
-                        borderRadius: BorderRadius.circular(3),
+                        borderRadius: BorderRadius.circular(AppRadii.xs),
                         border: daysBetween(today, d) == 0
                             ? Border.all(color: AppColors.text)
                             : null,
@@ -2036,7 +2111,10 @@ class EntryCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             'Click a square to check a day off.',
-            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(
+              fontSize: AppType.sizeMeta,
+              color: AppColors.textFaint,
+            ),
           ),
         ]);
       case CalendarCategory.events:
@@ -2052,7 +2130,10 @@ class EntryCard extends StatelessWidget {
                     ?e.timeLabel,
                     if (e.durationMinutes != null) '${e.durationMinutes} min',
                   ].join('  ·  '),
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.textMuted,
+            ),
           ),
         );
       case CalendarCategory.other:
@@ -2062,14 +2143,17 @@ class EntryCard extends StatelessWidget {
             dates.isEmpty
                 ? 'No dates'
                 : dates.map((k) => formatShortDate(parseDayKey(k))).join(', '),
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.textMuted,
+            ),
           ),
         );
     }
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.md),
         border: Border.all(color: AppColors.border),
       ),
       clipBehavior: Clip.antiAlias,
@@ -2127,7 +2211,10 @@ class EntryCard extends StatelessWidget {
         if (e.description.isNotEmpty)
           Text(
             e.description,
-            style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: AppType.sizeBodySmall,
+              color: AppColors.textMuted,
+            ),
           ),
         const SizedBox(height: 6),
         ...details,
@@ -2137,7 +2224,10 @@ class EntryCard extends StatelessWidget {
             e.notes.trim(),
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.textFaint,
+            ),
           ),
         ],
         if (e.assetIds.isNotEmpty) ...[
@@ -2157,7 +2247,7 @@ class EntryCard extends StatelessWidget {
 }
 
 Future<void> showArchive(BuildContext context, AppState state) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (context) => ListenableBuilder(
       listenable: state.workspace.entries,
@@ -2166,7 +2256,10 @@ Future<void> showArchive(BuildContext context, AppState state) {
         final archived = ws.entries.all.where((e) => e.archived).toList()
           ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
         return AlertDialog(
-          title: const Text('Archive', style: TextStyle(fontSize: 16)),
+          title: const Text(
+            'Archive',
+            style: TextStyle(fontSize: AppType.sizeHeading),
+          ),
           content: SizedBox(
             width: 480,
             height: 380,
@@ -2193,7 +2286,7 @@ Future<void> showArchive(BuildContext context, AppState state) {
                                       'permanently deleted '
                                       '${formatLongDate(e.archivedAt!.add(Workspace.archivedEntryRetention).toLocal())}',
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: AppType.sizeLabel,
                               color: AppColors.textFaint,
                             ),
                           ),

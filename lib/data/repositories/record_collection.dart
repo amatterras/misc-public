@@ -368,21 +368,47 @@ class RecordCollection<T extends Record> extends ChangeNotifier {
         'tombstones': _tombstones,
         if (_recentlyDeleted.isNotEmpty) 'recentlyDeleted': _recentlyDeleted,
       });
+      _failedSaves = 0;
+      lastSaveError = null;
       onSaveResult?.call(name, true);
     } catch (e) {
       _dirty = true;
+      _failedSaves++;
+      lastSaveError = e;
       onSaveResult?.call(name, false);
       AppLog.error('Saving $name failed; will retry', e);
-      // Try again by itself (e.g. once a locked file is free), rather than
-      // only at the next edit, so no change is left unsaved.
+      // Try again by itself (e.g. once a locked file is free or space was
+      // freed), rather than only at the next edit, so no change is left
+      // unsaved. The pause grows while it keeps failing (5 s, 10 s, 20 s …
+      // at most [maxRetryDelay]), so a full disk is not hammered.
       _timer?.cancel();
-      _timer = Timer(retryDelay, () => unawaited(flush().catchError((_) {})));
+      _timer = Timer(
+        _retryPause(),
+        () => unawaited(flush().catchError((_) {})),
+      );
       rethrow;
     }
   }
 
-  /// Wait before retrying a failed save.
+  /// Wait before retrying a failed save (the first time; it doubles after
+  /// each further failure, up to [maxRetryDelay]).
   static Duration retryDelay = const Duration(seconds: 5);
+  static Duration maxRetryDelay = const Duration(minutes: 1);
+
+  int _failedSaves = 0;
+
+  /// Why the last save failed (null after a successful save).
+  Object? lastSaveError;
+
+  Duration _retryPause() {
+    final factor = 1 << (_failedSaves - 1).clamp(0, 10);
+    final ms = retryDelay.inMilliseconds * factor;
+    return Duration(
+      milliseconds: ms > maxRetryDelay.inMilliseconds
+          ? maxRetryDelay.inMilliseconds
+          : ms,
+    );
+  }
 
   /// Told after every save attempt (collection name, whether it worked), so
   /// the app can show that changes are not on disk yet.

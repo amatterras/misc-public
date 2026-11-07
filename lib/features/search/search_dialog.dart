@@ -1,4 +1,5 @@
 import 'ranked_search.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -261,7 +262,7 @@ List<SearchResult> searchEverything(AppState s, String query) {
 }
 
 Future<void> showSearchDialog(BuildContext context, AppState state) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (_) => _SearchDialog(state: state, rootContext: context),
   );
@@ -382,7 +383,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                       builder: (context, _) => Text(
                         _pdfLine(widget.state),
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: AppType.sizeMeta,
                           color: AppColors.textFaint,
                         ),
                       ),
@@ -407,10 +408,17 @@ class _SearchDialogState extends State<_SearchDialog> {
                 children: [
                   for (final f in SearchFilter.values)
                     Padding(
-                      padding: const EdgeInsets.only(right: 6, top: 6, bottom: 6),
+                      padding: const EdgeInsets.only(
+                        right: 6,
+                        top: 6,
+                        bottom: 6,
+                      ),
                       child: ChoiceChip(
                         key: ValueKey('search-filter-${f.name}'),
-                        label: Text(f.label, style: const TextStyle(fontSize: 12)),
+                        label: Text(
+                          f.label,
+                          style: const TextStyle(fontSize: AppType.sizeLabel),
+                        ),
                         selected: _filter == f,
                         visualDensity: VisualDensity.compact,
                         onSelected: (_) => setState(() => _filter = f),
@@ -429,7 +437,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                             : 'Nothing found.',
                         style: TextStyle(
                           color: AppColors.textFaint,
-                          fontSize: 13,
+                          fontSize: AppType.sizeBodySmall,
                         ),
                       ),
                     )
@@ -446,18 +454,20 @@ class _SearchDialogState extends State<_SearchDialog> {
                           ),
                           title: Text(r.title, overflow: TextOverflow.ellipsis),
                           subtitle: Text(
-                            r.why.isEmpty ? r.subtitle : '${r.subtitle}\n${r.why}',
+                            r.why.isEmpty
+                                ? r.subtitle
+                                : '${r.subtitle}\n${r.why}',
                             maxLines: r.why.isEmpty ? 1 : 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: AppType.sizeLabel,
                               color: AppColors.textFaint,
                             ),
                           ),
                           trailing: Text(
                             r.kind,
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: AppType.sizeMeta,
                               color: AppColors.textFaint,
                             ),
                           ),

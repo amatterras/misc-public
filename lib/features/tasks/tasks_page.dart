@@ -5,12 +5,15 @@ import '../../app/shell.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart' show newId;
 import '../../data/models/record.dart';
+import '../../data/models/task_estimate.dart';
 import '../../data/models/task_models.dart';
 import '../../data/workspace.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import '../ai/ai_service.dart';
 import '../ai/ai_session.dart';
+import 'estimate_label.dart';
+import 'smart_views.dart';
 import 'task_views.dart';
 import '../transfer/transfer.dart';
 import '../templates/templates.dart';
@@ -46,6 +49,12 @@ class ProjectTaskList extends TaskList {
 class LabelTaskList extends TaskList {
   const LabelTaskList(this.label);
   final String label;
+}
+
+/// A Smart View (built-in or saved), picked in the column's view selector.
+class SmartViewTaskList extends TaskList {
+  const SmartViewTaskList(this.viewId);
+  final String viewId;
 }
 
 List<Color> get priorityColors => [
@@ -141,6 +150,8 @@ class _TasksPageState extends State<TasksPage> {
         return t.projectId == projectId;
       case LabelTaskList(:final label):
         return t.labels.contains(label);
+      case SmartViewTaskList(:final viewId):
+        return smartViewMatcher(ws, viewId, today)(t);
     }
   }
 
@@ -149,14 +160,21 @@ class _TasksPageState extends State<TasksPage> {
     if (title.isEmpty) return;
     final list = _list;
     final today = dateOnly(DateTime.now());
-    final task = ws.createTask(
+    final view = list is SmartViewTaskList
+        ? smartViewDefaults(ws, list.viewId)
+        : null;
+    var task = ws.createTask(
       title,
-      projectId: list is ProjectTaskList ? list.projectId : null,
+      projectId: list is ProjectTaskList ? list.projectId : view?.projectId,
       dueDate: list is SmartTaskList && list.kind == SmartList.today
           ? today
           : null,
       isExam: list is SmartTaskList && list.kind == SmartList.exams,
     );
+    if (view != null && (view.priority != null || view.labels.isNotEmpty)) {
+      task = task.copyWith(priority: view.priority, labels: view.labels);
+      ws.tasks.put(task);
+    }
     _newTask.clear();
     setState(() => _selectedId = task.id);
   }
@@ -181,6 +199,11 @@ class _TasksPageState extends State<TasksPage> {
 
   @override
   Widget build(BuildContext context) {
+    // A saved view deleted (here or on another device): back to All tasks.
+    final list = _list;
+    if (list is SmartViewTaskList && !smartViewExists(ws, list.viewId)) {
+      _list = const SmartTaskList(SmartList.open);
+    }
     final requested = s.selectedTaskId;
     if (requested != null) {
       _selectedId = requested;
@@ -251,9 +274,9 @@ class _TasksPageState extends State<TasksPage> {
       };
       return Material(
         color: selected ? AppColors.selected : Colors.transparent,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         child: InkWell(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
           onTap: () => setState(() => _list = list),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -272,7 +295,7 @@ class _TasksPageState extends State<TasksPage> {
                     label,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: AppType.sizeBodySmall,
                       color: selected ? AppColors.text : AppColors.textMuted,
                     ),
                   ),
@@ -280,7 +303,10 @@ class _TasksPageState extends State<TasksPage> {
                 if (count != null && count > 0)
                   Text(
                     '$count',
-                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                    style: TextStyle(
+                      fontSize: AppType.sizeMeta,
+                      color: AppColors.textFaint,
+                    ),
                   ),
               ],
             ),
@@ -311,7 +337,7 @@ class _TasksPageState extends State<TasksPage> {
             child: Text(
               title,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: AppType.sizeMeta,
                 letterSpacing: 0.6,
                 color: AppColors.textFaint,
               ),
@@ -449,7 +475,7 @@ class _TasksPageState extends State<TasksPage> {
             child: Text(
               'LABELS',
               style: TextStyle(
-                fontSize: 11,
+                fontSize: AppType.sizeMeta,
                 letterSpacing: 0.6,
                 color: AppColors.textFaint,
               ),
@@ -469,7 +495,10 @@ class _TasksPageState extends State<TasksPage> {
             touchFirst
                 ? 'Press and hold a project to rename or archive it.'
                 : 'Right-click a project to rename or archive it.',
-            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(
+              fontSize: AppType.sizeMeta,
+              color: AppColors.textFaint,
+            ),
           ),
         ),
       ],
@@ -552,7 +581,49 @@ class _TasksPageState extends State<TasksPage> {
     ProjectTaskList(:final projectId) =>
       ws.projects[projectId]?.name ?? 'Project',
     LabelTaskList(:final label) => label,
+    SmartViewTaskList(:final viewId) => smartViewName(ws, viewId),
   };
+
+  /// The open Smart View, or null (All tasks or a list of the side column).
+  String? get _viewId => switch (_list) {
+    SmartViewTaskList(:final viewId) => viewId,
+    _ => null,
+  };
+
+  bool get _habitsView => BuiltInView.ofId(_viewId) == BuiltInView.todaysHabits;
+
+  Widget _viewSelector() => SmartViewSelector(
+    workspace: ws,
+    current: _viewId,
+    onSelect: (id) => setState(() {
+      _list = id == null
+          ? const SmartTaskList(SmartList.open)
+          : SmartViewTaskList(id);
+      _selecting = false;
+      _picked.clear();
+    }),
+  );
+
+  /// What an empty list says (Smart Views explain why they may be empty).
+  Widget _empty() {
+    final id = _viewId;
+    if (id == null) {
+      return Center(
+        child: Text(
+          'Nothing here.',
+          style: TextStyle(color: AppColors.textFaint),
+        ),
+      );
+    }
+    final builtIn = BuiltInView.ofId(id);
+    return SmartViewEmpty(
+      title: builtIn?.emptyTitle ?? 'No tasks match this view.',
+      hint:
+          builtIn?.emptyHint ??
+          'Tasks appear here as soon as they meet its conditions. '
+              'Edit the view from the selector above.',
+    );
+  }
 
   static String _daysText(int days) =>
       '${days > 0 ? '+' : ''}$days day${days.abs() == 1 ? '' : 's'}';
@@ -568,7 +639,10 @@ class _TasksPageState extends State<TasksPage> {
           tooltip: v.label,
           label: MediaQuery.sizeOf(context).width < 1100
               ? null
-              : Text(v.label, style: const TextStyle(fontSize: 12)),
+              : Text(
+                  v.label,
+                  style: const TextStyle(fontSize: AppType.sizeLabel),
+                ),
         ),
     ],
     selected: {_view},
@@ -642,7 +716,7 @@ class _TasksPageState extends State<TasksPage> {
       padding: const EdgeInsets.symmetric(horizontal: Space.sm, vertical: 4),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: Wrap(
@@ -651,7 +725,10 @@ class _TasksPageState extends State<TasksPage> {
         children: [
           Text(
             '${ids.length} selected',
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.textMuted,
+            ),
           ),
           TextButton(
             onPressed: ids.isEmpty ? null : () => run('complete'),
@@ -679,7 +756,10 @@ class _TasksPageState extends State<TasksPage> {
             ],
             child: const Padding(
               padding: EdgeInsets.all(8),
-              child: Text('Priority ▾', style: TextStyle(fontSize: 13)),
+              child: Text(
+                'Priority ▾',
+                style: TextStyle(fontSize: AppType.sizeBodySmall),
+              ),
             ),
           ),
           PopupMenuButton<String>(
@@ -693,7 +773,10 @@ class _TasksPageState extends State<TasksPage> {
             ],
             child: const Padding(
               padding: EdgeInsets.all(8),
-              child: Text('Project ▾', style: TextStyle(fontSize: 13)),
+              child: Text(
+                'Project ▾',
+                style: TextStyle(fontSize: AppType.sizeBodySmall),
+              ),
             ),
           ),
           TextButton(
@@ -706,7 +789,12 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   Widget _tasks() {
-    final tasks = ws.tasks.all.where(_inList).toList()
+    final viewId = _viewId;
+    final test = viewId == null
+        ? _inList
+        : smartViewMatcher(ws, viewId, DateTime.now());
+    final habits = _habitsView;
+    final tasks = ws.tasks.all.where(test).toList()
       ..sort((a, b) {
         if (a.done != b.done) return a.done ? 1 : -1;
         final ad = a.dueDate, bd = b.dueDate;
@@ -727,12 +815,24 @@ class _TasksPageState extends State<TasksPage> {
             spacing: Space.md,
             runSpacing: Space.sm,
             children: [
-              Text(
-                _title,
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w600,
-                ),
+              // The title names the open view; the small control beside it
+              // switches Smart Views.
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      _title,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  _viewSelector(),
+                ],
               ),
               FocusTimerCard(state: s),
             ],
@@ -743,8 +843,8 @@ class _TasksPageState extends State<TasksPage> {
             runSpacing: Space.sm,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _viewSwitcher(),
-              if (_view == TaskView.list)
+              if (!habits) _viewSwitcher(),
+              if (_view == TaskView.list && !habits)
                 TextButton.icon(
                   key: const ValueKey('task-select-toggle'),
                   onPressed: () => setState(() {
@@ -759,90 +859,92 @@ class _TasksPageState extends State<TasksPage> {
                 ),
             ],
           ),
-          if (_selecting && _view == TaskView.list) ...[
+          if (_selecting && _view == TaskView.list && !habits) ...[
             const SizedBox(height: Space.sm),
             _bulkBar(),
           ],
           const SizedBox(height: Space.md),
-          TextField(
-            controller: _newTask,
-            style: const TextStyle(fontSize: 14),
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.add, size: 18),
-              hintText: 'Add a task and press Enter',
-            ),
-            onSubmitted: (_) => _add(),
-          ),
-          const SizedBox(height: Space.md),
-          Expanded(
-            child: TransferTarget(
-              state: s,
-              place: TasksPlace(
-                projectId: _list is ProjectTaskList
-                    ? (_list as ProjectTaskList).projectId
-                    : null,
+          if (!habits) ...[
+            TextField(
+              controller: _newTask,
+              style: const TextStyle(fontSize: AppType.sizeBody),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.add, size: 18),
+                hintText: 'Add a task and press Enter',
               ),
-              child: tasks.isEmpty
-                  ? Center(
-                      child: Text(
-                        'Nothing here.',
-                        style: TextStyle(color: AppColors.textFaint),
-                      ),
-                    )
-                  : switch (_view) {
-                      TaskView.list => ListView(
-                        children: [
-                          for (final t in tasks)
-                            Row(
-                              children: [
-                                if (_selecting)
-                                  Checkbox(
-                                    key: ValueKey('pick-${t.id}'),
-                                    value: _picked.contains(t.id),
-                                    onChanged: (on) => setState(
-                                      () => on == true
-                                          ? _picked.add(t.id)
-                                          : _picked.remove(t.id),
+              onSubmitted: (_) => _add(),
+            ),
+            const SizedBox(height: Space.md),
+          ],
+          if (habits)
+            Expanded(
+              child: TodaysHabitsList(workspace: ws, today: DateTime.now()),
+            )
+          else
+            Expanded(
+              child: TransferTarget(
+                state: s,
+                place: TasksPlace(
+                  projectId: _list is ProjectTaskList
+                      ? (_list as ProjectTaskList).projectId
+                      : null,
+                ),
+                child: tasks.isEmpty
+                    ? _empty()
+                    : switch (_view) {
+                        TaskView.list => ListView(
+                          children: [
+                            for (final t in tasks)
+                              Row(
+                                children: [
+                                  if (_selecting)
+                                    Checkbox(
+                                      key: ValueKey('pick-${t.id}'),
+                                      value: _picked.contains(t.id),
+                                      onChanged: (on) => setState(
+                                        () => on == true
+                                            ? _picked.add(t.id)
+                                            : _picked.remove(t.id),
+                                      ),
+                                    ),
+                                  Expanded(
+                                    child: TaskRow(
+                                      state: s,
+                                      task: t,
+                                      selected: t.id == _selectedId,
+                                      onTap: () => setState(() {
+                                        if (_selecting) {
+                                          _picked.contains(t.id)
+                                              ? _picked.remove(t.id)
+                                              : _picked.add(t.id);
+                                        } else {
+                                          _selectedId = t.id;
+                                        }
+                                      }),
                                     ),
                                   ),
-                                Expanded(
-                                  child: TaskRow(
-                                    state: s,
-                                    task: t,
-                                    selected: t.id == _selectedId,
-                                    onTap: () => setState(() {
-                                      if (_selecting) {
-                                        _picked.contains(t.id)
-                                            ? _picked.remove(t.id)
-                                            : _picked.add(t.id);
-                                      } else {
-                                        _selectedId = t.id;
-                                      }
-                                    }),
-                                  ),
-                                ),
-                              ],
-                            ),
-                        ],
-                      ),
-                      TaskView.board => TaskBoardView(
-                        state: s,
-                        tasks: tasks,
-                        onOpen: (id) => setState(() => _selectedId = id),
-                      ),
-                      TaskView.table => TaskTableView(
-                        state: s,
-                        tasks: tasks,
-                        onOpen: (id) => setState(() => _selectedId = id),
-                      ),
-                      TaskView.gantt => TaskGanttView(
-                        state: s,
-                        tasks: tasks,
-                        onOpen: (id) => setState(() => _selectedId = id),
-                      ),
-                    },
+                                ],
+                              ),
+                          ],
+                        ),
+                        TaskView.board => TaskBoardView(
+                          state: s,
+                          tasks: tasks,
+                          onOpen: (id) => setState(() => _selectedId = id),
+                        ),
+                        TaskView.table => TaskTableView(
+                          state: s,
+                          tasks: tasks,
+                          onOpen: (id) => setState(() => _selectedId = id),
+                        ),
+                        TaskView.gantt => TaskGanttView(
+                          state: s,
+                          tasks: tasks,
+                          onOpen: (id) => setState(() => _selectedId = id),
+                        ),
+                      },
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -888,9 +990,9 @@ class TaskRow extends StatelessWidget {
     final waiting = t.done ? const <Task>[] : ws.openPrerequisites(t);
     final row = Material(
       color: selected ? AppColors.selected : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadii.sm),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         onTap: onTap,
         child: Padding(
           padding: EdgeInsets.symmetric(
@@ -915,7 +1017,7 @@ class TaskRow extends StatelessWidget {
                       t.isExam ? 'Exam: ${t.title}' : t.title,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: AppType.sizeBody,
                         decoration: t.done ? TextDecoration.lineThrough : null,
                         color: t.done ? AppColors.textFaint : AppColors.text,
                         fontWeight: t.isExam
@@ -941,13 +1043,18 @@ class TaskRow extends StatelessWidget {
                             'waits for ${waiting.first.title}${waiting.length > 1 ? ' +${waiting.length - 1}' : ''}',
                         ].join('  ·  '),
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: AppType.sizeMeta,
                           color: AppColors.textFaint,
                         ),
                       ),
                   ],
                 ),
               ),
+              if (t.estimateMinutes != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: EstimateLabel(task: t),
+                ),
               if (t.dueDate != null)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
@@ -956,7 +1063,7 @@ class TaskRow extends StatelessWidget {
                         ? 'Today'
                         : formatShortDate(t.dueDate!),
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: AppType.sizeLabel,
                       color: overdue ? AppColors.danger : AppColors.textMuted,
                     ),
                   ),
@@ -1003,6 +1110,42 @@ class _TaskDetailState extends State<TaskDetail> {
   late final _notes = TextEditingController(text: _initial.notes);
   final _sub = TextEditingController();
 
+  /// The estimate as typed; read when the field is left or Enter pressed.
+  late final _estimate = TextEditingController(
+    text: _estimateText(_initial.estimateMinutes),
+  );
+  final _estimateFocus = FocusNode();
+  late int? _estimateShown = _initial.estimateMinutes;
+  bool _estimateInvalid = false;
+
+  static String _estimateText(int? minutes) =>
+      minutes == null ? '' : formatEstimate(minutes);
+
+  /// Saves what was typed: a duration, or nothing (clears the estimate).
+  void _commitEstimate() {
+    final text = _estimate.text.trim();
+    final minutes = text.isEmpty ? null : parseEstimate(text);
+    if (text.isNotEmpty && minutes == null) {
+      setState(() => _estimateInvalid = true);
+      return;
+    }
+    _estimateInvalid = false;
+    _estimateShown = minutes;
+    if (task?.estimateMinutes != minutes) {
+      _update((x) => x.copyWith(estimateMinutes: () => minutes));
+    }
+    _estimate.text = _estimateText(minutes);
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _estimateFocus.addListener(() {
+      if (!_estimateFocus.hasFocus) _commitEstimate();
+    });
+  }
+
   Workspace get ws => widget.state.workspace;
   Task? get task => ws.tasks[widget.taskId];
 
@@ -1011,6 +1154,8 @@ class _TaskDetailState extends State<TaskDetail> {
     _title.dispose();
     _notes.dispose();
     _sub.dispose();
+    _estimate.dispose();
+    _estimateFocus.dispose();
     super.dispose();
   }
 
@@ -1025,6 +1170,12 @@ class _TaskDetailState extends State<TaskDetail> {
     if (t == null) return const SizedBox.shrink();
     syncText(this, _title, t.title);
     syncText(this, _notes, t.notes);
+    // Changed elsewhere (another device, an undo) while not being typed in.
+    if (t.estimateMinutes != _estimateShown && !_estimateFocus.hasFocus) {
+      _estimateShown = t.estimateMinutes;
+      _estimateInvalid = false;
+      syncText(this, _estimate, _estimateText(t.estimateMinutes));
+    }
     final subtasks = ws.tasks.all.where((s) => s.parentId == t.id).toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     final projects =
@@ -1038,6 +1189,15 @@ class _TaskDetailState extends State<TaskDetail> {
         Row(
           children: [
             const Spacer(),
+            GhostIconButton(
+              key: const ValueKey('task-duplicate'),
+              icon: Icons.copy_outlined,
+              tooltip: 'Duplicate task',
+              onTap: () {
+                final copy = ws.duplicateTask(t.id);
+                if (copy != null) widget.state.openTask(copy.id);
+              },
+            ),
             GhostIconButton(
               icon: Icons.delete_outline,
               tooltip: 'Delete task',
@@ -1153,7 +1313,10 @@ class _TaskDetailState extends State<TaskDetail> {
             padding: EdgeInsets.only(left: 96, bottom: 4),
             child: Text(
               'Shown on Calendar on this date.',
-              style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+              style: TextStyle(
+                fontSize: AppType.sizeMeta,
+                color: AppColors.textFaint,
+              ),
             ),
           ),
         LabeledField(
@@ -1226,7 +1389,10 @@ class _TaskDetailState extends State<TaskDetail> {
                   Text(
                     'Moved from ${formatShortDate(t.seriesDate!)}; '
                     'the series continues from there.',
-                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                    style: TextStyle(
+                      fontSize: AppType.sizeMeta,
+                      color: AppColors.textFaint,
+                    ),
                   ),
               ],
             ),
@@ -1287,6 +1453,42 @@ class _TaskDetailState extends State<TaskDetail> {
             ),
           ),
         LabeledField(
+          label: 'Estimate',
+          child: TextField(
+            key: const ValueKey('task-estimate-field'),
+            controller: _estimate,
+            focusNode: _estimateFocus,
+            style: const TextStyle(fontSize: AppType.sizeBodySmall),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'e.g. 45 min or 1h30',
+              prefixIcon: const Icon(Icons.schedule, size: 16),
+              prefixIconConstraints: const BoxConstraints(minWidth: 32),
+              errorText: _estimateInvalid
+                  ? 'Try “45 min”, “1 hour” or “1h30”.'
+                  : null,
+            ),
+            onChanged: (_) {
+              if (_estimateInvalid) setState(() => _estimateInvalid = false);
+            },
+            onSubmitted: (_) => _commitEstimate(),
+          ),
+        ),
+        LabeledField(
+          label: 'Effort',
+          child: DropdownButton<TaskEffort?>(
+            key: const ValueKey('task-effort'),
+            isExpanded: true,
+            value: t.effort,
+            items: [
+              const DropdownMenuItem(value: null, child: Text('Not set')),
+              for (final e in TaskEffort.values)
+                DropdownMenuItem(value: e, child: Text(e.label)),
+            ],
+            onChanged: (v) => _update((x) => x.copyWith(effort: () => v)),
+          ),
+        ),
+        LabeledField(
           label: 'Priority',
           child: Wrap(
             spacing: 4,
@@ -1295,7 +1497,7 @@ class _TaskDetailState extends State<TaskDetail> {
                 ChoiceChip(
                   label: Text(
                     priorityNames[p],
-                    style: const TextStyle(fontSize: 12),
+                    style: const TextStyle(fontSize: AppType.sizeLabel),
                   ),
                   selected: t.priority == p,
                   avatar: Icon(Icons.flag, size: 14, color: priorityColors[p]),
@@ -1331,7 +1533,10 @@ class _TaskDetailState extends State<TaskDetail> {
             children: [
               for (final l in t.labels)
                 InputChip(
-                  label: Text(l, style: const TextStyle(fontSize: 12)),
+                  label: Text(
+                    l,
+                    style: const TextStyle(fontSize: AppType.sizeLabel),
+                  ),
                   onDeleted: () => _update(
                     (x) => x.copyWith(labels: [...x.labels]..remove(l)),
                   ),
@@ -1374,7 +1579,7 @@ class _TaskDetailState extends State<TaskDetail> {
                     ),
                     label: Text(
                       other.title,
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(fontSize: AppType.sizeLabel),
                     ),
                     onDeleted: () => _update(
                       (x) =>
@@ -1396,7 +1601,10 @@ class _TaskDetailState extends State<TaskDetail> {
                 ],
                 child: const Padding(
                   padding: EdgeInsets.all(8),
-                  child: Text('+ Task', style: TextStyle(fontSize: 13)),
+                  child: Text(
+                    '+ Task',
+                    style: TextStyle(fontSize: AppType.sizeBodySmall),
+                  ),
                 ),
               ),
             ],
@@ -1415,7 +1623,7 @@ class _TaskDetailState extends State<TaskDetail> {
                     avatar: const Icon(Icons.description_outlined, size: 14),
                     label: Text(
                       note.displayTitle,
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(fontSize: AppType.sizeLabel),
                     ),
                     onPressed: () => widget.state.openNote(id),
                     onDeleted: () => _update(
@@ -1439,7 +1647,10 @@ class _TaskDetailState extends State<TaskDetail> {
                 ],
                 child: const Padding(
                   padding: EdgeInsets.all(8),
-                  child: Text('+ Note', style: TextStyle(fontSize: 13)),
+                  child: Text(
+                    '+ Note',
+                    style: TextStyle(fontSize: AppType.sizeBodySmall),
+                  ),
                 ),
               ),
             ],
@@ -1456,7 +1667,7 @@ class _TaskDetailState extends State<TaskDetail> {
                     Expanded(
                       child: Text(
                         '${e.key}: ${e.value}',
-                        style: const TextStyle(fontSize: 13),
+                        style: const TextStyle(fontSize: AppType.sizeBodySmall),
                       ),
                     ),
                     GhostIconButton(
@@ -1502,10 +1713,16 @@ class _TaskDetailState extends State<TaskDetail> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           value: t.isExam,
-          title: const Text('This is an exam', style: TextStyle(fontSize: 13)),
+          title: const Text(
+            'This is an exam',
+            style: TextStyle(fontSize: AppType.sizeBodySmall),
+          ),
           subtitle: Text(
             'Add revision tasks as subtasks below.',
-            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(
+              fontSize: AppType.sizeMeta,
+              color: AppColors.textFaint,
+            ),
           ),
           onChanged: (v) => _update((x) => x.copyWith(isExam: v)),
         ),
@@ -1513,7 +1730,7 @@ class _TaskDetailState extends State<TaskDetail> {
         Text(
           t.isExam ? 'REVISION TASKS' : 'SUBTASKS',
           style: TextStyle(
-            fontSize: 11,
+            fontSize: AppType.sizeMeta,
             letterSpacing: 0.6,
             color: AppColors.textFaint,
           ),
@@ -1551,7 +1768,7 @@ class _TaskDetailState extends State<TaskDetail> {
           ),
         TextField(
           controller: _sub,
-          style: const TextStyle(fontSize: 13),
+          style: const TextStyle(fontSize: AppType.sizeBodySmall),
           decoration: const InputDecoration(
             hintText: '+ Add subtask',
             filled: false,
@@ -1569,7 +1786,7 @@ class _TaskDetailState extends State<TaskDetail> {
           controller: _notes,
           minLines: 3,
           maxLines: 10,
-          style: const TextStyle(fontSize: 13),
+          style: const TextStyle(fontSize: AppType.sizeBodySmall),
           decoration: const InputDecoration(
             hintText: 'Notes, preparation materials…',
           ),
@@ -1655,7 +1872,7 @@ class FocusTimerCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: AppColors.card,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadii.md),
             border: Border.all(color: AppColors.border),
           ),
           child: Row(
@@ -1667,7 +1884,7 @@ class FocusTimerCard extends StatelessWidget {
                   Text(
                     timer.onBreak ? 'BREAK' : 'FOCUS',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: AppType.sizeMicro,
                       letterSpacing: 0.6,
                       color: timer.onBreak
                           ? AppColors.success
@@ -1689,7 +1906,7 @@ class FocusTimerCard extends StatelessWidget {
                         task.title,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: AppType.sizeMeta,
                           color: AppColors.textMuted,
                         ),
                       ),

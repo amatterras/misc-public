@@ -124,7 +124,9 @@ class SecurityFacts {
       backupInterval: s.autoBackupEvery,
       recoveryPoints: recoveryPoints,
       backupIntact: backupIntact,
-      backupFailure: (job?.failures ?? 0) >= 3 ? job?.lastError : null,
+      backupFailure: (job?.failures ?? 0) >= 3
+          ? job?.lastError
+          : s.autoBackupError,
     );
   }
 }
@@ -518,7 +520,7 @@ class _Headline extends StatelessWidget {
         Text(
           status.label,
           style: TextStyle(
-            fontSize: 20,
+            fontSize: AppType.sizeTitle,
             fontWeight: FontWeight.w700,
             color: AppColors.text,
           ),
@@ -543,7 +545,7 @@ class _AreaCard extends StatelessWidget {
         key: ValueKey('security-area-${area.id}'),
         decoration: BoxDecoration(
           color: AppColors.card,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppRadii.card),
           border: Border.all(color: AppColors.border),
         ),
         child: Padding(
@@ -557,7 +559,7 @@ class _AreaCard extends StatelessWidget {
                     child: Text(
                       area.title,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: AppType.sizeBody,
                         fontWeight: FontWeight.w600,
                         color: AppColors.text,
                       ),
@@ -576,7 +578,7 @@ class _AreaCard extends StatelessWidget {
                     area.status.label,
                     key: ValueKey('security-status-${area.id}'),
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: AppType.sizeBodySmall,
                       fontWeight: FontWeight.w600,
                       color: color,
                     ),
@@ -587,7 +589,7 @@ class _AreaCard extends StatelessWidget {
               Text(
                 area.detail,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: AppType.sizeBodySmall,
                   height: 1.45,
                   color: AppColors.textMuted,
                 ),

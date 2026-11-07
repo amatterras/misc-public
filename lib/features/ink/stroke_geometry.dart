@@ -1,5 +1,13 @@
 // Shape of a pen stroke, shared by every writing surface (Canvas, note
-// pages, PDF pages) so ink looks and behaves the same everywhere.
+// pages, PDF pages, Calendar days, widgets) so ink looks and behaves the
+// same everywhere, on every platform.
+//
+// Two representations are kept apart (INK_ENGINE_REPORT.md):
+//  * the saved stroke: the raw samples as the pen delivered them
+//    (position + pressure), never smoothed or resampled;
+//  * the drawn shape, rebuilt from those samples here, every time, by
+//    the same code for the live stroke and the finished one. Nothing is
+//    filtered over time, so the ink never trails behind the pen.
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -8,117 +16,473 @@ import '../../data/models/canvas_models.dart';
 /// Pen pressure as 0..1. Flutter reports Apple Pencil force on iOS as a raw
 /// value up to `pressureMax` (about 4.2), mice report nothing.
 double normalizedPressure(double pressure, double pressureMax) {
+  if (!pressure.isFinite) return 0.5;
   if (pressureMax > 1) return (pressure / pressureMax).clamp(0.0, 1.0);
   return pressure.clamp(0.0, 1.0);
 }
 
-/// Width factor for a pressure (0..1): 0.5 keeps the base width, light
-/// strokes thin down to 45 %, firm ones up to 155 %.
-double pressureFactor(double pressure) => 0.45 + 1.1 * pressure;
+/// Width factor for a pressure (0..1).
+///
+/// Ordinary handwriting presses an Apple Pencil at about 0.15–0.4 of its
+/// range, so the curve is steep at the light end and flat at the firm
+/// end: normal writing comes out at about the chosen pen size (factor
+/// ≈ 0.85–1.05), the lightest touch at 62 % and the firmest at 138 %.
+/// (The earlier straight line 0.45 + 1.1·p drew ordinary writing at only
+/// 60–90 % of the chosen size and let the width swing 3.4×, which read
+/// as uneven thickness.)
+double pressureFactor(double pressure) {
+  // A table instead of math.pow per sample (the live stroke recomputes
+  // every sample's width each frame). Pressure steps of 1/1024 change the
+  // width by under 0.1 %.
+  final i = (pressure.clamp(0.0, 1.0) * 1024).round();
+  return (_pressureTable ??= _buildPressureTable())[i];
+}
 
-/// Smooth centre line through [points] (quadratic curves through segment
-/// midpoints; ends exactly on the first and last point, so the ink stays
-/// under the pen tip).
+List<double>? _pressureTable;
+List<double> _buildPressureTable() => [
+  for (var i = 0; i <= 1024; i++)
+    0.62 + 0.76 * math.pow(i / 1024, 0.6).toDouble(),
+];
+
+/// The drawn shape of one stroke: a filled or stroked [path], plus round
+/// [discs] (centre, radius) at sharp turns of a pressure stroke, painted
+/// with the same paint. The discs give a hairpin turn (the top of an "n",
+/// the point of a "v") the round tip a real pen leaves; an offset outline
+/// alone pinches there.
+class StrokeShape {
+  StrokeShape(this.path, {this.discs = const [], this.filled = true});
+
+  final Path path;
+  final List<(Offset, double)> discs;
+
+  /// Filled outline (pressure ink) or a centre line stroked with round caps.
+  final bool filled;
+
+  void paint(Canvas canvas, Paint paint) {
+    canvas.drawPath(path, paint);
+    for (final (centre, radius) in discs) {
+      canvas.drawCircle(centre, radius, paint);
+    }
+  }
+}
+
+// ----------------------------------------------------------- the curve --
+
+/// Points closer than this (world units) are one position: a still pen.
+const double _same = 1e-3;
+
+/// Appends the centripetal Catmull-Rom curve through [p] to [out] as dense
+/// samples, close enough that straight lines between them stay within
+/// [tolerance] (world units) of the curve, with [w] interpolated alongside
+/// into [outW] when given. Straight stretches get no extra samples.
+///
+/// Centripetal Catmull-Rom passes through every sample (small loops and
+/// the exact shape of a letter survive, unlike curves through midpoints,
+/// which cut corners and shrink loops when samples are sparse) and, unlike
+/// the uniform kind, never overshoots into cusps or self-loops. Each piece
+/// depends only on its four neighbouring samples, so finished pieces of a
+/// live stroke never change as the pen moves on: only the last piece is
+/// provisional, and the finished stroke is exactly the last live frame.
+void catmullRomDense(
+  List<Offset> p,
+  List<double>? w,
+  double tolerance,
+  List<Offset> out, [
+  List<double>? outW,
+  int from = 0,
+  int? to,
+]) {
+  final n = p.length;
+  if (n == 0) return;
+  final last = math.min(to ?? n - 1, n - 1);
+  out.add(p[from]);
+  outW?.add(w![from]);
+  if (n == 1) return;
+  // Plain doubles throughout: this runs for every sample of the live stroke
+  // on every frame, and Offset arithmetic allocated ~20 objects a sample.
+  for (var i = from; i < last; i++) {
+    final p1 = p[i], p2 = p[i + 1];
+    final x1 = p1.dx, y1 = p1.dy, x2 = p2.dx, y2 = p2.dy;
+    // Outer neighbours; mirrored at the stroke's ends, so the curve leaves
+    // the first and reaches the last sample along the line to its
+    // neighbour.
+    double x0, y0, x3, y3;
+    if (i > 0) {
+      x0 = p[i - 1].dx;
+      y0 = p[i - 1].dy;
+    } else {
+      x0 = 2 * x1 - x2;
+      y0 = 2 * y1 - y2;
+    }
+    if (i + 2 < n) {
+      x3 = p[i + 2].dx;
+      y3 = p[i + 2].dy;
+    } else {
+      x3 = 2 * x2 - x1;
+      y3 = 2 * y2 - y1;
+    }
+    // Centripetal parameterisation (Barry–Goldman, alpha = 1/2).
+    final d2 = math.sqrt(math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)));
+    double c1x = x1, c1y = y1, c2x = x2, c2y = y2;
+    if (d2 >= 1e-9) {
+      var d1 = math.sqrt(math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)));
+      var d3 = math.sqrt(math.sqrt((x3 - x2) * (x3 - x2) + (y3 - y2) * (y3 - y2)));
+      if (d1 < 1e-9) d1 = d2;
+      if (d3 < 1e-9) d3 = d2;
+      final a = d2 / d1, b = d2 / (d1 + d2);
+      final m1x = (x2 - x1) + ((x1 - x0) * a - (x2 - x0) * b);
+      final m1y = (y2 - y1) + ((y1 - y0) * a - (y2 - y0) * b);
+      final c = d2 / d3, e = d2 / (d2 + d3);
+      final m2x = (x2 - x1) + ((x3 - x2) * c - (x3 - x1) * e);
+      final m2y = (y2 - y1) + ((y3 - y2) * c - (y3 - y1) * e);
+      c1x = x1 + m1x / 3;
+      c1y = y1 + m1y / 3;
+      c2x = x2 - m2x / 3;
+      c2y = y2 - m2y / 3;
+    }
+    // Wang's bound: segments needed for the cubic to stay within tolerance.
+    final ax = x1 - 2 * c1x + c2x, ay = y1 - 2 * c1y + c2y;
+    final bx = c1x - 2 * c2x + x2, by = c1y - 2 * c2y + y2;
+    final dd = math.sqrt(math.max(ax * ax + ay * ay, bx * bx + by * by));
+    final steps = dd <= 0
+        ? 1
+        : math.max(1, math.min(32, math.sqrt(0.75 * dd / tolerance).ceil()));
+    for (var s = 1; s < steps; s++) {
+      final t = s / steps;
+      final u = 1 - t;
+      final k0 = u * u * u, k1 = 3 * u * u * t, k2 = 3 * u * t * t;
+      final k3 = t * t * t;
+      out.add(
+        Offset(
+          k0 * x1 + k1 * c1x + k2 * c2x + k3 * x2,
+          k0 * y1 + k1 * c1y + k2 * c2y + k3 * y2,
+        ),
+      );
+      if (outW != null) outW.add(w![i] + (w[i + 1] - w[i]) * t);
+    }
+    out.add(p2);
+    outW?.add(w![i + 1]);
+  }
+}
+
+/// Copies [points] (plus [predicted]) without repeated positions.
+List<Offset> _distinct(List<StrokePoint> points, Offset? predicted) {
+  final out = <Offset>[];
+  for (final p in points) {
+    final o = p.offset;
+    if (out.isNotEmpty && (o - out.last).distanceSquared < _same * _same) {
+      continue;
+    }
+    out.add(o);
+  }
+  if (predicted != null &&
+      out.isNotEmpty &&
+      (predicted - out.last).distanceSquared >= _same * _same) {
+    out.add(predicted);
+  }
+  return out;
+}
+
+/// Smooth centre line through [points] (see [catmullRomDense]): exactly
+/// through every sample, ending on the last one, so the ink stays under the
+/// pen tip.
 Path centreLine(
   List<StrokePoint> points, [
   Offset? predicted,
   double width = 0,
 ]) {
-  final pts = [for (final p in points) p.offset];
+  final pts = _distinct(points, predicted);
+  if (pts.isEmpty) return Path();
   // Set-down/lift-off wobble would show as a hook under the round cap.
   if (width > 0) trimLiftJitter(pts, width, width);
-  final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-  for (var i = 1; i < pts.length - 1; i++) {
-    final p = pts[i];
-    final mid = Offset.lerp(p, pts[i + 1], 0.5)!;
-    path.quadraticBezierTo(p.dx, p.dy, mid.dx, mid.dy);
+  if (pts.length == 1) {
+    // A dot: a zero-length line still gets its round cap.
+    return Path()
+      ..moveTo(pts.first.dx, pts.first.dy)
+      ..lineTo(pts.first.dx, pts.first.dy);
   }
-  if (pts.length > 1) path.lineTo(pts.last.dx, pts.last.dy);
-  if (predicted != null) path.lineTo(predicted.dx, predicted.dy);
-  return path;
+  final dense = <Offset>[];
+  catmullRomDense(pts, null, 0.04, dense);
+  // One call for the whole line (see pressureShape).
+  return Path()..addPolygon(dense, false);
 }
 
-/// Filled outline of a pressure-sensitive stroke: two edges offset from the
-/// smoothed centre line by half the local width, joined by round ends.
+/// Filled outline of a pressure-sensitive stroke (see [pressureShape]).
 Path pressureOutline(
   List<StrokePoint> points,
   double baseWidth, [
   Offset? predicted,
+]) => pressureShape(points, baseWidth, predicted).path;
+
+/// Turns sharper than this (cosine of the angle between the incoming and
+/// outgoing direction) get a round disc: about 75°.
+const double _sharpTurnCos = 0.26;
+
+/// Pressure ink: two edges offset from the curved centre line by half the
+/// local width, joined by round ends, plus round discs at sharp turns.
+StrokeShape pressureShape(
+  List<StrokePoint> points,
+  double baseWidth, [
+  Offset? predicted,
 ]) {
-  final pts = <Offset>[for (final p in points) p.offset];
-  final widths = <double>[
-    for (final p in points) baseWidth * pressureFactor(p.pressure),
-  ];
-  if (predicted != null && pts.isNotEmpty) {
-    pts.add(predicted);
-    widths.add(widths.last);
-  }
-  // Drop repeated positions (a still pen): they have no direction.
-  final p = <Offset>[], w = <double>[];
-  for (var i = 0; i < pts.length; i++) {
-    if (p.isNotEmpty && (pts[i] - p.last).distanceSquared < 1e-6) {
-      w[w.length - 1] = math.max(w.last, widths[i]);
-      continue;
+  final prep = _PressurePrep(points, baseWidth, predicted);
+  if (prep.p.isEmpty) return StrokeShape(Path());
+  if (prep.p.length == 1) return _dot(prep.p.first, prep.w.first);
+  return _pressureRange(prep, 0, prep.p.length - 1);
+}
+
+/// The samples of a pressure stroke as drawn: repeated positions merged,
+/// widths from pressure (softened), the prediction appended, set-down and
+/// lift-off wobble trimmed. Cheap (no curve work).
+class _PressurePrep {
+  _PressurePrep(List<StrokePoint> points, double baseWidth, Offset? predicted) {
+    for (final s in points) {
+      final o = s.offset;
+      final width = baseWidth * pressureFactor(s.pressure);
+      // Repeated positions (a still pen) have no direction: keep one, at
+      // the widest pressure seen there.
+      if (p.isNotEmpty && (o - p.last).distanceSquared < _same * _same) {
+        w[w.length - 1] = math.max(w.last, width);
+        continue;
+      }
+      p.add(o);
+      w.add(width);
     }
-    p.add(pts[i]);
-    w.add(widths[i]);
-  }
-  if (p.length == 1) {
-    return Path()
-      ..addOval(Rect.fromCircle(center: p.first, radius: w.first / 2));
-  }
-  // Soften width jumps between samples (pressure is noisy).
-  for (var i = 1; i < w.length - 1; i++) {
-    w[i] = (w[i - 1] + 2 * w[i] + w[i + 1]) / 4;
-  }
-  trimLiftJitter(p, w.first, w.last, widths: w);
-  if (p.length == 1) {
-    return Path()
-      ..addOval(Rect.fromCircle(center: p.first, radius: w.first / 2));
-  }
-  final left = <Offset>[], right = <Offset>[];
-  for (var i = 0; i < p.length; i++) {
-    // At the two ends the direction is taken over about half a line width
-    // (endTangent), so one shaky last sample cannot twist the cap.
-    var d = i == 0
-        ? endTangent(p, w.first, atStart: true)
-        : i == p.length - 1
-        ? endTangent(p, w.last, atStart: false)
-        : p[i + 1] - p[i - 1];
-    if (d.distance == 0) d = const Offset(1, 0);
-    final n = Offset(-d.dy, d.dx) / d.distance * (w[i] / 2);
-    left.add(p[i] + n);
-    right.add(p[i] - n);
-  }
-  final path = Path()..moveTo(left.first.dx, left.first.dy);
-  void edge(List<Offset> e) {
-    for (var i = 1; i < e.length - 1; i++) {
-      final mid = Offset.lerp(e[i], e[i + 1], 0.5)!;
-      path.quadraticBezierTo(e[i].dx, e[i].dy, mid.dx, mid.dy);
+    real = p.length;
+    if (p.isEmpty) return;
+    if (predicted != null &&
+        (predicted - p.last).distanceSquared >= _same * _same) {
+      p.add(predicted);
+      w.add(w.last);
     }
-    path.lineTo(e.last.dx, e.last.dy);
+    if (p.length == 1) return;
+    // Soften width jumps between samples (pressure is noisy). One pass over
+    // the neighbours only: a sample's width is final once the next sample
+    // has arrived, so the live stroke does not ripple behind the pen.
+    for (var i = 1; i < w.length - 1; i++) {
+      w[i] = (w[i - 1] + 2 * w[i] + w[i + 1]) / 4;
+    }
+    // Lift-off wobble first, then set-down wobble (as always).
+    trimLiftJitter(p, w.first, w.last, widths: w, start: false);
+    real = math.min(real, p.length);
+    final before = p.length;
+    trimLiftJitter(p, w.first, w.last, widths: w, end: false);
+    trimmedStart = before - p.length;
+    real -= trimmedStart;
   }
 
-  // Round ends bulge OUTWARD, ahead of the tip and behind the start. With
-  // "left" = the normal turned from the direction as above, that is the
-  // counter-clockwise half circle on screen (y points down). The default
-  // (clockwise) arc bulged back into the stroke: both ends looked cut off
-  // with a notch.
-  edge(left);
-  path.arcToPoint(
-    right.last,
-    radius: Radius.circular(w.last / 2),
-    clockwise: false,
-  );
-  edge(right.reversed.toList());
-  path.arcToPoint(
-    left.first,
-    radius: Radius.circular(w.first / 2),
-    clockwise: false,
-  );
-  path.close();
-  return path;
+  final p = <Offset>[];
+  final w = <double>[];
+
+  /// Samples before the prediction (after trimming).
+  int real = 0;
+
+  /// Set-down samples trimmed from the start.
+  int trimmedStart = 0;
 }
+
+/// The outline of the samples from [from] to [to] of [prep] (indices into
+/// prep.p), with round ends, curved using the samples around them too, so
+/// a range drawn alone matches the same stretch of the whole stroke.
+StrokeShape _pressureRange(
+  _PressurePrep prep,
+  int from,
+  int to, {
+  int? discsFrom,
+}) {
+  final p = prep.p, w = prep.w;
+  final dense = <Offset>[], dw = <double>[];
+  // 0.04 world units: facets stay under a fifth of a pixel at 5× zoom.
+  catmullRomDense(p, w, 0.04, dense, dw, from, to);
+
+  final m = dense.length;
+  final left = List<Offset>.filled(m, Offset.zero);
+  final right = List<Offset>.filled(m, Offset.zero);
+  var nx = 0.0, ny = 1.0;
+  var startNormal = const Offset(0, 1);
+  for (var i = 0; i < m; i++) {
+    // Direction: at the ends over about half a line width (endTangent), so
+    // one shaky last sample cannot twist the cap; inside, the bisector of
+    // the incoming and outgoing direction.
+    double dx, dy;
+    if (i == 0 || i == m - 1) {
+      final d = endTangent(
+        dense,
+        i == 0 ? dw.first : dw.last,
+        atStart: i == 0,
+      );
+      dx = d.dx;
+      dy = d.dy;
+    } else {
+      final ax = dense[i].dx - dense[i - 1].dx;
+      final ay = dense[i].dy - dense[i - 1].dy;
+      final bx = dense[i + 1].dx - dense[i].dx;
+      final by = dense[i + 1].dy - dense[i].dy;
+      final la = math.sqrt(ax * ax + ay * ay);
+      final lb = math.sqrt(bx * bx + by * by);
+      dx = (la > 0 ? ax / la : 0) + (lb > 0 ? bx / lb : 0);
+      dy = (la > 0 ? ay / la : 0) + (lb > 0 ? by / lb : 0);
+      // A full reversal (a cusp): keep the incoming direction.
+      if (dx * dx + dy * dy < 1e-6 && la > 0) {
+        dx = ax / la;
+        dy = ay / la;
+      }
+    }
+    final len = math.sqrt(dx * dx + dy * dy);
+    if (len > 0) {
+      nx = -dy / len;
+      ny = dx / len;
+    }
+    if (i == 0) startNormal = Offset(nx, ny);
+    final half = dw[i] / 2;
+    final c = dense[i];
+    left[i] = Offset(c.dx + nx * half, c.dy + ny * half);
+    right[i] = Offset(c.dx - nx * half, c.dy - ny * half);
+  }
+  final lastNormal = Offset(nx, ny);
+
+  // One closed polygon: the left edge, the round end, the right edge back,
+  // the round start. Built as one list and handed over in one call (one
+  // path command per point was the main cost of a long live stroke).
+  // Round ends bulge OUTWARD, ahead of the tip and behind the start: with
+  // "left" = the normal turned from the direction as above, that is the
+  // counter-clockwise half circle on screen (y points down).
+  final outline = <Offset>[...left];
+  _cap(outline, dense.last, lastNormal, dw.last / 2, ahead: true);
+  outline.addAll(right.reversed);
+  _cap(outline, dense.first, startNormal, dw.first / 2, ahead: false);
+  final path = Path()..addPolygon(outline, true);
+
+  final discs = <(Offset, double)>[];
+  final firstDisc = math.max(1, discsFrom ?? from);
+  for (var i = firstDisc; i < math.min(to, p.length - 1); i++) {
+    final a = p[i] - p[i - 1], b = p[i + 1] - p[i];
+    final la = a.distance, lb = b.distance;
+    if (la == 0 || lb == 0) continue;
+    final cos = (a.dx * b.dx + a.dy * b.dy) / (la * lb);
+    if (cos < _sharpTurnCos) discs.add((p[i], w[i] / 2));
+  }
+  return StrokeShape(path, discs: discs);
+}
+
+/// The live (still being drawn) pressure stroke, drawn as finished pieces
+/// that are kept plus a short tail rebuilt each frame, so the cost of a
+/// frame does not grow with the length of the stroke.
+///
+/// Each piece of the curve depends only on its neighbouring samples, so a
+/// stretch more than a few samples behind the pen never changes again.
+/// Pieces are computed with their neighbours (see [_pressureRange]) and
+/// overlap by one sample, and their round ends lie inside the line (a
+/// round end is a disc of the line's own width centred on its centre
+/// line), so together they draw what [pressureShape] draws for the whole
+/// stroke, which is what the finished stroke uses.
+class LiveInkGeometry {
+  String? _id;
+  double _width = 0;
+  int _trimmedStart = 0;
+  int _frozenTo = 0;
+  int _pieces = 0;
+
+  /// The kept pieces as one path (and their discs): one path, so where
+  /// pieces overlap the edge is anti-aliased once, exactly like the
+  /// finished stroke's single outline (two overlapping anti-aliased edges
+  /// would draw a slightly darker seam).
+  Path _frozenPath = Path();
+  final List<(Offset, double)> _frozenDiscs = [];
+
+  /// Samples behind the pen after which a piece no longer changes (the
+  /// curve looks two samples ahead, width softening one, lift-off
+  /// trimming up to two), with a margin.
+  static const int settle = 6;
+
+  /// Samples per frozen piece.
+  static const int chunk = 48;
+
+  /// Frozen pieces kept now (for tests).
+  int get frozenPieces => _pieces;
+
+  void reset() {
+    _id = null;
+    _frozenPath = Path();
+    _frozenDiscs.clear();
+    _frozenTo = 0;
+    _pieces = 0;
+  }
+
+  /// What to draw for the live [stroke] now (in order, same paint for all).
+  List<StrokeShape> shapes(StrokeItem stroke, Offset? predicted) {
+    if (!isPressureInk(stroke)) {
+      reset();
+      return [strokeShape(stroke, predicted: predicted)];
+    }
+    final prep = _PressurePrep(stroke.points, stroke.strokeWidth, predicted);
+    if (prep.p.length < 2) {
+      reset();
+      return [pressureShape(stroke.points, stroke.strokeWidth, predicted)];
+    }
+    if (stroke.id != _id ||
+        stroke.strokeWidth != _width ||
+        prep.trimmedStart != _trimmedStart ||
+        _frozenTo > prep.real - settle) {
+      reset();
+      _id = stroke.id;
+      _width = stroke.strokeWidth;
+      _trimmedStart = prep.trimmedStart;
+    }
+    final settled = prep.real - settle;
+    if (settled - _frozenTo >= chunk) {
+      final piece = _pressureRange(
+        prep,
+        math.max(0, _frozenTo - 1),
+        settled,
+        discsFrom: _frozenTo,
+      );
+      _frozenPath.addPath(piece.path, Offset.zero);
+      _frozenDiscs.addAll(piece.discs);
+      _frozenTo = settled;
+      _pieces++;
+    }
+    final tail = _pressureRange(
+      prep,
+      math.max(0, _frozenTo - 1),
+      prep.p.length - 1,
+      discsFrom: _frozenTo,
+    );
+    if (_pieces == 0) return [tail];
+    return [
+      StrokeShape(
+        Path.from(_frozenPath)..addPath(tail.path, Offset.zero),
+        discs: [..._frozenDiscs, ...tail.discs],
+      ),
+    ];
+  }
+}
+
+/// Adds the half circle of a round end to [out] (without its two corner
+/// points, which the edges already have): from the left corner over the
+/// tip to the right one at the end ([ahead]); from right over the back to
+/// left at the start.
+void _cap(
+  List<Offset> out,
+  Offset centre,
+  Offset normal,
+  double radius, {
+  required bool ahead,
+}) {
+  final forward = Offset(normal.dy, -normal.dx) * (ahead ? 1 : -1);
+  final side = ahead ? normal : -normal;
+  final steps = (radius * 6).ceil().clamp(8, 48);
+  for (var k = 1; k < steps; k++) {
+    final a = math.pi * k / steps;
+    out.add(
+      centre + side * (radius * math.cos(a)) + forward * (radius * math.sin(a)),
+    );
+  }
+}
+
+StrokeShape _dot(Offset centre, double width) => StrokeShape(
+  Path()..addOval(Rect.fromCircle(center: centre, radius: width / 2)),
+);
 
 /// The stroke's direction at one end, measured from the end point to the
 /// first point at least [width] / 2 away (or the far end of a short
@@ -148,19 +512,23 @@ void trimLiftJitter(
   double startWidth,
   double endWidth, {
   List<double>? widths,
+  bool start = true,
+  bool end = true,
 }) {
   bool turnsBack(Offset a, Offset b, Offset c) {
     final d1 = b - a, d2 = c - b;
     return d1.dx * d2.dx + d1.dy * d2.dy < 0;
   }
 
-  while (p.length > 2 &&
+  while (end &&
+      p.length > 2 &&
       (p.last - p[p.length - 2]).distance < endWidth / 3 &&
       turnsBack(p[p.length - 3], p[p.length - 2], p.last)) {
     p.removeLast();
     widths?.removeLast();
   }
-  while (p.length > 2 &&
+  while (start &&
+      p.length > 2 &&
       (p[1] - p.first).distance < startWidth / 3 &&
       turnsBack(p[2], p[1], p.first)) {
     p.removeAt(0);
@@ -168,48 +536,56 @@ void trimLiftJitter(
   }
 }
 
+/// Whether [stroke] is drawn as a filled pressure outline (Pencil pen
+/// ink); highlighters and see-through colours stay one even width.
+bool isPressureInk(StrokeItem stroke) =>
+    stroke.pressureWidth && stroke.color.a >= 0.99;
+
 /// Draws one stroke the same way on every surface. [predicted]: where the
-/// pen is expected to be next (drawn only, never stored).
+/// pen is expected to be next (drawn only, never stored). [cachedShape]:
+/// [strokeShape] of the same stroke, kept by the caller.
 void paintStroke(
   Canvas canvas,
   StrokeItem stroke, {
-  Path? cachedPath,
+  StrokeShape? cachedShape,
   Offset? predicted,
 }) {
-  final points = stroke.points;
-  if (points.isEmpty) return;
-  final fill = Paint()
+  if (stroke.points.isEmpty) return;
+  final shape = cachedShape ?? strokeShape(stroke, predicted: predicted);
+  shape.paint(canvas, strokePaint(stroke, shape));
+}
+
+/// The paint [paintStroke] uses for [stroke] drawn as [shape].
+Paint strokePaint(StrokeItem stroke, StrokeShape shape) {
+  final paint = Paint()
     ..color = stroke.color
     ..isAntiAlias = true;
-  // Pressure-sensitive ink (Apple Pencil pen); highlighters stay even.
-  if (stroke.pressureWidth && stroke.color.a >= 0.99) {
-    canvas.drawPath(
-      cachedPath ?? pressureOutline(points, stroke.strokeWidth, predicted),
-      fill,
-    );
-    return;
-  }
-  if (points.length == 1 && predicted == null) {
-    canvas.drawCircle(points.first.offset, stroke.strokeWidth / 2, fill);
-    return;
-  }
-  canvas.drawPath(
-    cachedPath ?? centreLine(points, predicted, stroke.strokeWidth),
-    Paint()
-      ..color = stroke.color
+  if (!shape.filled) {
+    paint
       ..strokeWidth = stroke.strokeWidth
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..isAntiAlias = true,
+      ..strokeJoin = StrokeJoin.round;
+  }
+  return paint;
+}
+
+/// What [paintStroke] draws for [stroke] (cacheable while the stroke, an
+/// immutable object, stays the same).
+StrokeShape strokeShape(StrokeItem stroke, {Offset? predicted}) {
+  if (isPressureInk(stroke)) {
+    return pressureShape(stroke.points, stroke.strokeWidth, predicted);
+  }
+  final distinct = _distinct(stroke.points, predicted);
+  if (distinct.length == 1) return _dot(distinct.first, stroke.strokeWidth);
+  return StrokeShape(
+    centreLine(stroke.points, predicted, stroke.strokeWidth),
+    filled: false,
   );
 }
 
-/// Cacheable path for [stroke] (what [paintStroke] draws).
-Path strokePath(StrokeItem stroke) =>
-    stroke.pressureWidth && stroke.color.a >= 0.99
-    ? pressureOutline(stroke.points, stroke.strokeWidth)
-    : centreLine(stroke.points, null, stroke.strokeWidth);
+/// Cacheable path for [stroke] (the main part of what [paintStroke] draws).
+Path strokePath(StrokeItem stroke) => strokeShape(stroke).path;
 
 // ------------------------------------------------- straight-line hold --
 

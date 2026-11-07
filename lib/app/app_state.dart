@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'design_tokens.dart';
 import '../data/models/canvas_models.dart';
 
 import '../data/models/library_models.dart';
@@ -382,13 +383,8 @@ class AppState extends ChangeNotifier {
     if (!await runMigrations()) return;
     workspace.backups.copiesDir ??= backupCopiesFolder();
     step('Daily backup');
-    try {
-      if (autoBackupEnabled) {
-        await workspace.backups.automaticBackup(every: autoBackupEvery);
-      }
-    } catch (e, s) {
-      AppLog.error('Automatic backup failed', e, s);
-    }
+    // At start nothing else touches the data yet: no lock needed (as before).
+    await runAutomaticBackup(locked: false);
 
     step('Opening canvases');
     await _refreshList();
@@ -573,10 +569,76 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  /// The daily (and weekly full) automatic backup. Runs at start and is
+  /// checked again every hour while the app is open (it only makes a backup
+  /// when one is due). A failure never touches earlier backups; it is retried
+  /// after 1, 2, 4 … up to 60 minutes, and shown in Settings meanwhile.
+  Future<bool> runAutomaticBackup({bool locked = true}) async {
+    _autoBackupTimer?.cancel();
+    _lastAutoBackupCheck = DateTime.now();
+    var ok = true;
+    if (autoBackupEnabled) {
+      try {
+        Future<void> backup() =>
+            workspace.backups.automaticBackup(every: autoBackupEvery);
+        // Later checks share the lock with sync and the live backup.
+        await (locked ? _dataLock.run(backup) : backup());
+        autoBackupError = null;
+        _autoBackupFailures = 0;
+      } catch (e, s) {
+        ok = false;
+        _autoBackupFailures++;
+        autoBackupError = 'The automatic backup could not be made; it is '
+            'retried by itself. Your data and earlier backups are untouched.';
+        AppLog.error('Automatic backup failed', e, s);
+      }
+    }
+    // Only a failure leaves a timer (the retry); while backups work, the
+    // hourly check rides on the Windows 10-second job and on the app coming
+    // back to the front.
+    if (!ok && !_disposed) {
+      final minutes = (1 << (_autoBackupFailures - 1).clamp(0, 6)).clamp(
+        1,
+        60,
+      );
+      _autoBackupTimer = Timer(
+        autoBackupRetryUnit * minutes,
+        () => unawaited(runAutomaticBackup()),
+      );
+    }
+    return ok;
+  }
+
+  DateTime? _lastAutoBackupCheck;
+
+  /// [runAutomaticBackup] if the last check is an hour old (and no retry is
+  /// already waiting).
+  Future<void> _maybeAutomaticBackup() async {
+    if (_autoBackupTimer?.isActive ?? false) return;
+    final last = _lastAutoBackupCheck;
+    if (last != null &&
+        DateTime.now().difference(last) < autoBackupRetryUnit * 60) {
+      return;
+    }
+    await runAutomaticBackup();
+  }
+
+  Timer? _autoBackupTimer;
+  int _autoBackupFailures = 0;
+
+  /// Why the last automatic backup failed (null when it worked).
+  String? autoBackupError;
+
+  /// One minute (shorter in tests): the unit of the automatic backup's
+  /// retry pauses (the routine check is every 60 units).
+  @visibleForTesting
+  static Duration autoBackupRetryUnit = const Duration(minutes: 1);
+
   /// A frequent backup of the records, only if something changed (the
   /// first one after start always runs). Checked before it counts.
   Future<bool> _backupTick() async {
     if (!autoBackupEnabled) return false;
+    await _maybeAutomaticBackup();
     final pending = _changesSinceBackup;
     final job = maintenance?.job('backup');
     if (pending == 0 && job?.lastSuccess != null) return false;
@@ -608,7 +670,9 @@ class AppState extends ChangeNotifier {
   // The app never depends on the hub: if it is off, edits wait locally and
   // go out on a later attempt.
 
-  static const syncInterval = Duration(minutes: 1);
+  /// The safety net behind the change triggers: while the app is active a
+  /// sync cycle runs at most this long after the previous one (7.15 B).
+  static const syncInterval = Duration(seconds: 10);
   SyncEngine? _sync;
   SyncScheduler? _scheduler;
   bool syncing = false;
@@ -624,6 +688,10 @@ class AppState extends ChangeNotifier {
 
   /// The sync connection, for the privacy summary (null when not syncing).
   SyncClient? get syncClientForSummary => _sync?.client;
+
+  /// The sync engine (tests tune its transfer budget and client).
+  @visibleForTesting
+  SyncEngine? get syncEngineForTests => _sync;
 
   /// Face ID / Touch ID covers the app (set by the app at start-up).
   bool appLockActive = false;
@@ -1327,6 +1395,7 @@ class AppState extends ChangeNotifier {
     await importSharedItems();
     _startCalendarSyncSchedule();
     unawaited(syncCalendarAccounts());
+    unawaited(_maybeAutomaticBackup());
     // Timers and the live connection stop in the background (iOS): start
     // again and catch up.
     final s = _scheduler;
@@ -1666,7 +1735,13 @@ class AppState extends ChangeNotifier {
         _lastResult =
             'Some changes could not sync: ${report.problems.first}'
             '${report.problems.length > 1 ? ' (+${report.problems.length - 1} more)' : ''}';
+      } else if (report.deferred > 0) {
+        // Small changes are through; big files are still on their way and
+        // continue in the next cycle (asked for right away).
+        _lastResult =
+            'Synced — ${report.deferred} large file(s) still transferring';
       }
+      if (report.deferred > 0) _scheduler?.request(Duration.zero);
       await _refreshList();
     } on SyncFailure catch (e) {
       if (e.code == 'unauthorized') {
@@ -3060,7 +3135,25 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _saveCanvas(CanvasDocument doc) async {
-    await canvases.save(doc);
+    final seq = _canvasSaveSeq[doc.id] = (_canvasSaveSeq[doc.id] ?? 0) + 1;
+    try {
+      await canvases.save(doc);
+    } catch (e) {
+      // Not on disk: kept here and retried by the app itself (with growing
+      // pauses), so the change survives even if its page is closed, and
+      // the unsaved notice says why in plain words.
+      if (_canvasSaveSeq[doc.id] == seq) {
+        _unsavedCanvases[doc.id] = (doc, seq);
+        workspace.noteSaveResult('canvas:${doc.id}', false, e);
+        _scheduleCanvasRetry();
+      }
+      rethrow;
+    }
+    if (_canvasSaveSeq[doc.id] == seq) {
+      if (_unsavedCanvases.remove(doc.id) != null) {
+        workspace.noteSaveResult('canvas:${doc.id}', true);
+      }
+    }
     // A saved mindmap edit asks for a sync by itself (canvas files are not
     // workspace records, so they do not tell the scheduler on their own).
     // Rapid saves are batched by the scheduler's short pause.
@@ -3080,6 +3173,66 @@ class AppState extends ChangeNotifier {
     if (index >= 0) {
       _canvasList = [..._canvasList]..[index] = summary;
       notifyListeners();
+    }
+  }
+
+  /// Canvas saves started, per document (a retry only writes the document
+  /// if no newer save of it was started since).
+  final Map<String, int> _canvasSaveSeq = {};
+
+  /// Documents whose last save failed: the latest version of each, kept
+  /// until it is on disk.
+  final Map<String, (CanvasDocument, int)> _unsavedCanvases = {};
+  Timer? _canvasRetry;
+  int _canvasRetryFailures = 0;
+
+  /// How many mindmap/notebook documents are waiting to be saved.
+  int get unsavedCanvasCount => _unsavedCanvases.length;
+
+  void _scheduleCanvasRetry() {
+    if (_canvasRetry?.isActive ?? false) return;
+    final ms = RecordCollection.retryDelay.inMilliseconds *
+        (1 << _canvasRetryFailures.clamp(0, 10));
+    final max = RecordCollection.maxRetryDelay.inMilliseconds;
+    _canvasRetry = Timer(
+      Duration(milliseconds: ms > max ? max : ms),
+      () => unawaited(retryUnsavedCanvases()),
+    );
+  }
+
+  /// Writes every document whose save failed (newest version only). Called
+  /// by the retry timer and before the app closes.
+  Future<void> retryUnsavedCanvases() async {
+    _canvasRetry?.cancel();
+    for (final MapEntry(key: id, value: (doc, seq))
+        in _unsavedCanvases.entries.toList()) {
+      if (_canvasSaveSeq[id] != seq) continue; // a newer save took over
+      try {
+        await canvases.save(doc);
+        if (_canvasSaveSeq[id] == seq) {
+          _unsavedCanvases.remove(id);
+          workspace.noteSaveResult('canvas:$id', true);
+          _editedLocally();
+          // An open page that showed "not saved" saves its current state.
+          for (final c in [
+            _canvas,
+            ..._canvasRefs.values.map((r) => r.$1),
+            ..._special.values,
+          ]) {
+            if (c != null && c.id == id && c.saveState == SaveState.failed) {
+              unawaited(c.flush());
+            }
+          }
+        }
+      } catch (e) {
+        workspace.noteSaveResult('canvas:$id', false, e);
+      }
+    }
+    if (_unsavedCanvases.isEmpty) {
+      _canvasRetryFailures = 0;
+    } else {
+      _canvasRetryFailures++;
+      if (!_disposed) _scheduleCanvasRetry();
     }
   }
 
@@ -3638,6 +3791,7 @@ class AppState extends ChangeNotifier {
   Future<void> flush() async {
     await _canvas?.flush();
     await _links?.flush();
+    if (_unsavedCanvases.isNotEmpty) await retryUnsavedCanvases();
     for (final c in _special.values) {
       await c.flush();
     }
@@ -3652,7 +3806,7 @@ class AppState extends ChangeNotifier {
       position: const Offset(0, 0),
       width: 460,
       minHeight: 0,
-      fontSize: 16,
+      fontSize: AppType.sizeHeading,
       text: touchFirst
           ? '# Welcome to your canvas\n'
                 '- Drag this guide to the top or either side to dismiss it\n'
@@ -3678,6 +3832,8 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _canvasRetry?.cancel();
+    _autoBackupTimer?.cancel();
     _scheduler?.stop();
     unawaited(maintenance?.stop(wait: Duration.zero));
     unawaited(hubHost?.stop());

@@ -31,6 +31,9 @@ abstract final class FileProtection {
   /// Set at start-up on iPhone/iPad; null elsewhere (everything is a no-op).
   static ProtectionBackend? backend;
 
+  /// How often a write that is waiting for unlock asks iOS again.
+  static const _recheckEvery = Duration(seconds: 2);
+
   static bool _available = true;
   static Completer<void>? _unlocked;
   static StreamSubscription<bool>? _subscription;
@@ -87,7 +90,21 @@ abstract final class FileProtection {
     if (b == null) return action();
     for (;;) {
       while (!_available) {
-        await (_unlocked ??= Completer<void>()).future;
+        await (_unlocked ??= Completer<void>()).future.timeout(
+          _recheckEvery,
+          onTimeout: () {},
+        );
+        if (!_available) {
+          // The "unlocked" notification can be missed (it may arrive before
+          // the app listens, or while it starts): ask again instead of
+          // waiting for it forever, which left saves, and with them
+          // start-up, hanging.
+          try {
+            _changed(await b.dataAvailable());
+          } on Exception {
+            // Keep waiting; asking again after the next interval.
+          }
+        }
       }
       try {
         return await action();

@@ -19,6 +19,7 @@ import 'canvas_painter.dart';
 import 'canvas_text.dart';
 import 'canvas_toolbar.dart';
 import '../tags/tag_ui.dart' show showTagPicker;
+import '../ink/native_ink.dart';
 import '../ink/stroke_geometry.dart';
 
 class CanvasPage extends StatelessWidget {
@@ -79,6 +80,12 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   /// The pointer whose stroke or drag the controller is handling.
   int? _drawingPointer;
   int? _welcomePointer;
+
+  /// Every Apple Pencil sample for the stroke being drawn (iPad).
+  final PencilFeed _pencilFeed = PencilFeed();
+
+  /// The finished drawing kept as one image while the pen writes.
+  final InkRasterCache _inkRaster = InkRasterCache();
   Offset? _welcomeStartPosition;
   bool _welcomeFading = false;
   bool _welcomeRemovalDone = false;
@@ -100,7 +107,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     super.initState();
     _welcomeFade = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: AppMotion.normal,
       value: 1,
     );
     _focusWhenShown();
@@ -169,6 +176,8 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   void dispose() {
     if (_welcomeFading) _removeWelcomeGuide();
     if (_welcomePointer != null) c.pointerCancel();
+    _pencilFeed.end();
+    _inkRaster.dispose();
     _welcomeFade.dispose();
     _squeeze?.cancel();
     _unregisterTap();
@@ -533,6 +542,17 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
       ctrl: keyboard.isControlPressed,
       timeStamp: e.timeStamp,
     );
+    final pointer = e.pointer;
+    _pencilFeed.begin(
+      e,
+      move: (local, pressure, timeStamp) {
+        if (_drawingPointer != pointer) return;
+        c.pointerMove(local, pressure: pressure, timeStamp: timeStamp);
+      },
+      predict: (local) {
+        if (_drawingPointer == pointer) c.setPredictedPoint(local);
+      },
+    );
   }
 
   void _onPointerMove(PointerMoveEvent e) {
@@ -564,6 +584,8 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
       if (_activeStylusPointer != null) return; // one resting finger is palm
     }
     if (e.pointer != _drawingPointer) return;
+    // Native Pencil samples may already have delivered this moment.
+    if (!_pencilFeed.flutterMove(e)) return;
     c.pointerMove(
       e.localPosition,
       pressure: _pressure(e),
@@ -591,7 +613,8 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     // must not end the pen stroke).
     if (e.pointer == _drawingPointer) {
       _drawingPointer = null;
-      c.pointerUp();
+      _pencilFeed.end();
+      c.pointerUp(screen: e.localPosition, timeStamp: e.timeStamp);
       if (isWelcome) _finishWelcomeDrag(e.localPosition);
     }
   }
@@ -601,7 +624,13 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     _releasePointer(e.pointer);
     if (e.pointer == _drawingPointer) {
       _drawingPointer = null;
-      c.pointerCancel();
+      _pencilFeed.end();
+      // Pencil writing interrupted by the system is kept, not erased.
+      c.pointerCancel(
+        keepInk:
+            e.kind == PointerDeviceKind.stylus ||
+            e.kind == PointerDeviceKind.invertedStylus,
+      );
       if (isWelcome) {
         _welcomePointer = null;
         _welcomeStartPosition = null;
@@ -818,6 +847,15 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                                               _welcomeFading
                                           ? _welcomeFade.value
                                           : 1,
+                                      // Not while the welcome guide fades:
+                                      // its opacity changes every frame.
+                                      rasterCache: _welcomeFading
+                                          ? null
+                                          : _inkRaster,
+                                      devicePixelRatio:
+                                          MediaQuery.devicePixelRatioOf(
+                                            context,
+                                          ),
                                       repaint: Listenable.merge([
                                         c,
                                         _welcomeFade,
@@ -960,7 +998,9 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color: AppColors.cardRaised,
-                            borderRadius: BorderRadius.all(Radius.circular(8)),
+                            borderRadius: BorderRadius.all(
+                              Radius.circular(AppRadii.sm),
+                            ),
                           ),
                           child: Padding(
                             padding: EdgeInsets.symmetric(
@@ -974,7 +1014,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                                 SizedBox(width: 6),
                                 Text(
                                   'Eraser (squeeze)',
-                                  style: TextStyle(fontSize: 12),
+                                  style: TextStyle(fontSize: AppType.sizeLabel),
                                 ),
                               ],
                             ),
@@ -994,7 +1034,9 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color: AppColors.cardRaised,
-                            borderRadius: BorderRadius.all(Radius.circular(8)),
+                            borderRadius: BorderRadius.all(
+                              Radius.circular(AppRadii.sm),
+                            ),
                           ),
                           child: Padding(
                             padding: EdgeInsets.symmetric(
@@ -1004,7 +1046,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                             child: Text(
                               'Now tap the item to connect to '
                               '(tap empty space to cancel)',
-                              style: TextStyle(fontSize: 13),
+                              style: TextStyle(fontSize: AppType.sizeBodySmall),
                             ),
                           ),
                         ),
@@ -1043,11 +1085,11 @@ class _Minimap extends StatelessWidget {
           height: size.height,
           decoration: BoxDecoration(
             color: AppColors.card.withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.sm),
             border: Border.all(color: AppColors.border),
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.sm),
             child: CustomPaint(painter: painter, size: size),
           ),
         ),
@@ -1152,11 +1194,14 @@ Future<void> runCanvasOption(
     if (title != null) await state.renameCanvas(controller.id, title);
   } else if (choice == 'folder') {
     String? folderId = controller.folderId;
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: const Text('Move to folder', style: TextStyle(fontSize: 16)),
+          title: const Text(
+            'Move to folder',
+            style: TextStyle(fontSize: AppType.sizeHeading),
+          ),
           content: SizedBox(
             width: 320,
             child: FolderDropdown(
@@ -1211,7 +1256,7 @@ class _SaveIndicator extends StatelessWidget {
       SaveState.saving => (Icons.sync, 'Saving…', AppColors.textFaint),
       SaveState.failed => (
         Icons.cloud_off_outlined,
-        'Save failed — retrying on next change',
+        'Not saved yet — retrying',
         AppColors.danger,
       ),
     };
@@ -1220,7 +1265,10 @@ class _SaveIndicator extends StatelessWidget {
       children: [
         Icon(icon, size: 14, color: color),
         const SizedBox(width: 6),
-        Text(label, style: TextStyle(fontSize: 12, color: color)),
+        Text(
+          label,
+          style: TextStyle(fontSize: AppType.sizeLabel, color: color),
+        ),
       ],
     );
   }
@@ -1246,7 +1294,7 @@ class _ZoomControls extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: Row(
@@ -1274,7 +1322,10 @@ class _ZoomControls extends StatelessWidget {
                 child: Text(
                   '${(controller.scale * 100).round()}%',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ),
             ),
@@ -1309,7 +1360,10 @@ class _EmptyHint extends StatelessWidget {
       child: Center(
         child: Text(
           touchFirst ? 'Double-tap anywhere to write  ·  pick the pen to draw' : 'Double-click anywhere to write  ·  Ctrl+V to paste text, links or images  ·  P to draw',
-          style: TextStyle(color: AppColors.textFaint, fontSize: 13),
+          style: TextStyle(
+            color: AppColors.textFaint,
+            fontSize: AppType.sizeBodySmall,
+          ),
         ),
       ),
     );

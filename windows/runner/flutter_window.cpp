@@ -32,6 +32,39 @@ bool FlutterWindow::OnCreate() {
   channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
       flutter_controller_->engine()->messenger(), "theapp/windows",
       &flutter::StandardMethodCodec::GetInstance());
+  // Dart -> native: "setWindowTheme" colours the native frame to match the
+  // app's light/dark theme (see lib/platform/window_chrome.dart).
+  channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() != "setWindowTheme") {
+          result->NotImplemented();
+          return;
+        }
+        const auto* args =
+            std::get_if<flutter::EncodableMap>(call.arguments());
+        if (!args) {
+          result->Error("bad-args", "Expected a map");
+          return;
+        }
+        auto read_int = [args](const char* key, int64_t fallback) -> int64_t {
+          auto it = args->find(flutter::EncodableValue(key));
+          if (it == args->end()) return fallback;
+          if (const auto* v = std::get_if<int32_t>(&it->second)) return *v;
+          if (const auto* v = std::get_if<int64_t>(&it->second)) return *v;
+          return fallback;
+        };
+        bool dark = true;
+        auto dark_it = args->find(flutter::EncodableValue("dark"));
+        if (dark_it != args->end()) {
+          if (const auto* v = std::get_if<bool>(&dark_it->second)) dark = *v;
+        }
+        SetAppTheme(dark, static_cast<DWORD>(read_int("caption", 0)),
+                    static_cast<DWORD>(read_int("text", 0xFFFFFF)),
+                    static_cast<DWORD>(read_int("border", 0x474D3A)));
+        result->Success();
+      });
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   webviews_ = std::make_unique<WebViewHost>(
       flutter_controller_->engine()->messenger(),

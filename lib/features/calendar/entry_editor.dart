@@ -48,7 +48,7 @@ Future<CalendarEntry?> showEntryEditor(
         endDate: cat == CalendarCategory.events ? start : null,
         dates: cat == CalendarCategory.other ? {dayKey(start)} : const {},
       );
-  return showDialog<CalendarEntry>(
+  return showAppDialog<CalendarEntry>(
     context: context,
     builder: (_) => _EntryEditor(
       state: state,
@@ -340,7 +340,7 @@ class _EntryEditorState extends State<_EntryEditor> {
                   InputChip(
                     label: Text(
                       formatShortDate(parseDayKey(k)),
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(fontSize: AppType.sizeLabel),
                     ),
                     onDeleted: () => setState(
                       () => e = e.copyWith(dates: {...e.dates}..remove(k)),
@@ -371,7 +371,10 @@ class _EntryEditorState extends State<_EntryEditor> {
               label: 'Needs a time',
               child: Text(
                 'Choose a local time for this habit. Existing untimed habits stay unscheduled until you choose one.',
-                style: TextStyle(fontSize: 12, color: AppColors.warm),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.warm,
+                ),
               ),
             ),
           LabeledField(
@@ -416,7 +419,10 @@ class _EntryEditorState extends State<_EntryEditor> {
             label: 'Done',
             child: Text(
               '${e.checkoffs.length} check-offs so far',
-              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: AppType.sizeBodySmall,
+                color: AppColors.textMuted,
+              ),
             ),
           ),
         ];
@@ -432,7 +438,10 @@ class _EntryEditorState extends State<_EntryEditor> {
               label: 'Daily page',
               child: Text(
                 'Part of ${plan?.name ?? e.readingPlanId} · ${formatLongDate(e.readingPlanDate!)}',
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textMuted,
+                ),
               ),
             ),
           if (e.readingPlanId == null) ...[
@@ -470,7 +479,10 @@ class _EntryEditorState extends State<_EntryEditor> {
                 label: 'Daily pages',
                 child: Text(
                   '${daysBetween(_readingPlanStart!, _readingPlanEnd!) + 1} independent pages · end date included',
-                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ),
           ],
@@ -598,7 +610,7 @@ class _EntryEditorState extends State<_EntryEditor> {
                     InputChip(
                       label: Text(
                         '${formatShortDate(parseDayKey(l.key))}: ${l.value} p.',
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: AppType.sizeLabel),
                       ),
                       onDeleted: () => setState(
                         () => e = e.copyWith(
@@ -626,7 +638,10 @@ class _EntryEditorState extends State<_EntryEditor> {
         label: 'Estimate',
         child: Text(
           'Enter a valid total page count, daily target, and start date.',
-          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          style: TextStyle(
+            fontSize: AppType.sizeLabel,
+            color: AppColors.textMuted,
+          ),
         ),
       );
     }
@@ -648,7 +663,10 @@ class _EntryEditorState extends State<_EntryEditor> {
                     '${formatLongDate(estimate.completionDate!)}\n'
                     'Assumes $target pages every calendar day, starting on '
                     'the later of today and ${formatShortDate(start)}.',
-          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          style: TextStyle(
+            fontSize: AppType.sizeLabel,
+            color: AppColors.textMuted,
+          ),
         ),
       );
     } on ArgumentError {
@@ -656,7 +674,10 @@ class _EntryEditorState extends State<_EntryEditor> {
         label: 'Estimate',
         child: Text(
           'Use positive page counts and keep current progress within the book.',
-          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          style: TextStyle(
+            fontSize: AppType.sizeLabel,
+            color: AppColors.textMuted,
+          ),
         ),
       );
     }
@@ -686,7 +707,7 @@ class _EntryEditorState extends State<_EntryEditor> {
             widget.isNew
                 ? 'New ${e.category.label} entry'
                 : 'Edit ${e.category.label} entry',
-            style: const TextStyle(fontSize: 16),
+            style: const TextStyle(fontSize: AppType.sizeHeading),
           ),
         ],
       ),
@@ -700,7 +721,7 @@ class _EntryEditorState extends State<_EntryEditor> {
               TextField(
                 controller: _name,
                 autofocus: widget.isNew,
-                style: const TextStyle(fontSize: 16),
+                style: const TextStyle(fontSize: AppType.sizeHeading),
                 decoration: InputDecoration(
                   hintText: switch (e.category) {
                     CalendarCategory.reading => 'Book title',
@@ -770,7 +791,10 @@ class _EntryEditorState extends State<_EntryEditor> {
                 const SizedBox(height: Space.md),
                 Text(
                   _error!,
-                  style: TextStyle(color: AppColors.danger, fontSize: 13),
+                  style: TextStyle(
+                    color: AppColors.danger,
+                    fontSize: AppType.sizeBodySmall,
+                  ),
                 ),
               ],
             ],

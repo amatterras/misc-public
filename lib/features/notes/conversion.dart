@@ -76,13 +76,13 @@ Future<String?> convertSelection(
     return null;
   }
 
-  final choice = await showDialog<String>(
+  final choice = await showAppDialog<String>(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
         title: Text(
           'Create a ${target.label.toLowerCase()}',
-          style: const TextStyle(fontSize: 16),
+          style: const TextStyle(fontSize: AppType.sizeHeading),
         ),
         content: SizedBox(
           width: 420,
@@ -98,7 +98,10 @@ Future<String?> convertSelection(
                   details,
                   maxLines: 6,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+                  style: TextStyle(
+                    fontSize: AppType.sizeBodySmall,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ],
               const SizedBox(height: Space.md),
@@ -115,20 +118,29 @@ Future<String?> convertSelection(
                   ],
                   onChanged: (v) => setState(() => parentId = v),
                 ),
-              Text(switch (target) {
-                ConversionTarget.task ||
-                ConversionTarget.subtask => 'It will be linked to this note.',
-                ConversionTarget.project =>
-                  'This note will be added to the project.',
-                ConversionTarget.note =>
-                  'A new note; this note keeps its text.',
-              }, style: TextStyle(fontSize: 12, color: AppColors.textFaint)),
+              Text(
+                switch (target) {
+                  ConversionTarget.task ||
+                  ConversionTarget.subtask => 'It will be linked to this note.',
+                  ConversionTarget.project =>
+                    'This note will be added to the project.',
+                  ConversionTarget.note =>
+                    'A new note; this note keeps its text.',
+                },
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textFaint,
+                ),
+              ),
               if (duplicate) ...[
                 const SizedBox(height: Space.sm),
                 Text(
                   'A ${target == ConversionTarget.subtask ? 'task' : target.label.toLowerCase()} '
                   'with this name already exists.',
-                  style: TextStyle(fontSize: 13, color: AppColors.warm),
+                  style: TextStyle(
+                    fontSize: AppType.sizeBodySmall,
+                    color: AppColors.warm,
+                  ),
                 ),
               ],
             ],
@@ -238,7 +250,7 @@ class ConversionBar extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 6),
     decoration: BoxDecoration(
       color: AppColors.card,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadii.sm),
       border: Border.all(color: AppColors.border),
     ),
     child: Wrap(

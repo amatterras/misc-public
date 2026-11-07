@@ -55,7 +55,7 @@ Future<void> showVersionComparison(
             Text(
               heading,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: AppType.sizeLabel,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textMuted,
               ),
@@ -73,7 +73,7 @@ Future<void> showVersionComparison(
                 child: Text(
                   lines[i].isEmpty ? ' ' : lines[i],
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: AppType.sizeBodySmall,
                     fontWeight: i == 0 ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
@@ -81,10 +81,13 @@ Future<void> showVersionComparison(
           ],
         ),
       );
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Compare versions', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'Compare versions',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       content: SizedBox(
         width: 820,
         height: 480,

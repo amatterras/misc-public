@@ -715,6 +715,8 @@ class HubServer {
               ..statusCode = range == null ? 200 : 206
               ..headers.contentType = ContentType.binary
               ..headers.contentLength = length - from;
+            // Tells the app it may pause a long download and continue later.
+            r.response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
             if (range != null) {
               r.response.headers.set(
                 HttpHeaders.contentRangeHeader,

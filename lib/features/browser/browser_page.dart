@@ -195,22 +195,25 @@ class _BrowserPageState extends State<BrowserPage> {
 
   // ---------------------------------------------------------- dialogs --
 
-  Future<void> _bookmarks() => showDialog<void>(
+  Future<void> _bookmarks() => showAppDialog<void>(
     context: context,
     builder: (context) => _BookmarksDialog(state: s, browser: b),
   );
 
-  Future<void> _history() => showDialog<void>(
+  Future<void> _history() => showAppDialog<void>(
     context: context,
     builder: (context) => _HistoryDialog(state: s, browser: b),
   );
 
-  Future<void> _downloads() => showDialog<void>(
+  Future<void> _downloads() => showAppDialog<void>(
     context: context,
     builder: (context) => ListenableBuilder(
       listenable: b,
       builder: (context, _) => AlertDialog(
-        title: const Text('Downloads', style: TextStyle(fontSize: 16)),
+        title: const Text(
+          'Downloads',
+          style: TextStyle(fontSize: AppType.sizeHeading),
+        ),
         content: SizedBox(
           width: 440,
           child: b.downloads.isEmpty
@@ -228,7 +231,7 @@ class _BrowserPageState extends State<BrowserPage> {
                                   ? 'Saved: ${d.path ?? ''}'
                                   : '${(d.progress * 100).round()}%'),
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: AppType.sizeMeta,
                             color: d.error != null ? AppColors.warm : null,
                           ),
                         ),
@@ -252,7 +255,7 @@ class _BrowserPageState extends State<BrowserPage> {
     ),
   );
 
-  Future<void> _privacy() => showDialog<void>(
+  Future<void> _privacy() => showAppDialog<void>(
     context: context,
     builder: (context) => _PrivacyDialog(state: s, browser: b),
   );
@@ -311,7 +314,7 @@ class _BrowserPageState extends State<BrowserPage> {
                         right: 8,
                         child: Material(
                           color: AppColors.card.withValues(alpha: 0.92),
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(AppRadii.sm),
                           child: GhostIconButton(
                             key: const ValueKey('browser-restore-chrome'),
                             icon: Icons.expand_more,
@@ -372,7 +375,7 @@ class _BrowserPageState extends State<BrowserPage> {
                                 : 'New tab',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
+                            style: const TextStyle(fontSize: AppType.sizeLabel),
                           ),
                         ),
                         GhostIconButton(
@@ -455,7 +458,7 @@ class _BrowserPageState extends State<BrowserPage> {
               key: const ValueKey('browser-address'),
               controller: _address,
               focusNode: _addressFocus,
-              style: const TextStyle(fontSize: 13),
+              style: const TextStyle(fontSize: AppType.sizeBodySmall),
               keyboardType: TextInputType.url,
               decoration: InputDecoration(
                 isDense: true,
@@ -679,7 +682,10 @@ class _BookmarksDialogState extends State<_BookmarksDialog> {
             ),
           );
         return AlertDialog(
-          title: const Text('Bookmarks', style: TextStyle(fontSize: 16)),
+          title: const Text(
+            'Bookmarks',
+            style: TextStyle(fontSize: AppType.sizeHeading),
+          ),
           content: SizedBox(
             width: 520,
             height: 420,
@@ -705,7 +711,7 @@ class _BookmarksDialogState extends State<_BookmarksDialog> {
                             ].join(' · '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 11),
+                            style: const TextStyle(fontSize: AppType.sizeMeta),
                           ),
                           onTap: () {
                             Navigator.pop(context);
@@ -786,7 +792,10 @@ class _HistoryDialogState extends State<_HistoryDialog> {
       builder: (context, _) {
         final list = widget.browser.searchHistory(_q).take(300).toList();
         return AlertDialog(
-          title: const Text('History', style: TextStyle(fontSize: 16)),
+          title: const Text(
+            'History',
+            style: TextStyle(fontSize: AppType.sizeHeading),
+          ),
           content: SizedBox(
             width: 520,
             height: 440,
@@ -814,7 +823,7 @@ class _HistoryDialogState extends State<_HistoryDialog> {
                             '${formatShortDate(h.visitedAt)} · ${h.url}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 11),
+                            style: const TextStyle(fontSize: AppType.sizeMeta),
                           ),
                           onTap: () {
                             Navigator.pop(context);
@@ -870,7 +879,7 @@ class _PrivacyDialog extends StatelessWidget {
       builder: (context, _) => AlertDialog(
         title: const Text(
           'Privacy and site data',
-          style: TextStyle(fontSize: 16),
+          style: TextStyle(fontSize: AppType.sizeHeading),
         ),
         content: SizedBox(
           width: 500,
@@ -881,7 +890,10 @@ class _PrivacyDialog extends StatelessWidget {
                 'Private tabs keep no history here and use a separate, '
                 'temporary data store in the engine (iPhone/iPad WebKit). '
                 'They do not make you anonymous to websites or networks.',
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textMuted,
+                ),
               ),
               const SizedBox(height: Space.md),
               Row(
@@ -914,7 +926,10 @@ class _PrivacyDialog extends StatelessWidget {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               if (ws.sitePermissions.length == 0)
-                const Text('None saved.', style: TextStyle(fontSize: 12)),
+                const Text(
+                  'None saved.',
+                  style: TextStyle(fontSize: AppType.sizeLabel),
+                ),
               for (final p in ws.sitePermissions.all)
                 ListTile(
                   dense: true,

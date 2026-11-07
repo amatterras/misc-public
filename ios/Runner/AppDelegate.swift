@@ -5,6 +5,7 @@ import PhotosUI
 import QuickLook
 import Security
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 import UniformTypeIdentifiers
 import UserNotifications
 import Vision
@@ -59,6 +60,9 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
   private let peers = PeerBonjour()
 
   func attach(messenger: FlutterBinaryMessenger) {
+    inkChannel = FlutterBasicMessageChannel(
+      name: "theapp/ink", binaryMessenger: messenger,
+      codec: FlutterStandardMessageCodec.sharedInstance())
     let channel = FlutterMethodChannel(name: "theapp/ios", binaryMessenger: messenger)
     channel.setMethodCallHandler { [weak self] call, result in
       self?.handle(call, result)
@@ -134,6 +138,9 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       result(writeShareTagCatalog(call.arguments as? String))
     case "enablePencilSqueeze":
       result(installPencilInteraction())
+    case "enableInkCapture":
+      inkCaptureOn = true
+      result(installInkObservers())
     case "deviceModel":
       result(UIDevice.current.model)
     case "peerAdvertise":
@@ -173,9 +180,9 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     case "protectedDataAvailable":
       result(UIApplication.shared.isProtectedDataAvailable)
     case "protectPaths":
-      result(Self.protect(call.arguments as? [String] ?? [], recursive: false))
+      protectInBackground(call.arguments as? [String] ?? [], recursive: false, result)
     case "protectTree":
-      result(Self.protect(call.arguments as? [String] ?? [], recursive: true))
+      protectInBackground(call.arguments as? [String] ?? [], recursive: true, result)
     case "biometricAvailable":
       result(LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil))
     case "biometricAuthenticate":
@@ -229,6 +236,13 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     let fm = FileManager.default
     var ok = true
     func apply(_ path: String) {
+      // Already complete (the normal case after the first launch): leave it
+      // alone. Changing the protection class of a file is the slow part.
+      if let current = try? fm.attributesOfItem(atPath: path)[.protectionKey] as? FileProtectionType,
+        current == .complete
+      {
+        return
+      }
       do {
         try fm.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: path)
       } catch {
@@ -248,6 +262,22 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       }
     }
     return ok
+  }
+
+  /// One at a time, off the main thread. Walking the whole data folder (and
+  /// the temporary folder) on the main thread at launch kept the first frame
+  /// from ever appearing: a black screen until the walk finished, or until the
+  /// user force-closed the app and the next launch got a bit further.
+  private static let protectQueue = DispatchQueue(
+    label: "theapp.file-protection", qos: .utility)
+
+  private func protectInBackground(
+    _ paths: [String], recursive: Bool, _ result: @escaping FlutterResult
+  ) {
+    Self.protectQueue.async {
+      let ok = Self.protect(paths, recursive: recursive)
+      DispatchQueue.main.async { result(ok) }
+    }
   }
 
   // MARK: Keychain (token for the sync hub; this device only)
@@ -488,6 +518,34 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     }
     top.present(sheet, animated: true)
     result(true)
+  }
+
+  // MARK: Full-rate Apple Pencil capture (lib/features/ink/native_ink.dart)
+
+  private var inkChannel: FlutterBasicMessageChannel?
+  private var inkCaptureOn = false
+
+  /// Puts one InkTouchObserver on the Flutter view of every window (iPad
+  /// windows / Stage Manager scenes included). Called when Dart asks for
+  /// it and again whenever a scene becomes active. Returns whether at
+  /// least one view has an observer.
+  @discardableResult
+  func installInkObservers() -> Bool {
+    guard inkCaptureOn, let channel = inkChannel else { return false }
+    var any = false
+    for scene in UIApplication.shared.connectedScenes {
+      guard let windowScene = scene as? UIWindowScene else { continue }
+      for window in windowScene.windows {
+        guard let flutter = window.rootViewController as? FlutterViewController,
+          let view = flutter.viewIfLoaded
+        else { continue }
+        if view.gestureRecognizers?.contains(where: { $0 is InkTouchObserver }) != true {
+          view.addGestureRecognizer(InkTouchObserver(channel: channel))
+        }
+        any = true
+      }
+    }
+    return any
   }
 
   // MARK: Apple Pencil Pro squeeze (iOS 17.5+; other Pencils never send it)
@@ -746,6 +804,111 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       top = presented
     }
     return top
+  }
+}
+
+// MARK: - Full-rate Apple Pencil samples
+
+/// Watches Apple Pencil touches on the Flutter view and sends Dart every
+/// sample UIKit has for them: the coalesced touches (Apple Pencil is
+/// sampled at 240 Hz, but UIKit calls back once per display frame, and
+/// Flutter's engine forwards only that one sample) and UIKit's predicted
+/// touches (where the tip will be about one frame from now).
+///
+/// It never takes a touch: it never leaves the "possible" state while a
+/// touch is down, does not cancel or delay touches, and only sees Pencil
+/// touches, so Flutter receives exactly what it received before, fingers
+/// and palm rejection included. The message format is documented in
+/// lib/features/ink/native_ink.dart.
+///
+/// UNTESTED on hardware: written on Windows; needs a Codemagic build and an
+/// iPad with Apple Pencil.
+final class InkTouchObserver: UIGestureRecognizer {
+  private let channel: FlutterBasicMessageChannel
+  private var begins: [ObjectIdentifier: Int64] = [:]
+
+  init(channel: FlutterBasicMessageChannel) {
+    self.channel = channel
+    super.init(target: nil, action: nil)
+    cancelsTouchesInView = false
+    delaysTouchesBegan = false
+    delaysTouchesEnded = false
+    allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+  }
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    send(touches, event, phase: 0)
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+    send(touches, event, phase: 1)
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    send(touches, event, phase: 2)
+    finishWhenIdle(event)
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+    send(touches, event, phase: 3)
+    finishWhenIdle(event)
+  }
+
+  override func reset() {
+    super.reset()
+    begins.removeAll()
+  }
+
+  /// Fails (and so resets) only once no touch at all is down, so a palm
+  /// resting between strokes does not switch the observer off for the
+  /// next stroke. Failing never affects the touches themselves.
+  private func finishWhenIdle(_ event: UIEvent) {
+    let active =
+      event.allTouches?.contains { $0.phase != .ended && $0.phase != .cancelled } ?? false
+    if !active && begins.isEmpty { state = .failed }
+  }
+
+  private static func micros(_ seconds: TimeInterval) -> Int64 {
+    // Exactly as Flutter's engine fills PointerEvent.timeStamp.
+    Int64(seconds * 1_000_000)
+  }
+
+  private func send(_ touches: Set<UITouch>, _ event: UIEvent, phase: Int) {
+    guard let view = view else { return }
+    for touch in touches where touch.type == .pencil {
+      let key = ObjectIdentifier(touch)
+      let begin: Int64
+      if phase == 0 {
+        begin = Self.micros(touch.timestamp)
+        begins[key] = begin
+      } else if let known = begins[key] {
+        begin = known
+      } else {
+        continue
+      }
+      if phase >= 2 { begins[key] = nil }
+      let samples = event.coalescedTouches(for: touch) ?? [touch]
+      let predicted = phase == 1 ? (event.predictedTouches(for: touch) ?? []) : []
+      var values: [Double] = [
+        1, Double(phase), Double(begin), Double(samples.count), Double(predicted.count),
+      ]
+      values.reserveCapacity(5 + 7 * (samples.count + predicted.count))
+      for sample in samples { Self.append(sample, in: view, to: &values) }
+      for sample in predicted { Self.append(sample, in: view, to: &values) }
+      let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
+      channel.sendMessage(FlutterStandardTypedData(float64: data))
+    }
+  }
+
+  private static func append(_ touch: UITouch, in view: UIView, to values: inout [Double]) {
+    let p = touch.preciseLocation(in: view)
+    values.append(Double(micros(touch.timestamp)))
+    values.append(Double(p.x))
+    values.append(Double(p.y))
+    values.append(Double(touch.force))
+    values.append(Double(touch.maximumPossibleForce))
+    values.append(Double(touch.altitudeAngle))
+    values.append(Double(touch.azimuthAngle(in: view)))
   }
 }
 

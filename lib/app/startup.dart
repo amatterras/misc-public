@@ -139,7 +139,7 @@ class _StartupScreenState extends State<StartupScreen> {
                     SelectableText(
                       '${p.error}\n'
                       '${(p.stack?.toString() ?? '').split('\n').take(8).join('\n')}',
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(fontSize: AppType.sizeLabel),
                     ),
                   ],
                   if (failed || stuck) ...[
@@ -152,7 +152,7 @@ class _StartupScreenState extends State<StartupScreen> {
                     SelectableText(
                       log.join('\n'),
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: AppType.sizeMeta,
                         color: AppColors.textMuted,
                       ),
                     ),
@@ -161,7 +161,7 @@ class _StartupScreenState extends State<StartupScreen> {
                       Text(
                         startupLogHint!,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: AppType.sizeLabel,
                           color: AppColors.textFaint,
                         ),
                       ),
@@ -187,7 +187,7 @@ Widget readableErrorWidget(FlutterErrorDetails details) => Directionality(
       padding: const EdgeInsets.all(8),
       child: Text(
         'This part of misc. could not be shown: ${details.exceptionAsString()}',
-        style: TextStyle(color: AppColors.danger, fontSize: 12),
+        style: TextStyle(color: AppColors.danger, fontSize: AppType.sizeLabel),
         maxLines: 6,
         overflow: TextOverflow.ellipsis,
       ),

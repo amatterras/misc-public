@@ -55,6 +55,11 @@ class Win32Window {
   // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();
 
+  // Colours the native frame (caption, caption text, border) to match the
+  // app's own light/dark theme instead of the Windows setting. Colours are
+  // COLORREF (0x00BBGGRR). Windows 10 ignores the colours; dark mode applies.
+  void SetAppTheme(bool dark, DWORD caption, DWORD text, DWORD border);
+
  protected:
   // Processes and route salient window messages for mouse handling,
   // size change and DPI. Delegates handling of these to member overloads that
@@ -91,6 +96,9 @@ class Win32Window {
   static void UpdateTheme(HWND const window);
 
   bool quit_on_close_ = false;
+
+  // True once the app chose its theme; the Windows theme no longer applies.
+  bool app_theme_set_ = false;
 
   // window handle for top level window.
   HWND window_handle_ = nullptr;

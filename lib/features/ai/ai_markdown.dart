@@ -262,7 +262,7 @@ class _CodeBlock extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     decoration: BoxDecoration(
       color: AppColors.selected,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(AppRadii.sm),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -273,14 +273,20 @@ class _CodeBlock extends StatelessWidget {
             Expanded(
               child: Text(
                 language.isEmpty ? 'Code' : language,
-                style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeMeta,
+                  color: AppColors.textFaint,
+                ),
               ),
             ),
             TextButton.icon(
               key: const ValueKey('ai-code-copy'),
               onPressed: () => Clipboard.setData(ClipboardData(text: code)),
               icon: const Icon(Icons.copy, size: 13),
-              label: const Text('Copy', style: TextStyle(fontSize: 11)),
+              label: const Text(
+                'Copy',
+                style: TextStyle(fontSize: AppType.sizeMeta),
+              ),
             ),
           ],
         ),

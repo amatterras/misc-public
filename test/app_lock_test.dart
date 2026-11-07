@@ -415,6 +415,17 @@ void main() {
       expect(runs, 1);
     });
 
+    test('a missed unlock notification does not hang a write', () async {
+      await backend.setUnlocked(false);
+      var runs = 0;
+      final done = FileProtection.whenUnlocked(() async => ++runs);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(runs, 0);
+      backend.unlocked = true; // unlocked, but no event is ever sent
+      expect(await done, 1);
+      expect(runs, 1);
+    });
+
     test('a write that fails because the device locked is deferred', () async {
       var attempts = 0;
       final done = FileProtection.whenUnlocked(() async {
@@ -512,6 +523,23 @@ void main() {
       expect(scene, contains('sceneDidBecomeActive'));
       expect(scene, contains('isCaptured'));
       expect(scene, contains('capturedDidChangeNotification'));
+      expect(scene, contains('didEnterBackgroundNotification'));
+      expect(scene, contains('willEnterForegroundNotification'));
+    });
+
+    test('a screenshot (app only inactive) never covers the screen', () {
+      final scene = read('ios/Runner/SceneDelegate.swift');
+      final resign = RegExp(
+        r'override func sceneWillResignActive[\s\S]*?\n  \}',
+      ).firstMatch(scene)!.group(0)!;
+      expect(resign, isNot(contains('setInBackground(true)')));
+      expect(resign, isNot(contains('show(')));
+    });
+
+    test('file protection is walked off the main thread', () {
+      final delegate = read('ios/Runner/AppDelegate.swift');
+      expect(delegate, contains('protectInBackground'));
+      expect(delegate, isNot(contains('result(Self.protect(')));
     });
   });
 }

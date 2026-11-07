@@ -39,11 +39,14 @@ class PeerSyncRow extends StatelessWidget {
         onChanged: (on) => c.setEnabled(on),
         title: const Text(
           'Sync directly between my devices',
-          style: TextStyle(fontSize: 14),
+          style: TextStyle(fontSize: AppType.sizeBody),
         ),
         subtitle: Text(
           _text(c),
-          style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+          style: TextStyle(
+            fontSize: AppType.sizeLabel,
+            color: AppColors.textFaint,
+          ),
         ),
       ),
     );

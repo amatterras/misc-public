@@ -116,7 +116,7 @@ Future<ContentTemplate?> pickTemplate(
 ) {
   final list = s.workspace.templates.all.where((t) => t.kind == kind).toList()
     ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-  return showDialog<ContentTemplate>(
+  return showAppDialog<ContentTemplate>(
     context: context,
     builder: (context) => SimpleDialog(
       title: Text(kind == 'note' ? 'Note templates' : 'Project templates'),

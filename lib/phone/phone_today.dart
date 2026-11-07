@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../app/quote_footer.dart';
 import '../data/models/record.dart';
@@ -176,7 +177,7 @@ class _PhoneTodayState extends State<PhoneToday> {
             Text(
               letters[day.weekday - 1],
               style: PhoneType.eyebrow.copyWith(
-                fontSize: 10.5,
+                fontSize: AppType.sizeMeta,
                 color: selected ? NewColors.text : NewColors.textFaint,
               ),
             ),
@@ -242,7 +243,7 @@ class _PhoneTodayState extends State<PhoneToday> {
               Expanded(
                 child: Text(
                   text ?? '',
-                  style: PhoneType.time.copyWith(fontSize: 14),
+                  style: PhoneType.time.copyWith(fontSize: AppType.sizeBody),
                 ),
               ),
               if (!isToday)
@@ -253,7 +254,7 @@ class _PhoneTodayState extends State<PhoneToday> {
                     child: Text(
                       'Back to today',
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: AppType.sizeBody,
                         fontWeight: FontWeight.w600,
                         color: NewColors.accent,
                       ),
@@ -269,8 +270,8 @@ class _PhoneTodayState extends State<PhoneToday> {
                 children: [
                   Container(height: 2, color: NewColors.border),
                   AnimatedContainer(
-                    duration: const Duration(milliseconds: 260),
-                    curve: Curves.easeOutCubic,
+                    duration: AppMotion.page,
+                    curve: AppMotion.standard,
                     height: 2,
                     width: c.maxWidth * a.progress,
                     decoration: BoxDecoration(gradient: NewGradients.brand),

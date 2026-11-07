@@ -37,7 +37,7 @@ class RelatedPanel extends StatelessWidget {
             if (!r.outgoing) r,
         ];
         final heading = TextStyle(
-          fontSize: 11,
+          fontSize: AppType.sizeMeta,
           letterSpacing: 0.6,
           color: AppColors.textFaint,
         );
@@ -77,14 +77,20 @@ class RelatedPanel extends StatelessWidget {
                   key: const ValueKey('related-add'),
                   onPressed: () => _add(context),
                   icon: const Icon(Icons.add_link, size: 14),
-                  label: const Text('Link…', style: TextStyle(fontSize: 12)),
+                  label: const Text(
+                    'Link…',
+                    style: TextStyle(fontSize: AppType.sizeLabel),
+                  ),
                 ),
               ],
             ),
             if (related.isEmpty)
               Text(
                 'Nothing is linked to this yet.',
-                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textFaint,
+                ),
               ),
             group('LINKS TO', out),
             group('LINKED FROM', back),
@@ -157,7 +163,7 @@ class _RelatedRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: AppType.sizeBodySmall,
                   color: r.exists ? AppColors.text : faint,
                   decoration: r.exists ? null : TextDecoration.lineThrough,
                 ),
@@ -169,7 +175,7 @@ class _RelatedRow extends StatelessWidget {
                 if (r.page != null) 'p. ${r.page}',
                 if (r.rel != 'related') r.rel,
               ].join(' · '),
-              style: TextStyle(fontSize: 11, color: faint),
+              style: TextStyle(fontSize: AppType.sizeMeta, color: faint),
             ),
             if (onUnlink != null)
               IconButton(
@@ -229,7 +235,7 @@ Future<Ref?> _pickTarget(
   AppState s, {
   required Ref exclude,
 }) {
-  return showDialog<Ref>(
+  return showAppDialog<Ref>(
     context: context,
     builder: (context) => _TargetPicker(state: s, exclude: exclude),
   );
@@ -270,7 +276,10 @@ class _TargetPickerState extends State<_TargetPicker> {
     ];
     return AlertDialog(
       backgroundColor: AppColors.card,
-      title: const Text('Link to…', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'Link to…',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       content: SizedBox(
         width: 420,
         height: 340,

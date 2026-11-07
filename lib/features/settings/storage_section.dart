@@ -36,7 +36,10 @@ class StorageModeSection extends StatelessWidget {
           Text(
             _statusLine(state),
             key: const ValueKey('storage-status'),
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.textMuted,
+            ),
           ),
         ],
       );
@@ -79,7 +82,7 @@ class _ModeTile extends StatelessWidget {
     padding: const EdgeInsets.all(Space.sm),
     decoration: BoxDecoration(
       color: selected ? AppColors.card : null,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadii.sm),
       border: Border.all(color: selected ? AppColors.accent : AppColors.border),
     ),
     child: Row(
@@ -98,13 +101,16 @@ class _ModeTile extends StatelessWidget {
               Text(
                 selected ? '${mode.label}  ·  in use' : mode.label,
                 style: const TextStyle(
-                  fontSize: 13,
+                  fontSize: AppType.sizeBodySmall,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               Text(
                 mode.explanation,
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textMuted,
+                ),
               ),
             ],
           ),
@@ -148,7 +154,7 @@ Future<bool> showStorageSwitchDialog(
     state.showToast(note ?? 'Now storing on this device only.');
     return true;
   }
-  final result = await showDialog<bool>(
+  final result = await showAppDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (_) => _SwitchDialog(
@@ -297,7 +303,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
     return AlertDialog(
       title: Text(
         'Switch to: ${widget.target.label}',
-        style: const TextStyle(fontSize: 16),
+        style: const TextStyle(fontSize: AppType.sizeHeading),
       ),
       content: SizedBox(
         width: 520,
@@ -313,11 +319,17 @@ class _SwitchDialogState extends State<_SwitchDialog> {
                   child: Text(
                     _error!,
                     key: const ValueKey('switch-error'),
-                    style: TextStyle(fontSize: 12, color: AppColors.danger),
+                    style: TextStyle(
+                      fontSize: AppType.sizeLabel,
+                      color: AppColors.danger,
+                    ),
                   ),
                 ),
               if (_info != null)
-                Text(_info!, style: const TextStyle(fontSize: 12)),
+                Text(
+                  _info!,
+                  style: const TextStyle(fontSize: AppType.sizeLabel),
+                ),
               if (_busy)
                 const Padding(
                   padding: EdgeInsets.only(top: Space.sm),
@@ -358,13 +370,16 @@ class _SwitchDialogState extends State<_SwitchDialog> {
   List<Widget> _detailsStep() => [
     Text(
       widget.target.explanation,
-      style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+      style: TextStyle(
+        fontSize: AppType.sizeBodySmall,
+        color: AppColors.textMuted,
+      ),
     ),
     const SizedBox(height: Space.sm),
     Text(
       'Nothing changes until the copy is verified and you confirm. Your data '
       'on this device is never replaced by the switch.',
-      style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+      style: TextStyle(fontSize: AppType.sizeLabel, color: AppColors.textFaint),
     ),
     TextField(
       key: const ValueKey('switch-address'),
@@ -399,7 +414,10 @@ class _SwitchDialogState extends State<_SwitchDialog> {
             'encrypted. Use https://, 127.0.0.1 or a Tailscale address '
             '(100.x.y.z).',
             key: ValueKey('switch-unencrypted-warning'),
-            style: TextStyle(fontSize: 12, color: AppColors.danger),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.danger,
+            ),
           );
         },
       ),
@@ -440,7 +458,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
             : 'Connected. The destination is empty.',
         key: const ValueKey('switch-destination'),
         style: TextStyle(
-          fontSize: 13,
+          fontSize: AppType.sizeBodySmall,
           color: _destinationChanges > 0 ? AppColors.warm : null,
         ),
       ),
@@ -449,7 +467,10 @@ class _SwitchDialogState extends State<_SwitchDialog> {
         'Next: a full backup of this device is made and checked, copied to '
         'the destination from that backup (your live data is not touched), '
         'then every record and attachment is read back and compared.',
-        style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+        style: TextStyle(
+          fontSize: AppType.sizeLabel,
+          color: AppColors.textMuted,
+        ),
       ),
       if (v != null && !v.ok) ...[
         const SizedBox(height: Space.sm),
@@ -458,7 +479,10 @@ class _SwitchDialogState extends State<_SwitchDialog> {
           'so nothing was switched. First: ${v.problems.first}. You can try '
           'again or cancel.',
           key: const ValueKey('switch-verify-failed'),
-          style: TextStyle(fontSize: 12, color: AppColors.danger),
+          style: TextStyle(
+            fontSize: AppType.sizeLabel,
+            color: AppColors.danger,
+          ),
         ),
       ],
     ];
@@ -472,14 +496,17 @@ class _SwitchDialogState extends State<_SwitchDialog> {
         '${v.attachmentsChecked} attachment(s) are on the destination.'
         '${v.conflicts > 0 ? ' ${v.conflicts} conflict(s) were kept for review.' : ''}',
         key: const ValueKey('switch-verified'),
-        style: const TextStyle(fontSize: 13),
+        style: const TextStyle(fontSize: AppType.sizeBodySmall),
       ),
       const SizedBox(height: Space.sm),
       Text(
         'Switch now? This device keeps all its data. '
         '${widget.state.storageMode == StorageMode.local ? '' : 'The ${widget.state.storageMode.label.toLowerCase()} keeps its copy; nothing is deleted there. '}'
         'A backup from just before the copy is kept on this device.',
-        style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+        style: TextStyle(
+          fontSize: AppType.sizeLabel,
+          color: AppColors.textMuted,
+        ),
       ),
     ];
   }
@@ -514,10 +541,13 @@ class DataSafetySection extends StatelessWidget {
   Future<void> _showIntegrity(BuildContext context) async {
     final report = await state.checkIntegrity();
     if (!context.mounted) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Data check', style: TextStyle(fontSize: 16)),
+        title: const Text(
+          'Data check',
+          style: TextStyle(fontSize: AppType.sizeHeading),
+        ),
         content: SizedBox(
           width: 560,
           height: 420,
@@ -538,7 +568,7 @@ class DataSafetySection extends StatelessWidget {
                       'Nothing was changed or removed. Each item says what '
                       'you can do.',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: AppType.sizeLabel,
                         color: AppColors.textMuted,
                       ),
                     ),
@@ -556,11 +586,13 @@ class DataSafetySection extends StatelessWidget {
                         ),
                         title: Text(
                           i.detail,
-                          style: const TextStyle(fontSize: 13),
+                          style: const TextStyle(
+                            fontSize: AppType.sizeBodySmall,
+                          ),
                         ),
                         subtitle: Text(
                           '${i.where}\n${i.recovery}',
-                          style: const TextStyle(fontSize: 11),
+                          style: const TextStyle(fontSize: AppType.sizeMeta),
                         ),
                       ),
                   ],
@@ -576,7 +608,7 @@ class DataSafetySection extends StatelessWidget {
     );
   }
 
-  Future<void> _showDeleted(BuildContext context) => showDialog<void>(
+  Future<void> _showDeleted(BuildContext context) => showAppDialog<void>(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) {
@@ -589,7 +621,7 @@ class DataSafetySection extends StatelessWidget {
         return AlertDialog(
           title: const Text(
             'Recently deleted (30 days)',
-            style: TextStyle(fontSize: 16),
+            style: TextStyle(fontSize: AppType.sizeHeading),
           ),
           content: SizedBox(
             width: 560,
@@ -609,7 +641,7 @@ class DataSafetySection extends StatelessWidget {
                           subtitle: Text(
                             '${collection.replaceAll('_', ' ')} · deleted '
                             '${(kept['at'] as String? ?? '').split('T').first}',
-                            style: const TextStyle(fontSize: 11),
+                            style: const TextStyle(fontSize: AppType.sizeMeta),
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -664,10 +696,13 @@ class DataSafetySection extends StatelessWidget {
   );
 
   /// Says what "for good" does and does not mean, in plain words.
-  Future<bool?> _confirmPurge(BuildContext context) => showDialog<bool>(
+  Future<bool?> _confirmPurge(BuildContext context) => showAppDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Delete for good?', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'Delete for good?',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       content: const Text(
         'This cannot be undone. It is removed from this device, from the '
         'backups misc. keeps, and from the hub; your other devices are told '

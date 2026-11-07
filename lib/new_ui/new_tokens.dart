@@ -67,14 +67,19 @@ abstract final class NewColors {
       _light ? const Color(0xFF6A6778) : const Color(0xFF898692);
 
   // ── Accent and states ───────────────────────────────────────────────
-  /// Primary accent for text, icons and fills. Light uses a deeper iris than
-  /// [mutedViolet] (#7D80B8 is only 3.6:1 on the page; this is 5.2:1).
+  /// Primary accent for text, icons and fills: the established steel blue.
+  /// Light uses a deepened steel blue (#3E6A8C, about 5.3:1 on the page)
+  /// so both themes share one identity.
   static Color get accent =>
-      _light ? const Color(0xFF5B60A8) : const Color(0xFF789BB5);
+      _light ? const Color(0xFF3E6A8C) : const Color(0xFF789BB5);
+
+  /// Text and icons on an [accent] fill (filled buttons, switches).
+  static Color get onAccent =>
+      _light ? const Color(0xFFFFFFFF) : const Color(0xFF191A1D);
   static Color get accentSecondary => _light ? deepIndigo : periwinkle;
   static Color get accentSoft => accent.withValues(alpha: _light ? 0.11 : 0.16);
   static Color get selected =>
-      _light ? const Color(0xFFE9E8F6) : const Color(0xFF282C38);
+      _light ? const Color(0xFFE4EBF2) : const Color(0xFF282C38);
   static Color get selection => accent.withValues(alpha: 0.28);
   static Color get hover =>
       _light ? const Color(0x0F1C1A27) : const Color(0x14FFFFFF);
@@ -150,27 +155,27 @@ abstract final class NewGradients {
 }
 
 abstract final class NewRadii {
-  static const sm = 10.0;
-  static const md = 14.0;
-  static const card = 18.0;
-  static const lg = 24.0;
+  static const sm = AppRadii.md;
+  static const md = AppRadii.popup;
+  static const card = AppRadii.card;
+  static const lg = AppRadii.xl;
 
   /// A full capsule (pill) end.
-  static const capsule = 999.0;
+  static const capsule = AppRadii.capsule;
 }
 
 /// 4/8-point spacing scale.
 abstract final class NewSpace {
-  static const xs = 4.0;
-  static const sm = 8.0;
-  static const md = 12.0;
-  static const lg = 16.0;
-  static const xl = 20.0;
-  static const xxl = 24.0;
-  static const xxxl = 32.0;
+  static const xs = AppSpace.xs;
+  static const sm = AppSpace.sm;
+  static const md = AppSpace.md;
+  static const lg = AppSpace.lg;
+  static const xl = AppSpace.lg + AppSpace.xs;
+  static const xxl = AppSpace.xl;
+  static const xxxl = AppSpace.xxl;
 
   /// Gap between the window edge and floating chrome.
-  static const edge = 14.0;
+  static const edge = AppSpace.edge;
 }
 
 abstract final class NewSizes {
@@ -188,59 +193,16 @@ abstract final class NewBlur {
 }
 
 abstract final class NewMotion {
-  static const quick = Duration(milliseconds: 140);
-  static const normal = Duration(milliseconds: 220);
-  static const curve = Curves.easeOutCubic;
+  static const quick = AppMotion.quick;
+  static const normal = AppMotion.normal;
+  static const curve = AppMotion.standard;
 }
 
 abstract final class NewShadows {
-  // Light shadows are tinted with the ink violet and layered (a tight contact
-  // shadow plus a wide soft one), which is what makes white cards look lifted
-  // instead of outlined.
-  static const _ink = Color(0xFF1C1A27);
-
-  static List<BoxShadow> get floating => AppColors.light
-      ? [
-          BoxShadow(
-            color: _ink.withValues(alpha: 0.06),
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-          BoxShadow(
-            color: _ink.withValues(alpha: 0.09),
-            blurRadius: 28,
-            offset: const Offset(0, 12),
-          ),
-        ]
-      : [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ];
+  static List<BoxShadow> get floating => AppElevation.floating;
 
   /// A resting card: barely there.
-  static List<BoxShadow> get card => AppColors.light
-      ? [
-          BoxShadow(
-            color: _ink.withValues(alpha: 0.05),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-          BoxShadow(
-            color: _ink.withValues(alpha: 0.05),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ]
-      : [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.30),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ];
+  static List<BoxShadow> get card => AppElevation.subtle;
 
   /// Soft coloured light around a floating surface.
   static List<BoxShadow> get glow => [
@@ -264,16 +226,16 @@ abstract final class NewShadows {
 /// Compact text styles (SF Pro design language: the app's existing font
 /// configuration is kept; weights 400 / 600 / 700 only).
 abstract final class NewText {
-  static const label = TextStyle(fontSize: 12, fontWeight: FontWeight.w600);
-  static const body = TextStyle(fontSize: 14, fontWeight: FontWeight.w400);
-  static const meta = TextStyle(fontSize: 12, fontWeight: FontWeight.w400);
-  static const title = TextStyle(fontSize: 16, fontWeight: FontWeight.w600);
-  static const heading = TextStyle(fontSize: 20, fontWeight: FontWeight.w700);
+  static const label = AppType.label;
+  static const body = AppType.body;
+  static const meta = AppType.caption;
+  static const title = AppType.heading;
+  static const heading = AppType.title;
 }
 
 /// Icon sizes.
 abstract final class NewIcons {
-  static const sm = 16.0;
-  static const md = 20.0;
-  static const lg = 24.0;
+  static const sm = AppSizes.iconSm;
+  static const md = AppSizes.iconLg;
+  static const lg = AppSizes.iconXl;
 }

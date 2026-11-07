@@ -30,7 +30,7 @@ class NoteConnections extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final heading = TextStyle(
-      fontSize: 11,
+      fontSize: AppType.sizeMeta,
       letterSpacing: 0.6,
       color: AppColors.textFaint,
     );
@@ -55,7 +55,10 @@ class NoteConnections extends StatelessWidget {
               if (ws.projects[id] case final p?)
                 InputChip(
                   avatar: const Icon(Icons.folder_special_outlined, size: 14),
-                  label: Text(p.name, style: const TextStyle(fontSize: 12)),
+                  label: Text(
+                    p.name,
+                    style: const TextStyle(fontSize: AppType.sizeLabel),
+                  ),
                   onDeleted: () => ws.notes.put(
                     note.copyWith(projectIds: [...note.projectIds]..remove(id)),
                   ),
@@ -73,7 +76,10 @@ class NoteConnections extends StatelessWidget {
               ],
               child: const Padding(
                 padding: EdgeInsets.all(6),
-                child: Text('+ Project', style: TextStyle(fontSize: 12)),
+                child: Text(
+                  '+ Project',
+                  style: TextStyle(fontSize: AppType.sizeLabel),
+                ),
               ),
             ),
             PopupMenuButton<String>(
@@ -105,7 +111,10 @@ class NoteConnections extends StatelessWidget {
               ],
               child: const Padding(
                 padding: EdgeInsets.all(6),
-                child: Text('+ Task', style: TextStyle(fontSize: 12)),
+                child: Text(
+                  '+ Task',
+                  style: TextStyle(fontSize: AppType.sizeLabel),
+                ),
               ),
             ),
           ],
@@ -176,7 +185,7 @@ class _OnMindmapsState extends State<_OnMindmaps> {
               avatar: const Icon(Icons.hub_outlined, size: 14),
               label: Text(
                 'On ${c.title}',
-                style: const TextStyle(fontSize: 12),
+                style: const TextStyle(fontSize: AppType.sizeLabel),
               ),
               tooltip: 'Open the mindmap',
               onPressed: () {

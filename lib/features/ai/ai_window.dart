@@ -82,10 +82,13 @@ class _AiPanelState extends State<AiPanel> {
     }
   }
 
-  Future<void> _openSettings() => showDialog<void>(
+  Future<void> _openSettings() => showAppDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('AI settings', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'AI settings',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       content: SizedBox(
         width: 460,
         child: SingleChildScrollView(child: AiSettingsSection(state: s)),
@@ -203,7 +206,7 @@ class _AiPanelState extends State<AiPanel> {
             ),
             label: Text(
               '${c.title}${session.allowedContext.contains(c) ? '' : ' (not allowed: not sent)'}',
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(fontSize: AppType.sizeLabel),
             ),
             onDeleted: () => session.detach(c),
           ),
@@ -211,7 +214,10 @@ class _AiPanelState extends State<AiPanel> {
           Text(
             'Nothing attached. Select text in a note, a task or items on a '
             'mindmap and choose “Ask AI”, or add a photo.',
-            style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.textFaint,
+            ),
           ),
         IconButton(
           key: const ValueKey('ai-add-photo'),
@@ -263,7 +269,10 @@ class _AiPanelState extends State<AiPanel> {
             child: session.streaming.isEmpty
                 ? const Padding(
                     padding: EdgeInsets.all(4),
-                    child: Text('…', style: TextStyle(fontSize: 16)),
+                    child: Text(
+                      '…',
+                      style: TextStyle(fontSize: AppType.sizeHeading),
+                    ),
                   )
                 : AiMarkdown(session.streaming),
           ),
@@ -280,18 +289,24 @@ class _AiPanelState extends State<AiPanel> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: AppColors.selected,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.md),
       ),
       child: SelectableText(
         text,
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: AppType.sizeBodySmall,
+        ),
       ),
     ),
   );
 
   Widget _turn(AiTurn t, {required bool last}) {
-    final faint = TextStyle(fontSize: 11, color: AppColors.textFaint);
-    final warn = TextStyle(fontSize: 11, color: AppColors.warm);
+    final faint = TextStyle(
+      fontSize: AppType.sizeMeta,
+      color: AppColors.textFaint,
+    );
+    final warn = TextStyle(fontSize: AppType.sizeMeta, color: AppColors.warm);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -327,7 +342,10 @@ class _AiPanelState extends State<AiPanel> {
                 key: ValueKey('ai-copy-${session.turns.indexOf(t)}'),
                 onPressed: () => _copy(t.answer),
                 icon: const Icon(Icons.copy, size: 14),
-                label: const Text('Copy', style: TextStyle(fontSize: 12)),
+                label: const Text(
+                  'Copy',
+                  style: TextStyle(fontSize: AppType.sizeLabel),
+                ),
               ),
             if (last && session.canRegenerate)
               TextButton.icon(
@@ -342,7 +360,7 @@ class _AiPanelState extends State<AiPanel> {
                   t.status == AiMessageStatus.complete
                       ? 'Regenerate'
                       : 'Try again',
-                  style: const TextStyle(fontSize: 12),
+                  style: const TextStyle(fontSize: AppType.sizeLabel),
                 ),
               ),
           ],
@@ -357,24 +375,33 @@ class _AiPanelState extends State<AiPanel> {
     padding: const EdgeInsets.all(Space.sm),
     decoration: BoxDecoration(
       border: Border.all(color: AppColors.accent),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadii.sm),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(switch (session.proposalsFrom) {
-          AiTool.tasks => 'Proposed tasks: tick the ones to create',
-          AiTool.mindmap =>
-            'Proposed mindmap “${session.mindmapCenter ?? 'Mindmap'}”: '
-                'tick the branches to add',
-          _ => 'Proposed links: tick the ones to add',
-        }, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        Text(
+          switch (session.proposalsFrom) {
+            AiTool.tasks => 'Proposed tasks: tick the ones to create',
+            AiTool.mindmap =>
+              'Proposed mindmap “${session.mindmapCenter ?? 'Mindmap'}”: '
+                  'tick the branches to add',
+            _ => 'Proposed links: tick the ones to add',
+          },
+          style: const TextStyle(
+            fontSize: AppType.sizeLabel,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         for (final p in session.proposals)
           CheckboxListTile(
             dense: true,
             contentPadding: EdgeInsets.only(left: 16.0 * p.level),
             value: p.selected,
-            title: Text(p.label, style: const TextStyle(fontSize: 13)),
+            title: Text(
+              p.label,
+              style: const TextStyle(fontSize: AppType.sizeBodySmall),
+            ),
             onChanged: (v) => setState(() => p.selected = v ?? false),
           ),
         Row(
@@ -420,14 +447,17 @@ class _AiPanelState extends State<AiPanel> {
               padding: const EdgeInsets.all(Space.sm),
               decoration: BoxDecoration(
                 border: Border.all(color: AppColors.warm),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadii.sm),
               ),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
                       session.error!,
-                      style: TextStyle(color: AppColors.warm, fontSize: 13),
+                      style: TextStyle(
+                        color: AppColors.warm,
+                        fontSize: AppType.sizeBodySmall,
+                      ),
                     ),
                   ),
                   if (kind == AiErrorKind.settings ||
@@ -455,7 +485,7 @@ class _AiPanelState extends State<AiPanel> {
                       visualDensity: VisualDensity.compact,
                       label: Text(
                         t.label,
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: AppType.sizeLabel),
                       ),
                       selected: _tool == t,
                       onSelected: (_) => setState(() => _tool = t),
@@ -493,7 +523,10 @@ class _AiPanelState extends State<AiPanel> {
               'What will be sent: ${preview.length} characters'
               '${pictures > 0 ? ' and $pictures picture(s)' : ''}'
               '${session.turns.isEmpty ? '' : ', plus up to 3 earlier questions and answers'}',
-              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: AppType.sizeLabel,
+                color: AppColors.textMuted,
+              ),
             ),
             children: [
               ConstrainedBox(
@@ -501,7 +534,10 @@ class _AiPanelState extends State<AiPanel> {
                 child: SingleChildScrollView(
                   child: SelectableText(
                     preview,
-                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                    style: TextStyle(
+                      fontSize: AppType.sizeMeta,
+                      color: AppColors.textFaint,
+                    ),
                   ),
                 ),
               ),
@@ -514,7 +550,10 @@ class _AiPanelState extends State<AiPanel> {
                   'To: ${s.ai.isLocal ? 'the local model on this PC' : s.ai.endpoint} (${s.ai.model})',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                  style: TextStyle(
+                    fontSize: AppType.sizeMeta,
+                    color: AppColors.textFaint,
+                  ),
                 ),
               ),
               if (session.busy)

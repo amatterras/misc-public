@@ -22,6 +22,7 @@
 // copies that native viewers need (see AttachmentStore.viewFile).
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -166,6 +167,37 @@ final class FileCipher {
 
   /// Encrypts a string (UTF-8).
   Uint8List encryptText(String text) => encrypt(utf8.encode(text));
+
+  /// Data at least this large is encrypted and decrypted on a background
+  /// isolate: AES-GCM here is plain Dart (measured about 2 s per MB in a
+  /// debug build), and on the UI isolate a large photo or PDF would freeze
+  /// typing and drawing while it runs.
+  static const backgroundBytes = 64 * 1024;
+
+  /// [encrypt], off the UI isolate for large data.
+  Future<Uint8List> encryptAsync(
+    List<int> plain, {
+    List<int> context = const [],
+  }) {
+    if (plain.length < backgroundBytes) {
+      return Future.value(encrypt(plain, context: context));
+    }
+    final data = plain is Uint8List ? plain : Uint8List.fromList(plain);
+    return Isolate.run(() => encrypt(data, context: context));
+  }
+
+  /// [decrypt], off the UI isolate for large data. Throws
+  /// [DecryptionFailure] like [decrypt].
+  Future<Uint8List> decryptAsync(
+    List<int> data, {
+    List<int> context = const [],
+  }) {
+    if (data.length < backgroundBytes) {
+      return Future.value(decrypt(data, context: context));
+    }
+    final bytes = data is Uint8List ? data : Uint8List.fromList(data);
+    return Isolate.run(() => decrypt(bytes, context: context));
+  }
 
   /// Overwrites the key in memory (best effort: Dart may have copied it).
   void dispose() => _key.fillRange(0, _key.length, 0);
@@ -394,7 +426,7 @@ abstract final class StorageEncryption {
         'This file is encrypted and no key is available: ${file.path}',
       );
     }
-    return cipher.decrypt(bytes);
+    return cipher.decryptAsync(bytes);
   }
 
   /// [readBytes], blocking (only for the viewer copies that need a file now).
@@ -413,9 +445,15 @@ abstract final class StorageEncryption {
       utf8.decode(await readBytes(file, cipher));
 
   /// Writes [text] to [file] (encrypted when [cipher] is set), flushed.
-  static Future<void> writeText(File file, String text, FileCipher? cipher) =>
-      file.writeAsBytes(
-        cipher == null ? utf8.encode(text) : cipher.encryptText(text),
-        flush: true,
-      );
+  static Future<void> writeText(
+    File file,
+    String text,
+    FileCipher? cipher,
+  ) async {
+    final plain = utf8.encode(text);
+    await file.writeAsBytes(
+      cipher == null ? plain : await cipher.encryptAsync(plain),
+      flush: true,
+    );
+  }
 }

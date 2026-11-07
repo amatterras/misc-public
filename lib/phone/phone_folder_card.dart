@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../data/models/object_library_models.dart';
 import '../features/links/link_tags.dart';
@@ -103,7 +104,7 @@ class ArchiveFolderCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: AppType.sizeMeta,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.2,
                           color: contrastOn(tint),
@@ -117,7 +118,7 @@ class ArchiveFolderCard extends StatelessWidget {
                     top: tabHeight + 8,
                     height: previewHeight,
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppRadii.sm),
                       child: _Preview(
                         key: const ValueKey('folder-preview'),
                         state: state,
@@ -138,7 +139,9 @@ class ArchiveFolderCard extends StatelessWidget {
                           title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: PhoneType.row.copyWith(fontSize: 16),
+                          style: PhoneType.row.copyWith(
+                            fontSize: AppType.sizeHeading,
+                          ),
                         ),
                         const Spacer(),
                         Text(
@@ -219,7 +222,7 @@ class _TextPreview extends StatelessWidget {
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: PhoneType.body.copyWith(
-                  fontSize: 13,
+                  fontSize: AppType.sizeBodySmall,
                   height: 1.3,
                   color: NewColors.text.withValues(alpha: 0.8),
                 ),
@@ -260,7 +263,7 @@ class _FolderPainter extends CustomPainter {
     canvas.drawPath(tab, Paint()..color = tint);
     final bodyRect = RRect.fromRectAndCorners(
       Rect.fromLTWH(0, tabH, size.width, size.height - tabH),
-      topLeft: const Radius.circular(4),
+      topLeft: const Radius.circular(AppRadii.xs),
       topRight: const Radius.circular(r),
       bottomLeft: const Radius.circular(r),
       bottomRight: const Radius.circular(r),

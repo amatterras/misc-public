@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app/design_tokens.dart';
 import '../new_ui/new_tokens.dart';
 import 'phone_tokens.dart';
 
@@ -109,7 +110,7 @@ class _PressState extends State<Press> {
             widget.onLongPress!();
           },
     child: AnimatedOpacity(
-      duration: const Duration(milliseconds: 70),
+      duration: AppMotion.press,
       opacity: _down ? 0.5 : 1,
       child: widget.child,
     ),
@@ -143,7 +144,7 @@ class TickRing extends StatelessWidget {
         height: 44,
         child: Center(
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
+            duration: AppMotion.quick,
             width: 22,
             height: 22,
             decoration: BoxDecoration(
@@ -238,11 +239,13 @@ Future<T?> showPhoneSheet<T>(
   context: context,
   isScrollControlled: true,
   backgroundColor: NewColors.surface,
-  barrierColor: Colors.black.withValues(alpha: 0.45),
+  barrierColor: AppElevation.modalBarrier,
   showDragHandle: false,
   useSafeArea: true,
   shape: RoundedRectangleBorder(
-    borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+    borderRadius: const BorderRadius.vertical(
+      top: Radius.circular(AppRadii.card),
+    ),
     side: BorderSide(color: NewColors.border.withValues(alpha: 0.8)),
   ),
   clipBehavior: Clip.antiAlias,
@@ -265,7 +268,7 @@ Future<T?> showPhoneSheet<T>(
                   height: 4,
                   decoration: BoxDecoration(
                     color: NewColors.border,
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: BorderRadius.circular(AppRadii.xs),
                   ),
                 ),
               ),
@@ -435,7 +438,7 @@ class TextLink extends StatelessWidget {
           Text(
             text,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: AppType.sizeBody,
               fontWeight: FontWeight.w600,
               color: NewColors.accent,
             ),

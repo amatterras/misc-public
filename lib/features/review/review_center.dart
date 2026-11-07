@@ -81,7 +81,7 @@ class ReviewData {
 }
 
 Future<void> showReviewCenter(BuildContext context, AppState s) =>
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (_) => Dialog(
         child: SizedBox(width: 640, height: 560, child: ReviewCenter(state: s)),
@@ -105,7 +105,10 @@ class _ReviewCenterState extends State<ReviewCenter> {
     padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
     child: Text(
       '$text ($count)',
-      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+      style: const TextStyle(
+        fontWeight: FontWeight.w600,
+        fontSize: AppType.sizeBodySmall,
+      ),
     ),
   );
 
@@ -118,7 +121,7 @@ class _ReviewCenterState extends State<ReviewCenter> {
         if (t.dueDate != null) 'Due ${formatShortDate(t.dueDate!)}',
         ?reason,
       ].join(' · '),
-      style: const TextStyle(fontSize: 11),
+      style: const TextStyle(fontSize: AppType.sizeMeta),
     ),
     onTap: () {
       Navigator.pop(context);
@@ -161,7 +164,10 @@ class _ReviewCenterState extends State<ReviewCenter> {
               children: [
                 const Text(
                   'Review',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    fontSize: AppType.sizeHeading,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(width: Space.md),
                 SegmentedButton<bool>(

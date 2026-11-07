@@ -165,7 +165,7 @@ class TopBar extends StatelessWidget {
               child: InkWell(
                 key: const ValueKey('top-bar-expand'),
                 onTap: () => w.setCollapsed(false),
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(AppRadii.sm),
                 child: SizedBox(
                   width: 56,
                   height: 14,
@@ -288,7 +288,7 @@ class TopBar extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: AppType.sizeLabel,
                         color: color,
                         fontStyle: minimized ? FontStyle.italic : null,
                       ),

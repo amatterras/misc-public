@@ -101,6 +101,8 @@ class SmallIconButton extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Material(
+        // A dark scrim over images and thumbnails, in either theme, so the
+        // icon on it is always light.
         color: const Color(0xAA000000),
         shape: const CircleBorder(),
         child: InkWell(
@@ -108,7 +110,11 @@ class SmallIconButton extends StatelessWidget {
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.all(3),
-            child: Icon(icon, size: size, color: color ?? AppColors.text),
+            child: Icon(
+              icon,
+              size: size,
+              color: color ?? const Color(0xFFF4F1F5),
+            ),
           ),
         ),
       ),
@@ -137,10 +143,20 @@ class GhostIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip,
+      // Hover, press and keyboard focus come from the theme's shared state
+      // layers; "active" (a selected tool) adds a quiet fill.
       child: InkWell(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         onTap: onTap,
-        child: Padding(
+        child: AnimatedContainer(
+          duration: AppMotion.of(context, AppMotion.hover),
+          curve: AppMotion.standard,
+          decoration: BoxDecoration(
+            color: active && onTap != null
+                ? AppStates.selected
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppRadii.sm),
+          ),
           padding: const EdgeInsets.all(6),
           child: Icon(
             icon,
@@ -171,7 +187,10 @@ class LabeledField extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Text(
       label,
-      style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+      style: TextStyle(
+        fontSize: AppType.sizeBodySmall,
+        color: AppColors.textMuted,
+      ),
     );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -245,10 +264,13 @@ class FolderDropdown extends StatelessWidget {
 void openDocumentAsset(BuildContext context, Workspace ws, Asset asset) {
   final file = ws.documentFile(asset);
   if (file != null && native.openDocument(file.path)) return;
-  showDialog<void>(
+  showAppDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text(asset.label, style: const TextStyle(fontSize: 16)),
+      title: Text(
+        asset.label,
+        style: const TextStyle(fontSize: AppType.sizeHeading),
+      ),
       content: Text(
         file == null
             ? 'This document is not on this device yet. It arrives with the '
@@ -295,7 +317,7 @@ class AssetChip extends StatelessWidget {
       );
     } else {
       leading = ClipRRect(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(AppRadii.xs),
         child: Image(
           image: ResizeImage(
             AttachmentImageProvider(workspace.attachments, asset.file!),
@@ -312,11 +334,11 @@ class AssetChip extends StatelessWidget {
     return Material(
       color: AppColors.background,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         side: BorderSide(color: AppColors.border),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         onTap: isLink && asset.url != null
             ? () => native.openUrl(asset.url!)
             : isDocument
@@ -334,7 +356,7 @@ class AssetChip extends StatelessWidget {
                 child: Text(
                   isLink || isDocument ? asset.label : 'Image',
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12),
+                  style: const TextStyle(fontSize: AppType.sizeLabel),
                 ),
               ),
               if (isDocument && onOpenPdfEditor != null)
@@ -368,7 +390,7 @@ class AssetChip extends StatelessWidget {
 }
 
 Future<void> showImageViewer(BuildContext context, Workspace ws, Asset asset) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (context) => Dialog(
       backgroundColor: Colors.transparent,
@@ -390,10 +412,10 @@ Future<bool> confirm(
   required String message,
   String action = 'Delete',
 }) async {
-  final result = await showDialog<bool>(
+  final result = await showAppDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text(title, style: const TextStyle(fontSize: 16)),
+      title: Text(title, style: const TextStyle(fontSize: AppType.sizeHeading)),
       content: Text(message, style: TextStyle(color: AppColors.textMuted)),
       actions: [
         TextButton(
@@ -420,12 +442,15 @@ Future<String?> promptText(
 }) async {
   // The dialog owns its text controller, so it is disposed only after the
   // closing animation (disposing it here crashed while the dialog faded).
-  final result = await showDialog<String>(
+  final result = await showAppDialog<String>(
     context: context,
     builder: (context) => _PromptDialog(
       initial: initial,
       builder: (context, controller) => AlertDialog(
-        title: Text(title, style: const TextStyle(fontSize: 16)),
+        title: Text(
+          title,
+          style: const TextStyle(fontSize: AppType.sizeHeading),
+        ),
         content: SizedBox(
           width: 340,
           child: TextField(

@@ -7,6 +7,7 @@ import 'dart:async';
 // under More); nothing is stored differently.
 import 'package:flutter/material.dart';
 
+import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../data/models/object_library_models.dart';
 import '../features/capture/sorting.dart';
@@ -253,7 +254,9 @@ class _FolderTab extends StatelessWidget {
         decoration: BoxDecoration(
           color: Color.lerp(NewColors.surface, color, 0.16),
           border: Border(top: BorderSide(color: color, width: 3)),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppRadii.sm),
+          ),
         ),
         alignment: Alignment.center,
         child: Row(
@@ -261,7 +264,7 @@ class _FolderTab extends StatelessWidget {
             Text(
               collection.name,
               maxLines: 1,
-              style: PhoneType.row.copyWith(fontSize: 14),
+              style: PhoneType.row.copyWith(fontSize: AppType.sizeBody),
             ),
             const SizedBox(width: 8),
             Text('${collection.total}', style: PhoneType.meta),
@@ -303,7 +306,7 @@ class _FolderRow extends StatelessWidget {
                   margin: const EdgeInsets.symmetric(vertical: 14),
                   decoration: BoxDecoration(
                     color: color,
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: BorderRadius.circular(AppRadii.xs),
                   ),
                 ),
                 const SizedBox(width: 14),

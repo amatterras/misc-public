@@ -12,11 +12,14 @@ import 'note_import.dart';
 Future<void> showImportDialog(BuildContext context, AppState s) async {
   var source = ImportSource.obsidian;
   final path = TextEditingController();
-  final go = await showDialog<bool>(
+  final go = await showAppDialog<bool>(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
-        title: const Text('Import notes', style: TextStyle(fontSize: 16)),
+        title: const Text(
+          'Import notes',
+          style: TextStyle(fontSize: AppType.sizeHeading),
+        ),
         content: SizedBox(
           width: 460,
           child: Column(
@@ -63,7 +66,10 @@ Future<void> showImportDialog(BuildContext context, AppState s) async {
                 'notes as HTML or text files (e.g. with an exporter app), '
                 'then import that folder. Importing again skips notes that '
                 'are already here.',
-                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textFaint,
+                ),
               ),
             ],
           ),
@@ -87,10 +93,13 @@ Future<void> showImportDialog(BuildContext context, AppState s) async {
   if (go != true || dir.isEmpty || !context.mounted) return;
   final report = await importNotes(s.workspace, Directory(dir), source: source);
   if (!context.mounted) return;
-  await showDialog<void>(
+  await showAppDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Import finished', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'Import finished',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       content: SizedBox(
         width: 480,
         child: ListView(
@@ -104,7 +113,7 @@ Future<void> showImportDialog(BuildContext context, AppState s) async {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               for (final line in report.notImported.take(50))
-                Text(line, style: const TextStyle(fontSize: 12)),
+                Text(line, style: const TextStyle(fontSize: AppType.sizeLabel)),
               if (report.notImported.length > 50)
                 Text('… and ${report.notImported.length - 50} more'),
             ],

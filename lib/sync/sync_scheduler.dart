@@ -8,9 +8,13 @@
 //   - a long-poll to the hub (/v1/wait) returns the moment another device's
 //     change is stored there, and a pull follows at once;
 //   - if the hub is unreachable the long-poll retries with growing pauses
-//     (1 s … 30 s) and catches up as soon as it answers again;
+//     (1 s … [maxRetry], 10 s by default) and catches up as soon as it
+//     answers again;
 //   - a hub from before /v1/wait (404) is simply polled;
-//   - a slow timer still runs as a safety net in every case.
+//   - a safety-net timer runs a cycle at most [fallback] (10 s) after the
+//     previous one finished, so even a missed trigger is caught within
+//     10 s while the app is active. While the hub cannot be reached it waits
+//     the growing retry pause instead (never more than [fallback]).
 import 'dart:async';
 import 'dart:math';
 
@@ -47,7 +51,8 @@ class SyncScheduler {
     required this.cursor,
     required this.client,
     this.debounce = const Duration(milliseconds: 300),
-    this.fallback = const Duration(minutes: 1),
+    this.fallback = const Duration(seconds: 10),
+    this.maxRetry = const Duration(seconds: 10),
     this.waitSeconds = 25,
     this.onChange,
     this.onError,
@@ -77,7 +82,14 @@ class SyncScheduler {
   final Future<int> Function() cursor;
   final SyncClient client;
   final Duration debounce;
+
+  /// The longest time between two cycles while the scheduler runs (the app
+  /// is active): the safety net behind the change triggers.
   final Duration fallback;
+
+  /// The longest pause between two reconnection attempts while the hub
+  /// cannot be reached (the pause grows 1 s, 2 s, 4 s … up to this).
+  final Duration maxRetry;
   final int waitSeconds;
 
   /// Told when [connection] or [pendingLocal] changes.
@@ -143,7 +155,40 @@ class SyncScheduler {
     return Duration(milliseconds: min(ms, 8 * 60 * 1000));
   }
 
-  bool get scheduled => !_stopped && (_fallback?.isActive ?? false);
+  /// The scheduler is running: a cycle is due (the safety-net timer is
+  /// armed) or one is running and re-arms it when it finishes.
+  bool get scheduled => !_stopped;
+
+  /// Consecutive failed cycles (for the safety-net retry pause).
+  int _cycleFailures = 0;
+
+  /// Arms the safety net: the next cycle at most [fallback] after now (or
+  /// after the growing retry pause while the hub cannot be reached).
+  void _armFallback() {
+    _fallback?.cancel();
+    if (_stopped) return;
+    var wait = fallback;
+    // While offline the live connection already probes the hub with growing
+    // pauses (and asks for a cycle the moment it answers); only without it
+    // (a hub from before live updates) does the safety net retry sooner.
+    if (_cycleFailures > 0 &&
+        connection == SyncConnection.offline &&
+        !_liveLoop) {
+      final r = _retryPause(_cycleFailures);
+      if (r < wait) wait = r;
+    }
+    _fallback = Timer(wait, () => request(Duration.zero));
+  }
+
+  /// 2 s, 4 s, 8 s … capped at [maxRetry] (and at 30 s whatever it is).
+  Duration _retryPause(int failures) {
+    final cap = min(maxRetry.inMilliseconds, 30 * 1000);
+    final ms = min(cap, 1000 * (1 << min(failures, 5)));
+    return Duration(milliseconds: max(ms, 1));
+  }
+
+  /// The long-poll loop is running (it reconnects by itself).
+  bool _liveLoop = false;
 
   void _set(SyncConnection c) {
     if (connection == c) return;
@@ -160,7 +205,8 @@ class SyncScheduler {
     // first retry.
     _failures = 0;
     _lastBlockedCode = null;
-    _fallback = Timer.periodic(fallback, (_) => request(Duration.zero));
+    _cycleFailures = 0;
+    _armFallback();
     _set(SyncConnection.polling);
     request(const Duration(seconds: 1)); // catch up after start
     unawaited(_live(_generation));
@@ -235,6 +281,7 @@ class SyncScheduler {
     try {
       await run();
       lastSuccess = DateTime.now();
+      _cycleFailures = 0;
       _lastBlockedCode = null;
       _lastBlockedAt = null;
       _blockedStreak = 0;
@@ -252,6 +299,7 @@ class SyncScheduler {
       }
     } on SyncFailure catch (e, s) {
       failuresTotal++;
+      _cycleFailures++;
       // Nothing pending is lost: unsent changes go out on the next cycle.
       if (!_stopped) {
         if (e.code == 'sync_paused') {
@@ -269,6 +317,7 @@ class SyncScheduler {
       // Something unexpected (a bug, unreadable data): never "live", and
       // never retried in a tight loop.
       failuresTotal++;
+      _cycleFailures++;
       if (!_stopped) {
         _blocked(
           const SyncFailure(
@@ -282,6 +331,8 @@ class SyncScheduler {
       _running = false;
       _idle?.complete();
       _idle = null;
+      // The safety net counts from the end of this cycle.
+      _armFallback();
       if (_again && !_stopped) {
         _again = false;
         request(debounce);
@@ -324,13 +375,22 @@ class SyncScheduler {
   }
 
   Duration _backoff() {
-    final seconds = min(30, 1 << min(_failures, 5));
-    return Duration(milliseconds: seconds * 1000 + _random.nextInt(500));
+    final pause = _retryPause(max(_failures, 1));
+    return pause + Duration(milliseconds: _random.nextInt(500));
   }
 
   /// The long-poll loop: one request at a time, a pull whenever the hub has
   /// something newer than this device's cursor.
   Future<void> _live(int generation) async {
+    _liveLoop = true;
+    try {
+      await _liveLoopBody(generation);
+    } finally {
+      if (generation == _generation) _liveLoop = false;
+    }
+  }
+
+  Future<void> _liveLoopBody(int generation) async {
     while (!_stopped && generation == _generation) {
       try {
         // Never ask again while a sync is about to run or running: the

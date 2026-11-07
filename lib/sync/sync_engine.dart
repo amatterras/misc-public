@@ -59,6 +59,12 @@ class SyncReport {
   int downloaded = 0;
   int skipped = 0;
 
+  /// Attachment transfers (and the records that need them) left for the next
+  /// cycle because this cycle's transfer time was used up, so that small
+  /// changes are never stuck behind a big file. Nothing is lost: a paused
+  /// transfer continues from where it stopped.
+  int deferred = 0;
+
   /// Conflicts where both sides' tags or PDF pages were kept.
   int merged = 0;
   final List<String> problems = [];
@@ -67,6 +73,7 @@ class SyncReport {
   String toString() =>
       'pushed $pushed, pulled $pulled, conflicts $conflicts'
       '${merged == 0 ? '' : ' ($merged merged)'}, files up $uploaded/down $downloaded'
+      '${deferred == 0 ? '' : ', $deferred file(s) continue next cycle'}'
       '${problems.isEmpty ? '' : ', ${problems.length} problem(s)'}';
 }
 
@@ -241,8 +248,27 @@ class SyncEngine {
     }
   }
 
+  /// How long one cycle may spend on attachment transfers before it pauses
+  /// them (they continue in the next cycle, which the app asks for at once).
+  /// Small record changes always go first, so a large photo or PDF never
+  /// holds back a note edit for longer than this.
+  Duration transferBudget = const Duration(seconds: 2);
+
+  final Stopwatch _cycleClock = Stopwatch();
+
+  /// At least one transfer step ran in this cycle (so every cycle makes
+  /// progress on big files, however slow the rest of it was).
+  bool _transferStarted = false;
+
+  bool _overBudget() =>
+      _transferStarted && _cycleClock.elapsed > transferBudget;
+
   Future<SyncReport> _syncOnce() async {
     final report = SyncReport();
+    _cycleClock
+      ..reset()
+      ..start();
+    _transferStarted = false;
     try {
       await openCanvas?.flushOpenCanvas();
       await workspace.flush();
@@ -453,10 +479,6 @@ class SyncEngine {
       }
       pending.add(c);
     }
-    if (!_attachmentsReconciled) {
-      await _reconcileAttachments(report);
-      _attachmentsReconciled = true;
-    }
     // Kinds added after the first hub version go last, each on its own: an
     // older hub refuses them, and that must not stop everything else.
     final late = {
@@ -467,9 +489,19 @@ class SyncEngine {
         ],
     };
     pending.removeWhere((c) => newerCollections.contains(c.collection));
+    // Small changes first: attachment records (which may need a big file
+    // uploaded before they can go) are sent after every other record, in
+    // their own batches, so a large file never delays a note or a task.
+    final assets = [
+      for (final c in pending)
+        if (c.collection == 'assets' && !c.deleted) c,
+    ];
+    pending.removeWhere((c) => c.collection == 'assets' && !c.deleted);
     final groups = [
       for (var i = 0; i < pending.length; i += maxPushBatch)
         pending.skip(i).take(maxPushBatch).toList(),
+      for (var i = 0; i < assets.length; i += maxPushBatch)
+        assets.skip(i).take(maxPushBatch).toList(),
       for (final list in late.values)
         for (var i = 0; i < list.length; i += maxPushBatch)
           list.skip(i).take(maxPushBatch).toList(),
@@ -493,9 +525,19 @@ class SyncEngine {
         if (c.collection == 'assets' && !c.deleted) {
           // End-to-end: the file is sealed and uploaded under its own id,
           // and the record carries that id (inside the sealed record).
-          batch[i] = await _withBlobs(c, report);
+          final ready = await _withBlobs(c, report);
+          if (ready == null) {
+            // Its file is still on its way: the record waits (it stays
+            // pending here) and goes with the next cycle.
+            batch.removeAt(i);
+            i--;
+            report.deferred++;
+          } else {
+            batch[i] = ready;
+          }
         }
       }
+      if (batch.isEmpty) continue;
       final ({List<PushResult> results, int lastSeq, String hubId}) response;
       try {
         response = await client.push(batch);
@@ -595,6 +637,12 @@ class SyncEngine {
         if (await _mergePages(id, ours)) report.merged++;
       }
       await _commitLocal(state);
+    }
+    // Once per session, after every record went out (a missing file on the
+    // hub must not hold back small changes either): finished only when no
+    // upload had to wait for the next cycle.
+    if (!_attachmentsReconciled) {
+      _attachmentsReconciled = await _reconcileAttachments(report);
     }
   }
 
@@ -762,10 +810,11 @@ class SyncEngine {
   /// Once per session: makes sure the hub has every photo this device has
   /// (e.g. after the hub lost its attachments folder), uploading any that
   /// are missing. Uploads are checked by size and checksum on the hub.
-  Future<void> _reconcileAttachments(SyncReport report) async {
+  Future<bool> _reconcileAttachments(SyncReport report) async {
+    var complete = true;
     for (final a in workspace.assets.all.toList()) {
       final data = workspace.assets.jsonOf(a.id) ?? a.toJson();
-      await _withBlobs(
+      final done = await _withBlobs(
         SyncChange(
           collection: 'assets',
           id: a.id,
@@ -775,7 +824,12 @@ class SyncEngine {
         ),
         report,
       );
+      if (done == null) {
+        complete = false;
+        report.deferred++;
+      }
     }
+    return complete;
   }
 
   /// This device's key pair, and where a changed workspace key is stored
@@ -1032,6 +1086,39 @@ class SyncEngine {
   /// Sealed copies waiting in the outbox: plain SHA-256 -> sealed id.
   Map<String, String>? _pendingIds;
 
+  /// Attachments being sealed for upload (plain SHA-256 -> the sealed id,
+  /// or null if the file changed); a sealing outlives the cycle that began it.
+  final Map<String, Future<String?>> _sealing = {};
+  static const _stillSealing = '\u0000sealing';
+
+  /// Seals attachment [name] off the UI isolate and stages the sealed copy in
+  /// the outbox (noted in the outbox table), so an interrupted upload
+  /// continues with the same bytes. Null if the file no longer matches [sha].
+  Future<String?> _sealAndStage(
+    String name,
+    String sha,
+    SyncCrypto crypto,
+    Directory outbox,
+  ) async {
+    try {
+      final plain = await workspace.attachments.readBytes(name);
+      if (sha256.convert(plain).toString() != sha) return null;
+      final sealed = await crypto.sealBlobAsync(plain);
+      final staged = File(
+        '${outbox.path}${Platform.pathSeparator}${sealed.id}.up',
+      );
+      await staged.writeAsBytes(sealed.bytes, flush: true);
+      final pending = await _pendingTable();
+      pending[sha] = sealed.id;
+      await workspace.store.write('sync', _file('outbox'), {
+        'pending': pending,
+      });
+      return sealed.id;
+    } finally {
+      _sealing.remove(sha);
+    }
+  }
+
   Future<Map<String, String>> _pendingTable() async {
     if (_pendingIds != null) return _pendingIds!;
     final saved = await workspace.store.read('sync', _file('outbox'));
@@ -1057,7 +1144,11 @@ class SyncEngine {
   /// holds it (uploading when not), and returns the asset change carrying the
   /// sealed copy's id as `fileBlob` / `previewBlob`. Without a key (older
   /// setups) the plain file is uploaded as before.
-  Future<SyncChange> _withBlobs(SyncChange asset, SyncReport report) async {
+  ///
+  /// Returns null when this cycle's transfer time is used up before the
+  /// hub holds every file: the record then waits for the next cycle (a
+  /// started upload continues from what the hub already has).
+  Future<SyncChange?> _withBlobs(SyncChange asset, SyncReport report) async {
     final crypto = client.crypto;
     if (crypto == null) {
       await _uploadFiles(asset, report);
@@ -1077,6 +1168,7 @@ class SyncEngine {
       var id = table[sha] ?? data[blobKey] as String?;
       final haveLocal = await workspace.attachments.fileFor(name).exists();
       if (haveLocal && (id == null || !await client.hasAttachment(id))) {
+        if (_overBudget()) return null;
         // The sealed copy is kept in the outbox until the hub has all of it,
         // so an interrupted upload continues instead of sealing (and
         // sending) the file again under a new id.
@@ -1092,21 +1184,34 @@ class SyncEngine {
         if (sealedId == null ||
             !await staged.exists() ||
             await fileSha256(staged) != sealedId) {
-          final plain = await workspace.attachments.readBytes(name);
-          if (sha256.convert(plain).toString() != sha) {
+          // Sealing a big file takes a while: it runs in the background and
+          // the cycle waits only for what is left of its transfer time. If
+          // it is not finished by then, the record waits for a later cycle
+          // (the sealing carries on meanwhile) and small changes keep going.
+          _transferStarted = true;
+          final job = _sealing[sha] ??= _sealAndStage(
+            name,
+            sha,
+            crypto,
+            outbox,
+          );
+          final left = transferBudget - _cycleClock.elapsed;
+          final result = await Future.any<String?>([
+            job,
+            Future<String?>.delayed(
+              left.isNegative ? Duration.zero : left,
+              () => _stillSealing,
+            ),
+          ]);
+          if (result == _stillSealing) return null;
+          if (result == null) {
             report.problems.add(
               'An attachment changed on disk and was not sent.',
             );
             continue;
           }
-          final sealed = crypto.sealBlob(plain);
-          sealedId = sealed.id;
+          sealedId = result;
           staged = File('${outbox.path}${Platform.pathSeparator}$sealedId.up');
-          await staged.writeAsBytes(sealed.bytes, flush: true);
-          pending[sha] = sealedId;
-          await workspace.store.write('sync', _file('outbox'), {
-            'pending': pending,
-          });
         }
         final total = await staged.length();
         transfers.update(
@@ -1115,8 +1220,10 @@ class SyncEngine {
           stage: TransferStage.active,
           total: total,
         );
+        _transferStarted = true;
+        final bool complete;
         try {
-          await client.upload(
+          complete = await client.upload(
             sealedId,
             staged,
             onProgress: (sent, all) => transfers.update(
@@ -1126,6 +1233,7 @@ class SyncEngine {
               bytes: sent,
               total: all,
             ),
+            shouldPause: _overBudget,
           );
         } on SyncFailure catch (e) {
           transfers.update(
@@ -1135,6 +1243,15 @@ class SyncEngine {
             error: e.message,
           );
           rethrow;
+        }
+        if (!complete) {
+          // Paused to let small changes through; the hub keeps what it has.
+          transfers.update(
+            sealedId,
+            upload: true,
+            stage: TransferStage.waiting,
+          );
+          return null;
         }
         // Done only now: the hub confirmed the complete, checked file.
         transfers.update(
@@ -1379,6 +1496,12 @@ class SyncEngine {
           continue;
         }
         if (await workspace.attachments.fileFor(name).exists()) continue;
+        if (_overBudget()) {
+          // This cycle's transfer time is used up: next cycle.
+          report.deferred++;
+          continue;
+        }
+        _transferStarted = true;
         // Downloaded into a staging file, then stored encrypted here.
         final staged = workspace.attachments.stagingFile(name);
         try {
@@ -1397,8 +1520,9 @@ class SyncEngine {
               '${Platform.pathSeparator}$blob.dl',
             );
             transfers.update(blob, upload: false, stage: TransferStage.active);
+            final bool complete;
             try {
-              await client.download(
+              complete = await client.download(
                 blob,
                 null,
                 partial,
@@ -1409,6 +1533,7 @@ class SyncEngine {
                   bytes: got,
                   total: all ?? size,
                 ),
+                shouldPause: _overBudget,
               );
             } on SyncFailure catch (e) {
               transfers.update(
@@ -1421,6 +1546,17 @@ class SyncEngine {
               );
               rethrow;
             }
+            if (!complete) {
+              // Paused; the partial file in `incoming/` is continued next
+              // cycle.
+              transfers.update(
+                blob,
+                upload: false,
+                stage: TransferStage.waiting,
+              );
+              report.deferred++;
+              continue;
+            }
             transfers.update(
               blob,
               upload: false,
@@ -1428,7 +1564,7 @@ class SyncEngine {
             );
             final Uint8List plain;
             try {
-              plain = crypto.openBlob(await partial.readAsBytes());
+              plain = await crypto.openBlobAsync(await partial.readAsBytes());
             } on DecryptionFailure {
               transfers.update(
                 blob,

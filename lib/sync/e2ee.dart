@@ -16,6 +16,7 @@
 //
 // Pure Dart (no Flutter): the hub uses [isEnvelope] and [envelopeShapeOk].
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -245,6 +246,23 @@ class SyncCrypto {
   ({Uint8List bytes, String id}) sealBlob(Uint8List plain) {
     final sealed = _ciphers[current]!.encrypt(plain, context: _blobContext);
     return (bytes: sealed, id: sha256.convert(sealed).toString());
+  }
+
+  /// [sealBlob] on a background isolate for large files, so sealing a big
+  /// photo or PDF never freezes the app.
+  Future<({Uint8List bytes, String id})> sealBlobAsync(Uint8List plain) {
+    if (plain.length < FileCipher.backgroundBytes) {
+      return Future.value(sealBlob(plain));
+    }
+    return Isolate.run(() => sealBlob(plain));
+  }
+
+  /// [openBlob] on a background isolate for large files.
+  Future<Uint8List> openBlobAsync(Uint8List sealed) {
+    if (sealed.length < FileCipher.backgroundBytes) {
+      return Future.value(openBlob(sealed));
+    }
+    return Isolate.run(() => openBlob(sealed));
   }
 
   /// Opens a sealed attachment: the newest key first, then older ones.

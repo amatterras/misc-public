@@ -6,6 +6,7 @@ import 'dart:math' as math;
 
 import '../data/models/library_models.dart';
 import 'conflict_notice.dart';
+import '../data/storage/storage_issue.dart';
 import '../data/models/task_models.dart';
 import '../features/calendar/calendar_page.dart';
 import '../features/canvas/canvas_page.dart';
@@ -95,7 +96,7 @@ Future<void> openAppSwitcher(
     appSwitcherWindow(state, () => _switcherActions(state)),
   );
   if (floating) return float();
-  await showDialog<void>(
+  await showAppDialog<void>(
     context: context,
     builder: (context) => Dialog(
       alignment: Alignment.topRight,
@@ -446,35 +447,31 @@ class _GreetingWindowState extends State<_GreetingWindow> {
       _drag = Offset.zero;
     }),
     child: AnimatedSlide(
-      duration: _dragging ? Duration.zero : const Duration(milliseconds: 170),
-      curve: Curves.easeOutCubic,
+      duration: _dragging ? Duration.zero : AppMotion.panel,
+      curve: AppMotion.standard,
       offset: _dismissing
           ? _dismissDirection * 2.5
           : Offset(_drag.dx / 340, _drag.dy / 80),
       child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 170),
+        duration: AppMotion.panel,
         opacity: _dismissing ? 0 : (1 - (_drag.distance / 280)).clamp(0.35, 1),
         child: MouseRegion(
           cursor: SystemMouseCursors.grab,
-          child: Material(
-            elevation: 12,
-            color: AppColors.cardRaised,
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              width: widget.width,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Text(
-                widget.service.greeting ?? '',
-                style: TextStyle(
-                  color: AppColors.text,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-              ),
+          child: Container(
+            width: widget.width,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpace.lg,
+              vertical: AppSpace.md + 1,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.light ? AppColors.card : AppColors.cardRaised,
+              borderRadius: BorderRadius.circular(AppRadii.popup),
+              border: Border.all(color: AppColors.border),
+              boxShadow: AppElevation.floating,
+            ),
+            child: Text(
+              widget.service.greeting ?? '',
+              style: AppType.paragraph.copyWith(color: AppColors.text),
             ),
           ),
         ),
@@ -500,14 +497,16 @@ class _TestDataBanner extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
             decoration: BoxDecoration(
               color: AppColors.danger,
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(6)),
+              borderRadius: BorderRadius.vertical(
+                bottom: Radius.circular(AppRadii.sm),
+              ),
             ),
             child: Text(
               'TEST DATA — ${TestEnvironment.dataDir?.path ?? ''}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: AppType.sizeMeta,
                 fontWeight: FontWeight.w600,
                 color: AppColors.text,
               ),
@@ -528,9 +527,13 @@ class _UnsavedNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<Set<String>>(
-      valueListenable: state.workspace.unsaved,
-      builder: (context, unsaved, _) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        state.workspace.unsaved,
+        state.workspace.saveIssue,
+      ]),
+      builder: (context, _) {
+        final unsaved = state.workspace.unsaved.value;
         if (unsaved.isEmpty) return const SizedBox.shrink();
         return Positioned(
           left: 0,
@@ -542,12 +545,16 @@ class _UnsavedNotice extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.danger,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadii.sm),
               ),
+              constraints: const BoxConstraints(maxWidth: 520),
+              margin: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                'Some changes are not saved yet. misc. keeps retrying — '
-                'keep the app open (details in the log).',
-                style: TextStyle(fontSize: 13, color: AppColors.text),
+                unsavedNoticeText(state.workspace.saveIssue.value),
+                style: TextStyle(
+                  fontSize: AppType.sizeBodySmall,
+                  color: AppColors.text,
+                ),
               ),
             ),
           ),
@@ -586,7 +593,7 @@ class _ReminderNotice extends StatelessWidget {
             padding: const EdgeInsets.all(Space.md),
             decoration: BoxDecoration(
               color: AppColors.cardRaised,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadii.md),
               border: Border.all(color: AppColors.accent),
             ),
             child: Column(
@@ -595,7 +602,10 @@ class _ReminderNotice extends StatelessWidget {
               children: [
                 Text(
                   due.length == 1 ? 'Reminder' : '${due.length} reminders',
-                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.textMuted,
+                  ),
                 ),
                 for (final t in due.take(3))
                   Row(
@@ -605,7 +615,7 @@ class _ReminderNotice extends StatelessWidget {
                           t.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14),
+                          style: const TextStyle(fontSize: AppType.sizeBody),
                         ),
                       ),
                       TextButton(
@@ -626,7 +636,10 @@ class _ReminderNotice extends StatelessWidget {
                 if (due.length > 3)
                   Text(
                     '+ ${due.length - 3} more',
-                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    style: TextStyle(
+                      fontSize: AppType.sizeLabel,
+                      color: AppColors.textMuted,
+                    ),
                   ),
               ],
             ),
@@ -655,7 +668,7 @@ class _Toast extends StatelessWidget {
           child: IgnorePointer(
             child: AnimatedOpacity(
               opacity: message == null ? 0 : 1,
-              duration: const Duration(milliseconds: 160),
+              duration: AppMotion.dropdown,
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -664,12 +677,12 @@ class _Toast extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: AppColors.cardRaised,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppRadii.sm),
                     border: Border.all(color: AppColors.border),
                   ),
                   child: Text(
                     message ?? '',
-                    style: const TextStyle(fontSize: 13),
+                    style: const TextStyle(fontSize: AppType.sizeBodySmall),
                   ),
                 ),
               ),
@@ -730,7 +743,7 @@ class _TransferBar extends StatelessWidget {
             child: Material(
               key: const ValueKey('transfer-result'),
               color: AppColors.cardRaised,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadii.sm),
               child: Padding(
                 padding: const EdgeInsets.only(left: 16, right: 4),
                 child: Row(
@@ -741,7 +754,7 @@ class _TransferBar extends StatelessWidget {
                         result.message,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13),
+                        style: const TextStyle(fontSize: AppType.sizeBodySmall),
                       ),
                     ),
                     if (result.undo != null)

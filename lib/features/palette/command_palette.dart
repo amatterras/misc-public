@@ -269,7 +269,7 @@ Future<void> showCommandPalette(
   BuildContext context,
   List<PaletteCommand> commands,
 ) async {
-  final chosen = await showDialog<PaletteCommand>(
+  final chosen = await showAppDialog<PaletteCommand>(
     context: context,
     builder: (_) => _Palette(commands: commands),
   );
@@ -346,7 +346,7 @@ class _PaletteState extends State<_Palette> {
                               : Text(
                                   shown[i].hint,
                                   style: TextStyle(
-                                    fontSize: 11,
+                                    fontSize: AppType.sizeMeta,
                                     color: AppColors.textFaint,
                                   ),
                                 ),

@@ -50,10 +50,13 @@ class _DevicesSectionState extends State<DevicesSection> {
   }
 
   Future<void> _remove(HubDeviceInfo d) async {
-    final yes = await showDialog<bool>(
+    final yes = await showAppDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Remove ${d.name}?', style: const TextStyle(fontSize: 16)),
+        title: Text(
+          'Remove ${d.name}?',
+          style: const TextStyle(fontSize: AppType.sizeHeading),
+        ),
         content: const Text(
           'It will stop syncing at once, and a new encryption key is made '
           'for your other devices. Notes it already has stay on it; to be '
@@ -90,7 +93,10 @@ class _DevicesSectionState extends State<DevicesSection> {
         Row(
           children: [
             const Expanded(
-              child: Text('Devices', style: TextStyle(fontSize: 13)),
+              child: Text(
+                'Devices',
+                style: TextStyle(fontSize: AppType.sizeBodySmall),
+              ),
             ),
             IconButton(
               tooltip: 'Refresh',
@@ -103,7 +109,10 @@ class _DevicesSectionState extends State<DevicesSection> {
         if (info == null && !_loading)
           Text(
             'The device list needs the hub to be reachable.',
-            style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.textFaint,
+            ),
           ),
         if (info != null)
           for (final d in info.devices)
@@ -114,7 +123,7 @@ class _DevicesSectionState extends State<DevicesSection> {
               enabled: !d.revoked,
               title: Text(
                 '${d.name}${d.id == info.self ? ' (this device)' : ''}',
-                style: const TextStyle(fontSize: 13),
+                style: const TextStyle(fontSize: AppType.sizeBodySmall),
               ),
               subtitle: Text(
                 '${d.revoked
@@ -123,7 +132,10 @@ class _DevicesSectionState extends State<DevicesSection> {
                     ? 'Read-only (a copy; cannot change your data)'
                     : 'Can read and write'}'
                 ' · last seen ${lastSeenText(d.lastSeen)}',
-                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textFaint,
+                ),
               ),
               trailing: d.revoked
                   ? null
@@ -139,7 +151,7 @@ class _DevicesSectionState extends State<DevicesSection> {
             child: Text(
               _message!,
               key: const ValueKey('device-message'),
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(fontSize: AppType.sizeLabel),
             ),
           ),
       ],

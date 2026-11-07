@@ -11,11 +11,13 @@ import 'models/library_models.dart';
 import 'models/record.dart';
 import 'models/sync_models.dart';
 import 'models/task_models.dart';
+import 'models/smart_view_models.dart';
 import 'repositories/record_collection.dart';
 import 'storage/attachment_store.dart';
 import 'storage/app_log.dart';
 import 'storage/backup_service.dart';
 import 'storage/json_file_store.dart';
+import 'storage/storage_issue.dart';
 import 'sync/sync_clock.dart';
 import 'models/ai_models.dart';
 import 'models/browser_models.dart';
@@ -109,6 +111,7 @@ class Workspace {
     days = _c('calendar_days', DayRecord.fromJson);
     tasks = _c('tasks', Task.fromJson);
     projects = _c('projects', Project.fromJson);
+    smartViews = _c('smart_views', SmartView.fromJson);
     conflicts = _c('conflicts', SyncConflict.fromJson);
     clipboard = _c('clipboard', ClipboardClip.fromJson);
     purges = _c('purges', PurgeMark.fromJson);
@@ -164,6 +167,9 @@ class Workspace {
   late final RecordCollection<DayRecord> days;
   late final RecordCollection<Task> tasks;
   late final RecordCollection<Project> projects;
+
+  /// Saved Smart Views of the Calendar's Tasks column (filters only).
+  late final RecordCollection<SmartView> smartViews;
   late final RecordCollection<SyncConflict> conflicts;
 
   /// Text shared between the user's devices (synced only while
@@ -220,6 +226,7 @@ class Workspace {
     'archive_folders': archiveFolders,
     'shares': shares,
     'custom_tags': customTags,
+    'smart_views': smartViews,
     'thought_experiments': experiments,
     'vault_meta': vaultMeta,
     'vault_items': vaultItems,
@@ -272,14 +279,39 @@ class Workspace {
     return c;
   }
 
-  /// Collections whose latest changes could not be saved yet (they keep
-  /// retrying). Empty when everything is on disk.
+  /// Collections (and `canvas:<id>` documents) whose latest changes could
+  /// not be saved yet (they keep retrying). Empty when everything is on disk.
   final ValueNotifier<Set<String>> unsaved = ValueNotifier(const {});
 
+  /// What kind of problem keeps the changes in [unsaved] off the disk (the
+  /// most serious one), or null when everything is saved. Shown in plain
+  /// words by the unsaved notice ([unsavedNoticeText]).
+  final ValueNotifier<StorageIssue?> saveIssue = ValueNotifier(null);
+  final Map<String, StorageIssue> _issues = {};
+
   void _noteSaveResult(String name, bool saved) {
+    Object? error;
+    for (final c in _all) {
+      if (c.name == name) error = c.lastSaveError;
+    }
+    noteSaveResult(name, saved, error);
+  }
+
+  /// Records the outcome of a save of [name] (a record collection, or
+  /// `canvas:<id>` for a mindmap/notebook document), so the notice shows
+  /// while anything is not on disk and says why.
+  void noteSaveResult(String name, bool saved, [Object? error]) {
+    if (saved) {
+      _issues.remove(name);
+    } else {
+      _issues[name] = error == null
+          ? StorageIssue.temporary
+          : classifyStorageError(error);
+    }
     final now = {...unsaved.value};
     final changed = saved ? now.remove(name) : now.add(name);
     if (changed) unsaved.value = now;
+    saveIssue.value = worstIssue(_issues.values);
   }
 
   /// Fires when any record anywhere changes.
@@ -292,7 +324,17 @@ class Workspace {
   /// What the last start-up finished of an interrupted multi-record change.
   RecoveryReport lastRecovery = const RecoveryReport();
 
+  /// Half-written files a crash left behind, removed by the last [load].
+  int lastTempCleanup = 0;
+
   Future<void> load() async {
+    // A crash in the middle of a save leaves its temporary file; the real
+    // file and its previous version are untouched, so it is only clutter.
+    try {
+      lastTempCleanup = await store.removeInterruptedWrites();
+    } catch (e) {
+      AppLog.warn('Could not remove leftover temporary files ($e)');
+    }
     device = await DeviceIdentity.loadOrCreate(store);
     clock.deviceId = device!.id;
     final deleted = await store.read('sync', 'canvas_tombstones');
@@ -1496,6 +1538,25 @@ class Workspace {
     );
     tasks.put(task);
     return task;
+  }
+
+  /// A copy of task [id] (same details, estimate included) with a new id,
+  /// not done. Null when the task is gone.
+  Task? duplicateTask(String id) {
+    final task = tasks[id];
+    if (task == null) return null;
+    final now = DateTime.now();
+    final copy = Task.fromJson({
+      ...task.toJson(),
+      'id': newId(),
+      'title': '${task.title} (copy)',
+      'done': false,
+      'completedAt': null,
+      'createdAt': utcIso(now),
+      'updatedAt': utcIso(now),
+    });
+    tasks.put(copy);
+    return copy;
   }
 
   void toggleTask(String id) {

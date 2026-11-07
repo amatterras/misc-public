@@ -452,8 +452,12 @@ void main() {
             () => Future<void>.delayed(const Duration(milliseconds: 20)),
           );
           await tester.pump(const Duration(milliseconds: 50));
-          pages = await tester.runAsync<CanvasDocument?>(
+          // Loading waits for a save of the same page still in progress,
+          // which moves on the simulated clock: wait on both clocks.
+          pages = await waitForBothClocks(
+            tester,
             () => s.canvases.load(notebookIdFor(note.id)),
+            what: 'Loading the pages',
           );
         }
         expect(pages!.items, hasLength(1));

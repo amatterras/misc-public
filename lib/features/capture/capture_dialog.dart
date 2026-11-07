@@ -27,7 +27,7 @@ Future<void> showCaptureDialog(
   CaptureDestination? destination,
   DateTime? day,
 }) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (_) => CaptureDialog(
       state: state,
@@ -381,7 +381,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                   autofocus: true,
                   minLines: 3,
                   maxLines: 8,
-                  style: const TextStyle(fontSize: 14),
+                  style: const TextStyle(fontSize: AppType.sizeBody),
                   decoration: const InputDecoration(
                     hintText: 'Type a note, or paste a link or image…',
                   ),
@@ -397,7 +397,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                           'Link: ${displayUrl(url)}',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: AppType.sizeLabel,
                             color: AppColors.textMuted,
                           ),
                         ),
@@ -407,7 +407,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                   const SizedBox(height: Space.sm),
                   TextField(
                     controller: _title,
-                    style: const TextStyle(fontSize: 13),
+                    style: const TextStyle(fontSize: AppType.sizeBodySmall),
                     decoration: InputDecoration(
                       hintText: s.capture.fetchPreviews
                           ? 'Title (optional — fetched from the page if empty)'
@@ -428,7 +428,9 @@ class _CaptureDialogState extends State<CaptureDialog> {
                             child: Stack(
                               children: [
                                 ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.sm,
+                                  ),
                                   child: SizedBox(
                                     width: 110,
                                     height: 84,
@@ -475,7 +477,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                 Text(
                   'SAVE TO',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: AppType.sizeMeta,
                     color: AppColors.textFaint,
                     letterSpacing: 0.6,
                   ),

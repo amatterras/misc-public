@@ -11,7 +11,7 @@ Future<void> showPaperDialog(
   BuildContext context,
   AppState state,
   String noteId,
-) => showDialog<void>(
+) => showAppDialog<void>(
   context: context,
   builder: (context) => _PaperDialog(state: state, noteId: noteId),
 );
@@ -49,7 +49,10 @@ class _PaperDialogState extends State<_PaperDialog> {
     // they are kept and apply again in the dark theme.
     final light = Theme.of(context).brightness == Brightness.light;
     return AlertDialog(
-      title: const Text('Paper', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'Paper',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       content: SizedBox(
         width: 460,
         child: SingleChildScrollView(
@@ -93,7 +96,10 @@ class _PaperDialogState extends State<_PaperDialog> {
                     'In the light theme the page is white and the lines are '
                     'black.',
                     key: const ValueKey('paper-light-note'),
-                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    style: TextStyle(
+                      fontSize: AppType.sizeLabel,
+                      color: AppColors.textMuted,
+                    ),
                   ),
                 )
               else ...[
@@ -158,7 +164,7 @@ class _PaperDialogState extends State<_PaperDialog> {
     padding: const EdgeInsets.only(bottom: 4),
     child: Text(
       text,
-      style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+      style: TextStyle(fontSize: AppType.sizeLabel, color: AppColors.textMuted),
     ),
   );
 
@@ -249,13 +255,13 @@ class _TemplateTile extends StatelessWidget {
   Widget build(BuildContext context) => InkWell(
     key: ValueKey('paper-${template.name}'),
     onTap: onTap,
-    borderRadius: BorderRadius.circular(6),
+    borderRadius: BorderRadius.circular(AppRadii.sm),
     child: Column(
       children: [
         Container(
           height: 110,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(AppRadii.sm),
             border: Border.all(
               color: selected ? AppColors.accent : AppColors.border,
               width: selected ? 2 : 1,
@@ -273,7 +279,7 @@ class _TemplateTile extends StatelessWidget {
           template.label,
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontSize: 11,
+            fontSize: AppType.sizeMeta,
             color: selected ? AppColors.text : AppColors.textMuted,
           ),
         ),

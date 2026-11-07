@@ -138,9 +138,9 @@ class _NotesPageState extends State<NotesPage> {
         padding: EdgeInsets.only(left: depth * 14.0),
         child: Material(
           color: selected ? AppColors.selected : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
           child: InkWell(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(AppRadii.sm),
             onTap: () => setState(() => _filter = filter),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -157,7 +157,7 @@ class _NotesPageState extends State<NotesPage> {
                       label,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: AppType.sizeBodySmall,
                         color: selected ? AppColors.text : AppColors.textMuted,
                       ),
                     ),
@@ -204,7 +204,7 @@ class _NotesPageState extends State<NotesPage> {
                 child: Text(
                   'FOLDERS',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: AppType.sizeMeta,
                     letterSpacing: 0.6,
                     color: AppColors.textFaint,
                   ),
@@ -254,7 +254,10 @@ class _NotesPageState extends State<NotesPage> {
             padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             child: Text(
               'Folders are shared with Canvas.',
-              style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+              style: TextStyle(
+                fontSize: AppType.sizeLabel,
+                color: AppColors.textFaint,
+              ),
             ),
           ),
         if (tags.isNotEmpty) ...[
@@ -263,7 +266,7 @@ class _NotesPageState extends State<NotesPage> {
             child: Text(
               'TAGS',
               style: TextStyle(
-                fontSize: 11,
+                fontSize: AppType.sizeMeta,
                 letterSpacing: 0.6,
                 color: AppColors.textFaint,
               ),
@@ -275,8 +278,10 @@ class _NotesPageState extends State<NotesPage> {
     );
   }
 
-  Widget _count(int n) =>
-      Text('$n', style: TextStyle(fontSize: 11, color: AppColors.textFaint));
+  Widget _count(int n) => Text(
+    '$n',
+    style: TextStyle(fontSize: AppType.sizeMeta, color: AppColors.textFaint),
+  );
 
   Future<void> _newFolder(String? parentId) async {
     final name = await promptText(
@@ -424,7 +429,7 @@ class _NotesPageState extends State<NotesPage> {
                     subtitle: Text(
                       'Canvas',
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: AppType.sizeMeta,
                         color: AppColors.textFaint,
                       ),
                     ),
@@ -439,7 +444,7 @@ class _NotesPageState extends State<NotesPage> {
                           ? 'No notes here yet. Tap New, or use Quick Add.'
                           : 'No notes here yet. Click New, or use Quick Add (Ctrl+N).',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: AppType.sizeBodySmall,
                         color: AppColors.textFaint,
                       ),
                     ),
@@ -473,9 +478,9 @@ class _NotesPageState extends State<NotesPage> {
       padding: const EdgeInsets.only(bottom: 4),
       child: Material(
         color: selected ? AppColors.selected : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
           onTap: () => _open(n.id),
           child: Padding(
             padding: const EdgeInsets.all(Space.md),
@@ -489,7 +494,7 @@ class _NotesPageState extends State<NotesPage> {
                         n.displayTitle,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: AppType.sizeBody,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -513,7 +518,7 @@ class _NotesPageState extends State<NotesPage> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: AppType.sizeLabel,
                       color: AppColors.textMuted,
                       height: 1.4,
                     ),
@@ -527,7 +532,10 @@ class _NotesPageState extends State<NotesPage> {
                     ...n.tags.map((t) => '#$t'),
                   ].join('  ·  '),
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                  style: TextStyle(
+                    fontSize: AppType.sizeMeta,
+                    color: AppColors.textFaint,
+                  ),
                 ),
               ],
             ),
@@ -758,11 +766,14 @@ class _NoteEditorState extends State<NoteEditor> {
 
   Future<void> _placeOnCanvas() async {
     String? canvasId = s.canvas?.id;
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: const Text('Place on canvas', style: TextStyle(fontSize: 16)),
+          title: const Text(
+            'Place on canvas',
+            style: TextStyle(fontSize: AppType.sizeHeading),
+          ),
           content: SizedBox(
             width: 340,
             child: Column(
@@ -772,7 +783,10 @@ class _NoteEditorState extends State<NoteEditor> {
                 Text(
                   'Adds a card that shows this note. It is the same note, not a '
                   'copy — edits appear in both places.',
-                  style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+                  style: TextStyle(
+                    fontSize: AppType.sizeBodySmall,
+                    color: AppColors.textMuted,
+                  ),
                 ),
                 const SizedBox(height: Space.md),
                 DropdownButton<String>(
@@ -895,7 +909,7 @@ class _NoteEditorState extends State<NoteEditor> {
                       child: Text(
                         'Text ${(_textZoom * 100).round()}%',
                         key: const ValueKey('note-text-zoom-value'),
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: AppType.sizeLabel),
                       ),
                     ),
                   ),
@@ -960,7 +974,10 @@ class _NoteEditorState extends State<NoteEditor> {
         children: [
           for (final t in n.tags)
             InputChip(
-              label: Text('#$t', style: const TextStyle(fontSize: 12)),
+              label: Text(
+                '#$t',
+                style: const TextStyle(fontSize: AppType.sizeLabel),
+              ),
               onDeleted: () =>
                   _update((x) => x.copyWith(tags: [...x.tags]..remove(t))),
               visualDensity: VisualDensity.compact,
@@ -969,7 +986,7 @@ class _NoteEditorState extends State<NoteEditor> {
             width: 140,
             child: TextField(
               controller: _tag,
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(fontSize: AppType.sizeLabel),
               decoration: const InputDecoration(
                 hintText: '+ add tag',
                 filled: false,
@@ -1064,7 +1081,7 @@ class _NoteEditorState extends State<NoteEditor> {
           Text(
             'ATTACHMENTS',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: AppType.sizeMeta,
               letterSpacing: 0.6,
               color: AppColors.textFaint,
             ),
@@ -1125,14 +1142,17 @@ class _NoteEditorState extends State<NoteEditor> {
             children: [
               Text(
                 'Mentions other notes:',
-                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textFaint,
+                ),
               ),
               for (final m in mentions.take(6))
                 ActionChip(
                   avatar: const Icon(Icons.add_link, size: 14),
                   label: Text(
                     'Link “${m.displayTitle}”',
-                    style: const TextStyle(fontSize: 12),
+                    style: const TextStyle(fontSize: AppType.sizeLabel),
                   ),
                   tooltip: 'Turn the mention into a [[link]]',
                   onPressed: () => ws.linkMention(n.id, m.displayTitle),
@@ -1147,7 +1167,7 @@ class _NoteEditorState extends State<NoteEditor> {
         Text(
           'LINKED NOTES',
           style: TextStyle(
-            fontSize: 11,
+            fontSize: AppType.sizeMeta,
             letterSpacing: 0.6,
             color: AppColors.textFaint,
           ),
@@ -1163,7 +1183,10 @@ class _NoteEditorState extends State<NoteEditor> {
                   ws.noteByTitle(t) == null ? Icons.add : Icons.north_east,
                   size: 14,
                 ),
-                label: Text(t, style: const TextStyle(fontSize: 12)),
+                label: Text(
+                  t,
+                  style: const TextStyle(fontSize: AppType.sizeLabel),
+                ),
                 tooltip: ws.noteByTitle(t) == null
                     ? 'Create this note'
                     : 'Open',
@@ -1174,7 +1197,7 @@ class _NoteEditorState extends State<NoteEditor> {
                 avatar: const Icon(Icons.subdirectory_arrow_left, size: 14),
                 label: Text(
                   b.displayTitle,
-                  style: const TextStyle(fontSize: 12),
+                  style: const TextStyle(fontSize: AppType.sizeLabel),
                 ),
                 tooltip: 'Links here',
                 onPressed: () => widget.onOpenNote(b.id),
@@ -1207,12 +1230,15 @@ Future<void> showNoteHistory(
   Workspace ws,
   String noteId,
 ) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (context) {
       final versions = ws.versionsOf(noteId);
       return AlertDialog(
-        title: const Text('Version history', style: TextStyle(fontSize: 16)),
+        title: const Text(
+          'Version history',
+          style: TextStyle(fontSize: AppType.sizeHeading),
+        ),
         content: SizedBox(
           width: 460,
           child: versions.isEmpty
@@ -1276,12 +1302,15 @@ Future<void> showNoteHistory(
 /// text, folder, tags, attachments and — from the trash folder — its
 /// handwriting and PDF pages.
 Future<void> showRecentlyDeleted(BuildContext context, AppState s) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (context) {
       final deleted = s.workspace.deletedNotes();
       return AlertDialog(
-        title: const Text('Recently deleted', style: TextStyle(fontSize: 16)),
+        title: const Text(
+          'Recently deleted',
+          style: TextStyle(fontSize: AppType.sizeHeading),
+        ),
         content: SizedBox(
           width: 460,
           child: deleted.isEmpty
@@ -1337,10 +1366,13 @@ Future<void> showRecentlyDeleted(BuildContext context, AppState s) {
 /// are only listed; nothing is merged or deleted.
 Future<void> showSimilarNotes(BuildContext context, AppState s) {
   final pairs = similarNotes(s.workspace.notes.all);
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Similar notes', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'Similar notes',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       content: SizedBox(
         width: 480,
         child: pairs.isEmpty

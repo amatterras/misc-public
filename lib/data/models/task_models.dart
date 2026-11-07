@@ -56,6 +56,17 @@ enum Recurrence { none, daily, weekly, monthly }
 /// Board column of an unfinished task (finished = [Task.done]).
 enum TaskStatus { todo, doing }
 
+/// Optional rough effort of a task, next to (never instead of) its time
+/// estimate.
+enum TaskEffort {
+  light('Light'),
+  medium('Medium'),
+  heavy('Heavy');
+
+  const TaskEffort(this.label);
+  final String label;
+}
+
 class Task implements Record {
   const Task({
     required this.id,
@@ -81,6 +92,8 @@ class Task implements Record {
     this.startDate,
     this.seriesDate,
     this.noteIds = const [],
+    this.estimateMinutes,
+    this.effort,
   });
 
   @override
@@ -132,6 +145,13 @@ class Task implements Record {
   /// Notes this task is about (each note lists its tasks).
   final List<String> noteIds;
 
+  /// Optional estimated duration in minutes (see task_estimate.dart). Only
+  /// shown; nothing is ever scheduled from it.
+  final int? estimateMinutes;
+
+  /// Optional effort level (shown only in the task's details).
+  final TaskEffort? effort;
+
   /// Tasks with a date but no time are reminded at this time of day.
   static const defaultReminderMinutes = 9 * 60;
 
@@ -172,6 +192,8 @@ class Task implements Record {
     DateTime? Function()? startDate,
     DateTime? Function()? seriesDate,
     List<String>? noteIds,
+    int? Function()? estimateMinutes,
+    TaskEffort? Function()? effort,
   }) => Task(
     id: id,
     title: title ?? this.title,
@@ -194,6 +216,10 @@ class Task implements Record {
     startDate: startDate != null ? startDate() : this.startDate,
     seriesDate: seriesDate != null ? seriesDate() : this.seriesDate,
     noteIds: noteIds ?? this.noteIds,
+    estimateMinutes: estimateMinutes != null
+        ? estimateMinutes()
+        : this.estimateMinutes,
+    effort: effort != null ? effort() : this.effort,
     createdAt: createdAt,
     updatedAt: DateTime.now(),
   );
@@ -289,6 +315,8 @@ class Task implements Record {
     if (startDate != null) 'startDate': dayKey(startDate!),
     if (seriesDate != null) 'seriesDate': dayKey(seriesDate!),
     if (noteIds.isNotEmpty) 'noteIds': noteIds,
+    if (estimateMinutes != null) 'estimateMinutes': estimateMinutes,
+    if (effort != null) 'effort': effort!.name,
     'createdAt': utcIso(createdAt),
     'updatedAt': utcIso(updatedAt),
   };
@@ -339,6 +367,11 @@ class Task implements Record {
       startDate: _day(j['startDate']),
       seriesDate: _day(j['seriesDate']),
       noteIds: _strings(j['noteIds']),
+      estimateMinutes: switch (j['estimateMinutes']) {
+        final int m when m > 0 => m,
+        _ => null, // missing or not a usable number: no estimate
+      },
+      effort: TaskEffort.values.asNameMap()[j['effort']],
       createdAt: parseDate(j['createdAt']) ?? DateTime.now(),
       updatedAt: parseDate(j['updatedAt']) ?? DateTime.now(),
     );

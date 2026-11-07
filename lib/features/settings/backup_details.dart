@@ -14,7 +14,7 @@ Future<void> showBackupDetails(
   BuildContext context,
   AppState state,
   Directory backup,
-) => showDialog<void>(
+) => showAppDialog<void>(
   context: context,
   builder: (_) => _BackupDetails(state: state, backup: backup),
 );
@@ -133,7 +133,7 @@ class _BackupDetailsState extends State<_BackupDetails> {
                         'Intact: every file matches.',
                         key: const ValueKey('backup-intact'),
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: AppType.sizeBodySmall,
                           color: AppColors.success,
                         ),
                       ),
@@ -144,7 +144,10 @@ class _BackupDetailsState extends State<_BackupDetails> {
                         'Damaged: ${_problems.first}'
                         '${_problems.length > 1 ? ' (+${_problems.length - 1} more)' : ''}',
                         key: const ValueKey('backup-damaged'),
-                        style: TextStyle(fontSize: 13, color: AppColors.danger),
+                        style: TextStyle(
+                          fontSize: AppType.sizeBodySmall,
+                          color: AppColors.danger,
+                        ),
                       ),
                     ),
                 ],

@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../data/models/calendar_models.dart' show CalendarCategory;
 import '../data/models/record.dart';
@@ -104,8 +105,8 @@ class _PhoneCalendarState extends State<PhoneCalendar> {
 
   void _step(int by) => _pages.animateToPage(
     (_pages.page ?? _base.toDouble()).round() + by,
-    duration: const Duration(milliseconds: 260),
-    curve: Curves.easeOutCubic,
+    duration: AppMotion.page,
+    curve: AppMotion.standard,
   );
 
   int _rows(DateTime month) {
@@ -227,7 +228,7 @@ class _PhoneCalendarState extends State<PhoneCalendar> {
               child: Center(
                 child: Text(
                   letters[(DatePrefs.firstWeekday - 1 + i) % 7],
-                  style: PhoneType.eyebrow.copyWith(fontSize: 10.5),
+                  style: PhoneType.eyebrow.copyWith(fontSize: AppType.sizeMeta),
                 ),
               ),
             ),
@@ -237,8 +238,8 @@ class _PhoneCalendarState extends State<PhoneCalendar> {
   }
 
   Widget _grid() => AnimatedContainer(
-    duration: const Duration(milliseconds: 200),
-    curve: Curves.easeOutCubic,
+    duration: AppMotion.normal,
+    curve: AppMotion.standard,
     height: _rows(_month) * _cellHeight + 6,
     child: PageView.builder(
       key: const ValueKey('phone-month'),
@@ -311,7 +312,7 @@ class _PhoneCalendarState extends State<PhoneCalendar> {
                 child: Text(
                   '${day.day}',
                   style: PhoneType.numeral.copyWith(
-                    fontSize: 16.5,
+                    fontSize: AppType.sizeHeading,
                     fontWeight: selected || today
                         ? FontWeight.w800
                         : FontWeight.w500,

@@ -91,7 +91,7 @@ class AppSwitcherGrid extends StatelessWidget {
                 for (final a in list)
                   InkWell(
                     key: ValueKey('switch-${a.label}'),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppRadii.md),
                     onTap: () {
                       final nav = Navigator.of(context);
                       if (closeAfter) nav.pop();
@@ -111,7 +111,7 @@ class AppSwitcherGrid extends StatelessWidget {
                         Text(
                           a.label,
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: AppType.sizeMeta,
                             color: a.active
                                 ? AppColors.accent
                                 : AppColors.textMuted,

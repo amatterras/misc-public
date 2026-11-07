@@ -38,7 +38,7 @@ Future<bool> showRecoveryCodeDialog(
     return false;
   }
   if (!context.mounted) return false;
-  final done = await showDialog<bool>(
+  final done = await showAppDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (_) => RecoveryCodeDialog(code: code.text),
@@ -88,7 +88,7 @@ class RecoveryCodeDialogState extends State<RecoveryCodeDialog> {
               Text(
                 _riskText,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: AppType.sizeBodySmall,
                   height: 1.45,
                   color: AppColors.textMuted,
                 ),
@@ -110,7 +110,10 @@ class RecoveryCodeDialogState extends State<RecoveryCodeDialog> {
               Text(
                 'Put it in a password manager or print it. Clipboard history '
                 'may keep a copy: clear it afterwards if you copy.',
-                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textFaint,
+                ),
               ),
               CheckboxListTile(
                 key: const ValueKey('recovery-saved'),
@@ -120,7 +123,7 @@ class RecoveryCodeDialogState extends State<RecoveryCodeDialog> {
                 onChanged: (v) => setState(() => _saved = v ?? false),
                 title: const Text(
                   'I have saved this code somewhere safe',
-                  style: TextStyle(fontSize: 14),
+                  style: TextStyle(fontSize: AppType.sizeBody),
                 ),
               ),
             ],
@@ -217,7 +220,7 @@ Future<void> offerRecoveryCodeOnce(BuildContext context, AppState state) async {
     return;
   }
   if (!context.mounted) return;
-  final make = await showDialog<bool>(
+  final make = await showAppDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       key: const ValueKey('recovery-offer'),

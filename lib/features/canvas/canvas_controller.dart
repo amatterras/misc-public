@@ -17,6 +17,7 @@ import 'canvas_resources.dart';
 import 'canvas_text.dart';
 import '../ink/stroke_geometry.dart';
 import '../ink/partial_erase.dart';
+import '../ink/ink_metrics.dart';
 import '../ink/shape_recognition.dart';
 
 export 'canvas_text.dart' show kTextPadding, canvasTextStyle;
@@ -1242,6 +1243,9 @@ class CanvasController extends ChangeNotifier {
   /// canvas) on every pen movement; that was the main source of lag.
   final ChangeNotifier liveInk = _Ping();
 
+  /// The live stroke's shape, kept between frames (see LiveInkGeometry).
+  final LiveInkGeometry liveGeometry = LiveInkGeometry();
+
   /// The live stroke comes from Apple Pencil: width follows pressure.
   bool _livePressure = false;
 
@@ -1256,9 +1260,20 @@ class CanvasController extends ChangeNotifier {
   /// Where the pen is expected to be next, or null.
   Offset? get predictedPoint {
     final v = _velocity;
-    if (_drag != _Drag.draw || v == null || _livePoints.isEmpty) {
-      return null;
+    if (_drag != _Drag.draw || _livePoints.isEmpty) return null;
+    if (_hasExternalPrediction) {
+      final p = _externalPrediction;
+      if (p == null) return null;
+      // UIKit predicts about one frame ahead; a wild guess (a fast flick)
+      // is shortened so it can never draw a visible spike.
+      final last = _livePoints.last.offset;
+      final ahead = p - last;
+      final maxAhead = 24 / _scale;
+      return ahead.distance <= maxAhead
+          ? p
+          : last + ahead / ahead.distance * maxAhead;
     }
+    if (v == null) return null;
     var ahead = v * (predictionHorizon.inMicroseconds / 1000);
     final maxAhead = 12 / _scale; // never more than 12 screen pixels
     if (ahead.distance > maxAhead) ahead = ahead / ahead.distance * maxAhead;
@@ -1516,14 +1531,32 @@ class CanvasController extends ChangeNotifier {
           createText(world);
         }
       case CanvasTool.pen || CanvasTool.highlighter:
+        final wasEditing = _editingId != null;
         endEditing();
         _beginTransaction();
         _drag = _Drag.draw;
-        _livePressure = kind == PointerDeviceKind.stylus;
+        _liveIsStylus = kind == PointerDeviceKind.stylus;
+        _firstPressure = pressure;
+        // Pressure-shaped ink only once this Pencil has shown it reports
+        // pressure (Apple Pencil USB-C and some pens do not): see
+        // [_addLiveSample]. Until then the line keeps the chosen width.
+        _livePressure = _liveIsStylus && pencilPressureSeen;
         _velocity = null;
+        _externalPrediction = null;
+        _hasExternalPrediction = false;
         _lastMoveTime = timeStamp;
         _livePoints = [StrokePoint(world.dx, world.dy, pressure)];
         _updateLiveStroke();
+        InkMetrics.instance
+          ..strokeStarted()
+          ..sampleKept();
+        // Only the live layer repaints. Notifying everyone here rebuilt the
+        // whole page and repainted every stroke of the document in the
+        // very frame that should show the first ink (measured: the most
+        // expensive frame of a stroke on large documents).
+        (liveInk as _Ping).ping();
+        if (wasEditing) notifyListeners();
+        return;
       case CanvasTool.eraser:
         endEditing();
         _beginTransaction();
@@ -1801,30 +1834,7 @@ class CanvasController extends ChangeNotifier {
         }
       case _Drag.draw:
         // Only the live stroke repaints (see [liveInk]); no full rebuild.
-        final last = _livePoints.last.offset;
-        // Skip points closer than half a screen pixel to keep files small.
-        if ((world - last).distance * _scale < 0.5) return;
-        final before = _lastMoveTime;
-        if (timeStamp != null && before != null && timeStamp > before) {
-          final ms = (timeStamp - before).inMicroseconds / 1000;
-          // Events less than a millisecond apart (coalesced Pencil samples)
-          // give a noisy speed on their own: blend them with the last one so
-          // the look-ahead tip does not tremble. Slower events replace it.
-          final v = (world - last) / ms;
-          final old = _velocity;
-          _velocity = old == null || ms >= 4 ? v : Offset.lerp(old, v, 0.5);
-        }
-        _lastMoveTime = timeStamp ?? _lastMoveTime;
-        _livePoints.add(StrokePoint(world.dx, world.dy, pressure));
-        _liveStale = true;
-        // A resting pen still jitters by a pixel or two; only real movement
-        // restarts the hold.
-        final anchor = _holdAnchor;
-        if (anchor == null || (screen - anchor).distance > 4) {
-          _holdAnchor = screen;
-          _restartLineHold();
-        }
-        (liveInk as _Ping).ping();
+        _addLiveSample(world, screen, pressure, timeStamp);
         return;
       case _Drag.erase:
         _eraseAt(toWorld(screen - delta), world);
@@ -1850,13 +1860,32 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void pointerUp() {
+  /// The pen, finger or mouse lifted. [screen]: where it lifted (the up
+  /// event's position). For a stroke it is the stroke's last sample when
+  /// the pen moved since the last move event; dropping it cut the last
+  /// stretch of every stroke short.
+  void pointerUp({Offset? screen, Duration? timeStamp}) {
+    StrokeItem? appended;
+    final epochBefore = _paintEpoch;
+    final itemsBefore = _items;
+    final finishStart = InkMetrics.instance.startTimer();
     switch (_drag) {
       case _Drag.draw:
+        if (screen != null && _livePoints.isNotEmpty) {
+          _addLiveSample(
+            toWorld(screen),
+            screen,
+            _livePoints.last.pressure,
+            timeStamp,
+            restartHold: false,
+          );
+        }
         final stroke = liveStroke;
         _liveStroke = null;
         _liveStale = false;
         _velocity = null;
+        _externalPrediction = null;
+        _hasExternalPrediction = false;
         (liveInk as _Ping).ping();
         if (stroke != null) {
           final displayedPoints = _liveLinePreview;
@@ -1874,6 +1903,7 @@ class CanvasController extends ChangeNotifier {
                   ),
           );
           _setItems([..._items, stored]);
+          appended = stored;
           if (displayedPoints != null) {
             _holdTimer?.cancel();
             _holdTimer = null;
@@ -1912,13 +1942,120 @@ class CanvasController extends ChangeNotifier {
       case _Drag.pan || _Drag.none:
         break;
     }
+    final wasDrawing = _drag == _Drag.draw;
     _drag = _Drag.none;
     _narrowTo = null;
     _resizeOriginal = null;
     _resizeItems = const [];
     _resizeBounds = null;
     notifyListeners();
+    lastStrokeAppend = appended == null
+        ? null
+        : StrokeAppend(
+            fromEpoch: epochBefore,
+            toEpoch: _paintEpoch,
+            before: itemsBefore,
+            after: _items,
+            stroke: appended,
+          );
+    if (wasDrawing) {
+      InkMetrics.instance.strokeFinished(
+        InkMetrics.instance.elapsedSince(finishStart),
+      );
+    }
   }
+
+  /// Adds one pen sample to the stroke being drawn (screen position
+  /// [screen], world position [world]).
+  void _addLiveSample(
+    Offset world,
+    Offset screen,
+    double pressure,
+    Duration? timeStamp, {
+    bool restartHold = true,
+  }) {
+    final metrics = InkMetrics.instance;
+    if (_liveIsStylus &&
+        !_livePressure &&
+        _tool != CanvasTool.highlighter &&
+        (pressure - _firstPressure).abs() > 0.02) {
+      // This Pencil reports pressure: from now on (this stroke included,
+      // within its first few milliseconds) ink follows it.
+      pencilPressureSeen = true;
+      _livePressure = true;
+      _liveStale = true;
+    }
+    final last = _livePoints.last.offset;
+    // Samples closer than half a screen pixel are one position (keeps
+    // files small; a still pen reports the same spot many times).
+    if ((world - last).distance * _scale < 0.5) {
+      metrics.sampleMerged();
+      return;
+    }
+    final before = _lastMoveTime;
+    if (timeStamp != null && before != null && timeStamp > before) {
+      final ms = (timeStamp - before).inMicroseconds / 1000;
+      // Events less than a millisecond apart (coalesced Pencil samples)
+      // give a noisy speed on their own: blend them with the last one so
+      // the look-ahead tip does not tremble. Slower events replace it.
+      final v = (world - last) / ms;
+      final old = _velocity;
+      _velocity = old == null || ms >= 4 ? v : Offset.lerp(old, v, 0.5);
+    }
+    _lastMoveTime = timeStamp ?? _lastMoveTime;
+    _livePoints.add(StrokePoint(world.dx, world.dy, pressure));
+    _liveStale = true;
+    metrics.sampleKept();
+    // A resting pen still jitters by a pixel or two; only real movement
+    // restarts the hold.
+    final anchor = _holdAnchor;
+    if (restartHold && (anchor == null || (screen - anchor).distance > 4)) {
+      _holdAnchor = screen;
+      _restartLineHold();
+    }
+    (liveInk as _Ping).ping();
+  }
+
+  /// Where the platform predicts the pen will be next (UIKit's predicted
+  /// touches on iPad), in screen units; null when it predicts nothing.
+  /// While a stroke receives these, they replace the app's own straight-
+  /// line guess. Drawn only, never stored.
+  void setPredictedPoint(Offset? screen) {
+    if (_drag != _Drag.draw) return;
+    _hasExternalPrediction = true;
+    _externalPrediction = screen == null ? null : toWorld(screen);
+    (liveInk as _Ping).ping();
+  }
+
+  /// Set once any Pencil stroke in this session showed varying pressure.
+  /// Pens that report none (Apple Pencil USB-C) then draw at exactly the
+  /// chosen width instead of a made-up pressure width.
+  static bool pencilPressureSeen = false;
+
+  bool _liveIsStylus = false;
+  double _firstPressure = 0.5;
+  Offset? _externalPrediction;
+  bool _hasExternalPrediction = false;
+
+  /// Counts the notifications that can change what [CanvasPainter] draws
+  /// (see the painter's raster cache). Hover and save-state changes do not
+  /// count.
+  int get paintEpoch => _paintEpoch;
+  int _paintEpoch = 0;
+
+  /// The last finished stroke, when that was the only change: lets the
+  /// painter add one stroke to its cached picture of the document instead
+  /// of drawing every stroke again.
+  StrokeAppend? lastStrokeAppend;
+
+  @override
+  void notifyListeners() {
+    _paintEpoch++;
+    super.notifyListeners();
+  }
+
+  /// Tells listeners about a change that does not alter the drawing.
+  void _notifyQuiet() => super.notifyListeners();
 
   /// [original] resized so its top-right corner follows [corner]; the
   /// bottom-left corner stays where it is.
@@ -2031,9 +2168,25 @@ class CanvasController extends ChangeNotifier {
     );
   }
 
-  void pointerCancel() {
+  /// The platform took the pointer away (a system gesture, an alert, the
+  /// app leaving the screen, a second finger starting a pinch).
+  ///
+  /// [keepInk]: the pointer was the Pencil. What it had written is real
+  /// handwriting, so it is kept as a finished stroke (never straightened)
+  /// instead of vanishing; iPadOS cancels Pencil touches near the screen
+  /// edges and when Control Centre or a notification takes over. A finger
+  /// stroke cancelled by a pinch is still dropped: that line was the start
+  /// of the pinch, not writing.
+  void pointerCancel({bool keepInk = false}) {
     cancelPendingLineStraightening();
     if (_drag == _Drag.draw) {
+      if (keepInk && _livePoints.isNotEmpty) {
+        InkMetrics.instance.cancelledKept++;
+        pointerUp();
+        cancelPendingLineStraightening();
+        return;
+      }
+      InkMetrics.instance.strokeCancelled(kept: false);
       _liveStroke = null;
       _liveStale = false;
     }
@@ -2047,7 +2200,9 @@ class CanvasController extends ChangeNotifier {
   void pointerHover(Offset? screen) {
     _hover = screen;
     if (screen != null) lastPointer = screen;
-    notifyListeners();
+    // Hovering changes the drawing only while a tapped connection waits
+    // for its target (the line follows the pointer).
+    _pendingFrom == null ? _notifyQuiet() : notifyListeners();
   }
 
   void _updateLiveStroke() {
@@ -2390,7 +2545,7 @@ class CanvasController extends ChangeNotifier {
 
   void _setSaveState(SaveState state) {
     _saveState = state;
-    if (!_disposed) notifyListeners();
+    if (!_disposed) _notifyQuiet();
   }
 
   @override
@@ -2406,6 +2561,25 @@ class CanvasController extends ChangeNotifier {
     _clearCardLayouts();
     super.dispose();
   }
+}
+
+/// One finished stroke added to the drawing by [CanvasController.pointerUp]
+/// and nothing else changed: [before] + [stroke] is [after], and the paint
+/// epoch went from [fromEpoch] to [toEpoch] for it.
+class StrokeAppend {
+  const StrokeAppend({
+    required this.fromEpoch,
+    required this.toEpoch,
+    required this.before,
+    required this.after,
+    required this.stroke,
+  });
+
+  final int fromEpoch;
+  final int toEpoch;
+  final List<CanvasItem> before;
+  final List<CanvasItem> after;
+  final StrokeItem stroke;
 }
 
 /// A ChangeNotifier that can be told to notify from outside.

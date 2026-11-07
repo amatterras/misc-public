@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:isolate';
+import 'dart:typed_data';
+
 import '../models/canvas_models.dart';
 import '../storage/app_log.dart';
 import '../storage/json_file_store.dart';
@@ -95,9 +99,84 @@ class FileCanvasRepository implements CanvasRepository {
     return json == null ? null : CanvasDocument.fromJson(json);
   }
 
+  /// Drawings with at least this many Pencil samples are encoded on a
+  /// background isolate (encoding 80 000 samples took 270–440 ms on the UI
+  /// thread, a visible pause right when writing resumes).
+  static const bigDrawing = 20000;
+
   @override
-  Future<void> save(CanvasDocument document) =>
-      store.write(_collection, document.id, document.toJson());
+  Future<void> save(CanvasDocument document) {
+    // The map is made now, so later edits cannot change this save.
+    final json = document.toJson();
+    var samples = 0;
+    for (final item in document.items) {
+      if (item is StrokeItem) samples += item.points.length;
+    }
+    if (samples < bigDrawing) return store.write(_collection, document.id, json);
+    // Same text as store.write makes; its place in the order of saves is
+    // taken now, so a later small save can never be overtaken.
+    _packPoints(json);
+    return store.writeText(
+      _collection,
+      document.id,
+      _encodeOnIsolate(json),
+    );
+  }
+
+  /// Static, so the isolate is sent only [json] (a closure made inside a
+  /// method would also carry the repository and its store).
+  static Future<String> _encodeOnIsolate(Map<String, dynamic> json) =>
+      Isolate.run(() {
+        _unpackPoints(json);
+        return const JsonEncoder.withIndent(' ').convert(json);
+      });
+
+  /// Replaces each stroke's points (`[[x, y, p], ...]`) by one flat
+  /// [Float64List]: sending a list of numbers to an isolate is one memory
+  /// copy, while thousands of small lists are copied one by one on the UI
+  /// thread (measured: most of the cost of starting the background save).
+  /// [_unpackPoints] restores the very same values, so the text is the same.
+  static void _packPoints(Map<String, dynamic> json) {
+    final items = json['items'];
+    if (items is! List) return;
+    for (final item in items) {
+      if (item is! Map<String, dynamic>) continue;
+      final points = item['points'];
+      if (points is! List || points.isEmpty) continue;
+      final flat = Float64List(points.length * 3);
+      var ok = true;
+      for (var i = 0; i < points.length && ok; i++) {
+        final p = points[i];
+        if (p is List && p.length == 3) {
+          for (var k = 0; k < 3; k++) {
+            final v = p[k];
+            if (v is double) {
+              flat[i * 3 + k] = v;
+            } else {
+              ok = false; // Not plain numbers: sent as it is.
+            }
+          }
+        } else {
+          ok = false;
+        }
+      }
+      if (ok) item['points'] = flat;
+    }
+  }
+
+  static void _unpackPoints(Map<String, dynamic> json) {
+    final items = json['items'];
+    if (items is! List) return;
+    for (final item in items) {
+      if (item is! Map<String, dynamic>) continue;
+      final flat = item['points'];
+      if (flat is! Float64List) continue;
+      item['points'] = [
+        for (var i = 0; i < flat.length; i += 3)
+          [flat[i], flat[i + 1], flat[i + 2]],
+      ];
+    }
+  }
 
   @override
   Future<void> delete(String id) => store.moveToTrash(_collection, id);

@@ -8,7 +8,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app/design_tokens.dart';
 import '../app/app_state.dart';
+import '../app/popups.dart';
 import '../data/models/library_models.dart' show AssetKind;
 import '../data/models/object_library_models.dart';
 import '../data/repositories/library_repository.dart';
@@ -174,7 +176,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
   }
 
   Future<void> _pickColor(LibrarySpace space) async {
-    final chosen = await showDialog<String>(
+    final chosen = await showAppDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: NewColors.surfaceRaised,
@@ -1003,7 +1005,9 @@ class _CollectionCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: base,
           borderRadius: BorderRadius.circular(NewRadii.lg + 2),
-          border: Border.all(color: folder.withValues(alpha: light ? 0.4 : 0.55)),
+          border: Border.all(
+            color: folder.withValues(alpha: light ? 0.4 : 0.55),
+          ),
           boxShadow: NewShadows.card,
         ),
         child: ClipRRect(
@@ -1063,7 +1067,7 @@ class _CollectionCard extends StatelessWidget {
                           c.countLabel,
                           key: ValueKey('archive-count-${c.id}'),
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: AppType.sizeLabel,
                             fontWeight: FontWeight.w600,
                             color: fg,
                           ),
@@ -1094,7 +1098,7 @@ class _CollectionCard extends StatelessWidget {
                           'Empty',
                           style: TextStyle(
                             color: fg.withValues(alpha: 0.6),
-                            fontSize: 13,
+                            fontSize: AppType.sizeBodySmall,
                           ),
                         ),
                       )
@@ -1204,7 +1208,7 @@ class _PreviewTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 12,
+                          fontSize: AppType.sizeLabel,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1227,7 +1231,7 @@ class _PreviewTile extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: AppType.sizeMeta,
                               color: ink.withValues(alpha: 0.7),
                             ),
                           ),
@@ -1240,7 +1244,7 @@ class _PreviewTile extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: AppType.sizeBodySmall,
                         fontWeight: FontWeight.w700,
                         color: ink,
                       ),
@@ -1252,7 +1256,7 @@ class _PreviewTile extends StatelessWidget {
                           snippet,
                           overflow: TextOverflow.fade,
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: AppType.sizeMeta,
                             height: 1.3,
                             color: ink.withValues(alpha: 0.75),
                           ),
@@ -1431,7 +1435,7 @@ class _SwipeActionsState extends State<SwipeActions> {
                               Text(
                                 a.label,
                                 style: TextStyle(
-                                  fontSize: 11,
+                                  fontSize: AppType.sizeMeta,
                                   color: contrastOn(a.color),
                                 ),
                               ),

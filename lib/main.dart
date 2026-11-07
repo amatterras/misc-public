@@ -11,6 +11,7 @@ import 'app/test_environment.dart';
 import 'app/shell.dart';
 import 'app/startup.dart';
 import 'app/theme.dart';
+import 'app/theme_switch.dart';
 import 'data/repositories/canvas_repository.dart';
 import 'data/storage/app_log.dart';
 import 'data/storage/attachment_store.dart';
@@ -31,6 +32,12 @@ import 'sync/secret_store.dart';
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   final progress = StartupProgress();
+  // iPhone/iPad: the first frame goes up before anything else is awaited.
+  // Until Flutter draws once, iOS shows only a black window, so any slow or
+  // stuck step below used to look like "the app is black, force-close it".
+  // (Windows must not flash a window here: a second launch from "Send to"
+  // quits again right away.)
+  if (Platform.isIOS) runApp(StartupApp(progress: progress));
   try {
     await _start(args, progress);
   } catch (e, s) {
@@ -104,11 +111,16 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
     // by earlier versions and the temporary folder.
     FileProtection.backend = IosBridge.instance;
     await FileProtection.start();
-    await FileProtection.protect([
-      root.path,
-      ?logCopy?.parent.path,
-      Directory.systemTemp.path,
-    ], tree: true);
+    // In the background (the native side walks the folders off the main
+    // thread and skips files that are already protected): start-up does not
+    // wait for it, and it is retried by itself if the device is locked.
+    unawaited(
+      FileProtection.protect([
+        root.path,
+        ?logCopy?.parent.path,
+        Directory.systemTemp.path,
+      ], tree: true),
+    );
   }
 
   // Release builds: a part of the screen that fails to build says why,
@@ -142,7 +154,7 @@ Future<void> _start(List<String> args, StartupProgress progress) async {
   }
   // Something on screen at once: the start-up steps below can take a moment
   // (and if one fails or hangs, this screen says which).
-  runApp(StartupApp(progress: progress));
+  if (!Platform.isIOS) runApp(StartupApp(progress: progress));
 
   // iPhone/iPad keep the hub token in the Keychain.
   if (Platform.isIOS) secretKeychain = IosBridge.instance;
@@ -231,10 +243,27 @@ class TheApp extends StatefulWidget {
 
 class _TheAppState extends State<TheApp> {
   late final AppLifecycleListener _lifecycle;
+  late final PlatformBrightnessListener _brightness;
+
+  ThemeMode get _mode =>
+      ThemeMode.values.asNameMap()[widget.state.themeModePreference.value] ??
+      ThemeMode.dark;
+
+  /// Theme changes repaint every visible part of the app in the same frame
+  /// (floating windows, open popups and dialogs, canvas grids), keeping
+  /// all state. See app/theme_switch.dart.
+  void _themeChanged() {
+    if (!mounted) return;
+    ThemeSwitch.apply(_mode, root: context as Element);
+  }
 
   @override
   void initState() {
     super.initState();
+    ThemeSwitch.apply(_mode);
+    widget.state.themeModePreference.addListener(_themeChanged);
+    // "System" follows Windows / iOS light-dark changes live.
+    _brightness = PlatformBrightnessListener(_themeChanged);
     // Save pending changes when the window is closed or loses focus.
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {
@@ -279,6 +308,8 @@ class _TheAppState extends State<TheApp> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    _brightness.dispose();
+    widget.state.themeModePreference.removeListener(_themeChanged);
     super.dispose();
   }
 
@@ -287,8 +318,7 @@ class _TheAppState extends State<TheApp> {
     return ListenableBuilder(
       listenable: widget.state.themeModePreference,
       builder: (context, _) {
-        final rawMode = widget.state.themeModePreference.value;
-        final mode = ThemeMode.values.asNameMap()[rawMode] ?? ThemeMode.dark;
+        final mode = _mode;
         AppColors.mode = mode;
         return MaterialApp(
           title: 'misc.',
@@ -296,6 +326,9 @@ class _TheAppState extends State<TheApp> {
           theme: buildAppTheme(brightness: Brightness.light),
           darkTheme: buildAppTheme(brightness: Brightness.dark),
           themeMode: mode,
+          // No cross-fade: palette colours switch in one frame, so Theme
+          // colours must too (otherwise they disagree for ~200 ms).
+          themeAnimationDuration: Duration.zero,
           builder: widget.appLock == null
               ? null
               : (context, child) =>
@@ -362,7 +395,7 @@ class _DataProblemPageState extends State<_DataProblemPage> {
   }
 
   Future<void> _restore() async {
-    final yes = await showDialog<bool>(
+    final yes = await showAppDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Restore the data from before the upgrade?'),
@@ -467,7 +500,10 @@ class _DataProblemPageState extends State<_DataProblemPage> {
                   SelectableText(
                     'Backup: ${failure.backup!.path}',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    style: TextStyle(
+                      fontSize: AppType.sizeLabel,
+                      color: AppColors.textMuted,
+                    ),
                   ),
                 ],
               ],
@@ -475,7 +511,10 @@ class _DataProblemPageState extends State<_DataProblemPage> {
               Text(
                 'Nothing was deleted. Data folder: ${widget.state?.workspace.root.path ?? defaultDataDirectory().path}',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textMuted,
+                ),
               ),
             ],
           ),

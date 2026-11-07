@@ -9,6 +9,7 @@ import '../../data/models/calendar_models.dart';
 import '../../data/models/record.dart';
 import '../../data/workspace.dart';
 import '../../widgets/common.dart';
+import '../tasks/estimate_label.dart';
 
 enum CalendarView { range, month, week, day, agenda, timeline }
 
@@ -117,7 +118,10 @@ class CalendarGridView extends StatelessWidget {
                   child: Text(
                     weekdayShort(days[i]).toUpperCase(),
                     textAlign: TextAlign.right,
-                    style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                    style: TextStyle(
+                      fontSize: AppType.sizeMeta,
+                      color: AppColors.textFaint,
+                    ),
                   ),
                 ),
               ),
@@ -214,7 +218,7 @@ class _CompactDayCell extends StatelessWidget {
                 Text(
                   '${day.day}',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: AppType.sizeBody,
                     fontWeight: FontWeight.w600,
                     color: isToday
                         ? AppColors.accent
@@ -233,7 +237,7 @@ class _CompactDayCell extends StatelessWidget {
                   ),
                 if (overflow.isNotEmpty)
                   InkWell(
-                    onTap: () => showDialog<void>(
+                    onTap: () => showAppDialog<void>(
                       context: context,
                       builder: (dialogContext) => AlertDialog(
                         title: Text(formatLongDate(day)),
@@ -281,7 +285,7 @@ class _CompactDayCell extends StatelessWidget {
                       child: Text(
                         '+${overflow.length} more',
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: AppType.sizeMicro,
                           color: AppColors.textFaint,
                         ),
                       ),
@@ -358,7 +362,7 @@ class _ItemLabel extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: AppType.sizeMeta,
                   decoration: done ? TextDecoration.lineThrough : null,
                   color: done ? AppColors.textFaint : AppColors.textMuted,
                 ),
@@ -422,7 +426,7 @@ class CalendarAgendaView extends StatelessWidget {
               child: Text(
                 formatLongDate(d),
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: AppType.sizeBodySmall,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textMuted,
                 ),
@@ -476,15 +480,23 @@ class CalendarAgendaView extends StatelessWidget {
               subtitle: switch (item) {
                 EntryOnDay(:final entry) => Text(
                   [entry.category.label, ?entry.timeLabel].join('  ·  '),
-                  style: const TextStyle(fontSize: 11),
+                  style: const TextStyle(fontSize: AppType.sizeMeta),
                 ),
-                TaskOnDay() => const Text(
-                  'Task',
-                  style: TextStyle(fontSize: 11),
+                TaskOnDay(:final task) => Row(
+                  children: [
+                    const Text(
+                      'Task',
+                      style: TextStyle(fontSize: AppType.sizeMeta),
+                    ),
+                    if (task.estimateMinutes != null) ...[
+                      const SizedBox(width: 8),
+                      EstimateLabel(task: task),
+                    ],
+                  ],
                 ),
                 ExternalOnDay(:final event) => Text(
                   event.provider == 'google' ? 'Google Calendar' : 'Outlook',
-                  style: const TextStyle(fontSize: 11),
+                  style: const TextStyle(fontSize: AppType.sizeMeta),
                 ),
               },
               onTap: () => onItem(item, d),
@@ -580,7 +592,7 @@ class CalendarTimelineView extends StatelessWidget {
                     child: Text(
                       '${days[i].day}',
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: AppType.sizeMicro,
                         color: AppColors.textFaint,
                       ),
                     ),
@@ -607,7 +619,7 @@ class CalendarTimelineView extends StatelessWidget {
                       rows[r].$1.label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(fontSize: AppType.sizeLabel),
                     ),
                   ),
                 ),
@@ -623,7 +635,7 @@ class CalendarTimelineView extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: dayItemColor(rows[r].$1)
                               .withValues(alpha: 0.8),
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(AppRadii.xs),
                         ),
                       ),
                     ),

@@ -86,7 +86,7 @@ class TaskBoardView extends StatelessWidget {
               padding: const EdgeInsets.all(Space.sm),
               decoration: BoxDecoration(
                 color: hovering.isEmpty ? AppColors.card : AppColors.selected,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppRadii.md),
                 border: Border.all(color: AppColors.border),
               ),
               child: Column(
@@ -101,7 +101,7 @@ class TaskBoardView extends StatelessWidget {
                         BoardColumn.done => 'Done',
                       },
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: AppType.sizeLabel,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textMuted,
                       ),
@@ -144,7 +144,7 @@ class _BoardCard extends StatelessWidget {
       padding: const EdgeInsets.all(Space.sm),
       decoration: BoxDecoration(
         color: AppColors.cardRaised,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
@@ -155,7 +155,7 @@ class _BoardCard extends StatelessWidget {
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: AppType.sizeBodySmall,
               decoration: task.done ? TextDecoration.lineThrough : null,
               color: task.done ? AppColors.textFaint : AppColors.text,
             ),
@@ -168,7 +168,10 @@ class _BoardCard extends StatelessWidget {
                   if (task.dueDate != null) formatShortDate(task.dueDate!),
                   ...task.labels,
                 ].join('  ·  '),
-                style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeMeta,
+                  color: AppColors.textFaint,
+                ),
               ),
             ),
         ],
@@ -290,7 +293,7 @@ class _TaskTableViewState extends State<TaskTableView> {
         TextField(
           key: const ValueKey('task-table-filter'),
           controller: _filter,
-          style: const TextStyle(fontSize: 13),
+          style: const TextStyle(fontSize: AppType.sizeBodySmall),
           decoration: const InputDecoration(
             prefixIcon: Icon(Icons.filter_list, size: 16),
             hintText: 'Filter by title, label, project or property',
@@ -307,11 +310,11 @@ class _TaskTableViewState extends State<TaskTableView> {
                 sortColumnIndex: _column.index,
                 sortAscending: _ascending,
                 headingTextStyle: TextStyle(
-                  fontSize: 12,
+                  fontSize: AppType.sizeLabel,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textMuted,
                 ),
-                dataTextStyle: const TextStyle(fontSize: 13),
+                dataTextStyle: const TextStyle(fontSize: AppType.sizeBodySmall),
                 columns: [
                   col('Task', TaskColumn.title),
                   col('Due', TaskColumn.due),
@@ -447,7 +450,7 @@ class TaskGanttView extends StatelessWidget {
                       return Text(
                         '${p.name}: $done/${all.length} done',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: AppType.sizeLabel,
                           color: AppColors.textMuted,
                         ),
                       );
@@ -487,7 +490,7 @@ class TaskGanttView extends StatelessWidget {
                           child: Text(
                             '${addDays(first, i).day}',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: AppType.sizeMicro,
                               color: AppColors.textFaint,
                             ),
                           ),
@@ -533,7 +536,7 @@ class TaskGanttView extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: AppType.sizeLabel,
                   decoration: t.done ? TextDecoration.lineThrough : null,
                   color: t.done ? AppColors.textFaint : AppColors.text,
                 ),
@@ -555,7 +558,7 @@ class TaskGanttView extends StatelessWidget {
               color: t.done
                   ? AppColors.success.withValues(alpha: 0.5)
                   : AppColors.accent.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(AppRadii.xs),
             ),
           ),
         ),

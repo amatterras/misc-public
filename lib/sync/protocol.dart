@@ -46,6 +46,7 @@ const syncedCollections = {
   'external_events', // Google / Outlook events (read-only mirrors)
   'calendar_links', // misc. entries exported to Google / Outlook
   'custom_tags', // the user's own Archive / Mindmap tags (name, colour)
+  'smart_views', // saved task filters of the Calendar's Tasks column
   'purges', // permanent deletions (id = "<collection>.<record id>")
   'library_objects',
   'library_relations',
@@ -66,6 +67,7 @@ const newerCollections = {
   'external_events',
   'calendar_links',
   'custom_tags',
+  'smart_views',
   'purges',
   'library_objects',
   'library_relations',

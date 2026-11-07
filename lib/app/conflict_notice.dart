@@ -46,7 +46,10 @@ class ConflictNotice extends StatelessWidget {
                       n == 1
                           ? '1 sync conflict to review'
                           : '$n sync conflicts to review',
-                      style: TextStyle(fontSize: 13, color: AppColors.text),
+                      style: TextStyle(
+                        fontSize: AppType.sizeBodySmall,
+                        color: AppColors.text,
+                      ),
                     ),
                   ],
                 ),

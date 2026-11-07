@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_state.dart';
+import '../../app/popups.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
 import '../canvas/canvas_controller.dart';
@@ -287,7 +288,7 @@ Future<String?> _pick(
   String title,
   List<(String?, String)> choices,
 ) async {
-  return showDialog<String?>(
+  return showAppDialog<String?>(
     context: context,
     builder: (context) => SimpleDialog(
       title: Text(title),
@@ -308,7 +309,7 @@ Future<String?> _pick(
 
 Future<void> _delete(BuildContext context, AppState s, ActionItem item) async {
   final label = item.title;
-  final ok = await showDialog<bool>(
+  final ok = await showAppDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Delete this item?'),

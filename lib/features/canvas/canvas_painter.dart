@@ -10,6 +10,7 @@ import '../../data/models/canvas_models.dart';
 import '../tags/tag_ui.dart' show tagForeground;
 import 'canvas_controller.dart';
 import 'canvas_text.dart';
+import '../ink/ink_metrics.dart';
 import '../ink/stroke_geometry.dart';
 
 /// Paints the whole canvas: dot grid, items, selection and live drawing.
@@ -26,8 +27,17 @@ class CanvasPainter extends CustomPainter {
     this.itemOpacityFor,
     Listenable? repaint,
     bool? lightTheme,
+    this.rasterCache,
+    this.devicePixelRatio = 0,
   }) : light = BackgroundPalette.isLight(lightTheme),
        super(repaint: repaint ?? controller);
+
+  /// Keeps the finished drawing as one image between changes (see
+  /// [InkRasterCache]); null paints every item every time.
+  final InkRasterCache? rasterCache;
+
+  /// Physical pixels per logical pixel; needed for [rasterCache].
+  final double devicePixelRatio;
 
   final CanvasController controller;
 
@@ -47,27 +57,59 @@ class CanvasPainter extends CustomPainter {
   /// rebuilding the canvas widget tree on every animation tick.
   final double Function(CanvasItem item)? itemOpacityFor;
 
-  static final Expando<Path> _pathCache = Expando();
+  static final Expando<StrokeShape> _shapeCache = Expando();
 
   @override
   void paint(Canvas canvas, Size size) {
+    final cache = rasterCache;
+    if (cache == null || !cache.draw(canvas, size, this)) {
+      _paintContent(canvas, size);
+    }
+    _paintOverlay(canvas, size);
+  }
+
+  /// The zoom and the visible world rectangle for a paint of [size].
+  (double, Rect) _view(Size size) {
     final page = this.page;
-    final double scale;
-    final Rect visible;
+    if (page != null) return (pageScale, page);
+    final scale = controller.scale;
+    return (scale, controller.visibleWorld(size).inflate(20 / scale));
+  }
+
+  /// Moves [canvas] from widget pixels to world units.
+  void _toWorld(Canvas canvas, Size size) {
+    final page = this.page;
+    if (page == null) {
+      canvas.translate(controller.offset.dx, controller.offset.dy);
+      canvas.scale(controller.scale);
+    } else {
+      canvas.clipRect(Offset.zero & size);
+      canvas.translate(-page.left * pageScale, -page.top * pageScale);
+      canvas.scale(pageScale);
+    }
+  }
+
+  /// Marks, tags and the selection: drawn over the finished drawing on
+  /// every paint (they change with the selection and are cheap).
+  void _paintOverlay(Canvas canvas, Size size) {
+    final (scale, visible) = _view(size);
+    canvas.save();
+    _toWorld(canvas, size);
+    _paintMarks(canvas, scale, visible);
+    _paintSelection(canvas, scale);
+    canvas.restore();
+  }
+
+  /// Background, grid and every item: what [InkRasterCache] keeps.
+  void _paintContent(Canvas canvas, Size size) {
+    final page = this.page;
+    final (scale, visible) = _view(size);
     canvas.save();
     if (page == null) {
       canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.canvas);
       _paintGrid(canvas, size);
-      scale = controller.scale;
-      visible = controller.visibleWorld(size).inflate(20 / scale);
-      canvas.translate(controller.offset.dx, controller.offset.dy);
-    } else {
-      scale = pageScale;
-      visible = page;
-      canvas.clipRect(Offset.zero & size);
-      canvas.translate(-page.left * scale, -page.top * scale);
     }
-    canvas.scale(scale);
+    _toWorld(canvas, size);
 
     // Reference overlays first and faint: they sit behind everything.
     for (final item in controller.items) {
@@ -160,8 +202,6 @@ class CanvasPainter extends CustomPainter {
       if (faded) canvas.restore();
       if (opacity < 1) canvas.restore();
     }
-    _paintMarks(canvas, scale, visible);
-    _paintSelection(canvas, scale);
     canvas.restore();
   }
 
@@ -235,8 +275,8 @@ class CanvasPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5 / scale;
       for (final corner in [bounds.topLeft, bounds.topRight]) {
-        canvas.drawCircle(corner, 6 / scale, dot);
-        canvas.drawCircle(corner, 6 / scale, ring);
+        canvas.drawCircle(corner, 8 / scale, dot);
+        canvas.drawCircle(corner, 8 / scale, ring);
       }
     }
     for (final unit in controller.unitsOf(controller.items)) {
@@ -459,7 +499,7 @@ class CanvasPainter extends CustomPainter {
   void _paintStroke(Canvas canvas, StrokeItem stroke) => paintStroke(
     canvas,
     stroke,
-    cachedPath: _pathCache[stroke] ??= strokePath(stroke),
+    cachedShape: _shapeCache[stroke] ??= strokeShape(stroke),
   );
 
   /// A connection: a line with small dots where it meets the two items.
@@ -576,6 +616,8 @@ class CanvasPainter extends CustomPainter {
       oldDelegate.page != page ||
       oldDelegate.pageScale != pageScale ||
       oldDelegate.light != light ||
+      oldDelegate.rasterCache != rasterCache ||
+      oldDelegate.devicePixelRatio != devicePixelRatio ||
       oldDelegate.itemOpacityFor != itemOpacityFor ||
       oldDelegate.itemOpacity.length != itemOpacity.length ||
       oldDelegate.itemOpacity.entries.any(
@@ -616,7 +658,9 @@ class MinimapPainter extends CustomPainter {
       r.width * s,
       r.height * s,
     );
-    final itemPaint = Paint()..color = const Color(0x55FFFFFF);
+    // Item blocks contrast with the canvas in either theme.
+    final itemPaint = Paint()
+      ..color = BackgroundPalette.dot().withValues(alpha: 0x55 / 0xFF);
     for (final item in controller.items) {
       final r = map(controller.itemBounds(item));
       // Archive tag selection, or the item's lasso tag color.
@@ -710,7 +754,18 @@ class LiveInkPainter extends CustomPainter {
       canvas.scale(pageScale);
     }
     if (live != null) {
-      paintStroke(canvas, live, predicted: controller.predictedPoint);
+      final metrics = InkMetrics.instance;
+      final start = metrics.startTimer();
+      // Finished stretches of a long stroke are kept, only the tail near
+      // the pen is rebuilt (LiveInkGeometry).
+      final shapes = controller.liveGeometry.shapes(
+        live,
+        controller.predictedPoint,
+      );
+      metrics.livePainted(metrics.elapsedSince(start));
+      for (final shape in shapes) {
+        shape.paint(canvas, strokePaint(live, shape));
+      }
     }
     if (preview != null) {
       if (page == null || preview.bounds.overlaps(page)) {
@@ -738,4 +793,158 @@ class LiveInkPainter extends CustomPainter {
       oldDelegate.controller != controller ||
       oldDelegate.page != page ||
       oldDelegate.pageScale != pageScale;
+}
+
+/// The finished drawing of one canvas (or notebook page) kept as a single
+/// GPU image while nothing in it changes.
+///
+/// Without it every frame drew every visible stroke again: Flutter's
+/// Impeller renderer has no raster cache, so while the pen moved, a page
+/// with thousands of strokes cost as much per frame as its first paint.
+/// With it, a frame while writing draws one image plus the live stroke.
+///
+/// * A finished stroke is added by drawing just that stroke over the old
+///   image ([CanvasController.lastStrokeAppend]), not the whole drawing.
+/// * Any other change (paint epoch), a new size, zoom or position, or a
+///   theme switch makes a new image; while the view is moving (panning,
+///   pinching) items are drawn directly and no image is made, so moving
+///   does not pay for images it would throw away the next frame.
+/// * Small drawings ([minItems]) skip it: drawing them directly is cheap.
+///
+/// Selection, marks and tags are drawn over the image on every paint.
+class InkRasterCache {
+  /// Switch for the whole app (tests and diagnosis).
+  static bool enabled = true;
+
+  /// Fewer items than this are always drawn directly.
+  static int minItems = 120;
+
+  /// Largest image kept, in physical pixels (about 64 MB of memory).
+  static int maxPixels = 4096 * 4096;
+
+  ui.Image? _image;
+  Object? _view;
+  int _epoch = -1;
+  List<CanvasItem>? _items;
+  Object? _lastSeenView;
+
+  /// How the last paint was done (for tests): "direct", "image", "append"
+  /// or "rebuild".
+  @visibleForTesting
+  String lastPaint = 'none';
+
+  /// Draws the finished drawing for [painter] from the image (making or
+  /// updating it first when needed). False: draw it directly instead.
+  bool draw(Canvas canvas, Size size, CanvasPainter painter) {
+    final c = painter.controller;
+    final dpr = painter.devicePixelRatio;
+    final width = (size.width * dpr).ceil(), height = (size.height * dpr).ceil();
+    if (!enabled ||
+        dpr <= 0 ||
+        width <= 0 ||
+        height <= 0 ||
+        width * height > maxPixels ||
+        c.items.length < minItems ||
+        c.liveConnection != null ||
+        painter.itemOpacity.isNotEmpty) {
+      _drop();
+      _lastSeenView = null;
+      lastPaint = 'direct';
+      return false;
+    }
+    final view = (
+      size,
+      dpr,
+      painter.light,
+      painter.page,
+      painter.pageScale,
+      c.offset,
+      c.scale,
+      c.dotOpacity,
+      c.dotSize,
+    );
+    final epoch = c.paintEpoch;
+    final image = _image;
+    if (image != null &&
+        _view == view &&
+        _epoch == epoch &&
+        identical(_items, c.items)) {
+      _blit(canvas, image, dpr);
+      lastPaint = 'image';
+      return true;
+    }
+    final append = c.lastStrokeAppend;
+    if (image != null &&
+        _view == view &&
+        append != null &&
+        _epoch == append.fromEpoch &&
+        epoch == append.toEpoch &&
+        identical(_items, append.before) &&
+        identical(c.items, append.after) &&
+        c.dimmed == null &&
+        c.highlighted == null) {
+      final (_, visible) = painter._view(size);
+      final recorder = ui.PictureRecorder();
+      final target = Canvas(recorder);
+      target.drawImage(image, Offset.zero, Paint());
+      if (append.stroke.bounds.overlaps(visible)) {
+        target.scale(dpr);
+        painter._toWorld(target, size);
+        painter._paintStroke(target, append.stroke);
+      }
+      _replace(recorder.endRecording(), width, height);
+      _epoch = epoch;
+      _items = c.items;
+      _blit(canvas, _image!, dpr);
+      lastPaint = 'append';
+      return true;
+    }
+    if (_lastSeenView != view) {
+      // The view is moving (or this is the first paint): draw directly.
+      _lastSeenView = view;
+      _drop();
+      lastPaint = 'direct';
+      return false;
+    }
+    final recorder = ui.PictureRecorder();
+    final target = Canvas(recorder);
+    target.scale(dpr);
+    painter._paintContent(target, size);
+    _replace(recorder.endRecording(), width, height);
+    _view = view;
+    _epoch = epoch;
+    _items = c.items;
+    _blit(canvas, _image!, dpr);
+    lastPaint = 'rebuild';
+    return true;
+  }
+
+  void _replace(ui.Picture picture, int width, int height) {
+    final next = picture.toImageSync(width, height);
+    picture.dispose();
+    // Pictures already recorded with the old image keep their own hold
+    // on it; this only drops ours.
+    _image?.dispose();
+    _image = next;
+  }
+
+  static void _blit(Canvas canvas, ui.Image image, double dpr) {
+    canvas.save();
+    canvas.scale(1 / dpr);
+    canvas.drawImage(image, Offset.zero, Paint());
+    canvas.restore();
+  }
+
+  void _drop() {
+    _image?.dispose();
+    _image = null;
+    _view = null;
+    _epoch = -1;
+    _items = null;
+  }
+
+  void dispose() {
+    _drop();
+    _lastSeenView = null;
+  }
 }

@@ -41,7 +41,7 @@ class QuoteFooter extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.right,
                 style: TextStyle(
-                  fontSize: 10.5,
+                  fontSize: AppType.sizeMeta,
                   height: 1.3,
                   fontStyle: FontStyle.italic,
                   color: AppColors.textFaint.withValues(alpha: 0.65),

@@ -110,7 +110,7 @@ Future<void> showShareDialog(
   required String sourceId,
   required String title,
   required String body,
-}) => showDialog<void>(
+}) => showAppDialog<void>(
   context: context,
   builder: (_) => _ShareDialog(
     state: s,
@@ -149,7 +149,7 @@ class _ShareDialogState extends State<_ShareDialog> {
     return AlertDialog(
       title: Text(
         'Share "${widget.title}"',
-        style: const TextStyle(fontSize: 16),
+        style: const TextStyle(fontSize: AppType.sizeHeading),
       ),
       content: SizedBox(
         width: 460,
@@ -162,15 +162,21 @@ class _ShareDialogState extends State<_ShareDialog> {
               'Anyone with the link who can reach your hub can read it: '
               'normally that is your home network only, unless you made '
               'your hub reachable from the internet yourself.',
-              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: AppType.sizeLabel,
+                color: AppColors.textMuted,
+              ),
             ),
             if (s.hubUrl == null)
-              const Padding(
-                padding: EdgeInsets.only(top: Space.sm),
+              Padding(
+                padding: const EdgeInsets.only(top: Space.sm),
                 child: Text(
                   'This device is not connected to a hub, so there is '
                   'nothing to serve the link. Connect one in Settings → Sync.',
-                  style: TextStyle(fontSize: 12, color: Colors.orange),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.warm,
+                  ),
                 ),
               ),
             const SizedBox(height: Space.md),
@@ -199,13 +205,16 @@ class _ShareDialogState extends State<_ShareDialog> {
               SelectableText(
                 url ?? 'Link made; it works once this device is paired.',
                 key: const ValueKey('share-url'),
-                style: const TextStyle(fontSize: 12),
+                style: const TextStyle(fontSize: AppType.sizeLabel),
               ),
               const SizedBox(height: Space.xs),
               Text(
                 'It works after the next sync. Revoke it any time in '
                 'Settings → Sharing → Shared links.',
-                style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+                style: TextStyle(
+                  fontSize: AppType.sizeMeta,
+                  color: AppColors.textFaint,
+                ),
               ),
             ],
           ],
@@ -246,7 +255,7 @@ class _ShareDialogState extends State<_ShareDialog> {
 
 /// Every share link, with copy (on the device that made it) and revoke.
 Future<void> showSharedLinks(BuildContext context, AppState s) =>
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (context) => ListenableBuilder(
         listenable: s.workspace.shares,
@@ -256,7 +265,10 @@ Future<void> showSharedLinks(BuildContext context, AppState s) =>
           final list = s.workspace.shares.all.toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
           return AlertDialog(
-            title: const Text('Shared links', style: TextStyle(fontSize: 16)),
+            title: const Text(
+              'Shared links',
+              style: TextStyle(fontSize: AppType.sizeHeading),
+            ),
             content: SizedBox(
               width: 480,
               height: 360,

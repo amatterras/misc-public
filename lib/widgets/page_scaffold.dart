@@ -28,19 +28,15 @@ class PageScaffold extends StatelessWidget {
     final heading = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.4,
-          ),
-        ),
+        Text(title, style: AppType.display),
         if (subtitle != null) ...[
           const SizedBox(height: Space.xs),
           Text(
             subtitle!,
-            style: TextStyle(fontSize: 14, color: AppColors.textMuted),
+            style: TextStyle(
+              fontSize: AppType.sizeBody,
+              color: AppColors.textMuted,
+            ),
           ),
         ],
       ],
@@ -91,7 +87,7 @@ class SectionCard extends StatelessWidget {
       padding: const EdgeInsets.all(Space.xl),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.md),
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
@@ -154,7 +150,7 @@ class ComingSoon extends StatelessWidget {
                 ],
               ),
               style: TextStyle(
-                fontSize: 13,
+                fontSize: AppType.sizeBodySmall,
                 color: AppColors.textFaint,
                 height: 1.5,
               ),

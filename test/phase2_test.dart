@@ -134,6 +134,8 @@ void main() {
       for (var i = 1; i <= 20; i++) {
         c.pointerMove(
           Offset(10 + i * 3, 10),
+          // A Pencil that reports pressure (it varies while writing).
+          pressure: 0.3 + i / 100,
           timeStamp: Duration(milliseconds: i * 8),
         );
       }

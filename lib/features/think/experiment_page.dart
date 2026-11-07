@@ -43,7 +43,7 @@ Future<void> newExperiment(BuildContext context, AppState s) async {
 
 /// The list of thought experiments (open, new, delete).
 Future<void> showExperiments(BuildContext context, AppState s) =>
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (context) => ListenableBuilder(
         listenable: s.workspace.experiments,
@@ -53,7 +53,7 @@ Future<void> showExperiments(BuildContext context, AppState s) =>
           return AlertDialog(
             title: const Text(
               'Thought experiments',
-              style: TextStyle(fontSize: 16),
+              style: TextStyle(fontSize: AppType.sizeHeading),
             ),
             content: SizedBox(
               width: 420,
@@ -150,7 +150,7 @@ class ExperimentPage extends StatelessWidget {
       for (final n in ws.notes.all) (n.id, 'Note: ${n.displayTitle}'),
       for (final a in ws.assets.all) (a.id, 'Archive: ${a.label}'),
     ];
-    final picked = await showDialog<String>(
+    final picked = await showAppDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('Source for this fact'),
@@ -295,7 +295,10 @@ class ExperimentPage extends StatelessWidget {
                   '${unsupported.length} "verified" '
                   '${unsupported.length == 1 ? 'fact has' : 'facts have'} no '
                   'source yet; they are shown as unsupported.',
-                  style: const TextStyle(fontSize: 12, color: Colors.orange),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.warm,
+                  ),
                 ),
               ),
             _section(
@@ -389,7 +392,10 @@ class ExperimentPage extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: AppType.sizeBodySmall,
+          ),
         ),
         const Spacer(),
         TextButton.icon(
@@ -403,7 +409,7 @@ class ExperimentPage extends StatelessWidget {
   );
 
   Color _originColor(ClaimOrigin o, bool unsupported) => switch (o) {
-    ClaimOrigin.verified when unsupported => Colors.orange,
+    ClaimOrigin.verified when unsupported => AppColors.warm,
     ClaimOrigin.verified => const Color(0xFF6BBF7A),
     ClaimOrigin.aiInference => const Color(0xFFB48EDB),
     ClaimOrigin.calculation => const Color(0xFF829CB5),
@@ -419,7 +425,7 @@ class ExperimentPage extends StatelessWidget {
           ? null
           : Text(
               'Sources: ${c.sourceIds.map(_sourceLabel).join(', ')}',
-              style: const TextStyle(fontSize: 11),
+              style: const TextStyle(fontSize: AppType.sizeMeta),
             ),
       leading: PopupMenuButton<ClaimOrigin>(
         tooltip: 'Where it comes from',
@@ -438,7 +444,7 @@ class ExperimentPage extends StatelessWidget {
         child: Text(
           unsupported ? 'Unsupported fact' : c.origin.label,
           style: TextStyle(
-            fontSize: 11,
+            fontSize: AppType.sizeMeta,
             color: _originColor(c.origin, unsupported),
           ),
         ),
@@ -513,7 +519,7 @@ class ExperimentPage extends StatelessWidget {
       padding: const EdgeInsets.all(Space.sm),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
@@ -543,7 +549,10 @@ class ExperimentPage extends StatelessWidget {
           ),
           Text(
             'Relies on',
-            style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+            style: TextStyle(
+              fontSize: AppType.sizeMeta,
+              color: AppColors.textFaint,
+            ),
           ),
           Wrap(
             spacing: 4,
@@ -553,7 +562,7 @@ class ExperimentPage extends StatelessWidget {
                 FilterChip(
                   label: Text(
                     c.text,
-                    style: const TextStyle(fontSize: 11),
+                    style: const TextStyle(fontSize: AppType.sizeMeta),
                     overflow: TextOverflow.ellipsis,
                   ),
                   selected: sc.assumptionIds.contains(c.id),
@@ -569,7 +578,10 @@ class ExperimentPage extends StatelessWidget {
           ),
           const SizedBox(height: Space.xs),
           for (final v in sc.variables)
-            Text('• ${v.text}', style: const TextStyle(fontSize: 12)),
+            Text(
+              '• ${v.text}',
+              style: const TextStyle(fontSize: AppType.sizeLabel),
+            ),
           TextButton(
             onPressed: () => addTo(false),
             child: const Text('+ Variable'),
@@ -577,7 +589,7 @@ class ExperimentPage extends StatelessWidget {
           for (final o in sc.outcomes)
             Text(
               '→ ${o.text}  (${o.origin.label})',
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(fontSize: AppType.sizeLabel),
             ),
           TextButton(
             onPressed: () => addTo(true),

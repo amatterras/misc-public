@@ -64,7 +64,7 @@ Future<void> showSettingsDialog(
   AppState state, {
   SettingsCategory? open,
 }) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (_) => _SettingsDialog(state: state, open: open),
   );
@@ -131,7 +131,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     final width = math.min(880.0, screen.width - 32);
     final height = math.min(640.0, screen.height - 48);
     final wide = width >= 640;
-    final radius = BorderRadius.circular(24);
+    final radius = BorderRadius.circular(AppRadii.xl);
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       backgroundColor: AppColors.background,
@@ -170,7 +170,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               child: Text(
                 'Settings',
                 style: TextStyle(
-                  fontSize: 20,
+                  fontSize: AppType.sizeTitle,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.3,
                   color: AppColors.text,
@@ -216,7 +216,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   child: Text(
                     'Settings',
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: AppType.sizeTitle,
                       fontWeight: FontWeight.w700,
                       color: AppColors.text,
                     ),
@@ -833,14 +833,20 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             trailing: SelectableText(
               appBuild,
               key: const ValueKey('about-build'),
-              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: AppType.sizeBodySmall,
+                color: AppColors.textMuted,
+              ),
             ),
           ),
           SettingsRow(
             title: 'Platform',
             trailing: Text(
               defaultTargetPlatform.name,
-              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: AppType.sizeBodySmall,
+                color: AppColors.textMuted,
+              ),
             ),
           ),
         ],
@@ -884,7 +890,7 @@ class _RailItemState extends State<_RailItem> {
           behavior: HitTestBehavior.opaque,
           onTap: widget.onTap,
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
+            duration: AppMotion.quick,
             padding: EdgeInsets.symmetric(
               horizontal: 12,
               vertical: widget.showHint ? 12 : 9,
@@ -895,7 +901,7 @@ class _RailItemState extends State<_RailItem> {
                   : _hover
                   ? AppColors.hover
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppRadii.md),
             ),
             child: Row(
               children: [
@@ -914,7 +920,7 @@ class _RailItemState extends State<_RailItem> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 13.5,
+                          fontSize: AppType.sizeBodySmall,
                           fontWeight: selected
                               ? FontWeight.w600
                               : FontWeight.w500,
@@ -927,7 +933,7 @@ class _RailItemState extends State<_RailItem> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: AppType.sizeLabel,
                             color: AppColors.textFaint,
                           ),
                         ),
@@ -968,7 +974,7 @@ class _UsageBar extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppRadii.capsule),
           child: SizedBox(
             height: 8,
             child: total == 0
@@ -1005,7 +1011,10 @@ class _UsageBar extends StatelessWidget {
                   const SizedBox(width: 6),
                   Text(
                     '$label  ${formatBytes(bytes)}',
-                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    style: TextStyle(
+                      fontSize: AppType.sizeLabel,
+                      color: AppColors.textMuted,
+                    ),
                   ),
                 ],
               ),

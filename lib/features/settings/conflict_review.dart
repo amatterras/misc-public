@@ -31,6 +31,7 @@ const _kinds = {
   'canvas_items': 'Item on a mindmap or notebook page',
   'archive_folders': 'Archive folder',
   'templates': 'Template',
+  'smart_views': 'Saved task view',
   'thought_experiments': 'Thought experiment',
 };
 
@@ -75,7 +76,7 @@ String _who(AppState s, String? device) => device == null || device.isEmpty
 
 /// Opens the review window.
 Future<void> showConflictReview(BuildContext context, AppState state) =>
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (_) => ConflictReviewDialog(state: state),
     );
@@ -124,7 +125,10 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
         final settled = r.settled();
         return AlertDialog(
           key: const ValueKey('conflict-review'),
-          title: const Text('Sync conflicts', style: TextStyle(fontSize: 16)),
+          title: const Text(
+            'Sync conflicts',
+            style: TextStyle(fontSize: AppType.sizeHeading),
+          ),
           content: SizedBox(
             width: 680,
             height: 520,
@@ -135,7 +139,10 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
                       ? 'No conflicts waiting.'
                       : 'Both versions are kept until you choose. Opening this '
                             'window changes nothing.',
-                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.textFaint,
+                  ),
                 ),
                 const SizedBox(height: Space.sm),
                 for (final c in open) _openTile(c),
@@ -150,7 +157,7 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
                       title: Text(
                         'Settled (${settled.length}) — both versions kept for '
                         '90 days',
-                        style: const TextStyle(fontSize: 13),
+                        style: const TextStyle(fontSize: AppType.sizeBodySmall),
                       ),
                       children: [for (final c in settled) _settledTile(c)],
                     ),
@@ -175,7 +182,7 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
       padding: const EdgeInsets.all(Space.sm),
       decoration: BoxDecoration(
         color: AppColors.background,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
@@ -183,15 +190,21 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
         children: [
           Text(
             label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              fontSize: AppType.sizeLabel,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           if (detail.isNotEmpty)
             Text(
               detail,
-              style: TextStyle(fontSize: 11, color: AppColors.textFaint),
+              style: TextStyle(
+                fontSize: AppType.sizeMeta,
+                color: AppColors.textFaint,
+              ),
             ),
           const SizedBox(height: 4),
-          Text(text, style: const TextStyle(fontSize: 13)),
+          Text(text, style: const TextStyle(fontSize: AppType.sizeBodySmall)),
         ],
       ),
     ),
@@ -216,13 +229,16 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
                 Text(
                   kind,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: AppType.sizeBody,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 Text(
                   _reasons[c.reason] ?? c.reason,
-                  style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+                  style: TextStyle(
+                    fontSize: AppType.sizeLabel,
+                    color: AppColors.textFaint,
+                  ),
                 ),
                 const SizedBox(height: Space.sm),
                 if (sides == null)
@@ -264,7 +280,10 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
                       'The current version was changed again after this '
                       'conflict. Using the other version replaces that newer '
                       'work (it stays saved under "Settled").',
-                      style: TextStyle(fontSize: 12, color: AppColors.warm),
+                      style: TextStyle(
+                        fontSize: AppType.sizeLabel,
+                        color: AppColors.warm,
+                      ),
                     ),
                   ),
                 const SizedBox(height: Space.sm),
@@ -334,7 +353,10 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
         c.choice == 'used_other'
             ? 'You used the other version'
             : 'You kept the current version',
-        style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+        style: TextStyle(
+          fontSize: AppType.sizeLabel,
+          color: AppColors.textFaint,
+        ),
       ),
       trailing: TextButton(
         key: ValueKey('undo-${c.id}'),

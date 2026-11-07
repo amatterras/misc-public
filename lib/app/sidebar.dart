@@ -35,8 +35,8 @@ class Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final collapsed = state.sidebarCollapsed;
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
+      duration: AppMotion.sidebar,
+      curve: AppMotion.emphasized,
       width: collapsed ? collapsedWidth : expandedWidth,
       decoration: BoxDecoration(
         color: AppColors.sidebar,
@@ -118,7 +118,10 @@ class Sidebar extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: Space.sm),
             child: Text(
               state.timer.label,
-              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+              style: TextStyle(
+                fontSize: AppType.sizeMeta,
+                color: AppColors.textMuted,
+              ),
             ),
           ),
         _IconButton(
@@ -149,7 +152,7 @@ class Sidebar extends StatelessWidget {
                       height: 32,
                       decoration: BoxDecoration(
                         color: AppColors.cardRaised,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppRadii.sm),
                         border: Border.all(color: AppColors.border),
                       ),
                       child: Icon(
@@ -163,7 +166,7 @@ class Sidebar extends StatelessWidget {
                       child: Text(
                         'misc.',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: AppType.sizeBody,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -197,7 +200,7 @@ class Sidebar extends StatelessWidget {
                           ? Text(
                               state.timer.label,
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: AppType.sizeMeta,
                                 color: AppColors.textMuted,
                               ),
                             )
@@ -233,9 +236,9 @@ class _NewButton extends StatelessWidget {
       message: 'Capture text, links and photos into Canvas, Notes or Calendar  (Ctrl+N)',
       child: Material(
         color: AppColors.text,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
           onTap: onTap,
           child: SizedBox(
             height: 40,
@@ -248,7 +251,7 @@ class _NewButton extends StatelessWidget {
                   'Quick Add',
                   style: TextStyle(
                     color: AppColors.background,
-                    fontSize: 14,
+                    fontSize: AppType.sizeBody,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -283,9 +286,9 @@ class _NavItem extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Material(
         color: active ? AppColors.selected : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
           hoverColor: AppColors.hover,
           onTap: onTap,
           child: SizedBox(
@@ -303,7 +306,7 @@ class _NavItem extends StatelessWidget {
                   child: Text(
                     label,
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: AppType.sizeBody,
                       fontWeight: active ? FontWeight.w600 : FontWeight.w400,
                       color: active ? AppColors.text : AppColors.textMuted,
                     ),
@@ -347,9 +350,9 @@ class _IconButton extends StatelessWidget {
             : active
             ? AppColors.selected
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
           hoverColor: AppColors.hover,
           onTap: onTap,
           child: SizedBox(

@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
+import '../../new_ui/new_tokens.dart' show NewColors;
 
 /// Corner radius of groups; New is a little rounder than Original.
 double get _groupRadius => 18;
@@ -48,7 +49,7 @@ class SettingsPage extends StatelessWidget {
                 Text(
                   subtitle!,
                   style: TextStyle(
-                    fontSize: 13.5,
+                    fontSize: AppType.sizeBodySmall,
                     height: 1.4,
                     color: AppColors.textMuted,
                   ),
@@ -103,7 +104,7 @@ class SettingsGroup extends StatelessWidget {
               child: Text(
                 label!.toUpperCase(),
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: AppType.sizeMeta,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.8,
                   color: AppColors.textFaint,
@@ -138,7 +139,7 @@ class SettingsGroup extends StatelessWidget {
               child: Text(
                 footer!,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: AppType.sizeLabel,
                   height: 1.4,
                   color: AppColors.textFaint,
                 ),
@@ -190,7 +191,7 @@ class SettingsRow extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: AppType.sizeBody,
                     fontWeight: FontWeight.w500,
                     color: onTap == null && trailing == null
                         ? AppColors.textMuted
@@ -202,7 +203,7 @@ class SettingsRow extends StatelessWidget {
                   Text(
                     subtitle!,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: AppType.sizeLabel,
                       height: 1.35,
                       color: AppColors.textFaint,
                     ),
@@ -247,7 +248,7 @@ class SettingsSwitch extends StatelessWidget {
       onChanged: onChanged,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       thumbColor: WidgetStatePropertyAll(
-        value ? Colors.white : AppColors.textMuted,
+        value ? NewColors.onAccent : AppColors.textMuted,
       ),
       trackColor: WidgetStateProperty.resolveWith(
         (states) => states.contains(WidgetState.selected)
@@ -305,14 +306,17 @@ class SettingsMenu<T> extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 7, 8, 7),
           decoration: BoxDecoration(
             color: AppColors.cardRaised.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadii.md),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 current?.$2 ?? '',
-                style: TextStyle(fontSize: 13, color: AppColors.text),
+                style: TextStyle(
+                  fontSize: AppType.sizeBodySmall,
+                  color: AppColors.text,
+                ),
               ),
               const SizedBox(width: 4),
               Icon(Icons.unfold_more, size: 16, color: AppColors.textFaint),
@@ -343,7 +347,7 @@ class SettingsSegments<T> extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: AppColors.cardRaised.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(AppRadii.capsule),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -353,19 +357,21 @@ class SettingsSegments<T> extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: () => onChanged(v),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOutCubic,
+                duration: AppMotion.dropdown,
+                curve: AppMotion.standard,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
                   color: v == value ? AppColors.card : Colors.transparent,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(AppRadii.capsule),
                   boxShadow: v == value
                       ? [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.10),
+                            color: AppElevation.shadowColor.withValues(
+                              alpha: 0.12,
+                            ),
                             blurRadius: 6,
                             offset: const Offset(0, 1),
                           ),
@@ -375,7 +381,7 @@ class SettingsSegments<T> extends StatelessWidget {
                 child: Text(
                   label,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: AppType.sizeBodySmall,
                     fontWeight: v == value ? FontWeight.w600 : FontWeight.w400,
                     color: v == value ? AppColors.text : AppColors.textMuted,
                   ),
@@ -414,7 +420,7 @@ class SettingsSegmentRow<T> extends StatelessWidget {
         Text(
           title,
           style: TextStyle(
-            fontSize: 14,
+            fontSize: AppType.sizeBody,
             fontWeight: FontWeight.w500,
             color: AppColors.text,
           ),
@@ -424,7 +430,7 @@ class SettingsSegmentRow<T> extends StatelessWidget {
           Text(
             subtitle!,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: AppType.sizeLabel,
               height: 1.35,
               color: AppColors.textFaint,
             ),
@@ -458,14 +464,14 @@ class SettingsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = primary ? Colors.white : AppColors.text;
+    final fg = primary ? NewColors.onAccent : AppColors.text;
     return Opacity(
       opacity: onPressed == null ? 0.45 : 1,
       child: Material(
         color: primary ? AppColors.accent : AppColors.cardRaised,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.md),
         child: InkWell(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadii.md),
           onTap: onPressed,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
@@ -481,7 +487,7 @@ class SettingsButton extends StatelessWidget {
                     label,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: AppType.sizeBodySmall,
                       fontWeight: FontWeight.w600,
                       color: fg,
                     ),
@@ -509,7 +515,7 @@ class SettingsNote extends StatelessWidget {
     child: Text(
       text,
       style: TextStyle(
-        fontSize: 13,
+        fontSize: AppType.sizeBodySmall,
         height: 1.45,
         color: strong ? AppColors.text : AppColors.textMuted,
       ),

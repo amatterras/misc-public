@@ -39,7 +39,10 @@ Future<void> showCanvasMenu(
           children: [
             Icon(icon, size: 16, color: AppColors.textMuted),
             const SizedBox(width: 10),
-            Text(label, style: const TextStyle(fontSize: 13)),
+            Text(
+              label,
+              style: const TextStyle(fontSize: AppType.sizeBodySmall),
+            ),
           ],
         ),
       );
@@ -219,12 +222,12 @@ Future<void> showCanvasMenu(
         );
         return;
       }
-      final picked = await showDialog<CanvasComponent>(
+      final picked = await showAppDialog<CanvasComponent>(
         context: context,
         builder: (context) => SimpleDialog(
           title: const Text(
             'Insert a component',
-            style: TextStyle(fontSize: 16),
+            style: TextStyle(fontSize: AppType.sizeHeading),
           ),
           children: [
             for (final comp in list)
@@ -272,12 +275,12 @@ Future<void> showCanvasVersions(
 ) async {
   final list = await s.snapshotsOf(c.id);
   if (!context.mounted) return;
-  await showDialog<void>(
+  await showAppDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text(
         'Versions of this mindmap',
-        style: TextStyle(fontSize: 16),
+        style: TextStyle(fontSize: AppType.sizeHeading),
       ),
       content: SizedBox(
         width: 420,
@@ -295,7 +298,7 @@ Future<void> showCanvasVersions(
                       title: Text(v.name),
                       subtitle: Text(
                         '${formatShortDate(v.savedAt)} · ${v.itemCount} items',
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: AppType.sizeLabel),
                       ),
                       trailing: TextButton(
                         onPressed: () async {
@@ -324,10 +327,13 @@ Future<void> showCanvasVersions(
 Future<String?> _pickNote(BuildContext context, AppState s) {
   final notes = s.workspace.notes.all.toList()
     ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-  return showDialog<String>(
+  return showAppDialog<String>(
     context: context,
     builder: (context) => SimpleDialog(
-      title: const Text('Choose a note', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'Choose a note',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       children: [
         if (notes.isEmpty)
           const Padding(
@@ -353,10 +359,13 @@ Future<String?> _pickCanvas(
     for (final c in s.canvasList)
       if (c.id != except) c,
   ];
-  return showDialog<String>(
+  return showAppDialog<String>(
     context: context,
     builder: (context) => SimpleDialog(
-      title: const Text('Choose a mindmap', style: TextStyle(fontSize: 16)),
+      title: const Text(
+        'Choose a mindmap',
+        style: TextStyle(fontSize: AppType.sizeHeading),
+      ),
       children: [
         if (list.isEmpty)
           const Padding(

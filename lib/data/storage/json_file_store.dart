@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import '../../platform/file_protection.dart';
 import 'app_log.dart';
@@ -145,20 +146,89 @@ class JsonFileStore {
 
   Future<void> write(String collection, String id, Map<String, dynamic> json) {
     if (readOnly) return Future.value();
-    final file = _file(collection, id);
     // Encode now so later changes to [json] can't affect this write.
-    final text = const JsonEncoder.withIndent(' ').convert(json);
+    return _enqueue(
+      collection,
+      id,
+      const JsonEncoder.withIndent(' ').convert(json),
+    );
+  }
+
+  /// Like [write], with the document already encoded (as [write] would) or
+  /// still being encoded elsewhere (a large drawing on a background
+  /// isolate). The write keeps its place in the order of writes of the same
+  /// document from the moment it is called, however long [text] takes.
+  Future<void> writeText(String collection, String id, Future<String> text) {
+    if (readOnly) return Future.value();
+    return _enqueue(collection, id, text);
+  }
+
+  /// Queues the write of [text] (a String, or a Future of one) after the
+  /// writes of the same document already queued.
+  Future<void> _enqueue(String collection, String id, Object text) {
+    final file = _file(collection, id);
     final previous = _pending[file.path] ?? Future<void>.value();
-    final next = previous
-        .catchError((_) {})
-        // On a locked iPhone/iPad the write waits (still in order, still
-        // once) instead of being made less protected.
-        .then((_) => FileProtection.whenUnlocked(() => _writeNow(file, text)));
+    // On a locked iPhone/iPad the write waits (still in order, still once)
+    // instead of being made less protected.
+    Future<void> save(String t) =>
+        FileProtection.whenUnlocked(() => _writeNow(file, t));
+    final next = previous.catchError((_) {}).then(
+      (_) => text is Future<String> ? text.then(save) : save(text as String),
+    );
     _pending[file.path] = next;
     return next.whenComplete(() {
       if (identical(_pending[file.path], next)) _pending.remove(file.path);
       _changed(collection, id);
     });
+  }
+
+  /// Removes the temporary files of writes that never finished (the app
+  /// was closed or crashed in the middle of a save). Such a write never
+  /// replaced its real file, so nothing is lost by removing it. Only files
+  /// no write of this session is using are touched; returns how many went.
+  Future<int> removeInterruptedWrites() async {
+    if (!await root.exists()) return 0;
+    var removed = 0;
+    // Record folders only: attachments and backups have their own clean-up
+    // and can be large.
+    final places = <FileSystemEntity>[];
+    await for (final e in root.list(followLinks: false)) {
+      final name = e.uri.pathSegments.where((p) => p.isNotEmpty).last;
+      if (e is Directory && (name == 'attachments' || name == 'backups')) {
+        continue;
+      }
+      places.add(e);
+    }
+    final files = [
+      for (final p in places)
+        if (p is File) p,
+      for (final p in places)
+        if (p is Directory)
+          ...await p
+              .list(recursive: true, followLinks: false)
+              .where((e) => e is File)
+              .toList(),
+    ];
+    for (final e in files) {
+      final path = e.path;
+      if (!path.endsWith('.json.tmp') && !path.endsWith('.json.bak.tmp')) {
+        continue;
+      }
+      final target = path.endsWith('.bak.tmp')
+          ? path.substring(0, path.length - '.bak.tmp'.length)
+          : path.substring(0, path.length - '.tmp'.length);
+      if (_pending.containsKey(target)) continue;
+      try {
+        await e.delete();
+        removed++;
+      } on FileSystemException {
+        // Locked by something else: tried again at the next start.
+      }
+    }
+    if (removed > 0) {
+      AppLog.info('Removed $removed unfinished save file(s) left by a crash');
+    }
+    return removed;
   }
 
   /// Waits until every write started so far is on disk (used before the
@@ -192,7 +262,7 @@ class JsonFileStore {
     // damaged on disk is moved aside (kept), never copied over a good .bak.
     var backupIsGood = false;
     if (await file.exists()) {
-      if (await _tryRead(file) != null) {
+      if (await _readable(file)) {
         await _retry(() => _copy(file, bak));
         backupIsGood = true;
       } else {
@@ -208,6 +278,39 @@ class JsonFileStore {
     }
     await FileProtection.protect([file.path, bak.path]);
   }
+
+  /// Documents at least this long (characters) are checked on a background
+  /// isolate.
+  static const _bigText = 256 * 1024;
+
+  /// Whether [file] holds a readable document, as [_tryRead] decides, in
+  /// the same steps. A large document (a big drawing) is decoded on a
+  /// background isolate, so the check before each save does not pause the
+  /// app; only the yes/no answer comes back.
+  Future<bool> _readable(File file) async {
+    try {
+      if (!await file.exists()) return false;
+      final text = await _retry(() => StorageEncryption.readText(file, cipher));
+      if (text.length < _bigText) {
+        return jsonDecode(text) is Map<String, dynamic>;
+      }
+      return await _decodesToMapOnIsolate(text);
+    } on FormatException {
+      return false;
+    } on DecryptionFailure {
+      return false;
+    }
+  }
+
+  /// Static, so the isolate is sent only [text] (a closure made inside a
+  /// method would also carry this store and its pending saves).
+  static Future<bool> _decodesToMapOnIsolate(String text) => Isolate.run(() {
+    try {
+      return jsonDecode(text) is Map<String, dynamic>;
+    } on FormatException {
+      return false;
+    }
+  });
 
   /// Makes the previous-version copy (`.bak`) equal to the file as it is now,
   /// and removes damaged-file leftovers of this document. After something was
@@ -274,6 +377,12 @@ class JsonFileStore {
   /// missing or corrupt. Returns null if neither is readable.
   Future<Map<String, dynamic>?> read(String collection, String id) async {
     final file = _file(collection, id);
+    // A save of this document in progress finishes first (its rename would
+    // otherwise briefly lock the file on Windows). Not while the device is
+    // locked: such a save waits for the unlock, and the read must not.
+    if (FileProtection.available) {
+      await _pending[file.path]?.catchError((_) {});
+    }
     final bak = File('${file.path}.bak');
     final main = await _tryRead(file);
     if (main != null) return main;
@@ -303,16 +412,19 @@ class JsonFileStore {
     return null;
   }
 
+  /// The document in [file], or null if it is missing or its content is
+  /// damaged. A file that cannot be OPENED (locked for a moment by another
+  /// program or by a save in progress, a vanished drive) is not damaged: the
+  /// read is retried briefly and then fails with [FileSystemException], so
+  /// such a file is never moved aside as "corrupt" or replaced by an older
+  /// copy.
   Future<Map<String, dynamic>?> _tryRead(File file) async {
     try {
       if (!await file.exists()) return null;
-      final decoded = jsonDecode(
-        await StorageEncryption.readText(file, cipher),
-      );
+      final text = await _retry(() => StorageEncryption.readText(file, cipher));
+      final decoded = jsonDecode(text);
       return decoded is Map<String, dynamic> ? decoded : null;
     } on FormatException {
-      return null;
-    } on FileSystemException {
       return null;
     } on DecryptionFailure {
       // Changed or damaged ciphertext is handled like a damaged file: kept

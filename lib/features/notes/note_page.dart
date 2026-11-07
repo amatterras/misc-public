@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/page_windows.dart';
 import '../../app/shell.dart' show WorkspaceBuilder;
+import '../../app/background_palette.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/paper.dart';
@@ -26,6 +27,7 @@ import '../../platform/ios_bridge.dart';
 import '../../widgets/common.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
+import '../ink/native_ink.dart';
 import '../ink/stroke_geometry.dart';
 import 'notebook_layout.dart';
 import '../export/exports.dart';
@@ -124,8 +126,20 @@ class _NotePageState extends State<NotePage> {
   // The pointer drawing right now, and whether a Pencil touches (palm
   // rejection: fingers are ignored meanwhile).
   int? _pointer;
-  bool _stylusDown = false;
+
+  /// Whether a Pencil touches. Only the scroll settings depend on it, so
+  /// they listen to it alone: putting the Pencil down must not rebuild the
+  /// pages in the very frame that should show the first ink.
+  final _stylusDownNow = ValueNotifier<bool>(false);
+  bool get _stylusDown => _stylusDownNow.value;
+  set _stylusDown(bool value) => _stylusDownNow.value = value;
   bool _pointerIsStylus = false;
+
+  /// Every Apple Pencil sample for the stroke being written (iPad).
+  final PencilFeed _pencilFeed = PencilFeed();
+
+  /// Each page's finished ink kept as one image while the pen writes.
+  final Map<int, InkRasterCache> _inkRaster = {};
 
   AppState get s => widget.state;
 
@@ -357,6 +371,11 @@ class _NotePageState extends State<NotePage> {
 
   @override
   void dispose() {
+    _stylusDownNow.dispose();
+    _pencilFeed.end();
+    for (final cache in _inkRaster.values) {
+      cache.dispose();
+    }
     _squeeze?.cancel();
     _unregisterTap?.call();
     _lifecycle?.dispose();
@@ -415,7 +434,6 @@ class _NotePageState extends State<NotePage> {
       _pinchDocumentAnchor = null;
       _pinchPrefix = null;
       _stylusDown = true;
-      if (mounted) setState(() {});
     }
     _pointer = e.pointer;
     _pointerIsStylus =
@@ -427,10 +445,29 @@ class _NotePageState extends State<NotePage> {
       pressure: _pressure(e),
       timeStamp: e.timeStamp,
     );
+    final pointer = e.pointer;
+    _pencilFeed.begin(
+      e,
+      move: (local, pressure, timeStamp) {
+        if (_pointer != pointer) return;
+        c.pointerMove(
+          _screen(local, page, sc),
+          pressure: pressure,
+          timeStamp: timeStamp,
+        );
+      },
+      predict: (local) {
+        if (_pointer == pointer) {
+          c.setPredictedPoint(local == null ? null : _screen(local, page, sc));
+        }
+      },
+    );
   }
 
   void _move(PointerMoveEvent e, CanvasController c, Rect page, double sc) {
     if (e.pointer != _pointer) return;
+    // Native Pencil samples may already have delivered this moment.
+    if (!_pencilFeed.flutterMove(e)) return;
     c.pointerMove(
       _screen(e.localPosition, page, sc),
       pressure: _pressure(e),
@@ -438,15 +475,28 @@ class _NotePageState extends State<NotePage> {
     );
   }
 
-  void _up(PointerEvent e, CanvasController c, {bool cancel = false}) {
+  void _up(
+    PointerEvent e,
+    CanvasController c,
+    Rect page,
+    double sc, {
+    bool cancel = false,
+  }) {
     if (e.pointer != _pointer) return;
+    final wasStylus = _pointerIsStylus;
     _pointer = null;
     _pointerIsStylus = false;
-    if (_stylusDown) {
-      _stylusDown = false;
-      if (mounted) setState(() {});
+    _pencilFeed.end();
+    _stylusDown = false;
+    if (cancel) {
+      // Pencil writing interrupted by the system is kept, not erased.
+      c.pointerCancel(keepInk: wasStylus);
+    } else {
+      c.pointerUp(
+        screen: _screen(e.localPosition, page, sc),
+        timeStamp: e.timeStamp,
+      );
     }
-    cancel ? c.pointerCancel() : c.pointerUp();
   }
 
   // ------------------------------------------------------------ PDFs --
@@ -672,23 +722,28 @@ class _NotePageState extends State<NotePage> {
             child: SizedBox(width: width, height: box.maxHeight, child: list),
           );
         }
-        return ScrollConfiguration(
-          // This configuration must wrap both axes; previously the outer
-          // horizontal scroll view used Flutter's default, which accepts a
-          // Pencil drag and steals writing input.
-          behavior: ScrollConfiguration.of(context).copyWith(
-            dragDevices: _stylusDown || (!touchFirst && _fingerDraws)
-                ? {PointerDeviceKind.trackpad}
-                : {PointerDeviceKind.touch, PointerDeviceKind.trackpad},
-          ),
-          child: Listener(
-            key: _gestureSurfaceKey,
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: _notePointerDown,
-            onPointerMove: _notePointerMove,
-            onPointerUp: _notePointerEnd,
-            onPointerCancel: _notePointerEnd,
-            child: list,
+        final surface = Listener(
+          key: _gestureSurfaceKey,
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: _notePointerDown,
+          onPointerMove: _notePointerMove,
+          onPointerUp: _notePointerEnd,
+          onPointerCancel: _notePointerEnd,
+          child: list,
+        );
+        return ValueListenableBuilder<bool>(
+          valueListenable: _stylusDownNow,
+          child: surface,
+          builder: (context, stylusDown, surface) => ScrollConfiguration(
+            // This configuration must wrap both axes; previously the outer
+            // horizontal scroll view used Flutter's default, which accepts
+            // a Pencil drag and steals writing input.
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: stylusDown || (!touchFirst && _fingerDraws)
+                  ? {PointerDeviceKind.trackpad}
+                  : {PointerDeviceKind.touch, PointerDeviceKind.trackpad},
+            ),
+            child: surface!,
           ),
         );
       },
@@ -720,7 +775,7 @@ class _NotePageState extends State<NotePage> {
             width: rect.width * scale,
             height: rect.height * scale,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(AppRadii.xs),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -736,7 +791,18 @@ class _NotePageState extends State<NotePage> {
                     PdfPageView(state: s, background: background, scale: scale),
                   RepaintBoundary(
                     child: CustomPaint(
-                      painter: CanvasPainter(c, page: rect, pageScale: scale),
+                      painter: CanvasPainter(
+                        c,
+                        page: rect,
+                        pageScale: scale,
+                        rasterCache: _inkRaster.putIfAbsent(
+                          index,
+                          InkRasterCache.new,
+                        ),
+                        devicePixelRatio: MediaQuery.devicePixelRatioOf(
+                          context,
+                        ),
+                      ),
                     ),
                   ),
                   RepaintBoundary(
@@ -748,8 +814,9 @@ class _NotePageState extends State<NotePage> {
                     behavior: HitTestBehavior.translucent,
                     onPointerDown: (e) => _down(e, c, rect, scale),
                     onPointerMove: (e) => _move(e, c, rect, scale),
-                    onPointerUp: (e) => _up(e, c),
-                    onPointerCancel: (e) => _up(e, c, cancel: true),
+                    onPointerUp: (e) => _up(e, c, rect, scale),
+                    onPointerCancel: (e) =>
+                        _up(e, c, rect, scale, cancel: true),
                   ),
                   if (editingHere)
                     Positioned(
@@ -770,7 +837,7 @@ class _NotePageState extends State<NotePage> {
                       child: Text(
                         '${index + 1}',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: AppType.sizeMeta,
                           color: AppColors.textFaint,
                         ),
                       ),
@@ -877,7 +944,7 @@ class _NotePageState extends State<NotePage> {
                   '${(_z * 100).round()}%',
                   key: const ValueKey('note-zoom-value'),
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: AppType.sizeLabel,
                     color: AppColors.textMuted,
                     fontFeatures: [ui.FontFeature.tabularFigures()],
                   ),
@@ -1072,15 +1139,19 @@ class _PdfPageViewState extends State<PdfPageView> {
     if (image != null) {
       return RawImage(image: image, fit: BoxFit.fill);
     }
+    // A PDF page is paper: white with dark text in either theme.
     return ColoredBox(
-      color: AppColors.text,
+      color: BackgroundPalette.lightPaper,
       child: Center(
         child: Text(
           widget.state.ios == null
               ? 'PDF page ${widget.background.pdfPage + 1} (shown on '
                     'iPhone/iPad)'
               : '',
-          style: const TextStyle(color: Colors.black54, fontSize: 13),
+          style: const TextStyle(
+            color: Colors.black54,
+            fontSize: AppType.sizeBodySmall,
+          ),
         ),
       ),
     );

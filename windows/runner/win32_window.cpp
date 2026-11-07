@@ -16,6 +16,26 @@ namespace {
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
+// Windows 11 frame attributes (redefined for older SDKs).
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
+#ifndef DWMWA_BORDER_COLOR
+#define DWMWA_BORDER_COLOR 34
+#endif
+#ifndef DWMWA_CAPTION_COLOR
+#define DWMWA_CAPTION_COLOR 35
+#endif
+#ifndef DWMWA_TEXT_COLOR
+#define DWMWA_TEXT_COLOR 36
+#endif
+// DWM_WINDOW_CORNER_PREFERENCE::DWMWCP_ROUND
+constexpr DWORD kCornerRound = 2;
+
+// Smallest window, in logical pixels (keeps every page usable).
+constexpr int kMinWidth = 480;
+constexpr int kMinHeight = 360;
+
 constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
 /// Registry key for app theme preference.
@@ -145,6 +165,10 @@ bool Win32Window::Create(const std::wstring& title,
   }
 
   UpdateTheme(window);
+  // Rounded corners in normal (not maximized/snapped) states on Windows 11;
+  // Windows 10 ignores the attribute.
+  DwmSetWindowAttribute(window, DWMWA_WINDOW_CORNER_PREFERENCE, &kCornerRound,
+                        sizeof(kCornerRound));
 
   return OnCreate();
 }
@@ -214,8 +238,21 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
 
     case WM_DWMCOLORIZATIONCOLORCHANGED:
-      UpdateTheme(hwnd);
+      if (!app_theme_set_) {
+        UpdateTheme(hwnd);
+      }
       return 0;
+
+    case WM_GETMINMAXINFO: {
+      auto info = reinterpret_cast<MINMAXINFO*>(lparam);
+      UINT dpi = GetDpiForWindow(hwnd);
+      if (dpi == 0) {
+        dpi = 96;
+      }
+      info->ptMinTrackSize.x = MulDiv(kMinWidth, dpi, 96);
+      info->ptMinTrackSize.y = MulDiv(kMinHeight, dpi, 96);
+      return 0;
+    }
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);
@@ -285,4 +322,23 @@ void Win32Window::UpdateTheme(HWND const window) {
     DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
                           &enable_dark_mode, sizeof(enable_dark_mode));
   }
+}
+
+void Win32Window::SetAppTheme(bool dark, DWORD caption, DWORD text,
+                              DWORD border) {
+  if (!window_handle_) {
+    return;
+  }
+  app_theme_set_ = true;
+  BOOL enable_dark_mode = dark ? TRUE : FALSE;
+  DwmSetWindowAttribute(window_handle_, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                        &enable_dark_mode, sizeof(enable_dark_mode));
+  // Windows 11 only; older versions return an error and keep the default.
+  DwmSetWindowAttribute(window_handle_, DWMWA_CAPTION_COLOR, &caption,
+                        sizeof(caption));
+  DwmSetWindowAttribute(window_handle_, DWMWA_TEXT_COLOR, &text, sizeof(text));
+  DwmSetWindowAttribute(window_handle_, DWMWA_BORDER_COLOR, &border,
+                        sizeof(border));
+  DwmSetWindowAttribute(window_handle_, DWMWA_WINDOW_CORNER_PREFERENCE,
+                        &kCornerRound, sizeof(kCornerRound));
 }

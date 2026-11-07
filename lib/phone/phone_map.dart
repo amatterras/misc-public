@@ -3,6 +3,7 @@
 // rename, trash); the bar replaces the corner picker the desktop canvas has.
 import 'package:flutter/material.dart';
 
+import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../features/canvas/canvas_page.dart' show CanvasPage, runCanvasOption;
 import '../new_ui/new_tokens.dart';
@@ -96,7 +97,9 @@ class PhoneMap extends StatelessWidget {
                           children: [
                             Text(
                               'MINDMAP',
-                              style: PhoneType.eyebrow.copyWith(fontSize: 10),
+                              style: PhoneType.eyebrow.copyWith(
+                                fontSize: AppType.sizeMicro,
+                              ),
                             ),
                             const SizedBox(height: 2),
                             Row(
@@ -107,7 +110,7 @@ class PhoneMap extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: PhoneType.title.copyWith(
-                                      fontSize: 20,
+                                      fontSize: AppType.sizeTitle,
                                     ),
                                   ),
                                 ),

@@ -158,7 +158,10 @@ class _AiChatPageState extends State<AiChatPage> {
               const Expanded(
                 child: Text(
                   'AI',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    fontSize: AppType.sizeTitle,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               IconButton(
@@ -173,7 +176,7 @@ class _AiChatPageState extends State<AiChatPage> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: Space.md),
           child: TextField(
-            style: const TextStyle(fontSize: 13),
+            style: const TextStyle(fontSize: AppType.sizeBodySmall),
             decoration: const InputDecoration(
               prefixIcon: Icon(Icons.search, size: 16),
               hintText: 'Find a conversation',
@@ -221,7 +224,7 @@ class _AiChatPageState extends State<AiChatPage> {
                               if (c.group.isNotEmpty) c.group,
                               '${c.messages.length ~/ 2} question(s)',
                             ].join(' · '),
-                            style: const TextStyle(fontSize: 11),
+                            style: const TextStyle(fontSize: AppType.sizeMeta),
                           ),
                           onTap: () => session.openConversation(c.id),
                           trailing: IconButton(

@@ -292,11 +292,11 @@ class _LibraryPageState extends State<LibraryPage> {
                     filled: true,
                     fillColor: AppColors.card,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadii.md),
                       borderSide: BorderSide(color: AppColors.border),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadii.md),
                       borderSide: BorderSide(color: AppColors.border),
                     ),
                   ),
@@ -566,7 +566,7 @@ class _LibraryPageState extends State<LibraryPage> {
         .map((id) => s.workspace.assets[id])
         .whereType<Asset>()
         .firstOrNull;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.card,
@@ -757,7 +757,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           '${job.stage.name}: ${job.status.name}${job.error == null ? '' : ' · ${job.error}'}',
                           style: TextStyle(
                             color: AppColors.textMuted,
-                            fontSize: 12,
+                            fontSize: AppType.sizeLabel,
                           ),
                         ),
                       ),
@@ -818,7 +818,7 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _manageSpaces(LibraryObject object) async {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
@@ -965,7 +965,10 @@ class _ObjectCard extends StatelessWidget {
                         object.type.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: AppType.sizeLabel,
+                    ),
                   ),
                   _labelDots(),
                 ],
