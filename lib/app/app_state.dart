@@ -18,6 +18,7 @@ import '../data/storage/backup_service.dart';
 import '../data/storage/backup_verifier.dart';
 import '../data/repositories/canvas_repository.dart';
 import '../data/repositories/record_collection.dart';
+import '../data/models/object_library_models.dart' show LibraryObject;
 import '../data/repositories/library_repository.dart';
 import '../data/storage/app_log.dart';
 import '../data/storage/json_file_store.dart' show iosDocuments, iosFolder;
@@ -408,6 +409,7 @@ class AppState extends ChangeNotifier {
       // Files dragged onto the window (Windows runner).
       listenForDroppedFiles(this);
       sendTo.onFocusRequested = native.focusMainWindow;
+      sendTo.onReused = (reused) => unawaited(offerArchiveDuplicates(reused));
       sendTo.start(capture);
     }
     if (ios != null) {
@@ -2076,9 +2078,57 @@ class AppState extends ChangeNotifier {
       final saved = await sendTo.handleUriToArchive(uri, capture);
       if (saved == 0) return;
       await workspace.flush();
-      showToast('Added $saved item(s) to the Archive');
+      final reused = sendTo.takeReused();
+      if (saved > reused.length) {
+        showToast('Added ${saved - reused.length} item(s) to the Archive');
+      }
+      await offerArchiveDuplicates(reused);
     });
   }
+
+  /// Set by the app shell: shows the small "Already in Archive" popup.
+  Future<DuplicateChoice> Function(ArchiveDuplicate dup)? askArchiveDuplicate;
+
+  /// Set by the app shell: opens one Archive item where the user is.
+  void Function(String objectId)? openArchiveObject;
+
+  /// Items shared from outside (Share Extension, links, Send to) that were
+  /// already in the Archive were not saved twice; this tells the user and
+  /// lets them open the existing item or save a copy anyway. Without the
+  /// app shell (tests, start-up) it only shows a short notice.
+  Future<void> offerArchiveDuplicates(List<ArchiveDuplicate> reused) async {
+    if (reused.isEmpty) return;
+    final ask = askArchiveDuplicate;
+    if (ask == null) {
+      showToast(
+        reused.length == 1
+            ? 'Already in Archive: ${_archiveTitle(reused.single.existing)}'
+            : '${reused.length} shared items were already in the Archive',
+      );
+      return;
+    }
+    // One popup at a time; more than a few repeats is a notice instead.
+    for (final dup in reused.take(3)) {
+      switch (await ask(dup)) {
+        case DuplicateChoice.openExisting:
+          openArchiveObject?.call(dup.existing.id);
+          return;
+        case DuplicateChoice.saveAnyway:
+          await dup.saveCopy?.call();
+          await workspace.flush();
+          showToast('Saved another copy in the Archive');
+        case DuplicateChoice.cancel:
+          break;
+      }
+    }
+    if (reused.length > 3) {
+      showToast('${reused.length - 3} more shared items were already saved');
+    }
+  }
+
+  static String _archiveTitle(LibraryObject o) => o.title.trim().isNotEmpty
+      ? o.title.trim()
+      : (o.sourceUrl ?? 'item');
 
   Future<void> _publishShareTagCatalog() async {
     final ios = this.ios;
@@ -2109,6 +2159,7 @@ class AppState extends ChangeNotifier {
       for (final t in (uri.queryParameters['tags'] ?? '').split(','))
         if (t.trim().isNotEmpty) t.trim().toLowerCase(),
     ];
+    final reused = <ArchiveDuplicate>[];
     await capture.captureToArchive(
       url: url,
       title: uri.queryParameters['title'],
@@ -2116,8 +2167,13 @@ class AppState extends ChangeNotifier {
         for (final t in tags)
           if (LinkTag.byId(t) != null) t,
       },
+      reused: reused,
     );
-    showToast('Added to the Archive');
+    if (reused.isEmpty) {
+      showToast('Added to the Archive');
+    } else {
+      await offerArchiveDuplicates(reused);
+    }
     return true;
   }
 
@@ -2127,6 +2183,10 @@ class AppState extends ChangeNotifier {
     final inbox = _sharedInbox;
     final count = await inbox?.processRequests(capture) ?? 0;
     final failed = inbox?.failedCount ?? 0;
+    // Shared items already in the Archive were not saved twice: say so
+    // instead of "Added" and offer to open them or save a copy.
+    final reused = inbox?.takeReused() ?? const <ArchiveDuplicate>[];
+    final added = count - reused.length;
     if (failed > 0) {
       final reason = inbox?.lastFailure;
       showToast(
@@ -2134,9 +2194,10 @@ class AppState extends ChangeNotifier {
             ? 'A shared item could not be saved: ${reason ?? 'unsupported or damaged content.'}'
             : 'Added $count item(s); another shared item could not be saved: ${reason ?? 'unsupported content.'}',
       );
-    } else if (count > 0) {
-      showToast('Added $count shared item(s) to the Archive');
+    } else if (added > 0) {
+      showToast('Added $added shared item(s) to the Archive');
     }
+    if (reused.isNotEmpty) unawaited(offerArchiveDuplicates(reused));
     return count;
   }
 

@@ -11,6 +11,9 @@ import '../../data/models/record.dart';
 import '../../data/storage/attachment_image.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
+import '../../data/repositories/archive_duplicates.dart';
+import '../../new_ui/new_archive_page.dart' show openArchiveItem;
+import '../library/duplicate_prompt.dart';
 import '../links/link_tags.dart';
 import 'capture_service.dart';
 
@@ -204,13 +207,55 @@ class _CaptureDialogState extends State<CaptureDialog> {
           for (final t in _linkTags)
             if (LinkTag.byId(t) != null) t,
         };
-        await s.capture.captureToArchive(
-          url: link.url,
-          title: title.isEmpty ? null : title,
-          categories: categories,
-        );
+        // Anything already in the Archive is asked about first (small
+        // popup): open it, save anyway, or skip it.
+        String? openId;
+        Future<bool> approve(ArchiveDuplicate? dup) async {
+          if (dup == null) return true;
+          if (!mounted || openId != null) return false;
+          final choice = await showArchiveDuplicatePrompt(context, s, dup);
+          if (choice == DuplicateChoice.openExisting) openId = dup.existing.id;
+          return choice == DuplicateChoice.saveAnyway;
+        }
+
+        final linkDup = s.library.findDuplicate(sourceUrl: link.url);
+        final saveLink = await approve(linkDup);
+        final imageSaves = <(Asset, bool)>[];
         for (final a in images) {
-          await s.capture.saveAssetToArchive(a, categories: categories);
+          final dup = await s.capture.archiveDuplicateOfAsset(a);
+          if (await approve(dup)) imageSaves.add((a, dup != null));
+        }
+        if (saveLink) {
+          await s.capture.captureToArchive(
+            url: link.url,
+            title: title.isEmpty ? null : title,
+            categories: categories,
+            allowDuplicate: linkDup != null,
+          );
+        }
+        for (final (a, again) in imageSaves) {
+          await s.capture.saveAssetToArchive(
+            a,
+            categories: categories,
+            allowDuplicate: again,
+          );
+        }
+        final savedAny = saveLink || imageSaves.isNotEmpty;
+        if (openId != null) {
+          if (savedAny) s.showToast('Added to the Archive');
+          if (mounted) Navigator.pop(context);
+          final open = s.openArchiveObject;
+          if (open != null) {
+            open(openId!);
+          } else if (mounted) {
+            await openArchiveItem(context, s, openId!);
+          }
+          return;
+        }
+        if (!savedAny) {
+          // Everything was already saved and the user cancelled: stay here.
+          if (mounted) setState(() => _saving = false);
+          return;
         }
         s.goTo(AppPage.links);
         done = 'Added to the Archive';

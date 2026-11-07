@@ -9,6 +9,9 @@ import '../models/object_library_models.dart';
 import '../models/tag_models.dart';
 import '../../features/links/link_tags.dart';
 import '../workspace.dart';
+import 'archive_duplicates.dart';
+
+export 'archive_duplicates.dart';
 
 /// Local-first persistence and indexed discovery for the replacement library.
 /// Binary bytes remain in Workspace.attachments; this repository stores IDs.
@@ -33,6 +36,37 @@ class LibraryRepository {
   List<LibraryObject> get objects =>
       workspace.libraryObjects.all.where((o) => !o.deleted).toList();
 
+  final _duplicates = ArchiveDuplicateFinder();
+
+  /// An item already in the Archive that saving this would repeat (see
+  /// archive_duplicates.dart), or null. Uses local records only, so it works
+  /// offline. Attachments are compared by their content hash: fill in
+  /// `Asset.fileSha256` first (see CaptureService.hashAsset).
+  ArchiveDuplicate? findDuplicate({
+    String? sourceUrl,
+    String? content,
+    List<String> attachmentIds = const [],
+  }) => _duplicates.find(
+    objects: workspace.libraryObjects.all,
+    assetOf: (id) => workspace.assets[id],
+    sourceUrl: sourceUrl,
+    contentHash: content == null
+        ? null
+        : sha256.convert(utf8.encode(content)).toString(),
+    newAssets: [
+      for (final id in attachmentIds)
+        if (workspace.assets[id] != null) workspace.assets[id]!,
+    ],
+  );
+
+  /// Saves an Archive item.
+  ///
+  /// When the same link, file content or text is already saved (a proven
+  /// duplicate) and [allowDuplicate] is false, nothing new is created: the
+  /// existing item is returned (and filed in [spaceId]). This keeps share
+  /// imports and retried requests from piling up copies. Pass
+  /// [allowDuplicate] after the user chose "Save anyway" to always create a
+  /// new item. Existing items are never overwritten or removed.
   Future<LibraryObject> save({
     required LibraryObjectType type,
     String title = '',
@@ -43,6 +77,32 @@ class LibraryRepository {
     String? thumbnailId,
     Map<String, dynamic> metadata = const {},
     String? spaceId,
+    bool allowDuplicate = false,
+  }) async => (await saveWithResult(
+    type: type,
+    title: title,
+    sourceUrl: sourceUrl,
+    content: content,
+    description: description,
+    attachmentIds: attachmentIds,
+    thumbnailId: thumbnailId,
+    metadata: metadata,
+    spaceId: spaceId,
+    allowDuplicate: allowDuplicate,
+  )).object;
+
+  /// Like [save], and also says whether an existing item was reused.
+  Future<LibrarySaveResult> saveWithResult({
+    required LibraryObjectType type,
+    String title = '',
+    String? sourceUrl,
+    String? content,
+    String? description,
+    List<String> attachmentIds = const [],
+    String? thumbnailId,
+    Map<String, dynamic> metadata = const {},
+    String? spaceId,
+    bool allowDuplicate = false,
   }) async {
     final canonical = sourceUrl == null ? null : canonicalizeUrl(sourceUrl);
     if (sourceUrl != null && canonical == null) {
@@ -55,23 +115,17 @@ class LibraryRepository {
     final hash = content == null
         ? null
         : sha256.convert(utf8.encode(content)).toString();
-    final uploadedHashes = attachmentIds
-        .map((id) => workspace.assets[id]?.fileSha256)
-        .whereType<String>()
-        .toSet();
-    final duplicate = objects
-        .where(
-          (o) =>
-              (canonical != null && o.canonicalUrl == canonical) ||
-              (hash != null && o.contentHash == hash) ||
-              (uploadedHashes.isNotEmpty &&
-                  o.attachmentIds.any(
-                    (id) => uploadedHashes.contains(
-                      workspace.assets[id]?.fileSha256,
-                    ),
-                  )),
-        )
-        .firstOrNull;
+    // Only proven duplicates are reused; a name-and-size hint never is.
+    // Checked and saved without an await in between, so two quick saves of
+    // the same thing cannot both create an item.
+    final match = allowDuplicate
+        ? null
+        : findDuplicate(
+            sourceUrl: sourceUrl,
+            content: content,
+            attachmentIds: attachmentIds,
+          );
+    final duplicate = match != null && match.certain ? match.existing : null;
     final now = DateTime.now().toUtc();
     final object = duplicate == null
         ? LibraryObject(
@@ -115,7 +169,10 @@ class LibraryRepository {
       // Saving is durable before any background work starts.
       processPendingJobs();
     }
-    return object;
+    return LibrarySaveResult(
+      object,
+      duplicate == null ? null : ArchiveDuplicate(duplicate, match!.reason),
+    );
   }
 
   Future<void> update(LibraryObject object) async {
@@ -663,6 +720,15 @@ class LibraryRepository {
       queryParameters: query.isEmpty ? null : query,
     ).toString();
   }
+}
+
+/// What [LibraryRepository.saveWithResult] did: the saved item, and the
+/// existing item that was reused instead of saving a copy (null when a new
+/// item was created).
+class LibrarySaveResult {
+  const LibrarySaveResult(this.object, this.reused);
+  final LibraryObject object;
+  final ArchiveDuplicate? reused;
 }
 
 class LibrarySearchResult {

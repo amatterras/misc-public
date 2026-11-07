@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/models/canvas_models.dart' show newId;
 import '../../data/models/library_models.dart';
+import '../../data/repositories/archive_duplicates.dart';
 import 'capture_service.dart';
 import '../links/link_tags.dart';
 
@@ -99,6 +100,22 @@ class SendToBridge {
   /// Called when another launch asked this window to come forward.
   VoidCallback? onFocusRequested;
 
+  /// Shared items that were already in the Archive (the existing item was
+  /// reused, nothing was saved twice), until taken with [takeReused].
+  final _reused = <ArchiveDuplicate>[];
+
+  /// Called after [processRequests] when some shared items were already in
+  /// the Archive (the app then asks the user). Without it they wait for
+  /// [takeReused].
+  void Function(List<ArchiveDuplicate> reused)? onReused;
+
+  /// The items reused since the last call (see [_reused]).
+  List<ArchiveDuplicate> takeReused() {
+    final out = List<ArchiveDuplicate>.of(_reused);
+    _reused.clear();
+    return out;
+  }
+
   /// Handles an inbound deep link URL (e.g. theapp://capture?url=... or theapp://share?text=...).
   /// Works across platforms without extra plugins. On iPhone/iPad the links
   /// arrive through `IosBridge.listenForLinks` (not yet run on a device).
@@ -127,6 +144,7 @@ class SendToBridge {
         url: uri.queryParameters['url'],
         text: uri.queryParameters['text'] ?? uri.queryParameters['body'],
         title: uri.queryParameters['title'],
+        reused: _reused,
       );
     }
     return 0;
@@ -207,27 +225,39 @@ class SendToBridge {
               if (json['typeIdentifier'] is String)
                 'typeIdentifier': json['typeIdentifier'],
               if (json['source'] is String) 'source': json['source'],
+              // Lets a retried request (after a crash) be told apart from
+              // the user sharing the same thing again.
+              'shareRequest': requestId,
             };
+            final reused = <ArchiveDuplicate>[];
             final saved = switch (json['type']) {
               'file' => await capture.captureToArchive(
                 files: [value],
                 categories: categories,
                 title: title,
                 metadata: metadata,
+                reused: reused,
               ),
               'url' => await capture.captureToArchive(
                 url: (json['url'] as String?) ?? value,
                 categories: categories,
                 title: title,
                 metadata: metadata,
+                reused: reused,
               ),
               _ => await capture.captureToArchive(
                 text: value,
                 categories: categories,
                 title: title,
                 metadata: metadata,
+                reused: reused,
               ),
             };
+            _reused.addAll(
+              reused.where(
+                (d) => d.existing.metadata['shareRequest'] != requestId,
+              ),
+            );
             if (saved == 0 && json['type'] == 'file') {
               throw const FormatException(
                 'Unsupported or invalid shared file; staged original kept for recovery.',
@@ -295,6 +325,8 @@ class SendToBridge {
     } finally {
       _busy = false;
     }
+    final callback = onReused;
+    if (callback != null && _reused.isNotEmpty) callback(takeReused());
     return count;
   }
 

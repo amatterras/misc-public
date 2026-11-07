@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import '../../app/app_state.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/object_library_models.dart';
+import '../../data/repositories/archive_duplicates.dart';
 import '../import/note_import.dart';
 
 const windowsChannel = MethodChannel('theapp/windows');
@@ -62,17 +63,25 @@ extension FileDrop on AppState {
     ];
     var onCanvas = 0, inLibrary = 0;
     final c = canvas;
+    // A dropped file that is already in the Archive is asked about first
+    // (small popup: open it, save anyway, or skip). Without the app shell
+    // (tests) it is saved normally, which reuses the existing item.
+    // Returns whether to save a separate copy, or null to skip the file.
+    String? openId;
+    Future<bool?> approve(Asset a) async {
+      final dup = await capture.archiveDuplicateOfAsset(a);
+      final ask = askArchiveDuplicate;
+      if (dup == null || ask == null) return false;
+      if (openId != null) return null;
+      final choice = await ask(dup);
+      if (choice == DuplicateChoice.openExisting) openId = dup.existing.id;
+      return choice == DuplicateChoice.saveAnyway ? true : null;
+    }
+
     if (page == AppPage.links) {
       for (final a in assets) {
-        final info = a.file == null
-            ? null
-            : await workspace.attachments.contentInfo(a.file!);
-        if (info != null) {
-          workspace.assets.put(
-            a.copyWith(fileSha256: info.$1, fileSize: info.$2),
-          );
-          await workspace.assets.flush();
-        }
+        final again = await approve(a);
+        if (again == null) continue; // cancelled, or opening the existing one
         await library.save(
           type: a.kind == AssetKind.image
               ? LibraryObjectType.image
@@ -80,6 +89,7 @@ extension FileDrop on AppState {
           title: a.label,
           attachmentIds: [a.id],
           metadata: {'legacyAssetId': a.id},
+          allowDuplicate: again,
         );
         inLibrary++;
       }
@@ -96,10 +106,13 @@ extension FileDrop on AppState {
       }
     } else {
       for (final a in assets) {
-        await capture.saveAssetToArchive(a);
+        final again = await approve(a);
+        if (again == null) continue;
+        await capture.saveAssetToArchive(a, allowDuplicate: again);
         inLibrary++;
       }
     }
+    if (openId != null) openArchiveObject?.call(openId!);
     var notes = 0;
     for (final t in texts) {
       try {

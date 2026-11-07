@@ -13,6 +13,7 @@ import '../features/ai/ai_chat_page.dart';
 import '../features/browser/browser_page.dart';
 import '../features/capture/capture_dialog.dart';
 import '../features/capture/capture_service.dart';
+import '../features/library/duplicate_prompt.dart';
 import '../features/notes/notes_page.dart';
 import '../features/palette/app_switcher.dart';
 import '../features/palette/command_palette.dart';
@@ -153,6 +154,13 @@ class _AppShellState extends State<AppShell> {
     if (widget.motivation == null) unawaited(_loadMotivation());
     _lastPage = state.page;
     state.addListener(_pageChanged);
+    // Shared items that were already in the Archive are asked about with
+    // the small "Already in Archive" popup, over whatever page is open.
+    state.askArchiveDuplicate = (dup) =>
+        showArchiveDuplicatePrompt(context, state, dup);
+    state.openArchiveObject = (id) {
+      if (mounted) unawaited(openArchiveItem(context, state, id));
+    };
     // Once, after start-up: offer a recovery code (never blocks anything).
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future<void>.delayed(const Duration(seconds: 4));
@@ -190,6 +198,8 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     state.removeListener(_pageChanged);
+    state.askArchiveDuplicate = null;
+    state.openArchiveObject = null;
     _focus.dispose();
     if (widget.motivation == null) _motivation.dispose();
     super.dispose();

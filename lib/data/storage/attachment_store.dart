@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -82,8 +83,16 @@ class AttachmentStore {
   /// it (never of the ciphertext).
   Future<(String, int)> contentInfo(String name) async {
     final bytes = await readBytes(name);
-    return (sha256.convert(bytes).toString(), bytes.length);
+    // Large files are hashed on a background isolate, so checking a big
+    // PDF or photo never freezes the UI.
+    final digest = bytes.length < backgroundHashBytes
+        ? sha256.convert(bytes).toString()
+        : await Isolate.run(() => sha256.convert(bytes).toString());
+    return (digest, bytes.length);
   }
+
+  /// Files at least this big are hashed off the UI thread.
+  static const backgroundHashBytes = 1024 * 1024;
 
   // ---------------------------------------------------------- view copies --
 

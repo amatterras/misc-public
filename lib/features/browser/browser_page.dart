@@ -18,6 +18,7 @@ import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../ai/ai_service.dart';
 import '../ai/ai_session.dart';
+import '../library/duplicate_prompt.dart';
 import '../transfer/transfer.dart';
 import 'browser_engine.dart';
 import 'browser_workspace.dart';
@@ -135,12 +136,20 @@ class _BrowserPageState extends State<BrowserPage> {
           } catch (_) {}
         }
         if (pageText.length > 200000) pageText = pageText.substring(0, 200000);
+        // The same page already saved: ask first (open it, save anyway, or
+        // cancel). Only the address is compared; page text changes.
+        final dup = s.library.findDuplicate(sourceUrl: t.url);
+        if (dup != null) {
+          if (!mounted) return;
+          if (!await proceedDespiteArchiveDuplicate(context, s, dup)) return;
+        }
         await s.library.save(
           type: LibraryObjectType.article,
           sourceUrl: t.url,
           title: t.title.isEmpty ? t.url : t.title,
           content: pageText.isEmpty ? null : pageText,
           metadata: {'browserCapture': true},
+          allowDuplicate: dup != null,
         );
         s.showToast('Saved to Library.');
       case 'note':

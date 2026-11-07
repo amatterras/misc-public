@@ -14,6 +14,7 @@ import '../data/models/object_library_models.dart';
 import '../data/repositories/library_repository.dart';
 import '../data/storage/attachment_image.dart';
 import '../data/workspace.dart';
+import '../features/library/duplicate_prompt.dart';
 import '../features/library/library_page.dart';
 import '../widgets/common.dart' show confirm, promptText;
 import 'archive_model.dart';
@@ -88,8 +89,20 @@ class _NewArchivePageState extends State<NewArchivePage> {
   /// The save is durable at once with the host as its title; the library's own
   /// background job then fills in the page title and preview, so nothing
   /// waits on the network and it works offline. A link that is already saved
-  /// is not saved twice (it is filed in this folder instead).
+  /// asks first (open it, save anyway, or cancel).
   Future<void> _pasteLink({String? folderId}) async {
+    if (_pasting) return; // a second quick tap saves nothing extra
+    _pasting = true;
+    try {
+      await _pasteLinkOnce(folderId: folderId);
+    } finally {
+      _pasting = false;
+    }
+  }
+
+  bool _pasting = false;
+
+  Future<void> _pasteLinkOnce({String? folderId}) async {
     final clip = await s.capture.readClipboard();
     final url = clip.url;
     if (url == null) {
@@ -103,23 +116,22 @@ class _NewArchivePageState extends State<NewArchivePage> {
     }
     final host = Uri.parse(canonical).host;
     final folder = folderId == null ? null : ws.librarySpaces[folderId]?.name;
-    final existing = repo.objects
-        .where((o) => o.canonicalUrl == canonical && !o.deleted)
-        .firstOrNull;
-    if (existing != null) {
-      if (folderId != null) await repo.addToRegularSpace(folderId, existing.id);
-      s.showToast(
-        folder == null
-            ? '$host is already in your Archive.'
-            : '$host is already in your Archive, now also in $folder.',
+    final duplicate = repo.findDuplicate(sourceUrl: url);
+    if (duplicate != null) {
+      if (!mounted) return;
+      final saveAnyway = await proceedDespiteArchiveDuplicate(
+        context,
+        s,
+        duplicate,
       );
-      return;
+      if (!saveAnyway) return;
     }
     await repo.save(
       type: LibraryObjectType.website,
       sourceUrl: url,
       title: host,
       spaceId: folderId,
+      allowDuplicate: duplicate != null,
     );
     s.showToast(folder == null ? 'Saved $host.' : 'Saved $host to $folder.');
   }

@@ -11,6 +11,7 @@ import '../../data/models/tag_models.dart';
 import '../../widgets/common.dart';
 import '../links/link_tags.dart';
 import '../tags/tag_ui.dart';
+import 'duplicate_prompt.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({
@@ -73,11 +74,17 @@ class _LibraryPageState extends State<LibraryPage> {
       s.showToast('Enter a valid http or https address.');
       return;
     }
+    final dup = repo.findDuplicate(sourceUrl: url);
+    if (dup != null) {
+      if (!mounted) return;
+      if (!await _askDuplicate(dup)) return;
+    }
     final result = await repo.save(
       type: LibraryObjectType.website,
       sourceUrl: url,
       title: Uri.parse(url).host,
       spaceId: _space,
+      allowDuplicate: dup != null,
     );
     if (mounted) setState(() {});
     s.showToast(
@@ -100,11 +107,17 @@ class _LibraryPageState extends State<LibraryPage> {
       action: 'Save',
     );
     if (body == null) return;
+    final dup = repo.findDuplicate(content: body);
+    if (dup != null) {
+      if (!mounted) return;
+      if (!await _askDuplicate(dup)) return;
+    }
     await repo.save(
       type: LibraryObjectType.note,
       title: title,
       content: body,
       spaceId: _space,
+      allowDuplicate: dup != null,
     );
     if (mounted) setState(() {});
   }
@@ -114,14 +127,12 @@ class _LibraryPageState extends State<LibraryPage> {
         ? await s.capture.pickImages()
         : await s.capture.pickDocuments();
     for (final asset in assets) {
-      final info = asset.file == null
-          ? null
-          : await s.workspace.attachments.contentInfo(asset.file!);
-      if (info != null) {
-        s.workspace.assets.put(
-          asset.copyWith(fileSha256: info.$1, fileSize: info.$2),
-        );
-        await s.workspace.assets.flush();
+      // Hashes the file (off the UI thread when big; a stored hash is
+      // reused) and asks first when the same file is already saved.
+      final dup = await s.capture.archiveDuplicateOfAsset(asset);
+      if (dup != null) {
+        if (!mounted) return;
+        if (!await _askDuplicate(dup)) continue;
       }
       await repo.save(
         type: asset.kind == AssetKind.image
@@ -131,9 +142,20 @@ class _LibraryPageState extends State<LibraryPage> {
         attachmentIds: [asset.id],
         metadata: {'legacyAssetId': asset.id},
         spaceId: _space,
+        allowDuplicate: dup != null,
       );
     }
     if (mounted) setState(() {});
+  }
+
+  /// The "Already in Archive" popup. True: save anyway. "Open existing"
+  /// opens it right here.
+  Future<bool> _askDuplicate(ArchiveDuplicate dup) async {
+    final choice = await showArchiveDuplicatePrompt(context, s, dup);
+    if (choice == DuplicateChoice.openExisting && mounted) {
+      await _open(dup.existing);
+    }
+    return choice == DuplicateChoice.saveAnyway;
   }
 
   Future<void> _newSpace({required bool smart}) async {

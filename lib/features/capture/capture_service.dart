@@ -282,18 +282,14 @@ class CaptureService {
     Asset asset, {
     Set<String> categories = const {},
     Map<String, Object?> metadata = const {},
+    bool allowDuplicate = false,
+    List<ArchiveDuplicate>? reused,
+    String? spaceId,
   }) async {
     final library = libraryRepository;
     if (library == null) return false;
-    final info = asset.file == null
-        ? null
-        : await workspace.attachments.contentInfo(asset.file!);
-    final stored = info == null
-        ? asset
-        : asset.copyWith(fileSha256: info.$1, fileSize: info.$2);
-    workspace.assets.put(stored);
-    await workspace.assets.flush();
-    final object = await library.save(
+    final stored = await hashAsset(asset);
+    final result = await library.saveWithResult(
       type: stored.kind == AssetKind.image
           ? LibraryObjectType.image
           : LibraryObjectType.document,
@@ -301,15 +297,67 @@ class CaptureService {
       attachmentIds: [stored.id],
       thumbnailId: stored.kind == AssetKind.image ? stored.id : null,
       metadata: {'legacyAssetId': stored.id, ...metadata},
+      spaceId: spaceId,
+      allowDuplicate: allowDuplicate,
     );
     for (final c in categories) {
-      await library.setCategory(object.id, c, true);
+      await library.setCategory(result.object.id, c, true);
+    }
+    final match = result.reused;
+    if (match != null && reused != null) {
+      reused.add(
+        ArchiveDuplicate(
+          match.existing,
+          match.reason,
+          saveCopy: () => saveAssetToArchive(
+            stored,
+            categories: categories,
+            metadata: metadata,
+            allowDuplicate: true,
+            spaceId: spaceId,
+          ),
+        ),
+      );
     }
     return true;
   }
 
+  /// [asset] with the SHA-256 and size of its file filled in (and stored),
+  /// for duplicate checks and sync. A hash that is already there is reused;
+  /// big files are hashed off the UI thread (AttachmentStore.contentInfo).
+  Future<Asset> hashAsset(Asset asset) async {
+    final current = workspace.assets[asset.id] ?? asset;
+    if (current.file == null ||
+        (current.fileSha256 != null && current.fileSize != null)) {
+      if (workspace.assets[asset.id] == null) {
+        workspace.assets.put(current);
+        await workspace.assets.flush();
+      }
+      return current;
+    }
+    final info = await workspace.attachments.contentInfo(current.file!);
+    final stored = current.copyWith(fileSha256: info.$1, fileSize: info.$2);
+    workspace.assets.put(stored);
+    await workspace.assets.flush();
+    return stored;
+  }
+
+  /// The Archive item that saving [asset] would repeat, or null. Hashes the
+  /// file first when needed (reusing a stored hash).
+  Future<ArchiveDuplicate?> archiveDuplicateOfAsset(Asset asset) async {
+    final library = libraryRepository;
+    if (library == null) return null;
+    final stored = await hashAsset(asset);
+    return library.findDuplicate(attachmentIds: [stored.id]);
+  }
+
   /// Saves what was shared from outside (a link, text, files) in the
   /// Archive. Returns how many objects were saved (0 without a library).
+  ///
+  /// Something already in the Archive is not saved again (the existing item
+  /// is reused and counted) unless [allowDuplicate]; each reused item is
+  /// added to [reused], so the caller can tell the user and offer "Save
+  /// anyway".
   Future<int> captureToArchive({
     String? url,
     String? text,
@@ -317,6 +365,8 @@ class CaptureService {
     List<String> files = const [],
     Set<String> categories = const {},
     Map<String, Object?> metadata = const {},
+    bool allowDuplicate = false,
+    List<ArchiveDuplicate>? reused,
   }) async {
     final library = libraryRepository;
     if (library == null) return 0;
@@ -338,27 +388,61 @@ class CaptureService {
       for (final c in categories) {
         await library.setCategory(o.id, c, true);
       }
-      saved++;
     }
 
-    if (cleanUrl != null) {
-      await label(
-        await library.save(
-          type: LibraryObjectType.website,
-          sourceUrl: cleanUrl,
-          title: title ?? Uri.parse(cleanUrl).host,
-          metadata: metadata,
+    // Saves one item; a reused existing item is reported in [reused] with a
+    // way to save a separate copy after all.
+    Future<void> saveOne({
+      required LibraryObjectType type,
+      required String title,
+      String? sourceUrl,
+      String? content,
+    }) async {
+      final r = await library.saveWithResult(
+        type: type,
+        title: title,
+        sourceUrl: sourceUrl,
+        content: content,
+        metadata: metadata,
+        allowDuplicate: allowDuplicate,
+      );
+      await label(r.object);
+      saved++;
+      final match = r.reused;
+      if (match == null || reused == null) return;
+      reused.add(
+        ArchiveDuplicate(
+          match.existing,
+          match.reason,
+          saveCopy: () async {
+            final copy = await library.save(
+              type: type,
+              title: title,
+              sourceUrl: sourceUrl,
+              content: content,
+              metadata: metadata,
+              allowDuplicate: true,
+            );
+            for (final c in categories) {
+              await library.setCategory(copy.id, c, true);
+            }
+          },
         ),
       );
     }
+
+    if (cleanUrl != null) {
+      await saveOne(
+        type: LibraryObjectType.website,
+        sourceUrl: cleanUrl,
+        title: title ?? Uri.parse(cleanUrl).host,
+      );
+    }
     if (bodyText.isNotEmpty) {
-      await label(
-        await library.save(
-          type: LibraryObjectType.note,
-          title: title ?? 'Shared note',
-          content: bodyText,
-          metadata: metadata,
-        ),
+      await saveOne(
+        type: LibraryObjectType.note,
+        title: title ?? 'Shared note',
+        content: bodyText,
       );
     }
     if (files.isNotEmpty) {
@@ -370,6 +454,8 @@ class CaptureService {
           asset,
           categories: categories,
           metadata: metadata,
+          allowDuplicate: allowDuplicate,
+          reused: reused,
         )) {
           saved++;
         }
