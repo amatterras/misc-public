@@ -50,12 +50,16 @@ void main() {
     expect(project, contains('path = ShareGreetings.swift'));
   });
 
-  test('popup geometry: floating, 68% x 55%, margins, no sheet', () {
-    expect(view, contains('container.width * 0.68'));
-    expect(view, contains('container.height * 0.55'));
-    expect(view, contains('static let margin: CGFloat = 16'));
-    // iPad: the same popup, sized inside the smaller sheet iOS hosts it in
-    expect(view, contains('min(400, tall)'));
+  test('popup geometry: floating, 74% x 60%, margins, no sheet', () {
+    expect(view, contains('container.width * 0.74'));
+    expect(view, contains('container.height * 0.60'));
+    expect(view, contains('static let margin: CGFloat = 20'));
+    // iPad: capped so it floats instead of covering most of the screen
+    expect(view, contains('static let maxWidth: CGFloat = 560'));
+    expect(view, contains('min(430, tall)'));
+    // presented over full screen with every surrounding layer transparent
+    expect(controller, contains('get { .overFullScreen }'));
+    expect(controller, contains('clearSurroundings()'));
     expect(view, contains('static let radius: CGFloat = 24'));
     // the overlay is its own layer; the popup is positioned, not stretched
     expect(view, contains('.position(x: metrics.centerX'));

@@ -41,18 +41,69 @@ final class ShareViewController: UIViewController {
   private let maxFileBytes: Int64 = 300 * 1024 * 1024
   private let maxTextChars = 200_000
 
-  // iOS presents a custom share extension as a modal sheet; with the default
-  // style that sheet is an opaque system card (the black full-screen surface).
-  // Over-full-screen keeps the app the user is sharing from visible behind us,
-  // so the floating popup is the only thing THEapp draws.
+  // iOS presents a custom share extension as a modal sheet: a page sheet on
+  // iPhone and a form sheet on iPad, both with a grey dimming layer and an
+  // opaque sheet behind our view. Over-full-screen has neither, so the app the
+  // user is sharing from stays visible and the floating card is the only thing
+  // THEapp draws. The getter is overridden (not just set once in init) so
+  // nothing in the extension host can switch it back to a sheet style.
+  override var modalPresentationStyle: UIModalPresentationStyle {
+    get { .overFullScreen }
+    set { super.modalPresentationStyle = .overFullScreen }
+  }
+
   override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
     super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
-    modalPresentationStyle = .overFullScreen
+    super.modalPresentationStyle = .overFullScreen
   }
 
   required init?(coder: NSCoder) {
     super.init(coder: coder)
-    modalPresentationStyle = .overFullScreen
+    super.modalPresentationStyle = .overFullScreen
+  }
+
+  /// Makes everything between our card and the screen see-through: our own
+  /// view, the hosting view, every view iOS wraps around us in the extension
+  /// process (the remote-view host / sheet content views), the presentation
+  /// container and the extension window. Without this one of them can show up
+  /// as a grey full-screen layer around the card. Runs again on every layout,
+  /// because iOS adds some of those wrappers only after viewDidLoad.
+  private func clearSurroundings() {
+    view.backgroundColor = .clear
+    view.isOpaque = false
+    for child in children {
+      child.view.backgroundColor = .clear
+      child.view.isOpaque = false
+    }
+    var ancestor = view.superview
+    while let current = ancestor {
+      current.backgroundColor = .clear
+      current.isOpaque = false
+      ancestor = current.superview
+    }
+    if let container = presentationController?.containerView {
+      container.backgroundColor = .clear
+      container.isOpaque = false
+    }
+    if let window = view.window {
+      window.backgroundColor = .clear
+      window.isOpaque = false
+    }
+  }
+
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    clearSurroundings()
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    clearSurroundings()
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    clearSurroundings()
   }
 
   override func viewDidLoad() {
@@ -403,12 +454,17 @@ private enum ShareError: LocalizedError {
 
 // MARK: popup
 
-/// Where the floating window sits inside the area iOS gives the extension.
-/// About 74% x 60% of it, centred, a little below the middle, and never closer
-/// than `margin` to any edge (small screens shrink it instead of clipping it).
+/// Where the floating card sits inside the area iOS gives the extension (the
+/// whole screen minus the safe areas, since the extension is presented over
+/// full screen). About 74% x 60% of it, centred a little below the middle, and
+/// never closer than `margin` to any edge: on small screens it shrinks instead
+/// of touching or clipping. On iPad it is capped at `maxWidth` x `maxHeight`
+/// so it stays a floating card instead of covering most of the screen.
 private struct PopupMetrics {
-  static let margin: CGFloat = 16
+  static let margin: CGFloat = 20
   static let radius: CGFloat = 24
+  static let maxWidth: CGFloat = 560
+  static let maxHeight: CGFloat = 640
 
   let width: CGFloat
   let height: CGFloat
@@ -416,8 +472,8 @@ private struct PopupMetrics {
   let centerY: CGFloat
 
   init(container: CGSize) {
-    let room = max(container.width - 2 * Self.margin, 1)
-    let tall = max(container.height - 2 * Self.margin, 1)
+    let room = min(max(container.width - 2 * Self.margin, 1), Self.maxWidth)
+    let tall = min(max(container.height - 2 * Self.margin, 1), Self.maxHeight)
     // 74% of the width, but not narrower than 280pt when the screen allows it.
     let popupWidth = min(max(container.width * 0.74, min(280, room)), room)
     // 60% of the height, but never shorter than 430pt when there is room, so
@@ -427,7 +483,10 @@ private struct PopupMetrics {
     width = popupWidth
     height = popupHeight
     centerX = container.width / 2
-    centerY = min(wanted, container.height - Self.margin - popupHeight / 2)
+    // A little below the middle, but the bottom edge keeps its margin too.
+    centerY = max(
+      Self.margin + popupHeight / 2,
+      min(wanted, container.height - Self.margin - popupHeight / 2))
   }
 }
 

@@ -14,9 +14,12 @@ pipeline creates Archive records and queues them for normal synchronization.
   The greeting on the popup is picked at random, once per sharing session, from
   the 120 owner-supplied sentences in `ShareGreetings.swift` (shown verbatim;
   `test/fixtures/share_greetings.txt` guards the list).
-- The popup is a floating window (~68% x 55% of the area iOS gives the
-  extension, centred a little below the middle, 16 pt minimum margin, 24 pt
-  corners) over a separate dimmed full-screen layer: `misc.` label, the
+- The popup is a floating card (~74% x 60% of the screen's safe area, at most
+  560 x 640 pt so it floats on iPad, centred a little below the middle, 20 pt
+  minimum margin from every edge, 24 pt corners). The extension is presented
+  over full screen and every layer around the card (our view, the hosting
+  view, the wrappers iOS adds, the window) is cleared, so there is no grey or
+  dimmed sheet behind it (`clearSurroundings()`): `misc.` label, the
   greeting, ONE glass container (link above, existing Archive tags below, one
   selectable), and a `done.` button outside it. All text is SF Pro Bold, white.
   iOS owns the sheet the extension is hosted in; see `PopupMetrics`.
