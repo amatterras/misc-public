@@ -57,11 +57,11 @@ void main() {
       expect(
         [for (final t in LinkTag.values) (t.label, t.color.toARGB32())],
         [
-          ('Resource', 0xFF3060B0),
-          ('Projects', 0xFFB03040),
-          ('Other', 0xFFF0C060),
-          ('Shopping', 0xFF409060),
-          ('Second-brain', 0xFFE0A0D0),
+          ('Resource', 0xFF5581C1),
+          ('Projects', 0xFFBB565A),
+          ('Other', 0xFFDEB866),
+          ('Shopping', 0xFF489A68),
+          ('Second-brain', 0xFFD492C1),
         ],
       );
       expect(LinkTag.byId('second-brain'), LinkTag.secondBrain);

@@ -80,7 +80,7 @@ abstract final class NewFolderColors {
 
 /// Dark or light foreground, whichever reads better on [background].
 Color contrastOn(Color background) {
-  const dark = Color(0xFF292631);
+  const dark = Color(0xFF181C25);
   const light = Color(0xFFFFFBFA);
   double ratio(Color a, Color b) {
     final la = a.computeLuminance();

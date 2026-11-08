@@ -11,7 +11,7 @@ import '../../widgets/common.dart';
 
 /// Text on a tag colour: dark on light colours, light on dark ones.
 Color tagForeground(Color background) => background.computeLuminance() > 0.45
-    ? const Color(0xFF1B1F27)
+    ? const Color(0xFF181C25)
     : const Color(0xFFFFFFFF);
 
 class TagChip extends StatelessWidget {

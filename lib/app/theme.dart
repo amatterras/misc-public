@@ -120,27 +120,27 @@ class InkSwatch {
 }
 
 abstract final class ArchiveCategoryColors {
-  static const resource = Color(0xFF3060B0);
-  static const projects = Color(0xFFB03040);
-  static const other = Color(0xFFF0C060);
-  static const shopping = Color(0xFF409060);
-  static const secondBrain = Color(0xFFE0A0D0);
+  static const resource = Color(0xFF5581C1);
+  static const projects = Color(0xFFBB565A);
+  static const other = Color(0xFFDEB866);
+  static const shopping = Color(0xFF489A68);
+  static const secondBrain = Color(0xFFD492C1);
 }
 
 abstract final class CalendarCategoryColors {
-  static const reading = Color(0xFFA3B18A);
-  static const habits = Color(0xFF6495ED);
-  static const other = Color(0xFFDDA0DD);
-  static const reminderEvent = Color(0xFF20B2AA);
+  static const reading = Color(0xFF8EA96C);
+  static const habits = Color(0xFF7092D0);
+  static const other = Color(0xFFC491C1);
+  static const reminderEvent = Color(0xFF52B0AB);
 }
 
 abstract final class CanvasTagColors {
   static const selected = [
-    Color(0xFFB5E1DF),
-    Color(0xFF15563F),
-    Color(0xFFA84D67),
-    Color(0xFFE9C5DD),
-    Color(0xFFE8AB73),
+    Color(0xFFACDCD8),
+    Color(0xFF2C6149),
+    Color(0xFFA65469),
+    Color(0xFFE9C5DB),
+    Color(0xFFE1AB7B),
   ];
 }
 
@@ -625,7 +625,7 @@ ThemeData _buildTheme(Brightness brightness) {
       mainAxisMargin: 2,
       minThumbLength: 36,
       thumbColor: WidgetStateProperty.resolveWith((s) {
-        final ink = light ? const Color(0xFF1C1A27) : Colors.white;
+        final ink = light ? const Color(0xFF181C25) : Colors.white;
         if (s.contains(WidgetState.dragged)) return ink.withValues(alpha: 0.40);
         if (s.contains(WidgetState.hovered)) return ink.withValues(alpha: 0.28);
         return ink.withValues(alpha: 0.16);

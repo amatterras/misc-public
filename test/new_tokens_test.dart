@@ -48,11 +48,11 @@ void main() {
   });
 
   test('the semantic category colours are not touched', () {
-    expect(CalendarCategoryColors.reading, const Color(0xFFA3B18A));
-    expect(CalendarCategoryColors.habits, const Color(0xFF6495ED));
-    expect(CalendarCategoryColors.other, const Color(0xFFDDA0DD));
-    expect(CalendarCategoryColors.reminderEvent, const Color(0xFF20B2AA));
-    expect(ArchiveCategoryColors.resource, const Color(0xFF3060B0));
-    expect(ArchiveCategoryColors.secondBrain, const Color(0xFFE0A0D0));
+    expect(CalendarCategoryColors.reading, const Color(0xFF8EA96C));
+    expect(CalendarCategoryColors.habits, const Color(0xFF7092D0));
+    expect(CalendarCategoryColors.other, const Color(0xFFC491C1));
+    expect(CalendarCategoryColors.reminderEvent, const Color(0xFF52B0AB));
+    expect(ArchiveCategoryColors.resource, const Color(0xFF5581C1));
+    expect(ArchiveCategoryColors.secondBrain, const Color(0xFFD492C1));
   });
 }

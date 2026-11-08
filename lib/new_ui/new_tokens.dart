@@ -30,41 +30,53 @@ abstract final class NewColors {
 
   // ── Surface hierarchy ────────────────────────────────────────────────
   //
-  // Light theme ("porcelain & ink"): a cool pearl page with a breath of
-  // lavender, pure white cards that lift off it, and one violet-tinted ink for
-  // text and borders so nothing reads as neutral grey. Depth comes from soft
+  // Light theme ("porcelain & ink"): a cool pearl page, pure white cards that
+  // lift off it, and one slate ink for text and borders. Depth comes from soft
   // layered shadows and hairlines, not from heavy fills or outlines.
+  //
+  // Harmony rules (2026-11-08 colour pass, values computed in OKLCH):
+  // - Every neutral (page, surfaces, borders, text, both themes) shares ONE
+  //   undertone, hue 268° — between the steel-blue accent (241°) and the
+  //   periwinkle/indigo gradient (~278°), so it bridges the two instead of
+  //   fighting them. Before, neutrals drifted 269°→318° (text read pinkish).
+  // - Selected states are tinted toward the accent hue, not the neutral one.
+  // - success / warm / danger share one lightness and chroma per theme, so
+  //   no state colour shouts louder than another.
+  // - Category colours (calendar, archive, canvas tags; theme.dart) keep
+  //   their original hues but share one muted chroma/lightness band
+  //   (retuned 2026-11-08 from stock web colours, user-approved).
+  // Keep new colours inside these rules.
 
   /// The window / canvas background.
   static Color get background =>
-      _light ? const Color(0xFFF5F4F9) : const Color(0xFF191A1D);
+      _light ? const Color(0xFFF3F5F9) : const Color(0xFF191A1D);
   static Color get canvas => background;
   static Color get canvasPage => background;
 
   /// Standard surface (cards, sidebar panels, dialogs).
   static Color get surface =>
-      _light ? const Color(0xFFFFFFFF) : const Color(0xFF202126);
+      _light ? const Color(0xFFFFFFFF) : const Color(0xFF1F2126);
 
   /// Secondary surface (inputs, grouped areas).
   static Color get surfaceSecondary =>
-      _light ? const Color(0xFFEEEDF5) : const Color(0xFF262932);
+      _light ? const Color(0xFFECEEF5) : const Color(0xFF26282F);
 
   /// Elevated surface (menus, tooltips, floating panels).
   static Color get surfaceRaised =>
-      _light ? const Color(0xFFE8E6F2) : const Color(0xFF2D3038);
+      _light ? const Color(0xFFE5E8F0) : const Color(0xFF2C2F36);
 
   static Color get border =>
-      _light ? const Color(0xFFE3E1EC) : const Color(0xFF3A3D47);
+      _light ? const Color(0xFFDEE2EA) : const Color(0xFF3A3D45);
 
   // ── Text ─────────────────────────────────────────────────────────────
   static Color get text =>
-      _light ? const Color(0xFF1C1A27) : const Color(0xFFF4F1F5);
+      _light ? const Color(0xFF181C25) : const Color(0xFFEFF0F4);
   static Color get textMuted =>
-      _light ? const Color(0xFF5D5A6B) : const Color(0xFFB9B5C1);
+      _light ? const Color(0xFF555B68) : const Color(0xFFB7BAC3);
 
   /// Muted text, kept at 4.5:1 or better on the page and on white.
   static Color get textFaint =>
-      _light ? const Color(0xFF6A6778) : const Color(0xFF898692);
+      _light ? const Color(0xFF656A78) : const Color(0xFF888C96);
 
   // ── Accent and states ───────────────────────────────────────────────
   /// Primary accent for text, icons and fills: the established steel blue.
@@ -79,22 +91,22 @@ abstract final class NewColors {
   static Color get accentSecondary => _light ? deepIndigo : periwinkle;
   static Color get accentSoft => accent.withValues(alpha: _light ? 0.11 : 0.16);
   static Color get selected =>
-      _light ? const Color(0xFFE4EBF2) : const Color(0xFF282C38);
+      _light ? const Color(0xFFE0EAF4) : const Color(0xFF242D38);
   static Color get selection => accent.withValues(alpha: 0.28);
   static Color get hover =>
-      _light ? const Color(0x0F1C1A27) : const Color(0x14FFFFFF);
+      _light ? const Color(0x0F181C25) : const Color(0x14FFFFFF);
   static Color get success =>
-      _light ? const Color(0xFF3F7A57) : const Color(0xFF9DB59A);
+      _light ? const Color(0xFF3D784F) : const Color(0xFF8FBF98);
   static Color get warm =>
-      _light ? const Color(0xFFB0603F) : const Color(0xFFE7A396);
+      _light ? const Color(0xFFA45936) : const Color(0xFFDFA084);
   static Color get danger =>
-      _light ? const Color(0xFFB42318) : const Color(0xFFE48A74);
+      _light ? const Color(0xFFAF3D36) : const Color(0xFFE39289);
 
   // ── Glass ────────────────────────────────────────────────────────────
   static Color get glass =>
-      _light ? const Color(0xCCFFFFFF) : const Color(0x99202126);
+      _light ? const Color(0xCCFFFFFF) : const Color(0x991F2126);
   static Color get glassBorder =>
-      _light ? const Color(0x1A1C1A27) : const Color(0x26FFFFFF);
+      _light ? const Color(0x1A181C25) : const Color(0x26FFFFFF);
   static Color get glassHighlight =>
       _light ? const Color(0xE6FFFFFF) : const Color(0x33FFFFFF);
 }

@@ -207,7 +207,7 @@ Color graphColor(GraphKind k) => switch (k) {
   GraphKind.task =>
     AppColors.light ? const Color(0xFFA9844C) : const Color(0xFFE5D5B8),
   GraphKind.project =>
-    AppColors.light ? const Color(0xFF5D5A6B) : const Color(0xFFF5F3EF),
+    AppColors.light ? const Color(0xFF555B68) : const Color(0xFFEFF0F4),
   GraphKind.entry => CalendarCategoryColors.reminderEvent,
   GraphKind.resource => const Color(0xFFAAAEB6),
 };

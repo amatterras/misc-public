@@ -193,21 +193,21 @@ void main() {
       );
       expect(InkColors.byId('bright-red')?.color, InkColors.brightRed);
       expect(CanvasTagColors.selected.map(hex), [
-        0xFFB5E1DF,
-        0xFF15563F,
-        0xFFA84D67,
-        0xFFE9C5DD,
-        0xFFE8AB73,
+        0xFFACDCD8,
+        0xFF2C6149,
+        0xFFA65469,
+        0xFFE9C5DB,
+        0xFFE1AB7B,
       ]);
-      expect(ArchiveCategoryColors.resource.toARGB32(), 0xFF3060B0);
-      expect(ArchiveCategoryColors.projects.toARGB32(), 0xFFB03040);
-      expect(ArchiveCategoryColors.other.toARGB32(), 0xFFF0C060);
-      expect(ArchiveCategoryColors.shopping.toARGB32(), 0xFF409060);
-      expect(ArchiveCategoryColors.secondBrain.toARGB32(), 0xFFE0A0D0);
-      expect(CalendarCategoryColors.reading.toARGB32(), 0xFFA3B18A);
-      expect(CalendarCategoryColors.habits.toARGB32(), 0xFF6495ED);
-      expect(CalendarCategoryColors.other.toARGB32(), 0xFFDDA0DD);
-      expect(CalendarCategoryColors.reminderEvent.toARGB32(), 0xFF20B2AA);
+      expect(ArchiveCategoryColors.resource.toARGB32(), 0xFF5581C1);
+      expect(ArchiveCategoryColors.projects.toARGB32(), 0xFFBB565A);
+      expect(ArchiveCategoryColors.other.toARGB32(), 0xFFDEB866);
+      expect(ArchiveCategoryColors.shopping.toARGB32(), 0xFF489A68);
+      expect(ArchiveCategoryColors.secondBrain.toARGB32(), 0xFFD492C1);
+      expect(CalendarCategoryColors.reading.toARGB32(), 0xFF8EA96C);
+      expect(CalendarCategoryColors.habits.toARGB32(), 0xFF7092D0);
+      expect(CalendarCategoryColors.other.toARGB32(), 0xFFC491C1);
+      expect(CalendarCategoryColors.reminderEvent.toARGB32(), 0xFF52B0AB);
       double luminance(Color color) => color.computeLuminance();
       final a = luminance(AppColors.text) + 0.05;
       final b = luminance(AppColors.background) + 0.05;

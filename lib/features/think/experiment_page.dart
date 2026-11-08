@@ -410,8 +410,8 @@ class ExperimentPage extends StatelessWidget {
 
   Color _originColor(ClaimOrigin o, bool unsupported) => switch (o) {
     ClaimOrigin.verified when unsupported => AppColors.warm,
-    ClaimOrigin.verified => const Color(0xFF6BBF7A),
-    ClaimOrigin.aiInference => const Color(0xFFB48EDB),
+    ClaimOrigin.verified => const Color(0xFF81BB8D),
+    ClaimOrigin.aiInference => const Color(0xFFA792CE),
     ClaimOrigin.calculation => const Color(0xFF829CB5),
     _ => AppColors.textMuted,
   };

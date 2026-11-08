@@ -41,11 +41,11 @@ void main() {
     expect(
       {for (final c in LinkTag.values) c.id: c.color.toARGB32()},
       {
-        'resource': 0xFF3060B0,
-        'projects': 0xFFB03040,
-        'other': 0xFFF0C060,
-        'shopping': 0xFF409060,
-        'second-brain': 0xFFE0A0D0,
+        'resource': 0xFF5581C1,
+        'projects': 0xFFBB565A,
+        'other': 0xFFDEB866,
+        'shopping': 0xFF489A68,
+        'second-brain': 0xFFD492C1,
       },
     );
     expect(ArchiveCategoryColors.resource, LinkTag.resource.color);

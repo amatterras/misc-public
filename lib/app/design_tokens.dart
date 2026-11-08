@@ -221,7 +221,7 @@ abstract final class AppSizes {
 /// hairline, so their shadows are deep but soft; light surfaces lift with a
 /// tight contact shadow plus a wide ink-tinted one.
 abstract final class AppElevation {
-  static const _ink = Color(0xFF1C1A27);
+  static const _ink = Color(0xFF181C25);
 
   static bool get _light => AppColors.light;
 
@@ -307,7 +307,7 @@ abstract final class AppElevation {
 
   /// Scrim behind modal dialogs and sheets.
   static Color get modalBarrier => _light
-      ? const Color(0xFF1C1A27).withValues(alpha: 0.22)
+      ? const Color(0xFF181C25).withValues(alpha: 0.22)
       : Colors.black.withValues(alpha: 0.50);
 }
 
@@ -359,7 +359,7 @@ abstract final class AppMotion {
 abstract final class AppStates {
   static Color get hover => NewColors.hover;
   static Color get pressed =>
-      AppColors.light ? const Color(0x1A1C1A27) : const Color(0x24FFFFFF);
+      AppColors.light ? const Color(0x1A181C25) : const Color(0x24FFFFFF);
   static Color get focusRing => NewColors.accent.withValues(alpha: 0.55);
   static Color get selected => NewColors.selected;
 

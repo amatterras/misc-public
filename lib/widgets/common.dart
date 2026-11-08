@@ -113,7 +113,7 @@ class SmallIconButton extends StatelessWidget {
             child: Icon(
               icon,
               size: size,
-              color: color ?? const Color(0xFFF4F1F5),
+              color: color ?? const Color(0xFFEFF0F4),
             ),
           ),
         ),
