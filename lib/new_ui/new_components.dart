@@ -39,7 +39,9 @@ class BrandPlus extends StatelessWidget {
         borderRadius: BorderRadius.circular(NewRadii.capsule),
         boxShadow: [
           BoxShadow(
-            color: NewColors.warmCoral.withValues(alpha: hovered ? 0.5 : 0.28),
+            color: NewGradients.brandRose.withValues(
+              alpha: hovered ? 0.5 : 0.28,
+            ),
             blurRadius: hovered ? 14 : 8,
           ),
         ],

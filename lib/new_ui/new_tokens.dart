@@ -158,11 +158,19 @@ abstract final class NewGradients {
     ],
   );
 
-  /// Brand gradient (selected-item marker, Quick Add, selected date).
+  /// Brand gradient (selected-item marker, Quick Add, filled buttons,
+  /// progress bars, selected date). Same periwinkle → coral direction as the
+  /// colour pools, but every stop sits at one lightness (OKLCH L ≈ 0.62) and
+  /// it travels through rose, so the middle never turns grey and white on
+  /// top stays ≥3.6:1 end to end. (The old two-stop periwinkle → coral blend
+  /// dipped to a muddy mauve in the middle and was only 2.1:1 on the left.)
+  static const brandIris = Color(0xFF787DC3);
+  static const brandRose = Color(0xFFB66C93);
+  static const brandCoral = Color(0xFFCA6C53);
   static const LinearGradient brand = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [NewColors.periwinkle, NewColors.warmCoral],
+    colors: [brandIris, brandRose, brandCoral],
   );
 }
 

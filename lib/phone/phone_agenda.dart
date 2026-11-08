@@ -497,8 +497,8 @@ class _NowLine extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    NewColors.periwinkle,
-                    NewColors.warmCoral.withValues(alpha: 0),
+                    NewGradients.brandIris,
+                    NewGradients.brandCoral.withValues(alpha: 0),
                   ],
                 ),
               ),
