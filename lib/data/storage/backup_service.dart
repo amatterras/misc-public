@@ -942,6 +942,10 @@ class BackupService {
         try {
           if (!await old.exists()) continue;
           if (await current.exists()) {
+            // The swap moved this device's keys and the trash from the old
+            // folder into the new one; they go back before it is set aside.
+            await _keepTrash(current, old);
+            await _keepSecrets(current, old);
             await current.rename('${current.path}.failed-restore');
           }
           await old.rename(current.path);

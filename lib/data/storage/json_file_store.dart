@@ -507,18 +507,31 @@ class JsonFileStore {
 
   Future<void> moveToTrash(String collection, String id) async {
     final file = _file(collection, id);
-    if (!await file.exists()) return;
+    // A save of this document already queued lands first, so it cannot
+    // write the document back after it was moved away (and the trash keeps
+    // its newest version).
+    await _pending[file.path]?.catchError((_) {});
+    final bak = File('${file.path}.bak');
+    // A document that only survives as its previous-version copy is still
+    // listed and read (see [list], [read]), so that copy is what is trashed.
+    final source = await file.exists()
+        ? file
+        : await bak.exists()
+        ? bak
+        : null;
+    if (source == null) return;
     final trash = Directory(
       '${_dir(collection).path}${Platform.pathSeparator}.trash',
     );
     await trash.create(recursive: true);
     final stamp = DateTime.now().millisecondsSinceEpoch;
     try {
-      await file.rename(
-        '${trash.path}${Platform.pathSeparator}$id-$stamp.json',
+      await _retry(
+        () => source.rename(
+          '${trash.path}${Platform.pathSeparator}$id-$stamp.json',
+        ),
       );
-      final bak = File('${file.path}.bak');
-      if (await bak.exists()) await bak.delete();
+      if (await bak.exists()) await _retry(bak.delete);
     } finally {
       _changed(collection, id);
     }

@@ -86,4 +86,37 @@ void main() {
     final trashed = Directory('${dir.path}/items/.trash').listSync();
     expect(trashed, hasLength(1));
   });
+
+  // QA 2026-11-08: a move to the trash right after a save was started (not
+  // awaited) used to rename the old file away and then let the queued save
+  // write the document back, so the deleted item reappeared.
+  test('a save still in flight cannot bring a trashed document back', () async {
+    await store.write('items', 'a', {'v': 1});
+    final pending = store.write('items', 'a', {'v': 2});
+    await store.moveToTrash('items', 'a');
+    await pending;
+    await store.flush();
+    expect(await store.read('items', 'a'), isNull);
+    expect(await store.list('items'), isEmpty);
+    final trashed = Directory('${dir.path}/items/.trash').listSync();
+    expect(trashed, hasLength(1));
+    expect(
+      await store.readFromTrash('items', 'a'),
+      {'v': 2},
+      reason: 'the trash keeps the newest version',
+    );
+  });
+
+  // QA 2026-11-08: a document that only survived as its previous-version
+  // copy (`.bak`, main file lost) was still listed and read, but a move to
+  // the trash did nothing, so it could never be deleted.
+  test('a document left only as its backup copy can be trashed', () async {
+    await store.write('items', 'a', {'v': 1});
+    await File('${dir.path}/items/a.json').delete();
+    expect(await store.read('items', 'a'), {'v': 1});
+    await store.moveToTrash('items', 'a');
+    expect(await store.read('items', 'a'), isNull);
+    expect(await store.list('items'), isEmpty);
+    expect(await store.readFromTrash('items', 'a'), {'v': 1});
+  });
 }
