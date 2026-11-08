@@ -116,7 +116,12 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500)); // page slides in
-    await tester.tap(find.byTooltip('Version history'));
+    // Version history lives in the note's "More" menu.
+    await tester.tap(find.byTooltip('More note actions'));
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.text('Version history'));
     for (var i = 0; i < 5; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }

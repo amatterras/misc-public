@@ -368,13 +368,11 @@ void main() {
       ws.tasks.put(task('t', due: day));
       List<String> ids({
         Set<CalendarCategory>? categories,
-        Set<int>? colors,
         bool tasks = true,
       }) => [
         for (final i in ws.itemsOn(
           day,
           categories: categories,
-          colors: colors,
           includeTasks: tasks,
         ))
           i.id,
@@ -382,8 +380,11 @@ void main() {
       expect(ids(), ['e', 'o', 't']);
       expect(ids(categories: {CalendarCategory.other}), ['o', 't']);
       expect(ids(categories: {CalendarCategory.other}, tasks: false), ['o']);
-      expect(ids(colors: {CalendarCategory.events.index}), ['e', 't']);
-      expect(ids(colors: {CalendarCategory.other.index}), ['o']);
+      // One category filter (the colour-dot filter was the same dimension
+      // and was merged into it); task cards are a separate switch.
+      expect(ids(categories: {CalendarCategory.events}), ['e', 't']);
+      expect(ids(categories: {CalendarCategory.events}, tasks: false), ['e']);
+      expect(ids(categories: const {}, tasks: false), isEmpty);
       await s.flush();
       s.dispose();
     });

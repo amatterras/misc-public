@@ -111,7 +111,7 @@ class Harness {
       await tapNav(tester, 'calendar');
       await tester.pump();
       final toggle = find.byKey(const ValueKey('calendar-tasks-toggle'));
-      if (find.text('Hide tasks').evaluate().isEmpty) {
+      if (!s.calendarTasksOpen) {
         await tester.tap(toggle);
       }
     } else {

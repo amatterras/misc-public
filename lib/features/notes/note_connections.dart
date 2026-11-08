@@ -29,9 +29,9 @@ class NoteConnections extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A quiet sentence-case label: the connections themselves lead.
     final heading = TextStyle(
-      fontSize: AppType.sizeMeta,
-      letterSpacing: 0.6,
+      fontSize: AppType.sizeLabel,
       color: AppColors.textFaint,
     );
     final ws = state.workspace;
@@ -44,7 +44,7 @@ class NoteConnections extends StatelessWidget {
       key: const ValueKey('note-connections'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('CONNECTIONS', style: heading),
+        Text('Connections', style: heading),
         const SizedBox(height: Space.sm),
         Wrap(
           spacing: 6,

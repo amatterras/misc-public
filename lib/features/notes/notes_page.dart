@@ -771,7 +771,7 @@ class _NoteEditorState extends State<NoteEditor> {
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           title: const Text(
-            'Place on canvas',
+            'Place on a Mindmap',
             style: TextStyle(fontSize: AppType.sizeHeading),
           ),
           content: SizedBox(
@@ -819,6 +819,96 @@ class _NoteEditorState extends State<NoteEditor> {
     }
   }
 
+  /// The note's less frequent operations, one click away. Delete keeps its
+  /// confirmation and "Recently deleted" recovery.
+  Widget _moreMenu(Note n) {
+    PopupMenuItem<String> item(
+      String value,
+      IconData icon,
+      String label, {
+      Key? key,
+      Color? color,
+    }) => PopupMenuItem<String>(
+      key: key,
+      value: value,
+      height: 40,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color ?? AppColors.textMuted),
+          const SizedBox(width: Space.md),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+    return PopupMenuButton<String>(
+      key: const ValueKey('note-more'),
+      tooltip: 'More note actions',
+      position: PopupMenuPosition.under,
+      icon: Icon(Icons.more_horiz, size: 20, color: AppColors.textMuted),
+      onSelected: (what) async {
+        switch (what) {
+          case 'mindmap':
+            await _placeOnCanvas();
+          case 'ai':
+            s.sendToAi(
+              AiContext(
+                title: n.displayTitle,
+                source: AiSource.notes,
+                text: '${n.displayTitle}\n${n.body}',
+                noteId: n.id,
+              ),
+            );
+          case 'history':
+            await showNoteHistory(context, s.workspace, n.id);
+          case 'delete':
+            await _delete(n);
+        }
+      },
+      itemBuilder: (_) => [
+        item('mindmap', Icons.hub_outlined, 'Place on a Mindmap…'),
+        if (s.ai.enabled)
+          item(
+            'ai',
+            Icons.auto_awesome_outlined,
+            'Ask AI about this note…',
+            key: const ValueKey('note-ask-ai'),
+          ),
+        item('history', Icons.history, 'Version history'),
+        const PopupMenuDivider(),
+        item(
+          'delete',
+          Icons.delete_outline,
+          'Delete note…',
+          key: const ValueKey('note-delete'),
+          color: AppColors.danger,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _delete(Note n) async {
+    final ok = await confirm(
+      context,
+      title: 'Delete “${n.displayTitle}”?',
+      message:
+          'Canvas cards that show this note will say it was deleted. '
+          'You can bring it back, with its handwriting, from '
+          '“Recently deleted” in Notes.',
+    );
+    if (ok) {
+      // All of it is kept: a version for Recently deleted, the
+      // handwriting in the trash folder.
+      unawaited(s.deleteNote(n.id));
+      widget.onDeleted();
+    }
+  }
+
   void _openLinked(String title) {
     final ws = s.workspace;
     final target =
@@ -846,12 +936,15 @@ class _NoteEditorState extends State<NoteEditor> {
         )
         .toList();
 
+    // Identity row: where the note lives and whether it is a favourite stay
+    // in view; the text size is one compact group; rarer note operations
+    // (Mindmap, AI, history, delete) share one "More" menu.
     final header = <Widget>[
       LayoutBuilder(
         builder: (context, box) => SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: SizedBox(
-            width: box.maxWidth < 520 ? 520 : box.maxWidth,
+            width: box.maxWidth < 360 ? 360 : box.maxWidth,
             child: Row(
               children: [
                 Expanded(
@@ -864,6 +957,7 @@ class _NoteEditorState extends State<NoteEditor> {
                 ),
                 const SizedBox(width: Space.md),
                 GhostIconButton(
+                  key: const ValueKey('note-favorite'),
                   icon: n.favorite ? Icons.star : Icons.star_outline,
                   tooltip: n.favorite
                       ? 'Remove from favorites'
@@ -872,81 +966,28 @@ class _NoteEditorState extends State<NoteEditor> {
                   onTap: () =>
                       _update((x) => x.copyWith(favorite: !x.favorite)),
                 ),
-                GhostIconButton(
-                  icon: Icons.grid_view,
-                  tooltip: 'Place on canvas (as a reference)',
-                  onTap: _placeOnCanvas,
-                ),
-                if (s.ai.enabled)
-                  GhostIconButton(
-                    key: const ValueKey('note-ask-ai'),
-                    icon: Icons.auto_awesome_outlined,
-                    tooltip:
-                        'Ask AI about this note (you review it before sending)',
-                    onTap: () => s.sendToAi(
-                      AiContext(
-                        title: n.displayTitle,
-                        source: AiSource.notes,
-                        text: '${n.displayTitle}\n${n.body}',
-                        noteId: n.id,
-                      ),
-                    ),
-                  ),
-                GhostIconButton(
-                  key: const ValueKey('note-text-zoom-out'),
-                  icon: Icons.text_decrease,
-                  tooltip: 'Smaller text (Ctrl −)',
-                  onTap: _textZoom > minTextZoom
+                const SizedBox(width: Space.sm),
+                ZoomStepper(
+                  key: const ValueKey('note-text-zoom'),
+                  label: 'Text ${(_textZoom * 100).round()}%',
+                  valueKey: const ValueKey('note-text-zoom-value'),
+                  outKey: const ValueKey('note-text-zoom-out'),
+                  inKey: const ValueKey('note-text-zoom-in'),
+                  outIcon: Icons.text_decrease,
+                  inIcon: Icons.text_increase,
+                  outTooltip: 'Smaller text (Ctrl −)',
+                  inTooltip: 'Larger text (Ctrl +)',
+                  resetTooltip: 'Text size of this note; tap for 100% (Ctrl 0)',
+                  onOut: _textZoom > minTextZoom
                       ? () => _setTextZoom(_textZoom / 1.15)
                       : null,
-                ),
-                Tooltip(
-                  message: 'Text size of this note; tap for 100% (Ctrl 0)',
-                  child: InkWell(
-                    onTap: () => _setTextZoom(1),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Text(
-                        'Text ${(_textZoom * 100).round()}%',
-                        key: const ValueKey('note-text-zoom-value'),
-                        style: const TextStyle(fontSize: AppType.sizeLabel),
-                      ),
-                    ),
-                  ),
-                ),
-                GhostIconButton(
-                  key: const ValueKey('note-text-zoom-in'),
-                  icon: Icons.text_increase,
-                  tooltip: 'Larger text (Ctrl +)',
-                  onTap: _textZoom < maxTextZoom
+                  onIn: _textZoom < maxTextZoom
                       ? () => _setTextZoom(_textZoom * 1.15)
                       : null,
+                  onReset: () => _setTextZoom(1),
                 ),
-                GhostIconButton(
-                  icon: Icons.history,
-                  tooltip: 'Version history',
-                  onTap: () => showNoteHistory(context, ws, n.id),
-                ),
-                GhostIconButton(
-                  icon: Icons.delete_outline,
-                  tooltip: 'Delete note',
-                  onTap: () async {
-                    final ok = await confirm(
-                      context,
-                      title: 'Delete “${n.displayTitle}”?',
-                      message:
-                          'Canvas cards that show this note will say it was deleted. '
-                          'You can bring it back, with its handwriting, from '
-                          '“Recently deleted” in Notes.',
-                    );
-                    if (ok) {
-                      // All of it is kept: a version for Recently deleted, the
-                      // handwriting in the trash folder.
-                      unawaited(s.deleteNote(n.id));
-                      widget.onDeleted();
-                    }
-                  },
-                ),
+                const SizedBox(width: Space.xs),
+                _moreMenu(n),
               ],
             ),
           ),
@@ -1071,43 +1112,45 @@ class _NoteEditorState extends State<NoteEditor> {
             ),
           ],
         ),
-      const Divider(),
-      const SizedBox(height: Space.md),
+      const SizedBox(height: Space.lg),
+      // Attach: one quiet row of one-click actions; the attachments
+      // themselves (below) are what stands out.
       Wrap(
-        spacing: 4,
+        key: const ValueKey('note-attach-actions'),
+        spacing: 2,
         runSpacing: 2,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Text(
-            'ATTACHMENTS',
-            style: TextStyle(
-              fontSize: AppType.sizeMeta,
-              letterSpacing: 0.6,
-              color: AppColors.textFaint,
+          Padding(
+            padding: const EdgeInsets.only(right: Space.xs),
+            child: Tooltip(
+              message: 'Attach to this note',
+              child: Icon(
+                Icons.attach_file,
+                size: 16,
+                color: AppColors.textFaint,
+              ),
             ),
           ),
-          TextButton.icon(
-            onPressed: _paste,
-            icon: const Icon(Icons.content_paste, size: 15),
-            label: const Text('Paste'),
-          ),
-          TextButton.icon(
-            onPressed: _addLink,
-            icon: const Icon(Icons.add_link, size: 15),
-            label: const Text('Link'),
-          ),
-          TextButton.icon(
-            onPressed: _addPhotos,
-            icon: const Icon(Icons.add_photo_alternate_outlined, size: 15),
-            label: const Text('Photos'),
-          ),
-          TextButton.icon(
-            onPressed: _addDocuments,
-            icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
-            label: const Text('PDF'),
-          ),
+          for (final (label, icon, onTap) in [
+            ('Paste', Icons.content_paste, _paste),
+            ('Link', Icons.add_link, _addLink),
+            ('Photos', Icons.add_photo_alternate_outlined, _addPhotos),
+            ('PDF', Icons.picture_as_pdf_outlined, _addDocuments),
+          ])
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textMuted,
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: Space.sm),
+              ),
+              onPressed: onTap,
+              icon: Icon(icon, size: 15),
+              label: Text(label),
+            ),
         ],
       ),
+      const SizedBox(height: Space.xs),
       Wrap(
         spacing: 8,
         runSpacing: 8,

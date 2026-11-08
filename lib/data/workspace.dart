@@ -1454,18 +1454,18 @@ class Workspace {
     entries.put(entry.copyWith(assetIds: [...entry.assetIds, assetId]));
   }
 
-  /// Entries and tasks on [day], optionally filtered.
+  /// Entries and tasks on [day], optionally filtered: [categories] (the
+  /// Calendar's only category filter; external events count as Events)
+  /// and [includeTasks] (task cards, independent of the categories).
   List<DayItem> itemsOn(
     DateTime day, {
     Set<CalendarCategory>? categories,
-    Set<int>? colors,
     bool includeTasks = true,
   }) {
     final result = <DayItem>[];
     for (final e in entries.all) {
       if (e.archived) continue;
       if (categories != null && !categories.contains(e.category)) continue;
-      if (colors != null && !colors.contains(e.category.index)) continue;
       if (e.occursOn(day)) result.add(EntryOnDay(e));
     }
     if (includeTasks) {
@@ -1473,15 +1473,10 @@ class Workspace {
         // Done tasks stay on their day (shown ticked), like in Tasks.
         final due = t.dueDate;
         if (due == null || daysBetween(due, day) != 0) continue;
-        final color = CalendarCategory.events.index;
-        if (colors != null && !colors.contains(color)) continue;
-        result.add(TaskOnDay(t, color));
+        result.add(TaskOnDay(t, CalendarCategory.events.index));
       }
     }
     for (final x in externalEvents.all) {
-      if (colors != null && !colors.contains(CalendarCategory.events.index)) {
-        break;
-      }
       if (categories != null && !categories.contains(CalendarCategory.events)) {
         break;
       }
@@ -1538,6 +1533,77 @@ class Workspace {
     );
     tasks.put(task);
     return task;
+  }
+
+  /// Whether entry [id] can move to [to] (see [changeEntryCategory]).
+  bool canChangeEntryCategory(String id, CalendarCategory to) {
+    final entry = entries[id];
+    return entry != null &&
+        entry.category != to &&
+        entry.category != CalendarCategory.reading &&
+        to != CalendarCategory.reading &&
+        hasRoomIn(to);
+  }
+
+  /// Moves entry [id] to category [to], keeping its id, name, notes, time,
+  /// attachments and check-offs, and keeping it on [day]: each category
+  /// schedules differently (Events: a date range; Other: chosen dates;
+  /// Habits: from a start date on its weekdays), so the new schedule starts
+  /// from [day]. Reading is left out both ways: its pages, logs and plans
+  /// have no counterpart elsewhere. False when not allowed (see
+  /// [canChangeEntryCategory]); the five-active rule still applies.
+  bool changeEntryCategory(String id, CalendarCategory to, DateTime day) {
+    if (!canChangeEntryCategory(id, to)) return false;
+    final entry = entries[id]!;
+    final d = dateOnly(day);
+    saveEntry(switch (to) {
+      CalendarCategory.events => entry.copyWith(
+        category: to,
+        colorIndex: to.index,
+        startDate: () => d,
+        endDate: () => d,
+      ),
+      CalendarCategory.other => entry.copyWith(
+        category: to,
+        colorIndex: to.index,
+        dates: {dayKey(d)},
+      ),
+      CalendarCategory.habits => entry.copyWith(
+        category: to,
+        colorIndex: to.index,
+        startDate: () => d,
+        endDate: () => null,
+      ),
+      CalendarCategory.reading => entry,
+    });
+    return true;
+  }
+
+  /// A copy of calendar entry [id] (same category, schedule and details)
+  /// with a new id and no completion history. Null when the entry is gone
+  /// or its category already has five active entries (see [saveEntry]).
+  CalendarEntry? duplicateEntry(String id) {
+    final entry = entries[id];
+    if (entry == null || !hasRoomIn(entry.category)) return null;
+    final now = DateTime.now();
+    final json = {
+      ...entry.toJson(),
+      'id': newId(),
+      'name': '${entry.name} (copy)',
+      'archived': false,
+      'archivedAt': null,
+      'checkoffs': const <String>[],
+      'readingLog': const <String, int>{},
+      'createdAt': utcIso(now),
+      'updatedAt': utcIso(now),
+    };
+    // A copy stands alone: it is not part of a reading plan.
+    for (final k in [...json.keys.where((k) => k.startsWith('readingPlan'))]) {
+      json[k] = null;
+    }
+    final copy = CalendarEntry.fromJson(json);
+    saveEntry(copy);
+    return copy;
   }
 
   /// A copy of task [id] (same details, estimate included) with a new id,

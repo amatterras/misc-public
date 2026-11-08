@@ -12,6 +12,7 @@ import '../../data/models/canvas_models.dart' show newId;
 import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
 import '../../data/workspace.dart';
+import '../../platform/input_hints.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../tasks/estimate_label.dart';
@@ -54,9 +55,12 @@ class CalendarPage extends StatefulWidget {
 class _CalendarPageState extends State<CalendarPage> {
   /// null = the date grid; otherwise one category's view.
   CalendarCategory? _tab;
+
+  /// What the views show: the one source of truth for category
+  /// visibility (the Filter menu). Tasks are their own switch: task cards
+  /// on days, not the Tasks panel ([AppState.calendarTasksOpen]).
   final Set<CalendarCategory> _shown = {...CalendarCategory.values};
   bool _showTasks = true;
-  Set<int>? _colors;
   DateTime? _selectedDay;
   final _viewer = TransformationController();
 
@@ -73,12 +77,8 @@ class _CalendarPageState extends State<CalendarPage> {
     setState(() {});
   }
 
-  List<DayItem> _itemsOn(DateTime day) => ws.itemsOn(
-    day,
-    categories: _shown,
-    colors: _colors,
-    includeTasks: _showTasks,
-  );
+  List<DayItem> _itemsOn(DateTime day) =>
+      ws.itemsOn(day, categories: _shown, includeTasks: _showTasks);
 
   AppState get s => widget.state;
   Workspace get ws => s.workspace;
@@ -461,7 +461,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     key: const ValueKey('calendar-tasks-toggle'),
                     onPressed: () => s.setCalendarTasksOpen(false),
                     icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Hide tasks'),
+                    label: const Text('Close Tasks panel'),
                   ),
                 ),
                 Expanded(
@@ -582,26 +582,32 @@ class _CalendarPageState extends State<CalendarPage> {
           ],
         ),
       ),
+      // Quick Add is the one filled (primary) action; the Tasks panel and
+      // the Archive stay one click away without competing with it.
       actions: [
-        _colorFilter(),
+        Tooltip(
+          message: s.calendarTasksOpen
+              ? 'Close the Tasks panel'
+              : 'Open the Tasks panel beside the calendar',
+          child: NewHeaderButton(
+            key: const ValueKey('calendar-tasks-toggle'),
+            onPressed: () => s.setCalendarTasksOpen(!s.calendarTasksOpen),
+            icon: s.calendarTasksOpen
+                ? Icons.keyboard_double_arrow_right
+                : Icons.view_sidebar_outlined,
+            label: 'Tasks panel',
+          ),
+        ),
         NewHeaderButton(
-          key: const ValueKey('calendar-tasks-toggle'),
-          onPressed: () => s.setCalendarTasksOpen(!s.calendarTasksOpen),
-          icon: s.calendarTasksOpen
-              ? Icons.keyboard_double_arrow_right
-              : Icons.checklist,
-          label: s.calendarTasksOpen ? 'Hide tasks' : 'Tasks',
+          onPressed: () => showArchive(context, s),
+          icon: Icons.inventory_2_outlined,
+          label: 'Archive  $archived',
         ),
         NewHeaderButton(
           filled: true,
           onPressed: () => _newEntry(),
           icon: Icons.add,
           label: 'Quick Add',
-        ),
-        NewHeaderButton(
-          onPressed: () => showArchive(context, s),
-          icon: Icons.inventory_2_outlined,
-          label: 'Archive  $archived',
         ),
       ],
     );
@@ -618,6 +624,10 @@ class _CalendarPageState extends State<CalendarPage> {
         SegmentedButton<CalendarView>(
           key: const ValueKey('calendar-view-switcher'),
           showSelectedIcon: false,
+          // Compact with a mouse; full-size touch targets on iPad/iPhone.
+          style: touchFirst
+              ? null
+              : const ButtonStyle(visualDensity: VisualDensity.compact),
           segments: [
             for (final c in CalendarView.values)
               ButtonSegment(
@@ -825,64 +835,87 @@ class _CalendarPageState extends State<CalendarPage> {
     ];
   }
 
-  Widget _colorFilter() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(AppRadii.sm),
-        border: Border.all(color: AppColors.border),
-      ),
+  /// How many of the five switches (four categories + tasks) are off.
+  int get _hiddenCount =>
+      CalendarCategory.values.where((c) => !_shown.contains(c)).length +
+      (_showTasks ? 0 : 1);
+
+  /// The one place to show or hide categories and task cards: a compact
+  /// trigger (it says when something is hidden) and a menu of checkboxes
+  /// that stays open while several are changed.
+  Widget _filterMenu() {
+    final hidden = _hiddenCount;
+    Widget box(
+      String label,
+      Color? color,
+      bool value,
+      VoidCallback toggle, {
+      Key? key,
+    }) => CheckboxMenuButton(
+      key: key,
+      value: value,
+      closeOnActivate: false,
+      onChanged: (_) => setState(toggle),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Tooltip(
-            message: 'All colours',
-            child: InkWell(
-              onTap: () => setState(() => _colors = null),
-              child: Padding(
-                padding: const EdgeInsets.all(3),
-                child: Icon(
-                  _colors == null
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_unchecked,
-                  size: 16,
-                  color: AppColors.textMuted,
-                ),
-              ),
-            ),
-          ),
-          for (var i = 0; i < CalendarCategory.values.length; i++)
-            InkWell(
-              onTap: () => setState(() {
-                final set = {...?_colors};
-                if (!set.remove(i)) set.add(i);
-                _colors = set.isEmpty ? null : set;
-              }),
-              child: Padding(
-                padding: const EdgeInsets.all(3),
-                child: Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: calendarCategoryColor(CalendarCategory.values[i])
-                        .withValues(
-                          alpha: _colors == null || _colors!.contains(i)
-                              ? 1
-                              : 0.25,
-                        ),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _colors?.contains(i) ?? false
-                          ? AppColors.text
-                          : Colors.transparent,
-                      width: 1.5,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          if (color != null)
+            ColorDot(color: color, size: 10)
+          else
+            Icon(Icons.task_alt_outlined, size: 14, color: AppColors.textMuted),
+          const SizedBox(width: Space.sm),
+          Text(label, style: const TextStyle(fontSize: AppType.sizeBodySmall)),
         ],
+      ),
+    );
+    return MenuAnchor(
+      menuChildren: [
+        for (final c in CalendarCategory.values)
+          box(
+            c.label,
+            calendarCategoryColor(c),
+            _shown.contains(c),
+            () => _shown.contains(c) ? _shown.remove(c) : _shown.add(c),
+            key: ValueKey('calendar-filter-${c.name}'),
+          ),
+        const Divider(height: 1),
+        box(
+          'Show tasks',
+          null,
+          _showTasks,
+          () => _showTasks = !_showTasks,
+          key: const ValueKey('calendar-filter-tasks'),
+        ),
+        if (hidden > 0) ...[
+          const Divider(height: 1),
+          MenuItemButton(
+            key: const ValueKey('calendar-filter-all'),
+            closeOnActivate: false,
+            onPressed: () => setState(() {
+              _shown.addAll(CalendarCategory.values);
+              _showTasks = true;
+            }),
+            child: const Text('Show everything'),
+          ),
+        ],
+      ],
+      builder: (context, menu, _) => Tooltip(
+        message: 'Show or hide categories and task cards',
+        child: TextButton.icon(
+          key: const ValueKey('calendar-filter'),
+          style: TextButton.styleFrom(
+            foregroundColor: hidden > 0
+                ? AppColors.accent
+                : AppColors.textMuted,
+            visualDensity: VisualDensity.compact,
+          ),
+          onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+          icon: const Icon(Icons.filter_list, size: 16),
+          label: Text(
+            hidden == 0 ? 'Filter' : 'Filter · $hidden hidden',
+            style: const TextStyle(fontSize: AppType.sizeLabel),
+          ),
+        ),
       ),
     );
   }
@@ -997,52 +1030,17 @@ class _CalendarPageState extends State<CalendarPage> {
           ),
         ),
         if (_tab == null)
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            runSpacing: 4,
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'Show',
-                style: TextStyle(
-                  fontSize: AppType.sizeLabel,
-                  color: AppColors.textFaint,
+              _filterMenu(),
+              // Only the 38-day grid pans and zooms.
+              if (_view == CalendarView.range)
+                GhostIconButton(
+                  icon: Icons.fit_screen_outlined,
+                  tooltip: 'Reset zoom',
+                  onTap: () => _viewer.value = Matrix4.identity(),
                 ),
-              ),
-              const SizedBox(width: 6),
-              for (final c in CalendarCategory.values)
-                Padding(
-                  padding: const EdgeInsets.only(left: 4),
-                  child: FilterChip(
-                    label: Text(
-                      c.label,
-                      style: const TextStyle(fontSize: AppType.sizeLabel),
-                    ),
-                    selected: _shown.contains(c),
-                    showCheckmark: false,
-                    visualDensity: VisualDensity.compact,
-                    onSelected: (on) =>
-                        setState(() => on ? _shown.add(c) : _shown.remove(c)),
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: FilterChip(
-                  label: const Text(
-                    'Tasks',
-                    style: TextStyle(fontSize: AppType.sizeLabel),
-                  ),
-                  selected: _showTasks,
-                  showCheckmark: false,
-                  visualDensity: VisualDensity.compact,
-                  onSelected: (on) => setState(() => _showTasks = on),
-                ),
-              ),
-              const SizedBox(width: Space.sm),
-              GhostIconButton(
-                icon: Icons.fit_screen_outlined,
-                tooltip: 'Reset zoom',
-                onTap: () => _viewer.value = Matrix4.identity(),
-              ),
             ],
           ),
       ],
@@ -1107,12 +1105,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                         addDays(start, i),
                                       ) ==
                                       0,
-                              items: ws.itemsOn(
-                                addDays(start, i),
-                                categories: _shown,
-                                colors: _colors,
-                                includeTasks: _showTasks,
-                              ),
+                              items: _itemsOn(addDays(start, i)),
                               onTap: () => setState(
                                 () => _selectedDay = addDays(start, i),
                               ),
@@ -1512,6 +1505,25 @@ class _DayPanelState extends State<DayPanel> {
     }
   }
 
+  /// A task due on this day; with [reminder], it also reminds (at its due
+  /// time, or the usual morning time without one) through the existing
+  /// task reminders.
+  Future<void> _addTask({required bool reminder}) async {
+    final title = await promptText(
+      context,
+      title: reminder ? 'Reminder' : 'New task',
+      hint: reminder ? 'What to remind you of' : 'Task',
+      action: 'Add',
+    );
+    if (title == null || title.trim().isEmpty) return;
+    final task = ws.createTask(title.trim(), dueDate: widget.day);
+    if (reminder) ws.tasks.put(task.copyWith(remindBefore: () => 0));
+    s.showToast(
+      '${reminder ? 'Reminder' : 'Task'} added for '
+      '${formatShortDate(widget.day)}',
+    );
+  }
+
   Future<void> _logReading(CalendarEntry entry) async {
     final input = await promptText(
       context,
@@ -1631,6 +1643,28 @@ class _DayPanelState extends State<DayPanel> {
                       ? () => widget.onNewEntry(c)
                       : null,
                 ),
+              // A task (or a task with a reminder) due this day: the same
+              // task records as the Tasks panel, never a calendar copy.
+              ActionChip(
+                key: const ValueKey('day-add-task'),
+                avatar: const Icon(Icons.add_task, size: 14),
+                label: const Text(
+                  'Task',
+                  style: TextStyle(fontSize: AppType.sizeLabel),
+                ),
+                tooltip: 'New task due on this day',
+                onPressed: () => _addTask(reminder: false),
+              ),
+              ActionChip(
+                key: const ValueKey('day-add-reminder'),
+                avatar: const Icon(Icons.notifications_none, size: 14),
+                label: const Text(
+                  'Reminder',
+                  style: TextStyle(fontSize: AppType.sizeLabel),
+                ),
+                tooltip: 'New task due on this day, with a reminder',
+                onPressed: () => _addTask(reminder: true),
+              ),
             ],
           ),
           if (reading.isNotEmpty) ...[
@@ -1769,11 +1803,78 @@ class _DayPanelState extends State<DayPanel> {
               color: AppColors.textFaint,
             ),
           ),
-          trailing: GhostIconButton(
-            icon: Icons.edit_outlined,
-            tooltip: 'Edit',
-            size: 16,
-            onTap: () => showEntryEditor(context, s, entry: entry),
+          // Edit is one click; the rarer entry actions share a small menu.
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GhostIconButton(
+                icon: Icons.edit_outlined,
+                tooltip: 'Edit',
+                size: 16,
+                onTap: () => showEntryEditor(context, s, entry: entry),
+              ),
+              PopupMenuButton<String>(
+                key: ValueKey('entry-more-${entry.id}'),
+                tooltip: 'More for this entry',
+                icon: Icon(
+                  Icons.more_horiz,
+                  size: 16,
+                  color: AppColors.textMuted,
+                ),
+                onSelected: (what) {
+                  if (what == 'duplicate') {
+                    final copy = ws.duplicateEntry(entry.id);
+                    s.showToast(
+                      copy == null
+                          ? '${entry.category.label} is full '
+                                '(${CalendarEntry.maxActivePerCategory} active)'
+                          : 'Duplicated “${entry.name}”',
+                    );
+                  } else if (what == 'archive') {
+                    ws.setArchived(entry.id, true);
+                    s.showToast(
+                      'Archived “${entry.name}”. Restore it from Archive.',
+                    );
+                  } else if (what.startsWith('move:')) {
+                    final to = CalendarCategory.values.byName(
+                      what.substring(5),
+                    );
+                    if (ws.changeEntryCategory(entry.id, to, day)) {
+                      s.showToast('Moved “${entry.name}” to ${to.label}');
+                    }
+                  }
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'duplicate',
+                    enabled: ws.hasRoomIn(entry.category),
+                    child: const Text('Duplicate'),
+                  ),
+                  // Change category: Reading entries (pages, logs, plans)
+                  // stay Reading; full categories are shown but disabled.
+                  if (entry.category != CalendarCategory.reading)
+                    for (final c in CalendarCategory.values)
+                      if (c != entry.category && c != CalendarCategory.reading)
+                        PopupMenuItem(
+                          key: ValueKey('entry-move-${c.name}'),
+                          value: 'move:${c.name}',
+                          enabled: ws.canChangeEntryCategory(entry.id, c),
+                          child: Row(
+                            children: [
+                              ColorDot(
+                                color: calendarCategoryColor(c),
+                                size: 10,
+                              ),
+                              const SizedBox(width: Space.sm),
+                              Text('Move to ${c.label}'),
+                            ],
+                          ),
+                        ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(value: 'archive', child: Text('Archive')),
+                ],
+              ),
+            ],
           ),
         );
       case TaskOnDay(:final task):

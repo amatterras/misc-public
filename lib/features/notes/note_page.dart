@@ -27,7 +27,9 @@ import '../../platform/ios_bridge.dart';
 import '../../widgets/common.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
+import '../canvas/canvas_toolbar.dart' show EraserPanel;
 import '../ink/native_ink.dart';
+import '../ink/pen_sizes.dart';
 import '../ink/stroke_geometry.dart';
 import 'notebook_layout.dart';
 import '../export/exports.dart';
@@ -332,6 +334,9 @@ class _NotePageState extends State<NotePage> {
         ? CanvasTool.pen
         : CanvasTool.text;
     if (doc.pageBackgrounds.isNotEmpty) c.setPen(color: notebookInk[1]);
+    // The eraser as last chosen on this device (shared with the Mindmap
+    // and the Calendar; changed here through AppState.setEraser).
+    c.setEraser(mode: s.eraserMode, size: s.eraserSize);
     s.openNotebooks.add(c); // sync merges remote changes into this document
     // Apple Pencil double-tap: Undo in this handwriting while it is shown.
     _unregisterTap = s.pencilDoubleTap.register(
@@ -863,148 +868,633 @@ class _NotePageState extends State<NotePage> {
     );
   }
 
+  /// The notebook toolbar, one row in three parts:
+  ///
+  ///  1. the tools (Pen, Highlighter, Eraser, Text, Select);
+  ///  2. the options of the chosen tool only (colour, thickness, eraser
+  ///     mode, selection actions) — they change with the tool, in place,
+  ///     so the row never shows options that do nothing right now;
+  ///  3. what is always needed: Undo/Redo, page zoom, paper, export, PDF.
+  ///
+  /// Wide windows keep part 3 pinned on the right while parts 1–2 scroll;
+  /// narrow windows (iPhone, a small floating window) scroll the whole row.
   Widget _toolbar(CanvasController c) {
+    return ListenableBuilder(
+      listenable: c,
+      builder: (context, _) => LayoutBuilder(
+        builder: (context, box) {
+          final tools = [
+            ..._toolButtons(c),
+            const _ToolbarGap(),
+            ..._toolOptions(c),
+          ];
+          final essentials = _essentials(c);
+          if (box.maxWidth < 760) {
+            return SingleChildScrollView(
+              key: const ValueKey('note-toolbar'),
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: Space.md),
+              child: Row(
+                children: [...tools, const _ToolbarGap(), ...essentials],
+              ),
+            );
+          }
+          return Padding(
+            key: const ValueKey('note-toolbar'),
+            padding: const EdgeInsets.symmetric(horizontal: Space.md),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: tools),
+                  ),
+                ),
+                const _ToolbarGap(),
+                ...essentials,
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  List<Widget> _toolButtons(CanvasController c) {
     Widget tool(CanvasTool t, IconData icon, String tip) => GhostIconButton(
+      key: ValueKey('note-tool-${t.name}'),
       icon: icon,
       tooltip: tip,
       active: c.tool == t,
       onTap: () => setState(() => c.tool = t),
     );
-    return ListenableBuilder(
-      listenable: c,
-      builder: (context, _) => SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: Space.md),
-        child: Row(
-          children: [
-            tool(CanvasTool.pen, Icons.edit_outlined, 'Pen'),
-            tool(
-              CanvasTool.highlighter,
-              Icons.border_color_outlined,
-              'Highlighter',
+    return [
+      tool(CanvasTool.pen, Icons.edit_outlined, 'Pen'),
+      tool(CanvasTool.highlighter, Icons.border_color_outlined, 'Highlighter'),
+      tool(
+        CanvasTool.eraser,
+        Icons.auto_fix_normal,
+        'Eraser (or squeeze Apple Pencil Pro)',
+      ),
+      tool(CanvasTool.text, Icons.title, 'Text box (headings: #, lists: -)'),
+      tool(CanvasTool.select, Icons.near_me_outlined, 'Select and move'),
+    ];
+  }
+
+  /// Colours picked in this note, newest first (this page only, so no
+  /// new setting or global state). Never replaces the full library.
+  final List<Color> _recentInk = [];
+
+  void _pickPenColor(CanvasController c, Color color) {
+    c.setPen(color: color);
+    _recentInk
+      ..remove(color)
+      ..insert(0, color);
+    if (_recentInk.length > 5) _recentInk.removeLast();
+  }
+
+  /// The options of the chosen tool (see [_toolbar]).
+  List<Widget> _toolOptions(CanvasController c) {
+    switch (c.tool) {
+      case CanvasTool.pen:
+        return [
+          InkColorButton(
+            key: const ValueKey('note-pen-color'),
+            color: c.penColor,
+            tooltip: 'Pen colour',
+            onSelected: (color) => _pickPenColor(c, color),
+          ),
+          for (final color in _recentInk.where((r) => r != c.penColor).take(4))
+            InkSwatchDot(
+              color: color,
+              label: 'Recent: ${inkSwatchName(color)}',
+              onTap: () => _pickPenColor(c, color),
             ),
-            tool(
-              CanvasTool.eraser,
-              Icons.auto_fix_normal,
-              'Eraser (or squeeze Apple Pencil Pro)',
+          InkWidthButton(
+            key: const ValueKey('note-pen-width'),
+            tooltip: 'Pen thickness',
+            width: c.penWidth,
+            widths: penSizes,
+            color: c.penColor,
+            onSelected: (w) => c.setPen(width: w),
+          ),
+        ];
+      case CanvasTool.highlighter:
+        return [
+          InkColorButton(
+            key: const ValueKey('note-highlighter-color'),
+            color: c.highlighterColor,
+            tooltip: 'Highlighter colour',
+            onSelected: (color) => c.setHighlighter(color: color),
+          ),
+          InkWidthButton(
+            key: const ValueKey('note-highlighter-width'),
+            tooltip: 'Highlighter thickness',
+            width: c.highlighterWidth,
+            widths: highlighterWidths,
+            color: c.highlighterColor,
+            onSelected: (w) => c.setHighlighter(width: w),
+          ),
+        ];
+      case CanvasTool.eraser:
+        return [
+          GhostIconButton(
+            key: const ValueKey('eraser-mode-stroke'),
+            icon: Icons.gesture,
+            tooltip: 'Erase whole strokes',
+            active: c.eraserMode == EraserMode.stroke,
+            onTap: () => s.setEraser(c, mode: EraserMode.stroke),
+          ),
+          GhostIconButton(
+            key: const ValueKey('eraser-mode-partial'),
+            icon: Icons.content_cut,
+            tooltip: 'Erase only the part under the eraser',
+            active: c.eraserMode == EraserMode.partial,
+            onTap: () => s.setEraser(c, mode: EraserMode.partial),
+          ),
+          InkWidthButton(
+            key: const ValueKey('note-eraser-size'),
+            tooltip: 'Eraser size',
+            width: c.eraserSize,
+            widths: EraserPanel.sizes,
+            ring: true,
+            onSelected: (size) => s.setEraser(c, size: size),
+          ),
+        ];
+      case CanvasTool.text:
+        return [
+          _ToolHint(
+            touchFirst
+                ? 'Tap a page to type  ·  # heading  ·  - list'
+                : 'Click a page to type  ·  # heading  ·  - list',
+          ),
+        ];
+      case CanvasTool.select || CanvasTool.lasso:
+        final selected = c.selectedItems;
+        if (selected.isEmpty) {
+          return [const _ToolHint('Tap ink or text to select it')];
+        }
+        final texts = selected.whereType<TextItem>().toList();
+        return [
+          _ToolHint('${selected.length} selected'),
+          InkColorButton(
+            key: const ValueKey('note-selection-color'),
+            color: texts.isEmpty
+                ? (selected.whereType<StrokeItem>().firstOrNull?.color ??
+                      c.penColor)
+                : (texts.first.textColor ?? AppColors.text),
+            tooltip: 'Recolour the selection',
+            onSelected: c.recolorSelection,
+          ),
+          if (texts.isNotEmpty) ...[
+            GhostIconButton(
+              icon: Icons.format_bold,
+              tooltip: 'Bold',
+              active: texts.first.bold,
+              onTap: () => c.updateSelectedTexts(
+                (t) => t.copyWith(bold: !texts.first.bold),
+              ),
             ),
-            tool(
-              CanvasTool.text,
-              Icons.title,
-              'Text box (headings: #, lists: -)',
+            GhostIconButton(
+              icon: Icons.format_italic,
+              tooltip: 'Italic',
+              active: texts.first.italic,
+              onTap: () => c.updateSelectedTexts(
+                (t) => t.copyWith(italic: !texts.first.italic),
+              ),
             ),
-            tool(CanvasTool.select, Icons.near_me_outlined, 'Select and move'),
-            const SizedBox(width: Space.sm),
-            for (final color in notebookInk)
-              GestureDetector(
-                onTap: () => setState(() => c.setPen(color: color)),
-                child: Container(
-                  width: 20,
-                  height: 20,
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: c.penColor == color
-                          ? AppColors.accent
-                          : AppColors.border,
-                      width: c.penColor == color ? 2 : 1,
+          ],
+          GhostIconButton(
+            key: const ValueKey('note-selection-duplicate'),
+            icon: Icons.copy_outlined,
+            tooltip: 'Duplicate',
+            onTap: c.duplicateSelection,
+          ),
+          GhostIconButton(
+            key: const ValueKey('note-selection-delete'),
+            icon: Icons.delete_outline,
+            tooltip: withShortcut('Delete', 'Del'),
+            onTap: c.deleteSelection,
+          ),
+        ];
+      default:
+        return const [];
+    }
+  }
+
+  /// Always visible: history, zoom, paper and export.
+  List<Widget> _essentials(CanvasController c) => [
+    GhostIconButton(
+      icon: Icons.undo,
+      tooltip: withShortcut('Undo', 'Ctrl+Z'),
+      onTap: c.canUndo ? c.undo : null,
+    ),
+    GhostIconButton(
+      icon: Icons.redo,
+      tooltip: withShortcut('Redo', 'Ctrl+Y'),
+      onTap: c.canRedo ? c.redo : null,
+    ),
+    const _ToolbarGap(),
+    ZoomStepper(
+      key: const ValueKey('note-zoom'),
+      label: '${(_z * 100).round()}%',
+      valueKey: const ValueKey('note-zoom-value'),
+      outTooltip: 'Smaller pages',
+      inTooltip: 'Larger pages',
+      // The percentage itself resets: one group, no separate fit button.
+      resetTooltip: 'Fit page width',
+      onOut: _z > _minZoom + 0.0001 ? () => _setZoom(_z / 1.25) : null,
+      onIn: _z < 3.0 - 0.0001 ? () => _setZoom(_z * 1.25) : null,
+      onReset: () => _setZoom(1),
+    ),
+    const _ToolbarGap(),
+    GhostIconButton(
+      key: const ValueKey('note-paper'),
+      icon: Icons.grid_4x4,
+      tooltip: 'Paper (template, grid, colors)',
+      onTap: () => showPaperDialog(context, s, widget.noteId),
+    ),
+    GhostIconButton(
+      icon: Icons.picture_as_pdf_outlined,
+      tooltip: 'Add PDF pages to this note',
+      onTap: _addPdf,
+    ),
+    PopupMenuButton<String>(
+      key: const ValueKey('note-export'),
+      tooltip: 'Export (Markdown, pictures, web page)',
+      icon: Icon(Icons.save_alt, size: 18, color: AppColors.textMuted),
+      onOpened: c.cancelPendingLineStraightening,
+      onSelected: (what) async {
+        if (what == 'pdf') {
+          await _exportPdf();
+          return;
+        }
+        final note = s.workspace.notes[widget.noteId];
+        if (note == null) return;
+        await c.flush();
+        await exportNoteFromMenu(s, note, what);
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'md', child: Text('Export text (Markdown)')),
+        const PopupMenuItem(
+          value: 'png',
+          child: Text('Export pages as pictures'),
+        ),
+        const PopupMenuItem(
+          value: 'html',
+          child: Text('Export as read-only web page'),
+        ),
+        // iPhone/iPad: the PDF pages with the ink written on them.
+        if (s.ios != null && c.pageBackgrounds.isNotEmpty)
+          const PopupMenuItem(
+            value: 'pdf',
+            child: Text('Export the PDF with your notes'),
+          ),
+      ],
+    ),
+  ];
+}
+
+/// Highlighter thicknesses offered in Notes (the same as the Mindmap's).
+const highlighterWidths = [12.0, 18.0, 26.0, 36.0];
+
+/// The library name of an ink colour ("Steel Blue"), or "Custom".
+String inkSwatchName(Color color) {
+  for (final swatch in InkColors.library) {
+    if (swatch.color == color) return swatch.name;
+  }
+  return 'Custom';
+}
+
+/// A little space between toolbar groups (instead of dividers).
+class _ToolbarGap extends StatelessWidget {
+  const _ToolbarGap();
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(width: Space.md);
+}
+
+/// A quiet line of guidance in the toolbar's options area.
+class _ToolHint extends StatelessWidget {
+  const _ToolHint(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: Space.xs),
+    child: Text(
+      text,
+      style: TextStyle(fontSize: AppType.sizeLabel, color: AppColors.textFaint),
+    ),
+  );
+}
+
+/// One compact zoom group: − [value] +. Tapping the value resets (fit, or
+/// 100 %). Used for the notebook page zoom and the note's text size.
+class ZoomStepper extends StatelessWidget {
+  const ZoomStepper({
+    super.key,
+    required this.label,
+    required this.outTooltip,
+    required this.inTooltip,
+    required this.resetTooltip,
+    required this.onOut,
+    required this.onIn,
+    required this.onReset,
+    this.valueKey,
+    this.outKey,
+    this.inKey,
+    this.outIcon = Icons.remove,
+    this.inIcon = Icons.add,
+  });
+
+  final String label;
+  final String outTooltip, inTooltip, resetTooltip;
+  final VoidCallback? onOut, onIn, onReset;
+  final Key? valueKey, outKey, inKey;
+  final IconData outIcon, inIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget step(Key? key, IconData icon, String tip, VoidCallback? onTap) =>
+        Tooltip(
+          message: tip,
+          child: InkWell(
+            key: key,
+            borderRadius: BorderRadius.circular(AppRadii.sm),
+            onTap: onTap,
+            child: SizedBox(
+              width: 28,
+              height: 28,
+              child: Icon(
+                icon,
+                size: 16,
+                color: onTap == null
+                    ? AppColors.textFaint
+                    : AppColors.textMuted,
+              ),
+            ),
+          ),
+        );
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          step(outKey, outIcon, outTooltip, onOut),
+          Tooltip(
+            message: resetTooltip,
+            child: Semantics(
+              button: true,
+              label: '$label. $resetTooltip',
+              excludeSemantics: true,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppRadii.xs),
+                onTap: onReset,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 44),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Space.xs,
+                      vertical: 6,
+                    ),
+                    child: Text(
+                      label,
+                      key: valueKey,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: AppType.sizeLabel,
+                        color: AppColors.text,
+                        fontFeatures: const [ui.FontFeature.tabularFigures()],
+                      ),
                     ),
                   ),
                 ),
               ),
-            const SizedBox(width: Space.sm),
-            GhostIconButton(
-              icon: Icons.undo,
-              tooltip: withShortcut('Undo', 'Ctrl+Z'),
-              onTap: c.canUndo ? c.undo : null,
             ),
-            GhostIconButton(
-              icon: Icons.redo,
-              tooltip: withShortcut('Redo', 'Ctrl+Y'),
-              onTap: c.canRedo ? c.redo : null,
-            ),
-            const SizedBox(width: Space.sm),
-            GhostIconButton(
-              icon: Icons.zoom_out,
-              tooltip: 'Smaller pages',
-              onTap: () => _setZoom(_z / 1.25),
-            ),
-            GhostIconButton(
-              icon: Icons.fit_screen_outlined,
-              tooltip: 'Fit page width',
-              onTap: () => _setZoom(1),
-            ),
-            Tooltip(
-              message: 'Page zoom ${(_z * 100).round()}% relative to fit',
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: Space.sm),
-                child: Text(
-                  '${(_z * 100).round()}%',
-                  key: const ValueKey('note-zoom-value'),
-                  style: TextStyle(
-                    fontSize: AppType.sizeLabel,
-                    color: AppColors.textMuted,
-                    fontFeatures: [ui.FontFeature.tabularFigures()],
-                  ),
-                ),
+          ),
+          step(inKey, inIcon, inTooltip, onIn),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single swatch (a recent colour, or one cell of the library grid).
+class InkSwatchDot extends StatelessWidget {
+  const InkSwatchDot({
+    super.key,
+    required this.color,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+    this.size = 18,
+  });
+
+  final Color color;
+  final String label;
+  final VoidCallback onTap;
+  final bool active;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: label,
+    child: Semantics(
+      button: true,
+      selected: active,
+      label: label,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: active ? AppColors.text : AppColors.border,
+                width: active ? 2 : 1,
+                strokeAlign: BorderSide.strokeAlignOutside,
               ),
             ),
-            GhostIconButton(
-              icon: Icons.zoom_in,
-              tooltip: 'Larger pages',
-              onTap: () => _setZoom(_z * 1.25),
-            ),
-            const SizedBox(width: Space.sm),
-            PopupMenuButton<String>(
-              key: const ValueKey('note-export'),
-              tooltip: 'Export (Markdown, pictures, web page)',
-              icon: const Icon(Icons.ios_share, size: 18),
-              onOpened: c.cancelPendingLineStraightening,
-              onSelected: (what) async {
-                final note = s.workspace.notes[widget.noteId];
-                if (note == null) return;
-                await c.flush();
-                await exportNoteFromMenu(s, note, what);
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: 'md',
-                  child: Text('Export text (Markdown)'),
-                ),
-                PopupMenuItem(
-                  value: 'png',
-                  child: Text('Export pages as pictures'),
-                ),
-                PopupMenuItem(
-                  value: 'html',
-                  child: Text('Export as read-only web page'),
-                ),
-              ],
-            ),
-            GhostIconButton(
-              key: const ValueKey('note-paper'),
-              icon: Icons.grid_4x4,
-              tooltip: 'Paper (template, grid, colors)',
-              onTap: () => showPaperDialog(context, s, widget.noteId),
-            ),
-            GhostIconButton(
-              icon: Icons.picture_as_pdf_outlined,
-              tooltip: 'Add PDF pages to this note',
-              onTap: _addPdf,
-            ),
-            if (s.ios != null && c.pageBackgrounds.isNotEmpty)
-              GhostIconButton(
-                icon: Icons.ios_share,
-                tooltip: 'Export the PDF with your notes',
-                onTap: _exportPdf,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// The current ink colour; opens the complete canonical library
+/// ([InkColors.library], all 19 colours in their fixed order).
+class InkColorButton extends StatelessWidget {
+  const InkColorButton({
+    super.key,
+    required this.color,
+    required this.tooltip,
+    required this.onSelected,
+  });
+
+  final Color color;
+  final String tooltip;
+  final ValueChanged<Color> onSelected;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<Color>(
+    tooltip: '$tooltip: ${inkSwatchName(color)}',
+    padding: EdgeInsets.zero,
+    position: PopupMenuPosition.under,
+    onSelected: onSelected,
+    itemBuilder: (_) => [_InkLibraryEntry(current: color)],
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: AppColors.text,
+                width: 2,
+                strokeAlign: BorderSide.strokeAlignOutside,
               ),
-          ],
+            ),
+          ),
+          Icon(Icons.expand_more, size: 14, color: AppColors.textFaint),
+        ],
+      ),
+    ),
+  );
+}
+
+/// The library grid inside [InkColorButton]'s menu.
+class _InkLibraryEntry extends PopupMenuEntry<Color> {
+  const _InkLibraryEntry({required this.current});
+
+  final Color current;
+
+  @override
+  double get height => 160;
+
+  @override
+  bool represents(Color? value) => value == current;
+
+  @override
+  State<_InkLibraryEntry> createState() => _InkLibraryEntryState();
+}
+
+class _InkLibraryEntryState extends State<_InkLibraryEntry> {
+  @override
+  Widget build(BuildContext context) => Padding(
+    key: const ValueKey('ink-library'),
+    padding: const EdgeInsets.all(Space.sm),
+    child: SizedBox(
+      width: 5 * 28.0,
+      child: Wrap(
+        children: [
+          for (final swatch in InkColors.library)
+            InkSwatchDot(
+              key: ValueKey('ink-swatch-${swatch.id}'),
+              color: swatch.color,
+              label: swatch.name,
+              active: swatch.color == widget.current,
+              onTap: () => Navigator.of(context).pop(swatch.color),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// The current thickness (a dot of that size); opens the list of sizes.
+class InkWidthButton extends StatelessWidget {
+  const InkWidthButton({
+    super.key,
+    required this.tooltip,
+    required this.width,
+    required this.widths,
+    required this.onSelected,
+    this.color,
+    this.ring = false,
+  });
+
+  final String tooltip;
+  final double width;
+  final List<double> widths;
+  final ValueChanged<double> onSelected;
+  final Color? color;
+
+  /// Draw rings (the eraser's outline) instead of filled dots.
+  final bool ring;
+
+  Widget _dot(double w) {
+    final d = ring ? (w / 3).clamp(4.0, 18.0) : (w + 2).clamp(3.0, 18.0);
+    return SizedBox(
+      width: 20,
+      height: 20,
+      child: Center(
+        child: Container(
+          width: d,
+          height: d,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: ring ? null : (color ?? AppColors.text),
+            border: ring
+                ? Border.all(color: AppColors.text, width: 1.5)
+                : Border.all(color: AppColors.border),
+          ),
         ),
       ),
     );
   }
+
+  static String _number(double w) =>
+      w == w.roundToDouble() ? w.round().toString() : w.toString();
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<double>(
+    tooltip: '$tooltip: ${_number(width)}',
+    position: PopupMenuPosition.under,
+    onSelected: onSelected,
+    itemBuilder: (_) => [
+      for (final w in widths)
+        CheckedPopupMenuItem<double>(
+          key: ValueKey('ink-width-$w'),
+          value: w,
+          checked: w == width,
+          height: 36,
+          child: Row(
+            children: [
+              _dot(w),
+              const SizedBox(width: Space.sm),
+              Text(_number(w)),
+            ],
+          ),
+        ),
+    ],
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _dot(width),
+          Icon(Icons.expand_more, size: 14, color: AppColors.textFaint),
+        ],
+      ),
+    ),
+  );
 }
 
 /// The ink of one notebook page as PDF strokes: points in PDF points from
