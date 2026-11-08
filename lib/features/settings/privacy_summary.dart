@@ -245,7 +245,7 @@ class PrivacySummary extends StatelessWidget {
           children: [
             for (final l in lines)
               Padding(
-                padding: const EdgeInsets.only(bottom: Space.sm),
+                padding: const EdgeInsets.only(bottom: AppSpace.sm),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

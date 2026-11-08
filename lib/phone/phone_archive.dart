@@ -7,14 +7,13 @@ import 'dart:async';
 // under More); nothing is stored differently.
 import 'package:flutter/material.dart';
 
-import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../data/models/object_library_models.dart';
 import '../features/capture/sorting.dart';
 import '../new_ui/archive_model.dart';
 import '../features/library/library_page.dart' show LibraryPage;
 import '../new_ui/new_folder_colors.dart' show NewFolderColors;
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 import 'phone_folder_card.dart';
 import 'phone_more.dart';
 import 'phone_page.dart';
@@ -184,14 +183,14 @@ class _PhoneArchiveState extends State<PhoneArchive> {
     ),
     child: Row(
       children: [
-        Icon(Icons.search_rounded, size: 20, color: NewColors.textFaint),
+        Icon(Icons.search_rounded, size: 20, color: AppColors.textFaint),
         const SizedBox(width: 10),
         Expanded(
           child: TextField(
             key: const ValueKey('phone-archive-search'),
             controller: _search,
             onChanged: (v) => setState(() => _query = v),
-            cursorColor: NewColors.accent,
+            cursorColor: AppColors.accent,
             style: PhoneType.row.copyWith(fontWeight: FontWeight.w400),
             decoration: InputDecoration(
               isDense: true,
@@ -202,7 +201,7 @@ class _PhoneArchiveState extends State<PhoneArchive> {
               hintText: 'Search the Archive',
               hintStyle: PhoneType.row.copyWith(
                 fontWeight: FontWeight.w400,
-                color: NewColors.textFaint,
+                color: AppColors.textFaint,
               ),
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
@@ -246,13 +245,13 @@ class _FolderTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final color =
         NewFolderColors.byId(collection.space?.colorId)?.color ??
-        NewColors.textFaint;
+        AppColors.textFaint;
     return Press(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: Color.lerp(NewColors.surface, color, 0.16),
+          color: Color.lerp(AppColors.card, color, 0.16),
           border: Border(top: BorderSide(color: color, width: 3)),
           borderRadius: const BorderRadius.vertical(
             top: Radius.circular(AppRadii.sm),
@@ -290,7 +289,7 @@ class _FolderRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final color =
         NewFolderColors.byId(collection.space?.colorId)?.color ??
-        NewColors.textFaint;
+        AppColors.textFaint;
     final latest = collection.items.firstOrNull;
     return Press(
       onTap: onTap,

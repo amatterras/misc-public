@@ -3,11 +3,10 @@
 // of what is in it, and when it was touched. A note opens on its own page.
 import 'package:flutter/material.dart';
 
-import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../data/models/library_models.dart';
 import '../features/notes/note_page.dart' show openNotePage;
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 import '../widgets/common.dart' show confirm;
 import 'phone_more.dart';
 import 'phone_tokens.dart';
@@ -71,7 +70,7 @@ class _PhoneNotesState extends State<PhoneNotes> {
         ),
         SheetItem(
           label: 'Delete',
-          color: NewColors.danger,
+          color: AppColors.danger,
           onTap: () => Navigator.pop(c, 'delete'),
         ),
       ],
@@ -190,7 +189,7 @@ class _PhoneNotesState extends State<PhoneNotes> {
     ),
     child: Row(
       children: [
-        Icon(Icons.search_rounded, size: 20, color: NewColors.textFaint),
+        Icon(Icons.search_rounded, size: 20, color: AppColors.textFaint),
         const SizedBox(width: 10),
         Expanded(
           child: TextField(
@@ -198,7 +197,7 @@ class _PhoneNotesState extends State<PhoneNotes> {
             controller: _search,
             onChanged: (v) => setState(() => _query = v),
             textInputAction: TextInputAction.search,
-            cursorColor: NewColors.accent,
+            cursorColor: AppColors.accent,
             style: PhoneType.row.copyWith(fontWeight: FontWeight.w400),
             decoration: InputDecoration(
               isDense: true,
@@ -209,7 +208,7 @@ class _PhoneNotesState extends State<PhoneNotes> {
               hintText: 'Search notes',
               hintStyle: PhoneType.row.copyWith(
                 fontWeight: FontWeight.w400,
-                color: NewColors.textFaint,
+                color: AppColors.textFaint,
               ),
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
@@ -257,15 +256,15 @@ class _PhoneNotesState extends State<PhoneNotes> {
                         fontWeight: FontWeight.w600,
                         letterSpacing: -0.2,
                         color: id == _filter
-                            ? NewColors.text
-                            : NewColors.textFaint,
+                            ? AppColors.text
+                            : AppColors.textFaint,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Container(
                       height: 2,
                       width: id == _filter ? 16 : 0,
-                      color: NewColors.text,
+                      color: AppColors.text,
                     ),
                     const SizedBox(height: 4),
                   ],
@@ -320,7 +319,7 @@ class _NoteRow extends StatelessWidget {
                         child: Icon(
                           Icons.star_rounded,
                           size: 14,
-                          color: NewColors.accent,
+                          color: AppColors.accent,
                         ),
                       ),
                     Expanded(
@@ -330,8 +329,8 @@ class _NoteRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: PhoneType.row.copyWith(
                           color: note.title.trim().isEmpty
-                              ? NewColors.textFaint
-                              : NewColors.text,
+                              ? AppColors.textFaint
+                              : AppColors.text,
                         ),
                       ),
                     ),
@@ -347,8 +346,8 @@ class _NoteRow extends StatelessWidget {
                   style: PhoneType.body.copyWith(
                     fontSize: AppType.sizeBody,
                     color: text.isEmpty
-                        ? NewColors.textFaint
-                        : NewColors.textMuted,
+                        ? AppColors.textFaint
+                        : AppColors.textMuted,
                   ),
                 ),
                 if (folder != null)

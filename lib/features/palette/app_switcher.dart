@@ -86,7 +86,7 @@ class AppSwitcherGrid extends StatelessWidget {
               key: const ValueKey('app-switcher-grid'),
               crossAxisCount: 3,
               shrinkWrap: true,
-              padding: const EdgeInsets.all(Space.sm),
+              padding: const EdgeInsets.all(AppSpace.sm),
               children: [
                 for (final a in list)
                   InkWell(

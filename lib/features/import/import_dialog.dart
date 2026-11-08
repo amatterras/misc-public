@@ -59,7 +59,7 @@ Future<void> showImportDialog(BuildContext context, AppState s) async {
                     ),
                 ],
               ),
-              const SizedBox(height: Space.sm),
+              const SizedBox(height: AppSpace.sm),
               Text(
                 'Files are only read, never changed. Notion: unzip the '
                 'export first. Apple Notes has no export of its own: export '
@@ -107,7 +107,7 @@ Future<void> showImportDialog(BuildContext context, AppState s) async {
           children: [
             Text(report.summary, key: const ValueKey('import-summary')),
             if (report.notImported.isNotEmpty) ...[
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               const Text(
                 'Not imported:',
                 style: TextStyle(fontWeight: FontWeight.w600),

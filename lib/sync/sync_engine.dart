@@ -1602,11 +1602,6 @@ class SyncEngine {
   }
 }
 
-/// Small helper so callers don't need dart:io for the default file.
-File syncConfigFile(Workspace ws) => File(
-  '${ws.root.path}${Platform.pathSeparator}sync${Platform.pathSeparator}hub.json',
-);
-
 /// Records file checksums on [workspace]'s assets (a local edit, so it
 /// syncs).
 Future<void> fillAttachmentHashes(Workspace workspace) async {

@@ -365,7 +365,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
         title: Row(
           children: [
             Icon(Icons.bolt_outlined, size: 20, color: AppColors.textMuted),
-            SizedBox(width: Space.sm),
+            SizedBox(width: AppSpace.sm),
             Text('Quick Add', style: TextStyle(fontSize: 17)),
           ],
         ),
@@ -386,7 +386,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                     hintText: 'Type a note, or paste a link or image…',
                   ),
                 ),
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
                 if (url != null) ...[
                   Row(
                     children: [
@@ -404,7 +404,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: Space.sm),
+                  const SizedBox(height: AppSpace.sm),
                   TextField(
                     controller: _title,
                     style: const TextStyle(fontSize: AppType.sizeBodySmall),
@@ -414,7 +414,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                           : 'Title (optional)',
                     ),
                   ),
-                  const SizedBox(height: Space.sm),
+                  const SizedBox(height: AppSpace.sm),
                 ],
                 if (_images.isNotEmpty)
                   SizedBox(
@@ -424,7 +424,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                       children: [
                         for (final img in _images)
                           Padding(
-                            padding: const EdgeInsets.only(right: Space.sm),
+                            padding: const EdgeInsets.only(right: AppSpace.sm),
                             child: Stack(
                               children: [
                                 ClipRRect(
@@ -453,10 +453,10 @@ class _CaptureDialogState extends State<CaptureDialog> {
                       ],
                     ),
                   ),
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
                 Wrap(
-                  spacing: Space.sm,
-                  runSpacing: Space.sm,
+                  spacing: AppSpace.sm,
+                  runSpacing: AppSpace.sm,
                   children: [
                     OutlinedButton.icon(
                       onPressed: _paste,
@@ -473,7 +473,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                     ),
                   ],
                 ),
-                const SizedBox(height: Space.xl),
+                const SizedBox(height: AppSpace.xl),
                 Text(
                   'SAVE TO',
                   style: TextStyle(
@@ -482,7 +482,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                     letterSpacing: 0.6,
                   ),
                 ),
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
                 // Six destinations: scrolls sideways on narrow phones.
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -519,7 +519,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                     onSelectionChanged: (v) => setState(() => _dest = v.first),
                   ),
                 ),
-                const SizedBox(height: Space.md),
+                const SizedBox(height: AppSpace.md),
                 _destinationOptions(),
               ],
             ),
@@ -561,8 +561,8 @@ class _CaptureDialogState extends State<CaptureDialog> {
         return LabeledField(
           label: 'Tags',
           child: Wrap(
-            spacing: Space.xs,
-            runSpacing: Space.xs,
+            spacing: AppSpace.xs,
+            runSpacing: AppSpace.xs,
             children: [
               for (final tag in LinkTag.values)
                 FilterChip(
@@ -605,7 +605,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                   selected: _newNote,
                   onSelected: (_) => setState(() => _newNote = true),
                 ),
-                const SizedBox(width: Space.sm),
+                const SizedBox(width: AppSpace.sm),
                 ChoiceChip(
                   label: const Text('Add to existing note'),
                   selected: !_newNote,
@@ -615,7 +615,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
                 ),
               ],
             ),
-            const SizedBox(height: Space.sm),
+            const SizedBox(height: AppSpace.sm),
             if (_newNote)
               LabeledField(
                 label: 'Folder',

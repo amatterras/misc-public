@@ -7,7 +7,6 @@
 // read, never changed. What cannot be imported is listed in the report.
 import 'dart:io';
 
-import '../../data/models/library_models.dart';
 import '../../data/workspace.dart';
 
 enum ImportSource { obsidian, notion, appleNotes, markdown }
@@ -303,8 +302,3 @@ Future<ImportReport> importNotes(
   return report;
 }
 
-/// Notes in folder [folderId] (for checks after an import).
-List<Note> notesIn(Workspace ws, String folderId) => [
-  for (final n in ws.notes.all)
-    if (n.folderId == folderId) n,
-];

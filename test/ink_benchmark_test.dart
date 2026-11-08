@@ -1,4 +1,4 @@
-// Before/after measurements for INK_ENGINE_REPORT.md, on deterministic
+// Before/after measurements for docs/INK_ENGINE_REPORT.md, on deterministic
 // synthetic handwriting. Prints a table; the assertions only guard against
 // regressions far outside the measured values.
 //

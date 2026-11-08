@@ -1,7 +1,7 @@
 // Phase 2: live theme switching and the design-token system.
 //
 // The app reads most colours from static palette getters (AppColors /
-// NewColors). A theme change must reach every visible component in the SAME
+// AppColors). A theme change must reach every visible component in the SAME
 // frame, including widgets that never depend on Theme.of (const widgets, open
 // dialogs, floating windows), without re-creating any state. These tests open
 // several kinds of UI at once, switch theme, pump exactly one frame and check
@@ -17,7 +17,6 @@ import 'package:flutter_application_1/app/theme_switch.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/main.dart';
-import 'package:flutter_application_1/new_ui/new_tokens.dart';
 import 'package:flutter_application_1/platform/window_chrome.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -174,7 +173,7 @@ void main() {
     // cross-fade where Theme colours lag behind palette colours).
     final theme = Theme.of(tester.element(find.byType(Dialog)));
     expect(theme.brightness, Brightness.light);
-    expect(theme.scaffoldBackgroundColor, NewColors.background);
+    expect(theme.scaffoldBackgroundColor, AppColors.background);
 
     // Nothing was re-created: same State, same text, dialog still open.
     expect(tester.state<_KeeperState>(find.byType(_Keeper)), same(keeper));
@@ -238,15 +237,15 @@ void main() {
 
   group('design tokens', () {
     test('old names are aliases of the one token set', () {
-      expect(Space.md, AppSpace.md);
-      expect(Space.xl, AppSpace.xl);
-      expect(NewSpace.sm, AppSpace.sm);
-      expect(NewRadii.capsule, AppRadii.capsule);
-      expect(NewRadii.card, AppRadii.card);
-      expect(NewMotion.quick, AppMotion.quick);
-      expect(NewMotion.curve, AppMotion.standard);
-      expect(NewText.label, AppType.label);
-      expect(NewText.heading, AppType.title);
+      expect(AppSpace.md, AppSpace.md);
+      expect(AppSpace.xl, AppSpace.xl);
+      expect(AppSpace.sm, AppSpace.sm);
+      expect(AppRadii.capsule, AppRadii.capsule);
+      expect(AppRadii.card, AppRadii.card);
+      expect(AppMotion.quick, AppMotion.quick);
+      expect(AppMotion.standard, AppMotion.standard);
+      expect(AppType.label, AppType.label);
+      expect(AppType.title, AppType.title);
     });
 
     test('motion presets sit inside the Phase 2 target ranges', () {
@@ -286,9 +285,9 @@ void main() {
         AppColors.mode = b == Brightness.light
             ? ThemeMode.light
             : ThemeMode.dark;
-        expect(t.scaffoldBackgroundColor, NewColors.background);
-        expect(t.colorScheme.primary, NewColors.accent);
-        expect(t.colorScheme.onPrimary, NewColors.onAccent);
+        expect(t.scaffoldBackgroundColor, AppColors.background);
+        expect(t.colorScheme.primary, AppColors.accent);
+        expect(t.colorScheme.onPrimary, AppColors.onAccent);
         final dialog = t.dialogTheme.shape! as RoundedRectangleBorder;
         expect(dialog.borderRadius, AppRadii.all(AppRadii.dialog));
         final menu = t.popupMenuTheme.shape! as RoundedRectangleBorder;
@@ -312,10 +311,10 @@ void main() {
 
       for (final mode in [ThemeMode.dark, ThemeMode.light]) {
         AppColors.mode = mode;
-        final hsv = HSVColor.fromColor(NewColors.accent);
+        final hsv = HSVColor.fromColor(AppColors.accent);
         expect(hsv.hue, inInclusiveRange(195, 215), reason: mode.name);
         expect(
-          ratio(NewColors.onAccent, NewColors.accent),
+          ratio(AppColors.onAccent, AppColors.accent),
           greaterThanOrEqualTo(4.5),
           reason: '${mode.name}: text on filled buttons',
         );

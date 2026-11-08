@@ -1,4 +1,4 @@
-// Data-safety baseline (DATA_MIGRATIONS.md): versioned migrations on a
+// Data-safety baseline (docs/DATA_MIGRATIONS.md): versioned migrations on a
 // realistic pre-update workspace, verified backups and restore, integrity
 // checks on deliberately damaged data, recoverable deletion with sync
 // tombstones, and logs without personal content. Everything runs on

@@ -399,7 +399,7 @@ class _SmartViewEditorState extends State<_SmartViewEditor> {
       );
 
   Widget _section(String title, Widget child) => Padding(
-    padding: const EdgeInsets.only(top: Space.md),
+    padding: const EdgeInsets.only(top: AppSpace.md),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -565,7 +565,7 @@ class _SmartViewEditorState extends State<_SmartViewEditor> {
                   ),
                 ),
               Padding(
-                padding: const EdgeInsets.only(top: Space.md),
+                padding: const EdgeInsets.only(top: AppSpace.md),
                 child: Text(
                   'A task shows when it meets every condition. Nothing is '
                   'copied: the view follows your tasks as they change.',

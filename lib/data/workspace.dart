@@ -764,14 +764,6 @@ class Workspace {
   }
 
   /// Reads an image's pixel size without fully decoding it.
-  static Future<ui.Size?> imageSize(File file) async {
-    try {
-      return await imageSizeOfBytes(await file.readAsBytes());
-    } catch (_) {
-      return null;
-    }
-  }
-
   static Future<ui.Size?> imageSizeOfBytes(Uint8List bytes) async {
     try {
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);

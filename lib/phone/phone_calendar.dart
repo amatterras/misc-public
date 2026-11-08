@@ -5,14 +5,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../data/models/calendar_models.dart' show CalendarCategory;
 import '../data/models/record.dart';
 import '../data/models/task_models.dart';
 import '../data/workspace.dart' show TaskOnDay;
 import '../new_ui/home_agenda.dart';
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 import '../widgets/date_prefs.dart';
 import 'phone_agenda.dart';
 import 'phone_capture.dart' show PhoneDay;
@@ -201,11 +200,11 @@ class _PhoneCalendarState extends State<PhoneCalendar> {
               fontSize: 15,
               fontWeight: FontWeight.w600,
               letterSpacing: -0.2,
-              color: on ? NewColors.text : NewColors.textFaint,
+              color: on ? AppColors.text : AppColors.textFaint,
             ),
           ),
           const SizedBox(height: 6),
-          Container(height: 2, width: on ? 16 : 0, color: NewColors.text),
+          Container(height: 2, width: on ? 16 : 0, color: AppColors.text),
           const SizedBox(height: 4),
         ],
       ),
@@ -307,7 +306,7 @@ class _PhoneCalendarState extends State<PhoneCalendar> {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: selected ? NewColors.text : Colors.transparent,
+                  color: selected ? AppColors.text : Colors.transparent,
                 ),
                 child: Text(
                   '${day.day}',
@@ -317,10 +316,10 @@ class _PhoneCalendarState extends State<PhoneCalendar> {
                         ? FontWeight.w800
                         : FontWeight.w500,
                     color: selected
-                        ? NewColors.background
+                        ? AppColors.background
                         : today
-                        ? NewColors.accent
-                        : NewColors.text,
+                        ? AppColors.accent
+                        : AppColors.text,
                   ),
                 ),
               ),
@@ -374,7 +373,7 @@ class _PhoneCalendarState extends State<PhoneCalendar> {
             const SizedBox(width: 10),
             Text(
               'TODAY',
-              style: PhoneType.eyebrow.copyWith(color: NewColors.accent),
+              style: PhoneType.eyebrow.copyWith(color: AppColors.accent),
             ),
           ],
         ],
@@ -475,7 +474,7 @@ class _TaskListState extends State<_TaskList> with AgendaActions {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (overdue.isNotEmpty) ...[
-          label('Overdue', overdue.length, color: NewColors.warm),
+          label('Overdue', overdue.length, color: AppColors.warm),
           for (final t in overdue) row(t, label: short(t.dueDate!)),
         ],
         if (dueToday.isNotEmpty) ...[

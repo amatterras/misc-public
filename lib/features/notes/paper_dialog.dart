@@ -76,7 +76,7 @@ class _PaperDialogState extends State<_PaperDialog> {
                     ),
                 ],
               ),
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               if (split) _heading('Grid (left 2/5)'),
               _slider(
                 'Square size',
@@ -91,7 +91,7 @@ class _PaperDialogState extends State<_PaperDialog> {
               ),
               if (light)
                 Padding(
-                  padding: const EdgeInsets.only(top: Space.sm),
+                  padding: const EdgeInsets.only(top: AppSpace.sm),
                   child: Text(
                     'In the light theme the page is white and the lines are '
                     'black.',
@@ -109,7 +109,7 @@ class _PaperDialogState extends State<_PaperDialog> {
                   p.lineColor,
                   (c) => _set(p.copyWith(lineColor: c)),
                 ),
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
                 _swatches(
                   'Page color',
                   paperBackgroundColors,
@@ -118,7 +118,7 @@ class _PaperDialogState extends State<_PaperDialog> {
                 ),
               ],
               if (split) ...[
-                const SizedBox(height: Space.md),
+                const SizedBox(height: AppSpace.md),
                 _heading('Dots (right 3/5)'),
                 _slider(
                   'Dot spacing',
@@ -138,7 +138,7 @@ class _PaperDialogState extends State<_PaperDialog> {
                     p.dotColor,
                     (c) => _set(p.copyWith(dotColor: c)),
                   ),
-                  const SizedBox(height: Space.sm),
+                  const SizedBox(height: AppSpace.sm),
                   _swatches(
                     'Page color',
                     paperBackgroundColors,

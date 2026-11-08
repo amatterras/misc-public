@@ -8,9 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../app/design_tokens.dart';
 import '../app/app_state.dart';
-import '../app/popups.dart';
 import '../data/models/library_models.dart' show AssetKind;
 import '../data/models/object_library_models.dart';
 import '../data/repositories/library_repository.dart';
@@ -22,7 +20,7 @@ import '../widgets/common.dart' show confirm, promptText;
 import 'archive_model.dart';
 import 'new_components.dart';
 import 'new_folder_colors.dart';
-import 'new_tokens.dart';
+import '../app/theme.dart';
 
 /// Opens one saved item in the Archive's existing detail dialog.
 Future<void> openArchiveItem(
@@ -179,13 +177,13 @@ class _NewArchivePageState extends State<NewArchivePage> {
     final chosen = await showAppDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: NewColors.surfaceRaised,
-        title: Text('Colour', style: TextStyle(color: NewColors.text)),
+        backgroundColor: AppColors.cardRaised,
+        title: Text('Colour', style: TextStyle(color: AppColors.text)),
         content: SizedBox(
           width: 300,
           child: Wrap(
-            spacing: NewSpace.md,
-            runSpacing: NewSpace.md,
+            spacing: AppSpace.md,
+            runSpacing: AppSpace.md,
             children: [
               for (final c in NewFolderColors.all)
                 Tooltip(
@@ -201,7 +199,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: space.colorId == c.id
-                              ? NewColors.text
+                              ? AppColors.text
                               : Colors.transparent,
                           width: 2,
                         ),
@@ -254,9 +252,9 @@ class _NewArchivePageState extends State<NewArchivePage> {
   Future<void> _folderMenu(LibrarySpace space) async {
     final choice = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: NewColors.surfaceRaised,
+      backgroundColor: AppColors.cardRaised,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(NewRadii.lg)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.xl)),
       ),
       builder: (context) => SafeArea(
         child: SingleChildScrollView(
@@ -281,9 +279,9 @@ class _NewArchivePageState extends State<NewArchivePage> {
                 Icons.delete_outline,
                 'Delete folder',
                 'delete',
-                color: NewColors.danger,
+                color: AppColors.danger,
               ),
-              const SizedBox(height: NewSpace.sm),
+              const SizedBox(height: AppSpace.sm),
             ],
           ),
         ),
@@ -311,8 +309,8 @@ class _NewArchivePageState extends State<NewArchivePage> {
   Widget _sheetRow(IconData icon, String label, String value, {Color? color}) =>
       ListTile(
         key: ValueKey('archive-menu-$value'),
-        leading: Icon(icon, color: color ?? NewColors.textMuted),
-        title: Text(label, style: TextStyle(color: color ?? NewColors.text)),
+        leading: Icon(icon, color: color ?? AppColors.textMuted),
+        title: Text(label, style: TextStyle(color: color ?? AppColors.text)),
         onTap: () => Navigator.pop(context, value),
       );
 
@@ -345,9 +343,9 @@ class _NewArchivePageState extends State<NewArchivePage> {
     ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return showModalBottomSheet<String>(
       context: context,
-      backgroundColor: NewColors.surfaceRaised,
+      backgroundColor: AppColors.cardRaised,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(NewRadii.lg)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.xl)),
       ),
       builder: (context) => SafeArea(
         child: ListView(
@@ -361,17 +359,17 @@ class _NewArchivePageState extends State<NewArchivePage> {
                   radius: 8,
                   backgroundColor:
                       NewFolderColors.byId(f.colorId)?.color ??
-                      NewColors.accent,
+                      AppColors.accent,
                 ),
-                title: Text(f.name, style: TextStyle(color: NewColors.text)),
+                title: Text(f.name, style: TextStyle(color: AppColors.text)),
                 onTap: () => Navigator.pop(context, f.id),
               ),
             ListTile(
               key: const ValueKey('archive-target-unfiled'),
-              leading: Icon(Icons.inbox_outlined, color: NewColors.textMuted),
+              leading: Icon(Icons.inbox_outlined, color: AppColors.textMuted),
               title: Text(
                 'Unfiled',
-                style: TextStyle(color: NewColors.textMuted),
+                style: TextStyle(color: AppColors.textMuted),
               ),
               onTap: () => Navigator.pop(context, unfiledId),
             ),
@@ -428,8 +426,9 @@ class _NewArchivePageState extends State<NewArchivePage> {
 
   @override
   Widget build(BuildContext context) {
+    // Transparent: the app-wide atmosphere (shell) is the page background.
     return ColoredBox(
-      color: NewColors.background,
+      color: Colors.transparent,
       child: ListenableBuilder(
         listenable: Listenable.merge([s, ws.changes]),
         builder: (context, _) {
@@ -490,7 +489,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
               ? Center(
                   child: Text(
                     'Nothing saved yet.',
-                    style: NewText.body.copyWith(color: NewColors.textFaint),
+                    style: AppType.body.copyWith(color: AppColors.textFaint),
                   ),
                 )
               : _stack(collections),
@@ -511,10 +510,10 @@ class _NewArchivePageState extends State<NewArchivePage> {
     final result = repo.search(raw);
     if (result.error != null) {
       return Padding(
-        padding: const EdgeInsets.all(NewSpace.lg),
+        padding: const EdgeInsets.all(AppSpace.lg),
         child: Text(
           result.error!,
-          style: NewText.body.copyWith(color: NewColors.danger),
+          style: AppType.body.copyWith(color: AppColors.danger),
         ),
       );
     }
@@ -522,17 +521,17 @@ class _NewArchivePageState extends State<NewArchivePage> {
       return Center(
         child: Text(
           'No matches.',
-          style: NewText.body.copyWith(color: NewColors.textFaint),
+          style: AppType.body.copyWith(color: AppColors.textFaint),
         ),
       );
     }
     return ListView(
       key: const ValueKey('archive-results'),
-      padding: const EdgeInsets.fromLTRB(NewSpace.lg, 0, NewSpace.lg, 96),
+      padding: const EdgeInsets.fromLTRB(AppSpace.lg, 0, AppSpace.lg, 96),
       children: [
         for (final o in result.items)
           Padding(
-            padding: const EdgeInsets.only(bottom: NewSpace.sm),
+            padding: const EdgeInsets.only(bottom: AppSpace.sm),
             child: _ItemRow(
               key: ValueKey('archive-item-${o.id}'),
               state: s,
@@ -549,9 +548,9 @@ class _NewArchivePageState extends State<NewArchivePage> {
     return ListView(
       key: const ValueKey('archive-stack'),
       padding: const EdgeInsets.fromLTRB(
-        NewSpace.lg,
-        NewSpace.sm,
-        NewSpace.lg,
+        AppSpace.lg,
+        AppSpace.sm,
+        AppSpace.lg,
         96,
       ),
       children: [
@@ -595,13 +594,13 @@ class _NewArchivePageState extends State<NewArchivePage> {
         data: c.id,
         hapticFeedbackOnStart: true,
         feedback: SizedBox(
-          width: MediaQuery.sizeOf(context).width - 2 * NewSpace.lg,
+          width: MediaQuery.sizeOf(context).width - 2 * AppSpace.lg,
           child: Opacity(opacity: 0.9, child: card),
         ),
         childWhenDragging: Opacity(opacity: 0.35, child: card),
         child: AnimatedScale(
           scale: candidate.isEmpty ? 1 : 0.98,
-          duration: NewMotion.quick,
+          duration: AppMotion.quick,
           child: card,
         ),
       ),
@@ -614,22 +613,22 @@ class _NewArchivePageState extends State<NewArchivePage> {
     children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(
-          NewSpace.sm,
-          NewSpace.sm,
-          NewSpace.lg,
-          NewSpace.xs,
+          AppSpace.sm,
+          AppSpace.sm,
+          AppSpace.lg,
+          AppSpace.xs,
         ),
         child: Row(
           children: [
             IconButton(
               key: const ValueKey('archive-back'),
               tooltip: 'Back to Archive',
-              icon: Icon(Icons.chevron_left, color: NewColors.textMuted),
+              icon: Icon(Icons.chevron_left, color: AppColors.textMuted),
               onPressed: () => setState(() => _view = _View.landing),
             ),
             Text(
               'Whole Look',
-              style: NewText.title.copyWith(color: NewColors.text),
+              style: AppType.heading.copyWith(color: AppColors.text),
             ),
           ],
         ),
@@ -673,9 +672,9 @@ class _NewArchivePageState extends State<NewArchivePage> {
           child: ListView(
             key: const ValueKey('archive-collection-items'),
             padding: const EdgeInsets.fromLTRB(
-              NewSpace.lg,
-              NewSpace.sm,
-              NewSpace.lg,
+              AppSpace.lg,
+              AppSpace.sm,
+              AppSpace.lg,
               96,
             ),
             children: [
@@ -687,7 +686,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
                     children: [
                       for (final f in subfolders)
                         Padding(
-                          padding: const EdgeInsets.only(right: NewSpace.sm),
+                          padding: const EdgeInsets.only(right: AppSpace.sm),
                           child: ActionChip(
                             key: ValueKey('archive-sub-${f.id}'),
                             avatar: CircleAvatar(
@@ -704,17 +703,17 @@ class _NewArchivePageState extends State<NewArchivePage> {
                 ),
               if (c.items.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.all(NewSpace.xxl),
+                  padding: const EdgeInsets.all(AppSpace.xl),
                   child: Center(
                     child: Text(
                       'Nothing in this folder yet.',
-                      style: NewText.body.copyWith(color: NewColors.textFaint),
+                      style: AppType.body.copyWith(color: AppColors.textFaint),
                     ),
                   ),
                 ),
               for (final o in c.items)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: NewSpace.sm),
+                  padding: const EdgeInsets.only(bottom: AppSpace.sm),
                   child: _itemWithActions(c, o),
                 ),
             ],
@@ -728,17 +727,17 @@ class _NewArchivePageState extends State<NewArchivePage> {
     final color = c.color;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        NewSpace.sm,
-        NewSpace.sm,
-        NewSpace.sm,
-        NewSpace.xs,
+        AppSpace.sm,
+        AppSpace.sm,
+        AppSpace.sm,
+        AppSpace.xs,
       ),
       child: Row(
         children: [
           IconButton(
             key: const ValueKey('archive-back'),
             tooltip: 'Back',
-            icon: Icon(Icons.chevron_left, color: NewColors.textMuted),
+            icon: Icon(Icons.chevron_left, color: AppColors.textMuted),
             onPressed: () => setState(() {
               _path.removeLast();
               if (_path.isEmpty) _view = _View.landing;
@@ -750,7 +749,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
             Container(
               width: 12,
               height: 12,
-              margin: const EdgeInsets.only(right: NewSpace.sm),
+              margin: const EdgeInsets.only(right: AppSpace.sm),
               decoration: BoxDecoration(
                 color: color.color,
                 shape: BoxShape.circle,
@@ -761,14 +760,14 @@ class _NewArchivePageState extends State<NewArchivePage> {
               c.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: NewText.title.copyWith(color: NewColors.text),
+              style: AppType.heading.copyWith(color: AppColors.text),
             ),
           ),
           NewPill('${c.total}'),
           IconButton(
             key: const ValueKey('archive-paste-link'),
             tooltip: 'Paste the link on the clipboard into this folder',
-            icon: Icon(Icons.add_link, color: NewColors.accent),
+            icon: Icon(Icons.add_link, color: AppColors.accent),
             onPressed: () =>
                 _pasteLink(folderId: c.space == null ? null : c.id),
           ),
@@ -777,7 +776,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
             tooltip: _selectMode ? 'Done selecting' : 'Select',
             icon: Icon(
               _selectMode ? Icons.check_circle : Icons.checklist,
-              color: _selectMode ? NewColors.accent : NewColors.textMuted,
+              color: _selectMode ? AppColors.accent : AppColors.textMuted,
             ),
             onPressed: () => setState(() {
               _selectMode = !_selectMode;
@@ -788,7 +787,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
             IconButton(
               key: const ValueKey('archive-folder-menu'),
               tooltip: 'Folder options',
-              icon: Icon(Icons.more_horiz, color: NewColors.textMuted),
+              icon: Icon(Icons.more_horiz, color: AppColors.textMuted),
               onPressed: () => _folderMenu(c.space!),
             ),
         ],
@@ -800,18 +799,18 @@ class _NewArchivePageState extends State<NewArchivePage> {
     final n = chosen.length;
     return Container(
       key: const ValueKey('archive-selection-bar'),
-      margin: const EdgeInsets.symmetric(horizontal: NewSpace.lg),
-      padding: const EdgeInsets.symmetric(horizontal: NewSpace.sm),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpace.lg),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm),
       decoration: BoxDecoration(
-        color: NewColors.surfaceSecondary,
-        borderRadius: BorderRadius.circular(NewRadii.md),
+        color: AppColors.surfaceSecondary,
+        borderRadius: BorderRadius.circular(AppRadii.popup),
       ),
       child: Row(
         children: [
           Expanded(
             child: Text(
               n == 0 ? 'Select items' : '$n selected',
-              style: NewText.label.copyWith(color: NewColors.textMuted),
+              style: AppType.label.copyWith(color: AppColors.textMuted),
             ),
           ),
           TextButton(
@@ -851,7 +850,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
           IconButton(
             key: const ValueKey('archive-bulk-delete'),
             tooltip: 'Delete',
-            icon: Icon(Icons.delete_outline, color: NewColors.danger),
+            icon: Icon(Icons.delete_outline, color: AppColors.danger),
             onPressed: n == 0
                 ? null
                 : () async {
@@ -875,7 +874,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
       height: 52,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: NewSpace.lg),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg),
         children: [
           for (final f in folders)
             DragTarget<_ItemDrag>(
@@ -884,7 +883,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
                 setState(() => _dragging = false);
               },
               builder: (context, candidate, _) => Padding(
-                padding: const EdgeInsets.only(right: NewSpace.sm),
+                padding: const EdgeInsets.only(right: AppSpace.sm),
                 child: Chip(
                   key: ValueKey('archive-drop-${f.id}'),
                   avatar: CircleAvatar(
@@ -894,8 +893,8 @@ class _NewArchivePageState extends State<NewArchivePage> {
                   label: Text(f.name),
                   side: BorderSide(
                     color: candidate.isEmpty
-                        ? NewColors.border
-                        : NewColors.accent,
+                        ? AppColors.border
+                        : AppColors.accent,
                   ),
                 ),
               ),
@@ -929,7 +928,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
       onDragStarted: () => setState(() => _dragging = true),
       onDragEnd: (_) => setState(() => _dragging = false),
       feedback: SizedBox(
-        width: MediaQuery.sizeOf(context).width - 2 * NewSpace.lg,
+        width: MediaQuery.sizeOf(context).width - 2 * AppSpace.lg,
         child: Opacity(opacity: 0.9, child: row),
       ),
       childWhenDragging: Opacity(opacity: 0.3, child: row),
@@ -940,7 +939,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
             key: ValueKey('archive-swipe-move-${o.id}'),
             icon: Icons.drive_file_move_outlined,
             label: 'Move',
-            color: NewColors.accent,
+            color: AppColors.accent,
             onTap: () => _moveItems([o.id]),
           ),
           SwipeAction(
@@ -949,14 +948,14 @@ class _NewArchivePageState extends State<NewArchivePage> {
                 ? Icons.star
                 : Icons.star_outline,
             label: 'Favorite',
-            color: NewColors.warmCoral,
+            color: BrandColors.warmCoral,
             onTap: () => _toggleFavorite(o),
           ),
           SwipeAction(
             key: ValueKey('archive-swipe-delete-${o.id}'),
             icon: Icons.delete_outline,
             label: 'Delete',
-            color: NewColors.danger,
+            color: AppColors.danger,
             onTap: () => _deleteItems([o]),
           ),
         ],
@@ -987,13 +986,13 @@ class _CollectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = collection;
-    final light = NewColors.background.computeLuminance() > 0.5;
+    final light = AppColors.background.computeLuminance() > 0.5;
     final folder = c.color.color;
     final base = c.virtual
-        ? NewColors.surfaceSecondary
+        ? AppColors.surfaceSecondary
         // Light: a gentle wash of the folder colour (the saturated colour is
         // kept for the border and the count), dark: a deeper tint.
-        : Color.lerp(NewColors.surface, folder, light ? 0.22 : 0.3)!;
+        : Color.lerp(AppColors.card, folder, light ? 0.22 : 0.3)!;
     final fg = contrastOn(base);
     final shown = c.items.take(ArchiveCollection.visibleCount).toList();
     final hidden = c.hidden;
@@ -1004,14 +1003,14 @@ class _CollectionCard extends StatelessWidget {
         height: height,
         decoration: BoxDecoration(
           color: base,
-          borderRadius: BorderRadius.circular(NewRadii.lg + 2),
+          borderRadius: BorderRadius.circular(AppRadii.xl + 2),
           border: Border.all(
             color: folder.withValues(alpha: light ? 0.4 : 0.55),
           ),
-          boxShadow: NewShadows.card,
+          boxShadow: AppElevation.subtle,
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(NewRadii.lg + 2),
+          borderRadius: BorderRadius.circular(AppRadii.xl + 2),
           child: Stack(
             children: [
               // Previews that do not fit in front, peeking out behind.
@@ -1030,7 +1029,7 @@ class _CollectionCard extends StatelessWidget {
                             ? 0.55 + 0.1 * (4 - k) / 3
                             : 0.18 + 0.05 * (4 - k),
                       ),
-                      borderRadius: BorderRadius.circular(NewRadii.md),
+                      borderRadius: BorderRadius.circular(AppRadii.popup),
                     ),
                   ),
                 ),
@@ -1056,7 +1055,7 @@ class _CollectionCard extends StatelessWidget {
                     DecoratedBox(
                       decoration: BoxDecoration(
                         color: fg.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(NewRadii.capsule),
+                        borderRadius: BorderRadius.circular(AppRadii.capsule),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -1083,7 +1082,7 @@ class _CollectionCard extends StatelessWidget {
                         onPressed: onMenu,
                       )
                     else
-                      const SizedBox(width: NewSpace.md),
+                      const SizedBox(width: AppSpace.md),
                   ],
                 ),
               ),
@@ -1105,7 +1104,7 @@ class _CollectionCard extends StatelessWidget {
                     : Row(
                         children: [
                           for (var i = 0; i < shown.length; i++) ...[
-                            if (i > 0) const SizedBox(width: NewSpace.sm + 2),
+                            if (i > 0) const SizedBox(width: AppSpace.sm + 2),
                             Expanded(
                               child: _PreviewTile(
                                 key: ValueKey('archive-preview-${shown[i].id}'),
@@ -1181,7 +1180,7 @@ class _PreviewTile extends StatelessWidget {
         ? (object.content ?? '').trim()
         : (object.description ?? object.summary ?? '').trim();
     return ClipRRect(
-      borderRadius: BorderRadius.circular(NewRadii.card),
+      borderRadius: BorderRadius.circular(AppRadii.card),
       child: ColoredBox(
         color: paper,
         child: image != null
@@ -1294,36 +1293,36 @@ class _ItemRow extends StatelessWidget {
     final image = archiveImageOf(state, object);
     final favorite = object.metadata['favorite'] == true;
     return NewCard(
-      padding: const EdgeInsets.all(NewSpace.sm),
+      padding: const EdgeInsets.all(AppSpace.sm),
       onTap: onTap,
-      borderColor: selected ? NewColors.accent : null,
+      borderColor: selected ? AppColors.accent : null,
       child: Row(
         children: [
           if (selecting)
             Padding(
-              padding: const EdgeInsets.only(right: NewSpace.sm),
+              padding: const EdgeInsets.only(right: AppSpace.sm),
               child: Icon(
                 selected ? Icons.check_circle : Icons.circle_outlined,
-                color: selected ? NewColors.accent : NewColors.textFaint,
+                color: selected ? AppColors.accent : AppColors.textFaint,
               ),
             ),
           ClipRRect(
-            borderRadius: BorderRadius.circular(NewRadii.sm),
+            borderRadius: BorderRadius.circular(AppRadii.md),
             child: SizedBox(
               width: 56,
               height: 56,
               child: image != null
                   ? Image(image: image, fit: BoxFit.cover)
                   : ColoredBox(
-                      color: NewColors.surfaceSecondary,
+                      color: AppColors.surfaceSecondary,
                       child: Icon(
                         archiveIconOf(object),
-                        color: NewColors.textMuted,
+                        color: AppColors.textMuted,
                       ),
                     ),
             ),
           ),
-          const SizedBox(width: NewSpace.md),
+          const SizedBox(width: AppSpace.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1332,9 +1331,9 @@ class _ItemRow extends StatelessWidget {
                   object.title.isEmpty ? 'Untitled' : object.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: NewText.body.copyWith(
+                  style: AppType.body.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: NewColors.text,
+                    color: AppColors.text,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -1342,12 +1341,12 @@ class _ItemRow extends StatelessWidget {
                   archiveMetaOf(object),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: NewText.meta.copyWith(color: NewColors.textFaint),
+                  style: AppType.caption.copyWith(color: AppColors.textFaint),
                 ),
               ],
             ),
           ),
-          if (favorite) Icon(Icons.star, size: 18, color: NewColors.warmCoral),
+          if (favorite) Icon(Icons.star, size: 18, color: BrandColors.warmCoral),
         ],
       ),
     );
@@ -1404,7 +1403,7 @@ class _SwipeActionsState extends State<SwipeActions> {
           setState(() => _dx = (_dx + d.delta.dx).clamp(-_open, 0).toDouble()),
       onHorizontalDragEnd: (_) => _end(),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(NewRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         child: Stack(
           children: [
             Positioned.fill(
@@ -1449,7 +1448,7 @@ class _SwipeActionsState extends State<SwipeActions> {
             ),
             AnimatedContainer(
               duration: _dx == 0 || _dx == -_open
-                  ? NewMotion.quick
+                  ? AppMotion.quick
                   : Duration.zero,
               transform: Matrix4.translationValues(_dx, 0, 0),
               child: widget.child,

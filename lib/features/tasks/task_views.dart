@@ -83,7 +83,7 @@ class TaskBoardView extends StatelessWidget {
             },
             builder: (context, hovering, _) => Container(
               margin: const EdgeInsets.all(4),
-              padding: const EdgeInsets.all(Space.sm),
+              padding: const EdgeInsets.all(AppSpace.sm),
               decoration: BoxDecoration(
                 color: hovering.isEmpty ? AppColors.card : AppColors.selected,
                 borderRadius: BorderRadius.circular(AppRadii.md),
@@ -141,7 +141,7 @@ class _BoardCard extends StatelessWidget {
     final card = Container(
       width: 220,
       margin: const EdgeInsets.symmetric(vertical: 3),
-      padding: const EdgeInsets.all(Space.sm),
+      padding: const EdgeInsets.all(AppSpace.sm),
       decoration: BoxDecoration(
         color: AppColors.cardRaised,
         borderRadius: BorderRadius.circular(AppRadii.sm),
@@ -300,7 +300,7 @@ class _TaskTableViewState extends State<TaskTableView> {
           ),
           onChanged: (_) => setState(() {}),
         ),
-        const SizedBox(height: Space.sm),
+        const SizedBox(height: AppSpace.sm),
         Expanded(
           child: SingleChildScrollView(
             child: SingleChildScrollView(
@@ -437,7 +437,7 @@ class TaskGanttView extends StatelessWidget {
       children: [
         if (projectIds.isNotEmpty)
           Wrap(
-            spacing: Space.md,
+            spacing: AppSpace.md,
             children: [
               for (final id in projectIds)
                 if (ws.projects[id] case final p?)
@@ -458,7 +458,7 @@ class TaskGanttView extends StatelessWidget {
                   ),
             ],
           ),
-        const SizedBox(height: Space.sm),
+        const SizedBox(height: AppSpace.sm),
         Expanded(
           child: SingleChildScrollView(
             child: SingleChildScrollView(

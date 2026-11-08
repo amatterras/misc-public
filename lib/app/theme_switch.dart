@@ -1,6 +1,6 @@
 // Live theme switching.
 //
-// Most of THEapp reads its colours from AppColors / NewColors, which are
+// Most of THEapp reads its colours from AppColors / AppColors, which are
 // static getters that follow AppColors.mode. That keeps components simple,
 // but a widget that does not depend on Theme.of(context) is not rebuilt by
 // MaterialApp when the theme changes, and a CustomPainter that reads the
@@ -77,6 +77,3 @@ class PlatformBrightnessListener with WidgetsBindingObserver {
   void dispose() => WidgetsBinding.instance.removeObserver(this);
 }
 
-/// Shortcut so tests can refresh a pumped app the same way the app does.
-@visibleForTesting
-void debugRefreshThemeTree(Element root) => ThemeSwitch.refreshTree(root);

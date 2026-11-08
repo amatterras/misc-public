@@ -595,7 +595,7 @@ class _BrowserPageState extends State<BrowserPage> {
       return Center(
         key: const ValueKey('browser-no-engine'),
         child: Padding(
-          padding: const EdgeInsets.all(Space.xl),
+          padding: const EdgeInsets.all(AppSpace.xl),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -604,7 +604,7 @@ class _BrowserPageState extends State<BrowserPage> {
                 size: 36,
                 color: AppColors.textFaint,
               ),
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),
                 child: Text(
@@ -614,7 +614,7 @@ class _BrowserPageState extends State<BrowserPage> {
                 ),
               ),
               if (t.url.isNotEmpty) ...[
-                const SizedBox(height: Space.md),
+                const SizedBox(height: AppSpace.md),
                 OutlinedButton(
                   onPressed: () => native.openUrl(t.url),
                   child: const Text('Open this page in the default browser'),
@@ -646,7 +646,7 @@ class _BrowserPageState extends State<BrowserPage> {
             Container(
               color: AppColors.background,
               alignment: Alignment.center,
-              padding: const EdgeInsets.all(Space.xl),
+              padding: const EdgeInsets.all(AppSpace.xl),
               child: Text(
                 st.error!,
                 key: const ValueKey('browser-error'),
@@ -895,7 +895,7 @@ class _PrivacyDialog extends StatelessWidget {
                   color: AppColors.textMuted,
                 ),
               ),
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               Row(
                 children: [
                   const Expanded(child: Text('Links to other apps')),
@@ -920,7 +920,7 @@ class _PrivacyDialog extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: Space.sm),
+              const SizedBox(height: AppSpace.sm),
               const Text(
                 'Site permissions',
                 style: TextStyle(fontWeight: FontWeight.w600),
@@ -940,7 +940,7 @@ class _PrivacyDialog extends StatelessWidget {
                     child: const Text('Forget'),
                   ),
                 ),
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               OutlinedButton(
                 onPressed: () async {
                   final ok = await confirm(

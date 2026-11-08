@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/shell.dart';
 import '../../new_ui/new_components.dart';
-import '../../new_ui/new_tokens.dart';
 import '../../app/theme.dart';
 import '../../data/models/calendar_models.dart';
 import '../../data/models/canvas_models.dart' show newId;
@@ -288,7 +287,7 @@ class _CalendarPageState extends State<CalendarPage> {
                               : 'No date was confidently detected. The selected calendar day is filled in; change it if needed.'),
                       style: TextStyle(color: AppColors.textMuted),
                     ),
-                    const SizedBox(height: Space.md),
+                    const SizedBox(height: AppSpace.md),
                     TextField(
                       key: const ValueKey('handwriting-event-title'),
                       controller: title,
@@ -328,9 +327,9 @@ class _CalendarPageState extends State<CalendarPage> {
                         labelText: 'Notes (optional)',
                       ),
                     ),
-                    const SizedBox(height: Space.md),
+                    const SizedBox(height: AppSpace.md),
                     const Text('Recognized handwriting'),
-                    const SizedBox(height: Space.xs),
+                    const SizedBox(height: AppSpace.xs),
                     SelectableText(
                       recognized.trim(),
                       style: TextStyle(
@@ -495,12 +494,12 @@ class _CalendarPageState extends State<CalendarPage> {
   Widget _calendar() {
     // Short windows (a phone held sideways) get tighter spacing.
     final short = MediaQuery.sizeOf(context).height < 480;
-    final gap = short ? Space.xs : Space.md;
+    final gap = short ? AppSpace.xs : AppSpace.md;
     final rest = <Widget>[
       ..._overLimitWarning(),
       SizedBox(height: gap),
       _viewBar(),
-      SizedBox(height: short ? Space.sm : Space.lg),
+      SizedBox(height: short ? AppSpace.sm : AppSpace.lg),
       _tabs(),
       SizedBox(height: gap),
       Expanded(
@@ -512,7 +511,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 children: [
                   Expanded(child: _grid()),
                   if (_selectedDay != null) ...[
-                    const SizedBox(width: Space.md),
+                    const SizedBox(width: AppSpace.md),
                     SizedBox(
                       width: 340,
                       child: DayPanel(
@@ -542,7 +541,7 @@ class _CalendarPageState extends State<CalendarPage> {
         _newHeader(),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(Space.xl, 0, Space.xl, 0),
+            padding: const EdgeInsets.fromLTRB(AppSpace.xl, 0, AppSpace.xl, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: rest,
@@ -570,14 +569,14 @@ class _CalendarPageState extends State<CalendarPage> {
               child: Text(
                 '${formatShortDate(start)} – ${formatShortDate(end)} ${end.year}  ·  ${s.calendarDays} days',
                 overflow: TextOverflow.ellipsis,
-                style: NewText.meta.copyWith(color: NewColors.textMuted),
+                style: AppType.caption.copyWith(color: AppColors.textMuted),
               ),
             ),
             const SizedBox(width: 4),
             Icon(
               Icons.edit_calendar_outlined,
               size: 14,
-              color: NewColors.textFaint,
+              color: AppColors.textFaint,
             ),
           ],
         ),
@@ -617,8 +616,8 @@ class _CalendarPageState extends State<CalendarPage> {
   Widget _viewBar() {
     final v = _view;
     return Wrap(
-      spacing: Space.sm,
-      runSpacing: Space.sm,
+      spacing: AppSpace.sm,
+      runSpacing: AppSpace.sm,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         SegmentedButton<CalendarView>(
@@ -807,7 +806,7 @@ class _CalendarPageState extends State<CalendarPage> {
       for (final c in over) '${c.label} (${ws.activeCount(c)} active)',
     ].join(', ');
     return [
-      const SizedBox(height: Space.md),
+      const SizedBox(height: AppSpace.md),
       Container(
         key: const ValueKey('over-limit-warning'),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -819,7 +818,7 @@ class _CalendarPageState extends State<CalendarPage> {
         child: Row(
           children: [
             Icon(Icons.warning_amber_rounded, size: 18, color: AppColors.warm),
-            const SizedBox(width: Space.sm),
+            const SizedBox(width: AppSpace.sm),
             Expanded(
               child: Text(
                 'More than $max active entries in $which after syncing '
@@ -863,7 +862,7 @@ class _CalendarPageState extends State<CalendarPage> {
             ColorDot(color: color, size: 10)
           else
             Icon(Icons.task_alt_outlined, size: 14, color: AppColors.textMuted),
-          const SizedBox(width: Space.sm),
+          const SizedBox(width: AppSpace.sm),
           Text(label, style: const TextStyle(fontSize: AppType.sizeBodySmall)),
         ],
       ),
@@ -996,7 +995,7 @@ class _CalendarPageState extends State<CalendarPage> {
     return Wrap(
       alignment: WrapAlignment.spaceBetween,
       crossAxisAlignment: WrapCrossAlignment.center,
-      runSpacing: Space.sm,
+      runSpacing: AppSpace.sm,
       children: [
         // Scrolls sideways when the window is too narrow for all tabs.
         SingleChildScrollView(
@@ -1062,8 +1061,9 @@ class _CalendarPageState extends State<CalendarPage> {
       onPointerCancel: (e) => _arbiter?.release(e.pointer),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadii.md),
+        // Transparent: the grid sits on the app-wide atmosphere.
         child: ColoredBox(
-          color: AppColors.canvas,
+          color: Colors.transparent,
           child: InteractiveViewer(
             transformationController: _viewer,
             // In Draw mode one pointer draws; two fingers pinch and pan (the
@@ -1075,7 +1075,7 @@ class _CalendarPageState extends State<CalendarPage> {
             maxScale: 2.5,
             boundaryMargin: const EdgeInsets.all(600),
             child: Padding(
-              padding: const EdgeInsets.all(Space.lg),
+              padding: const EdgeInsets.all(AppSpace.lg),
               child: SizedBox(
                 width: w * 7,
                 height: h * rows,
@@ -1566,7 +1566,7 @@ class _DayPanelState extends State<DayPanel> {
         border: Border.all(color: AppColors.border),
       ),
       child: ListView(
-        padding: const EdgeInsets.all(Space.lg),
+        padding: const EdgeInsets.all(AppSpace.lg),
         children: [
           Row(
             children: [
@@ -1586,7 +1586,7 @@ class _DayPanelState extends State<DayPanel> {
               ),
             ],
           ),
-          const SizedBox(height: Space.sm),
+          const SizedBox(height: AppSpace.sm),
           OutlinedButton.icon(
             key: const ValueKey('calendar-read-handwriting'),
             onPressed: _recognizingHandwriting
@@ -1614,7 +1614,7 @@ class _DayPanelState extends State<DayPanel> {
                   : 'Create event from handwriting',
             ),
           ),
-          const SizedBox(height: Space.md),
+          const SizedBox(height: AppSpace.md),
           if (items.isEmpty)
             Text(
               'Nothing on this day.',
@@ -1624,7 +1624,7 @@ class _DayPanelState extends State<DayPanel> {
               ),
             ),
           for (final item in items) _itemRow(item),
-          const SizedBox(height: Space.sm),
+          const SizedBox(height: AppSpace.sm),
           Wrap(
             spacing: 6,
             runSpacing: 6,
@@ -1668,7 +1668,7 @@ class _DayPanelState extends State<DayPanel> {
             ],
           ),
           if (reading.isNotEmpty) ...[
-            const SizedBox(height: Space.md),
+            const SizedBox(height: AppSpace.md),
             Wrap(
               spacing: 6,
               runSpacing: 6,
@@ -1685,7 +1685,7 @@ class _DayPanelState extends State<DayPanel> {
               ],
             ),
           ],
-          const SizedBox(height: Space.xl),
+          const SizedBox(height: AppSpace.xl),
           Text(
             'DAY NOTE',
             style: TextStyle(
@@ -1694,7 +1694,7 @@ class _DayPanelState extends State<DayPanel> {
               color: AppColors.textFaint,
             ),
           ),
-          const SizedBox(height: Space.sm),
+          const SizedBox(height: AppSpace.sm),
           TextField(
             controller: _text,
             minLines: 3,
@@ -1705,7 +1705,7 @@ class _DayPanelState extends State<DayPanel> {
             ),
             onChanged: (v) => ws.saveDay(ws.dayRecord(day).copyWith(text: v)),
           ),
-          const SizedBox(height: Space.lg),
+          const SizedBox(height: AppSpace.lg),
           Row(
             children: [
               Text(
@@ -1746,7 +1746,7 @@ class _DayPanelState extends State<DayPanel> {
               ),
             ],
           ),
-          const SizedBox(height: Space.sm),
+          const SizedBox(height: AppSpace.sm),
           Wrap(
             spacing: 6,
             runSpacing: 6,
@@ -1865,7 +1865,7 @@ class _DayPanelState extends State<DayPanel> {
                                 color: calendarCategoryColor(c),
                                 size: 10,
                               ),
-                              const SizedBox(width: Space.sm),
+                              const SizedBox(width: AppSpace.sm),
                               Text('Move to ${c.label}'),
                             ],
                           ),
@@ -1991,7 +1991,7 @@ class CategoryView extends StatelessWidget {
             const Spacer(),
             if (full)
               Padding(
-                padding: EdgeInsets.only(right: Space.md),
+                padding: EdgeInsets.only(right: AppSpace.md),
                 child: Text(
                   'Full — archive an entry to add another.',
                   style: TextStyle(
@@ -2009,8 +2009,8 @@ class CategoryView extends StatelessWidget {
         ),
         if (countedEntries > CalendarEntry.maxActivePerCategory)
           Container(
-            margin: const EdgeInsets.only(top: Space.md),
-            padding: const EdgeInsets.all(Space.md),
+            margin: const EdgeInsets.only(top: AppSpace.md),
+            padding: const EdgeInsets.all(AppSpace.md),
             decoration: BoxDecoration(
               color: AppColors.warm.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(AppRadii.sm),
@@ -2024,18 +2024,18 @@ class CategoryView extends StatelessWidget {
               style: const TextStyle(fontSize: AppType.sizeBodySmall),
             ),
           ),
-        const SizedBox(height: Space.lg),
+        const SizedBox(height: AppSpace.lg),
         if (entries.isEmpty)
           Padding(
-            padding: EdgeInsets.all(Space.xl),
+            padding: EdgeInsets.all(AppSpace.xl),
             child: Text(
               'Nothing here yet.',
               style: TextStyle(color: AppColors.textFaint),
             ),
           ),
         Wrap(
-          spacing: Space.lg,
-          runSpacing: Space.lg,
+          spacing: AppSpace.lg,
+          runSpacing: AppSpace.lg,
           children: [
             for (final e in entries)
               SizedBox(
@@ -2265,7 +2265,7 @@ class EntryCard extends StatelessWidget {
             Container(width: 3, color: color),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(Space.lg),
+                padding: const EdgeInsets.all(AppSpace.lg),
                 child: _body(context, e, ws, details),
               ),
             ),

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/app/shell.dart';
-import 'package:flutter_application_1/app/sidebar.dart' show appDestinations;
+import 'package:flutter_application_1/app/navigation.dart' show appDestinations;
 import 'package:flutter_application_1/app/theme.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';

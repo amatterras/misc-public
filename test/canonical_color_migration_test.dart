@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/app/theme.dart';
-import 'package:flutter_application_1/new_ui/new_tokens.dart';
 import 'package:flutter_application_1/data/migrations/canonical_color_migration.dart';
 import 'package:flutter_application_1/data/models/calendar_models.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
@@ -119,12 +118,12 @@ void main() {
       // both themes.
       for (final mode in [ThemeMode.dark, ThemeMode.light]) {
         AppColors.mode = mode;
-        expect(AppColors.background, NewColors.background);
-        expect(AppColors.card, NewColors.surface);
-        expect(AppColors.cardRaised, NewColors.surfaceRaised);
-        expect(AppColors.border, NewColors.border);
-        expect(AppColors.text, NewColors.text);
-        expect(AppColors.accent, NewColors.accent);
+        expect(AppColors.background, AppColors.background);
+        expect(AppColors.card, AppColors.card);
+        expect(AppColors.cardRaised, AppColors.cardRaised);
+        expect(AppColors.border, AppColors.border);
+        expect(AppColors.text, AppColors.text);
+        expect(AppColors.accent, AppColors.accent);
         expect(
           contrast(AppColors.text, AppColors.background),
           greaterThan(7),

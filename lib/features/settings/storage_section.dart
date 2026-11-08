@@ -1,6 +1,6 @@
 // Settings → Storage: the three storage modes, the copy-and-verify switch
 // between them, and the data-safety tools (integrity check, recently
-// deleted). See STORAGE_MODES.md.
+// deleted). See docs/STORAGE_MODES.md.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -32,7 +32,7 @@ class StorageModeSection extends StatelessWidget {
         children: [
           for (final mode in StorageMode.values)
             _ModeTile(state: state, mode: mode, selected: mode == current),
-          const SizedBox(height: Space.xs),
+          const SizedBox(height: AppSpace.xs),
           Text(
             _statusLine(state),
             key: const ValueKey('storage-status'),
@@ -78,8 +78,8 @@ class _ModeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     key: ValueKey('storage-mode-${mode.name}'),
-    margin: const EdgeInsets.only(bottom: Space.xs),
-    padding: const EdgeInsets.all(Space.sm),
+    margin: const EdgeInsets.only(bottom: AppSpace.xs),
+    padding: const EdgeInsets.all(AppSpace.sm),
     decoration: BoxDecoration(
       color: selected ? AppColors.card : null,
       borderRadius: BorderRadius.circular(AppRadii.sm),
@@ -93,7 +93,7 @@ class _ModeTile extends StatelessWidget {
           size: 18,
           color: selected ? AppColors.accent : AppColors.textFaint,
         ),
-        const SizedBox(width: Space.sm),
+        const SizedBox(width: AppSpace.sm),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -315,7 +315,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
               ...children,
               if (_error != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: Space.sm),
+                  padding: const EdgeInsets.only(top: AppSpace.sm),
                   child: Text(
                     _error!,
                     key: const ValueKey('switch-error'),
@@ -332,7 +332,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
                 ),
               if (_busy)
                 const Padding(
-                  padding: EdgeInsets.only(top: Space.sm),
+                  padding: EdgeInsets.only(top: AppSpace.sm),
                   child: LinearProgressIndicator(),
                 ),
             ],
@@ -375,7 +375,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
         color: AppColors.textMuted,
       ),
     ),
-    const SizedBox(height: Space.sm),
+    const SizedBox(height: AppSpace.sm),
     Text(
       'Nothing changes until the copy is verified and you confirm. Your data '
       'on this device is never replaced by the switch.',
@@ -462,7 +462,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
           color: _destinationChanges > 0 ? AppColors.warm : null,
         ),
       ),
-      const SizedBox(height: Space.sm),
+      const SizedBox(height: AppSpace.sm),
       Text(
         'Next: a full backup of this device is made and checked, copied to '
         'the destination from that backup (your live data is not touched), '
@@ -473,7 +473,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
         ),
       ),
       if (v != null && !v.ok) ...[
-        const SizedBox(height: Space.sm),
+        const SizedBox(height: AppSpace.sm),
         Text(
           'The copy could not be verified (${v.problems.length} problem(s)), '
           'so nothing was switched. First: ${v.problems.first}. You can try '
@@ -498,7 +498,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
         key: const ValueKey('switch-verified'),
         style: const TextStyle(fontSize: AppType.sizeBodySmall),
       ),
-      const SizedBox(height: Space.sm),
+      const SizedBox(height: AppSpace.sm),
       Text(
         'Switch now? This device keeps all its data. '
         '${widget.state.storageMode == StorageMode.local ? '' : 'The ${widget.state.storageMode.label.toLowerCase()} keeps its copy; nothing is deleted there. '}'
@@ -520,8 +520,8 @@ class DataSafetySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Wrap(
-    spacing: Space.sm,
-    runSpacing: Space.sm,
+    spacing: AppSpace.sm,
+    runSpacing: AppSpace.sm,
     children: [
       OutlinedButton.icon(
         key: const ValueKey('check-data'),

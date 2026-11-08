@@ -92,7 +92,7 @@ class _StartupScreenState extends State<StartupScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(Space.xl),
+            padding: const EdgeInsets.all(AppSpace.xl),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 640),
               child: Column(
@@ -103,7 +103,7 @@ class _StartupScreenState extends State<StartupScreen> {
                     'misc.',
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
                   ),
-                  const SizedBox(height: Space.lg),
+                  const SizedBox(height: AppSpace.lg),
                   if (!failed && !stuck)
                     Row(
                       children: [
@@ -112,7 +112,7 @@ class _StartupScreenState extends State<StartupScreen> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         ),
-                        const SizedBox(width: Space.md),
+                        const SizedBox(width: AppSpace.md),
                         Text(
                           '${p.step}…',
                           key: const ValueKey('startup-step'),
@@ -135,7 +135,7 @@ class _StartupScreenState extends State<StartupScreen> {
                       key: const ValueKey('startup-error'),
                       style: TextStyle(color: AppColors.danger),
                     ),
-                    const SizedBox(height: Space.md),
+                    const SizedBox(height: AppSpace.md),
                     SelectableText(
                       '${p.error}\n'
                       '${(p.stack?.toString() ?? '').split('\n').take(8).join('\n')}',
@@ -143,12 +143,12 @@ class _StartupScreenState extends State<StartupScreen> {
                     ),
                   ],
                   if (failed || stuck) ...[
-                    const SizedBox(height: Space.lg),
+                    const SizedBox(height: AppSpace.lg),
                     Text(
                       'Latest log lines',
                       style: TextStyle(color: AppColors.textMuted),
                     ),
-                    const SizedBox(height: Space.sm),
+                    const SizedBox(height: AppSpace.sm),
                     SelectableText(
                       log.join('\n'),
                       style: TextStyle(
@@ -157,7 +157,7 @@ class _StartupScreenState extends State<StartupScreen> {
                       ),
                     ),
                     if (startupLogHint != null) ...[
-                      const SizedBox(height: Space.md),
+                      const SizedBox(height: AppSpace.md),
                       Text(
                         startupLogHint!,
                         style: TextStyle(

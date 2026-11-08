@@ -1,6 +1,6 @@
 // The THEapp sync protocol (version 1), shared by the hub and the clients.
 // Pure Dart: no Flutter imports, so the hub can run as a plain Dart program.
-// See SYNC_ARCHITECTURE.md for the full description.
+// See docs/SYNC_ARCHITECTURE.md for the full description.
 
 /// Bumped whenever the wire format changes incompatibly. Hub and client
 /// refuse to talk across different versions.
@@ -91,7 +91,7 @@ String? deviceOfRev(String rev) {
 class ProtocolException implements Exception {
   const ProtocolException(this.code, this.message, {this.status = 400});
 
-  /// Stable machine-readable code (see SYNC_ARCHITECTURE.md §10).
+  /// Stable machine-readable code (see docs/SYNC_ARCHITECTURE.md §10).
   final String code;
 
   /// Human-readable, never contains user content.

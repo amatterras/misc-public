@@ -3,10 +3,9 @@
 // rename, trash); the bar replaces the corner picker the desktop canvas has.
 import 'package:flutter/material.dart';
 
-import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../features/canvas/canvas_page.dart' show CanvasPage, runCanvasOption;
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 import 'phone_more.dart';
 import 'phone_tokens.dart';
 import 'phone_widgets.dart';
@@ -48,7 +47,7 @@ class PhoneMap extends StatelessWidget {
           SheetItem(label: 'Rename', onTap: () => Navigator.pop(c, 'rename')),
           SheetItem(
             label: 'Move to trash',
-            color: NewColors.danger,
+            color: AppColors.danger,
             onTap: () => Navigator.pop(c, 'delete'),
           ),
         ],
@@ -80,7 +79,7 @@ class PhoneMap extends StatelessWidget {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: NewColors.border.withValues(alpha: 0.7),
+                    color: AppColors.border.withValues(alpha: 0.7),
                   ),
                 ),
               ),
@@ -118,7 +117,7 @@ class PhoneMap extends StatelessWidget {
                                 Icon(
                                   Icons.keyboard_arrow_down_rounded,
                                   size: 20,
-                                  color: NewColors.textFaint,
+                                  color: AppColors.textFaint,
                                 ),
                               ],
                             ),

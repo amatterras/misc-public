@@ -1,10 +1,9 @@
 // THEapp design system: the one authoritative set of non-colour tokens.
 //
-// Colour lives next door in lib/new_ui/new_tokens.dart (NewColors, theme
-// aware through AppColors.light). Everything else a component needs to look
-// like part of the family is here: type, spacing, geometry, strokes,
-// elevation and motion. Older names (Space, NewSpace, NewRadii, NewMotion,
-// NewText) are kept as thin aliases of these values so nothing drifts.
+// Colour lives next door in palette.dart (AppColors, BrandColors,
+// AppGradients). Everything else a component needs to look like part of the
+// family is here: type, spacing, geometry, strokes, elevation, blur and
+// motion. Each token has exactly one name; there are no aliases.
 //
 // Rule of thumb for new code: if a number describes how something LOOKS or
 // MOVES (a size, a gap, a radius, a duration, a curve), it comes from here.
@@ -12,8 +11,7 @@
 // geometry stored in documents) stay where they are.
 import 'package:flutter/material.dart';
 
-import '../new_ui/new_tokens.dart' show NewColors;
-import 'theme.dart' show AppColors;
+import 'palette.dart';
 
 // ── Typography ─────────────────────────────────────────────────────────────
 
@@ -309,6 +307,27 @@ abstract final class AppElevation {
   static Color get modalBarrier => _light
       ? const Color(0xFF181C25).withValues(alpha: 0.22)
       : Colors.black.withValues(alpha: 0.50);
+
+  /// Soft brand-coloured light around a floating surface (the sidebar
+  /// capsule).
+  static List<BoxShadow> get glow => [
+    BoxShadow(
+      color: BrandColors.periwinkle.withValues(alpha: _light ? 0.16 : 0.18),
+      blurRadius: AppBlur.glow,
+      spreadRadius: 1,
+    ),
+    BoxShadow(
+      color: BrandColors.warmCoral.withValues(alpha: _light ? 0.08 : 0.10),
+      blurRadius: AppBlur.glow,
+      offset: const Offset(0, 14),
+    ),
+  ];
+}
+
+/// Blur strengths: frosted glass behind floating chrome, and glows.
+abstract final class AppBlur {
+  static const glass = 18.0;
+  static const glow = 36.0;
 }
 
 // ── Motion ─────────────────────────────────────────────────────────────────
@@ -357,11 +376,11 @@ abstract final class AppMotion {
 /// Interaction-state colours shared by every control, derived from the
 /// palette so they follow the theme.
 abstract final class AppStates {
-  static Color get hover => NewColors.hover;
+  static Color get hover => AppColors.hover;
   static Color get pressed =>
       AppColors.light ? const Color(0x1A181C25) : const Color(0x24FFFFFF);
-  static Color get focusRing => NewColors.accent.withValues(alpha: 0.55);
-  static Color get selected => NewColors.selected;
+  static Color get focusRing => AppColors.accent.withValues(alpha: 0.55);
+  static Color get selected => AppColors.selected;
 
   /// Opacity of disabled controls (content and fill together).
   static const disabledOpacity = 0.42;

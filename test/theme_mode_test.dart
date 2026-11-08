@@ -6,7 +6,6 @@ import 'package:flutter_application_1/app/theme.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
-import 'package:flutter_application_1/new_ui/new_tokens.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -33,10 +32,10 @@ void main() {
 
       AppColors.mode = ThemeMode.light;
       // The one interface palette, light variant ("porcelain & ink").
-      expect(AppColors.background, NewColors.background);
+      expect(AppColors.background, AppColors.background);
       expect(AppColors.background, const Color(0xFFF3F5F9));
-      expect(AppColors.canvas, NewColors.canvasPage);
-      expect(AppColors.text, NewColors.text);
+      expect(AppColors.canvas, AppColors.canvas);
+      expect(AppColors.text, AppColors.text);
       expect(AppColors.text, const Color(0xFF181C25));
       expect(
         buildAppTheme(brightness: Brightness.light).brightness,

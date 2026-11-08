@@ -98,7 +98,7 @@ class _VaultPageState extends State<VaultPage> {
             key: const ValueKey('vault-recovery-code'),
             style: const TextStyle(fontSize: 18, fontFamily: 'monospace'),
           ),
-          const SizedBox(height: Space.sm),
+          const SizedBox(height: AppSpace.sm),
           const Text(
             'Write it down and keep it somewhere safe, away from this '
             'device. It is shown only now. Without the password or this '
@@ -126,7 +126,7 @@ class _VaultPageState extends State<VaultPage> {
   );
 
   Widget _field(TextEditingController c, String label, {Key? key}) => Padding(
-    padding: const EdgeInsets.only(bottom: Space.sm),
+    padding: const EdgeInsets.only(bottom: AppSpace.sm),
     child: TextField(
       key: key,
       controller: c,
@@ -140,7 +140,7 @@ class _VaultPageState extends State<VaultPage> {
   Widget _locked() {
     final creating = !v.exists;
     return ListView(
-      padding: const EdgeInsets.all(Space.lg),
+      padding: const EdgeInsets.all(AppSpace.lg),
       children: [
         Text(
           creating
@@ -153,7 +153,7 @@ class _VaultPageState extends State<VaultPage> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: Space.sm),
+        const SizedBox(height: AppSpace.sm),
         Text(
           creating
               ? 'Private notes encrypted with your password (Argon2id + '
@@ -168,7 +168,7 @@ class _VaultPageState extends State<VaultPage> {
             color: AppColors.textMuted,
           ),
         ),
-        const SizedBox(height: Space.md),
+        const SizedBox(height: AppSpace.md),
         if (_recovering)
           _field(_pw2, 'Recovery code', key: const ValueKey('vault-code')),
         _field(
@@ -184,7 +184,7 @@ class _VaultPageState extends State<VaultPage> {
           ),
         if (_error != null)
           Text(_error!, style: TextStyle(color: AppColors.warm)),
-        const SizedBox(height: Space.sm),
+        const SizedBox(height: AppSpace.sm),
         Row(
           children: [
             FilledButton(
@@ -235,7 +235,7 @@ class _VaultPageState extends State<VaultPage> {
     final list = v.entries();
     if (_editing != null) {
       return Padding(
-        padding: const EdgeInsets.all(Space.lg),
+        padding: const EdgeInsets.all(AppSpace.lg),
         child: Column(
           children: [
             TextField(
@@ -280,7 +280,7 @@ class _VaultPageState extends State<VaultPage> {
       children: [
         Row(
           children: [
-            const SizedBox(width: Space.lg),
+            const SizedBox(width: AppSpace.lg),
             const Expanded(
               child: Text(
                 'Private vault (unlocked)',

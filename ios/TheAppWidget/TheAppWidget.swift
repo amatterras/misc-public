@@ -1,7 +1,7 @@
 // THEapp home-screen widgets: today's and tomorrow's tasks and calendar
 // entries. They only READ widget_snapshot.json, which THEapp writes into
 // the App Group folder whenever tasks or the calendar change (see
-// lib/features/widgets/widget_snapshot.dart). The snapshot is derived,
+// lib/features/home_widgets/widget_snapshot.dart). The snapshot is derived,
 // display-only data; nothing here can change THEapp's records.
 //
 // Tapping an item opens it (theapp://open?task=… or ?day=…).

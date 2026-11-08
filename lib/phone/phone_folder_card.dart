@@ -10,14 +10,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
-import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../data/models/object_library_models.dart';
 import '../features/links/link_tags.dart';
 import '../new_ui/new_archive_page.dart'
     show archiveIconOf, archiveImageOf, archiveMetaOf;
 import '../new_ui/new_folder_colors.dart' show contrastOn;
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 import 'phone_tokens.dart';
 import 'phone_widgets.dart';
 
@@ -63,7 +62,7 @@ class ArchiveFolderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tag = archiveTagOf(state, object);
     // Without a tag the folder is a neutral steel; with one it is tinted.
-    final tint = tag?.color ?? NewColors.textFaint;
+    final tint = tag?.color ?? AppColors.textFaint;
     final title = object.title.trim().isEmpty ? 'Untitled' : object.title;
     final when = object.lastSavedAt ?? object.createdAt;
     return Padding(
@@ -86,8 +85,8 @@ class ArchiveFolderCard extends StatelessWidget {
             child: CustomPaint(
               painter: _FolderPainter(
                 tint: tint,
-                body: Color.lerp(NewColors.surface, tint, 0.13)!,
-                border: NewColors.border,
+                body: Color.lerp(AppColors.card, tint, 0.13)!,
+                border: AppColors.border,
               ),
               child: Stack(
                 children: [
@@ -208,13 +207,13 @@ class _TextPreview extends StatelessWidget {
                 : (object.description ?? object.summary ?? ''))
             .trim();
     return ColoredBox(
-      color: Color.lerp(NewColors.surfaceSecondary, tint, 0.2)!,
+      color: Color.lerp(AppColors.surfaceSecondary, tint, 0.2)!,
       child: Padding(
         padding: const EdgeInsets.all(10),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(archiveIconOf(object), size: 18, color: NewColors.textMuted),
+            Icon(archiveIconOf(object), size: 18, color: AppColors.textMuted),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -224,7 +223,7 @@ class _TextPreview extends StatelessWidget {
                 style: PhoneType.body.copyWith(
                   fontSize: AppType.sizeBodySmall,
                   height: 1.3,
-                  color: NewColors.text.withValues(alpha: 0.8),
+                  color: AppColors.text.withValues(alpha: 0.8),
                 ),
               ),
             ),

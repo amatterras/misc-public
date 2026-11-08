@@ -432,21 +432,21 @@ class _DataProblemPageState extends State<_DataProblemPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.shield_outlined, size: 40, color: AppColors.warm),
-              const SizedBox(height: Space.lg),
+              const SizedBox(height: AppSpace.lg),
               Text(
                 message,
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 15, height: 1.5),
               ),
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               if (widget.recoveryRoot != null &&
                   RecoveryService(widget.recoveryRoot!).file.existsSync()) ...[
-                const SizedBox(height: Space.lg),
+                const SizedBox(height: AppSpace.lg),
                 const Text(
                   'If you saved a recovery code, enter it to get access back.',
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
                 TextField(
                   key: const ValueKey('recovery-code-input'),
                   controller: _code,
@@ -455,21 +455,21 @@ class _DataProblemPageState extends State<_DataProblemPage> {
                     hintText: 'XXXX-XXXX-XXXX-…',
                   ),
                 ),
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
                 FilledButton(
                   key: const ValueKey('recovery-code-restore'),
                   onPressed: _busy ? null : _useRecoveryCode,
                   child: const Text('Restore access'),
                 ),
                 if (_recoveryMessage != null) ...[
-                  const SizedBox(height: Space.sm),
+                  const SizedBox(height: AppSpace.sm),
                   Text(_recoveryMessage!, textAlign: TextAlign.center),
                 ],
               ],
               if (failure != null) ...[
-                const SizedBox(height: Space.lg),
+                const SizedBox(height: AppSpace.lg),
                 Wrap(
-                  spacing: Space.md,
+                  spacing: AppSpace.md,
                   alignment: WrapAlignment.center,
                   children: [
                     FilledButton(
@@ -488,7 +488,7 @@ class _DataProblemPageState extends State<_DataProblemPage> {
                   ],
                 ),
                 if (_result != null) ...[
-                  const SizedBox(height: Space.md),
+                  const SizedBox(height: AppSpace.md),
                   Text(
                     _result!,
                     key: const ValueKey('migration-action-result'),
@@ -496,7 +496,7 @@ class _DataProblemPageState extends State<_DataProblemPage> {
                   ),
                 ],
                 if (failure.backup != null) ...[
-                  const SizedBox(height: Space.md),
+                  const SizedBox(height: AppSpace.md),
                   SelectableText(
                     'Backup: ${failure.backup!.path}',
                     textAlign: TextAlign.center,
@@ -507,7 +507,7 @@ class _DataProblemPageState extends State<_DataProblemPage> {
                   ),
                 ],
               ],
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               Text(
                 'Nothing was deleted. Data folder: ${widget.state?.workspace.root.path ?? defaultDataDirectory().path}',
                 textAlign: TextAlign.center,

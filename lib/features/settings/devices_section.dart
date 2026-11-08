@@ -147,7 +147,7 @@ class _DevicesSectionState extends State<DevicesSection> {
             ),
         if (_message != null)
           Padding(
-            padding: const EdgeInsets.only(top: Space.sm),
+            padding: const EdgeInsets.only(top: AppSpace.sm),
             child: Text(
               _message!,
               key: const ValueKey('device-message'),

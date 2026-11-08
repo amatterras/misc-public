@@ -21,6 +21,7 @@ import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/paper.dart';
 import '../../data/storage/app_log.dart';
+import '../../new_ui/new_components.dart' show NewAtmosphere;
 import '../../platform/device_idiom.dart';
 import '../../platform/input_hints.dart';
 import '../../platform/ios_bridge.dart';
@@ -43,7 +44,9 @@ import '../templates/templates.dart';
 Future<void> openNotePage(BuildContext context, AppState state, String id) =>
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => NotePage(state: state, noteId: id),
+        // A pushed route is outside the shell: give it the atmosphere.
+        builder: (_) =>
+            NewAtmosphere.behind(child: NotePage(state: state, noteId: id)),
       ),
     );
 
@@ -606,8 +609,14 @@ class _NotePageState extends State<NotePage> {
         await _close();
         if (context.mounted) Navigator.of(context).pop();
       },
+      // Transparent: in the shell the app-wide atmosphere shows through;
+      // pushed on its own, openNotePage puts one behind it.
       child: Scaffold(
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          scrolledUnderElevation: 0,
           title: Text(note?.displayTitle ?? 'Note'),
           actions: [
             if (note != null)
@@ -770,7 +779,7 @@ class _NotePageState extends State<NotePage> {
       key: ValueKey('notebook-page-$index'),
       child: Padding(
         padding: EdgeInsets.only(
-          top: index == 0 ? Space.xl : 0,
+          top: index == 0 ? AppSpace.xl : 0,
           bottom: NotebookLayout.gap * scale,
         ),
         child: Align(
@@ -893,7 +902,7 @@ class _NotePageState extends State<NotePage> {
             return SingleChildScrollView(
               key: const ValueKey('note-toolbar'),
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: Space.md),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
               child: Row(
                 children: [...tools, const _ToolbarGap(), ...essentials],
               ),
@@ -901,7 +910,7 @@ class _NotePageState extends State<NotePage> {
           }
           return Padding(
             key: const ValueKey('note-toolbar'),
-            padding: const EdgeInsets.symmetric(horizontal: Space.md),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
             child: Row(
               children: [
                 Expanded(
@@ -1171,7 +1180,7 @@ class _ToolbarGap extends StatelessWidget {
   const _ToolbarGap();
 
   @override
-  Widget build(BuildContext context) => const SizedBox(width: Space.md);
+  Widget build(BuildContext context) => const SizedBox(width: AppSpace.md);
 }
 
 /// A quiet line of guidance in the toolbar's options area.
@@ -1182,7 +1191,7 @@ class _ToolHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: Space.xs),
+    padding: const EdgeInsets.symmetric(horizontal: AppSpace.xs),
     child: Text(
       text,
       style: TextStyle(fontSize: AppType.sizeLabel, color: AppColors.textFaint),
@@ -1259,7 +1268,7 @@ class ZoomStepper extends StatelessWidget {
                   constraints: const BoxConstraints(minWidth: 44),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: Space.xs,
+                      horizontal: AppSpace.xs,
                       vertical: 6,
                     ),
                     child: Text(
@@ -1399,7 +1408,7 @@ class _InkLibraryEntryState extends State<_InkLibraryEntry> {
   @override
   Widget build(BuildContext context) => Padding(
     key: const ValueKey('ink-library'),
-    padding: const EdgeInsets.all(Space.sm),
+    padding: const EdgeInsets.all(AppSpace.sm),
     child: SizedBox(
       width: 5 * 28.0,
       child: Wrap(
@@ -1478,7 +1487,7 @@ class InkWidthButton extends StatelessWidget {
           child: Row(
             children: [
               _dot(w),
-              const SizedBox(width: Space.sm),
+              const SizedBox(width: AppSpace.sm),
               Text(_number(w)),
             ],
           ),

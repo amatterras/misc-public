@@ -106,7 +106,9 @@ class CanvasPainter extends CustomPainter {
     final (scale, visible) = _view(size);
     canvas.save();
     if (page == null) {
-      canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.canvas);
+      // No background fill: the infinite canvas sits on the app-wide
+      // atmosphere (plain alpha blending, so cached and live strokes
+      // composite identically). Exports paint their own background.
       _paintGrid(canvas, size);
     }
     _toWorld(canvas, size);

@@ -1,165 +1,17 @@
+// The Material theme, built from the design system: colours from
+// palette.dart, everything else from design_tokens.dart. Both are
+// re-exported here, so `import 'theme.dart'` gives a widget the whole system.
 import 'package:flutter/material.dart';
 
-import '../new_ui/new_tokens.dart';
 import 'design_tokens.dart';
+import 'palette.dart';
 
 export 'design_tokens.dart';
+export 'palette.dart';
 export 'popups.dart' show showAppDialog, PopupEntrance;
 
-import 'dart:ui' show PlatformDispatcher;
-
-/// Colour tokens taken from the Gemini prototype: near-black surfaces,
-/// hairline white borders and soft grey text.
-abstract final class AppColors {
-  static ThemeMode mode = ThemeMode.dark;
-
-  static bool get light => switch (mode) {
-    ThemeMode.light => true,
-    ThemeMode.dark => false,
-    ThemeMode.system => _platformBrightness == Brightness.light,
-  };
-
-  /// The system light/dark setting, read the same way MaterialApp reads it
-  /// (through the binding when there is one), so the two never disagree.
-  static Brightness get _platformBrightness {
-    try {
-      return WidgetsBinding.instance.platformDispatcher.platformBrightness;
-    } catch (_) {
-      return PlatformDispatcher.instance.platformBrightness;
-    }
-  }
-
-  // Every colour comes from the New palette (lib/new_ui/new_tokens.dart),
-  // which follows the light/dark choice through [light].
-  static Color get background => NewColors.background;
-  static Color get canvas => NewColors.canvasPage;
-  static Color get sidebar => NewColors.surface;
-  static Color get card => NewColors.surface;
-  static Color get cardRaised => NewColors.surfaceRaised;
-  static Color get border => NewColors.border;
-  static Color get hover => NewColors.hover;
-  static Color get selected => NewColors.selected;
-  static Color get text => NewColors.text;
-  static Color get textMuted => NewColors.textMuted;
-  static Color get textFaint => NewColors.textFaint;
-  static Color get disabled => NewColors.textFaint;
-  static Color get accent => NewColors.accent;
-  static Color get accentSecondary => NewColors.accentSecondary;
-  static Color get focus => NewColors.accent;
-  static Color get selection => NewColors.selection;
-  static Color get success => NewColors.success;
-  static Color get brand => NewColors.deepIndigo;
-  static Color get warm => NewColors.warm;
-  static Color get danger => NewColors.danger;
-}
-
-/// Canonical ink choices shared by fineliner, brush, pencil, highlighter,
-/// and marker tools. Order and names are part of the user-facing palette.
-abstract final class InkColors {
-  static const pearl = Color(0xFFE3E5E8);
-  static const steelBlue = Color(0xFF789BB5);
-  static const dustyBlue = Color(0xFF829CB5);
-  static const midnightNavy = Color(0xFF172943);
-  static const petrol = Color(0xFF4F9AA6);
-  static const dustyMint = Color(0xFF8FBFA9);
-  static const pistachio = Color(0xFFC7D5A0);
-  static const orchidMist = Color(0xFFC8AED2);
-  static const softAmber = Color(0xFFD5A16F);
-  static const fuchsia = Color(0xFFE56BDA);
-  static const antiqueGold = Color(0xFFC6AD79);
-  static const electricAzure = Color(0xFF2878F0);
-  static const sapphire = Color(0xFF2366AD);
-  static const vividTurquoise = Color(0xFF00BDB1);
-  static const electricLime = Color(0xFFB5DC32);
-  static const ultraviolet = Color(0xFF793BE8);
-  static const electricGold = Color(0xFFF2D84A);
-  static const deepPine = Color(0xFF176B4D);
-
-  /// Single approved bright red swatch. Added last so all legacy indices and
-  /// any IDs derived from the original swatch order remain stable.
-  static const brightRed = Color(0xFFFF3B30);
-
-  static const library = <InkSwatch>[
-    InkSwatch('pearl', 'Pearl', pearl),
-    InkSwatch('steel-blue', 'Steel Blue', steelBlue),
-    InkSwatch('dusty-blue', 'Dusty Blue', dustyBlue),
-    InkSwatch('midnight-navy', 'Midnight Navy', midnightNavy),
-    InkSwatch('petrol', 'Petrol', petrol),
-    InkSwatch('dusty-mint', 'Dusty Mint', dustyMint),
-    InkSwatch('pistachio', 'Pistachio', pistachio),
-    InkSwatch('orchid-mist', 'Orchid Mist', orchidMist),
-    InkSwatch('soft-amber', 'Soft Amber', softAmber),
-    InkSwatch('fuchsia', 'Fuchsia', fuchsia),
-    InkSwatch('antique-gold', 'Antique Gold', antiqueGold),
-    InkSwatch('electric-azure', 'Electric Azure', electricAzure),
-    InkSwatch('sapphire', 'Sapphire', sapphire),
-    InkSwatch('vivid-turquoise', 'Vivid Turquoise', vividTurquoise),
-    InkSwatch('electric-lime', 'Electric Lime', electricLime),
-    InkSwatch('ultraviolet', 'Ultraviolet', ultraviolet),
-    InkSwatch('electric-gold', 'Electric Gold', electricGold),
-    InkSwatch('deep-pine', 'Deep Pine', deepPine),
-    InkSwatch('bright-red', 'Bright Red', brightRed),
-  ];
-
-  static final List<Color> all = List.unmodifiable(
-    library.map((swatch) => swatch.color),
-  );
-  static InkSwatch? byId(String id) {
-    for (final swatch in library) {
-      if (swatch.id == id) return swatch;
-    }
-    return null;
-  }
-}
-
-class InkSwatch {
-  const InkSwatch(this.id, this.name, this.color);
-  final String id;
-  final String name;
-  final Color color;
-}
-
-abstract final class ArchiveCategoryColors {
-  static const resource = Color(0xFF5581C1);
-  static const projects = Color(0xFFBB565A);
-  static const other = Color(0xFFDEB866);
-  static const shopping = Color(0xFF489A68);
-  static const secondBrain = Color(0xFFD492C1);
-}
-
-abstract final class CalendarCategoryColors {
-  static const reading = Color(0xFF8EA96C);
-  static const habits = Color(0xFF7092D0);
-  static const other = Color(0xFFC491C1);
-  static const reminderEvent = Color(0xFF52B0AB);
-}
-
-abstract final class CanvasTagColors {
-  static const selected = [
-    Color(0xFFACDCD8),
-    Color(0xFF2C6149),
-    Color(0xFFA65469),
-    Color(0xFFE9C5DB),
-    Color(0xFFE1AB7B),
-  ];
-}
-
-List<String> get inkColorNames =>
-    InkColors.library.map((swatch) => swatch.name).toList(growable: false);
-
-/// Shared spacing scale, so every page lines up the same way.
-abstract final class Space {
-  static const xs = AppSpace.xs;
-  static const sm = AppSpace.sm;
-  static const md = AppSpace.md;
-  static const lg = AppSpace.lg;
-  static const xl = AppSpace.xl;
-  static const xxl = AppSpace.xxl;
-  static const page = AppSpace.page;
-}
-
 /// The Material theme, built entirely from the design tokens
-/// (design_tokens.dart) and the palette (NewColors). Every stock Material
+/// (design_tokens.dart) and the palette (AppColors). Every stock Material
 /// control the app uses gets the same geometry, states and motion here, so
 /// individual screens don't restyle them one by one.
 ThemeData buildAppTheme({Brightness brightness = Brightness.dark}) {
@@ -176,7 +28,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.dark}) {
 
 ThemeData _buildTheme(Brightness brightness) {
   final light = brightness == Brightness.light;
-  final onAccent = NewColors.onAccent;
+  final onAccent = AppColors.onAccent;
   final scheme = light
       ? ColorScheme.light(
           surface: AppColors.background,
@@ -185,11 +37,11 @@ ThemeData _buildTheme(Brightness brightness) {
           surfaceContainerLowest: AppColors.card,
           surfaceContainerLow: AppColors.card,
           surfaceContainer: AppColors.card,
-          surfaceContainerHigh: NewColors.surfaceSecondary,
+          surfaceContainerHigh: AppColors.surfaceSecondary,
           surfaceContainerHighest: AppColors.cardRaised,
           primary: AppColors.accent,
           onPrimary: onAccent,
-          primaryContainer: NewColors.accentSoft,
+          primaryContainer: AppColors.accentSoft,
           onPrimaryContainer: AppColors.accent,
           secondary: AppColors.accentSecondary,
           onSecondary: Colors.white,
@@ -209,11 +61,11 @@ ThemeData _buildTheme(Brightness brightness) {
           surfaceContainerLowest: AppColors.background,
           surfaceContainerLow: AppColors.card,
           surfaceContainer: AppColors.card,
-          surfaceContainerHigh: NewColors.surfaceSecondary,
+          surfaceContainerHigh: AppColors.surfaceSecondary,
           surfaceContainerHighest: AppColors.cardRaised,
           primary: AppColors.accent,
           onPrimary: onAccent,
-          primaryContainer: NewColors.accentSoft,
+          primaryContainer: AppColors.accentSoft,
           onPrimaryContainer: AppColors.accent,
           secondary: AppColors.accent,
           onSecondary: AppColors.background,
@@ -412,7 +264,7 @@ ThemeData _buildTheme(Brightness brightness) {
     inputDecorationTheme: InputDecorationTheme(
       isDense: true,
       filled: true,
-      fillColor: light ? AppColors.card : NewColors.surfaceSecondary,
+      fillColor: light ? AppColors.card : AppColors.surfaceSecondary,
       hoverColor: Colors.transparent,
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpace.md,
@@ -476,7 +328,7 @@ ThemeData _buildTheme(Brightness brightness) {
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ButtonStyle(
-        backgroundColor: WidgetStatePropertyAll(NewColors.surfaceSecondary),
+        backgroundColor: WidgetStatePropertyAll(AppColors.surfaceSecondary),
         foregroundColor: WidgetStateProperty.resolveWith(
           (s) => s.contains(WidgetState.disabled)
               ? faded(AppColors.text)
@@ -535,7 +387,7 @@ ThemeData _buildTheme(Brightness brightness) {
       style: ButtonStyle(
         backgroundColor: WidgetStateProperty.resolveWith(
           (s) => s.contains(WidgetState.selected)
-              ? NewColors.accentSoft
+              ? AppColors.accentSoft
               : Colors.transparent,
         ),
         foregroundColor: WidgetStateProperty.resolveWith(
@@ -551,9 +403,9 @@ ThemeData _buildTheme(Brightness brightness) {
       ),
     ),
     chipTheme: ChipThemeData(
-      backgroundColor: NewColors.surfaceSecondary,
-      selectedColor: NewColors.accentSoft,
-      disabledColor: faded(NewColors.surfaceSecondary),
+      backgroundColor: AppColors.surfaceSecondary,
+      selectedColor: AppColors.accentSoft,
+      disabledColor: faded(AppColors.surfaceSecondary),
       side: BorderSide(color: AppColors.border),
       shape: RoundedRectangleBorder(borderRadius: AppRadii.all(AppRadii.sm)),
       labelStyle: AppType.caption.copyWith(color: AppColors.text),
@@ -592,7 +444,7 @@ ThemeData _buildTheme(Brightness brightness) {
       trackColor: WidgetStateProperty.resolveWith(
         (s) => s.contains(WidgetState.selected)
             ? AppColors.accent
-            : NewColors.surfaceSecondary,
+            : AppColors.surfaceSecondary,
       ),
       trackOutlineColor: WidgetStateProperty.resolveWith(
         (s) => s.contains(WidgetState.selected)
@@ -661,7 +513,7 @@ ThemeData _buildTheme(Brightness brightness) {
       contentTextStyle: AppType.bodySmall.copyWith(
         color: light ? AppColors.background : AppColors.text,
       ),
-      actionTextColor: light ? NewColors.steelBlue : AppColors.accent,
+      actionTextColor: light ? BrandColors.steelBlue : AppColors.accent,
       elevation: 6,
       insetPadding: const EdgeInsets.all(AppSpace.lg),
       shape: RoundedRectangleBorder(

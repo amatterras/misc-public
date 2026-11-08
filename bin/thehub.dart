@@ -6,7 +6,7 @@
 //   dart run bin/thehub.dart backup | compact | restore-to <backupDir> <emptyDir>
 //   dart run bin/thehub.dart startup enable|disable|status
 //
-// See SYNC_ARCHITECTURE.md §15 for details.
+// See docs/SYNC_ARCHITECTURE.md §15 for details.
 
 import 'dart:async';
 import 'dart:convert';
@@ -95,7 +95,7 @@ Future<void> main(List<String> args) async {
           );
         }
         stdout.writeln(
-          'Live data was not touched. See SYNC_ARCHITECTURE.md §14 to switch to it.',
+          'Live data was not touched. See docs/SYNC_ARCHITECTURE.md §14 to switch to it.',
         );
       case 'startup':
         await _startup(

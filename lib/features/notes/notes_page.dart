@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import '../../app/app_state.dart';
 import '../../app/shell.dart';
 import '../../new_ui/new_components.dart';
-import '../../new_ui/new_tokens.dart';
 import '../../app/theme.dart';
 import '../../data/models/library_models.dart';
 import '../../data/workspace.dart';
@@ -172,10 +171,10 @@ class _NotesPageState extends State<NotesPage> {
     }
 
     return ListView(
-      padding: const EdgeInsets.all(Space.md),
+      padding: const EdgeInsets.all(AppSpace.md),
       children: [
         // The page title is in the header above the list.
-        const SizedBox(height: Space.xl),
+        const SizedBox(height: AppSpace.xl),
         // Dropping a note on "All notes" takes it out of its folder.
         TransferTarget(
           state: s,
@@ -351,7 +350,7 @@ class _NotesPageState extends State<NotesPage> {
         PopupMenuButton<String>(
           key: const ValueKey('notes-more'),
           tooltip: 'More: import notes, find similar notes',
-          icon: Icon(Icons.more_horiz, size: 20, color: NewColors.textMuted),
+          icon: Icon(Icons.more_horiz, size: 20, color: AppColors.textMuted),
           onSelected: (v) => v == 'import'
               ? showImportDialog(context, s)
               : showSimilarNotes(context, s),
@@ -415,7 +414,7 @@ class _NotesPageState extends State<NotesPage> {
             state: s,
             place: const NewNotePlace(),
             child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: Space.md),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
               children: [
                 for (final c in canvases)
                   ListTile(
@@ -438,7 +437,7 @@ class _NotesPageState extends State<NotesPage> {
                 for (final n in notes) _noteTile(n),
                 if (notes.isEmpty && canvases.isEmpty)
                   Padding(
-                    padding: const EdgeInsets.all(Space.xl),
+                    padding: const EdgeInsets.all(AppSpace.xl),
                     child: Text(
                       touchFirst
                           ? 'No notes here yet. Tap New, or use Quick Add.'
@@ -483,7 +482,7 @@ class _NotesPageState extends State<NotesPage> {
           borderRadius: BorderRadius.circular(AppRadii.sm),
           onTap: () => _open(n.id),
           child: Padding(
-            padding: const EdgeInsets.all(Space.md),
+            padding: const EdgeInsets.all(AppSpace.md),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -788,7 +787,7 @@ class _NoteEditorState extends State<NoteEditor> {
                     color: AppColors.textMuted,
                   ),
                 ),
-                const SizedBox(height: Space.md),
+                const SizedBox(height: AppSpace.md),
                 DropdownButton<String>(
                   isExpanded: true,
                   value: canvasId,
@@ -835,7 +834,7 @@ class _NoteEditorState extends State<NoteEditor> {
       child: Row(
         children: [
           Icon(icon, size: 18, color: color ?? AppColors.textMuted),
-          const SizedBox(width: Space.md),
+          const SizedBox(width: AppSpace.md),
           Flexible(
             child: Text(
               label,
@@ -955,7 +954,7 @@ class _NoteEditorState extends State<NoteEditor> {
                         _update((x) => x.copyWith(folderId: () => v)),
                   ),
                 ),
-                const SizedBox(width: Space.md),
+                const SizedBox(width: AppSpace.md),
                 GhostIconButton(
                   key: const ValueKey('note-favorite'),
                   icon: n.favorite ? Icons.star : Icons.star_outline,
@@ -966,7 +965,7 @@ class _NoteEditorState extends State<NoteEditor> {
                   onTap: () =>
                       _update((x) => x.copyWith(favorite: !x.favorite)),
                 ),
-                const SizedBox(width: Space.sm),
+                const SizedBox(width: AppSpace.sm),
                 ZoomStepper(
                   key: const ValueKey('note-text-zoom'),
                   label: 'Text ${(_textZoom * 100).round()}%',
@@ -986,7 +985,7 @@ class _NoteEditorState extends State<NoteEditor> {
                       : null,
                   onReset: () => _setTextZoom(1),
                 ),
-                const SizedBox(width: Space.xs),
+                const SizedBox(width: AppSpace.xs),
                 _moreMenu(n),
               ],
             ),
@@ -1045,7 +1044,7 @@ class _NoteEditorState extends State<NoteEditor> {
           ),
         ],
       ),
-      const SizedBox(height: Space.md),
+      const SizedBox(height: AppSpace.md),
       _zoomed(
         TextField(
           key: const ValueKey('note-body'),
@@ -1112,7 +1111,7 @@ class _NoteEditorState extends State<NoteEditor> {
             ),
           ],
         ),
-      const SizedBox(height: Space.lg),
+      const SizedBox(height: AppSpace.lg),
       // Attach: one quiet row of one-click actions; the attachments
       // themselves (below) are what stands out.
       Wrap(
@@ -1122,7 +1121,7 @@ class _NoteEditorState extends State<NoteEditor> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Padding(
-            padding: const EdgeInsets.only(right: Space.xs),
+            padding: const EdgeInsets.only(right: AppSpace.xs),
             child: Tooltip(
               message: 'Attach to this note',
               child: Icon(
@@ -1142,7 +1141,7 @@ class _NoteEditorState extends State<NoteEditor> {
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.textMuted,
                 visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: Space.sm),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm),
               ),
               onPressed: onTap,
               icon: Icon(icon, size: 15),
@@ -1150,7 +1149,7 @@ class _NoteEditorState extends State<NoteEditor> {
             ),
         ],
       ),
-      const SizedBox(height: Space.xs),
+      const SizedBox(height: AppSpace.xs),
       Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -1176,7 +1175,7 @@ class _NoteEditorState extends State<NoteEditor> {
       ),
       if (ws.mentionedNotes(n) case final mentions when mentions.isNotEmpty)
         Padding(
-          padding: const EdgeInsets.only(top: Space.md),
+          padding: const EdgeInsets.only(top: AppSpace.md),
           child: Wrap(
             key: const ValueKey('mention-suggestions'),
             spacing: 6,
@@ -1203,10 +1202,10 @@ class _NoteEditorState extends State<NoteEditor> {
             ],
           ),
         ),
-      const SizedBox(height: Space.xl),
+      const SizedBox(height: AppSpace.xl),
       NoteConnections(state: s, note: n, onOpenNote: widget.onOpenNote),
       if (linked.isNotEmpty || backlinks.isNotEmpty) ...[
-        const SizedBox(height: Space.xl),
+        const SizedBox(height: AppSpace.xl),
         Text(
           'LINKED NOTES',
           style: TextStyle(
@@ -1215,7 +1214,7 @@ class _NoteEditorState extends State<NoteEditor> {
             color: AppColors.textFaint,
           ),
         ),
-        const SizedBox(height: Space.sm),
+        const SizedBox(height: AppSpace.sm),
         Wrap(
           spacing: 8,
           runSpacing: 8,

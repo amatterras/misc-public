@@ -144,10 +144,10 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
                     color: AppColors.textFaint,
                   ),
                 ),
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
                 for (final c in open) _openTile(c),
                 if (settled.isNotEmpty) ...[
-                  const SizedBox(height: Space.md),
+                  const SizedBox(height: AppSpace.md),
                   Theme(
                     data: Theme.of(context)
                         .copyWith(dividerColor: Colors.transparent),
@@ -179,7 +179,7 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
 
   Widget _side(String label, String detail, String text) => Expanded(
     child: Container(
-      padding: const EdgeInsets.all(Space.sm),
+      padding: const EdgeInsets.all(AppSpace.sm),
       decoration: BoxDecoration(
         color: AppColors.background,
         borderRadius: BorderRadius.circular(AppRadii.sm),
@@ -215,10 +215,10 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
     final kind = _kinds[c.collection] ?? c.collection.replaceAll('_', ' ');
     return Card(
       key: ValueKey('conflict-${c.id}'),
-      margin: const EdgeInsets.only(bottom: Space.md),
+      margin: const EdgeInsets.only(bottom: AppSpace.md),
       color: AppColors.card,
       child: Padding(
-        padding: const EdgeInsets.all(Space.md),
+        padding: const EdgeInsets.all(AppSpace.md),
         child: FutureBuilder<ConflictSides>(
           future: r.sides(c),
           builder: (context, snap) {
@@ -240,7 +240,7 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
                     color: AppColors.textFaint,
                   ),
                 ),
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
                 if (sides == null)
                   const LinearProgressIndicator()
                 else
@@ -258,7 +258,7 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
                           deleted: sides.currentDeleted && c.keptDeleted,
                         ),
                       ),
-                      const SizedBox(width: Space.sm),
+                      const SizedBox(width: AppSpace.sm),
                       _side(
                         'Other version',
                         [
@@ -275,7 +275,7 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
                 if (sides != null && sides.editedSince)
                   Padding(
                     key: ValueKey('edited-since-${c.id}'),
-                    padding: const EdgeInsets.only(top: Space.xs),
+                    padding: const EdgeInsets.only(top: AppSpace.xs),
                     child: Text(
                       'The current version was changed again after this '
                       'conflict. Using the other version replaces that newer '
@@ -286,10 +286,10 @@ class _ConflictReviewDialogState extends State<ConflictReviewDialog> {
                       ),
                     ),
                   ),
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
                 Wrap(
-                  spacing: Space.sm,
-                  runSpacing: Space.xs,
+                  spacing: AppSpace.sm,
+                  runSpacing: AppSpace.xs,
                   children: [
                     OutlinedButton(
                       key: ValueKey('keep-current-${c.id}'),

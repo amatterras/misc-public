@@ -383,7 +383,7 @@ class _TasksPageState extends State<TasksPage> {
     }
 
     return ListView(
-      padding: const EdgeInsets.all(Space.md),
+      padding: const EdgeInsets.all(AppSpace.md),
       children: [
         const Padding(
           padding: EdgeInsets.fromLTRB(10, 20, 10, 12),
@@ -713,7 +713,7 @@ class _TasksPageState extends State<TasksPage> {
       ..sort((a, b) => a.name.compareTo(b.name));
     return Container(
       key: const ValueKey('task-bulk-bar'),
-      padding: const EdgeInsets.symmetric(horizontal: Space.sm, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm, vertical: 4),
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(AppRadii.sm),
@@ -806,14 +806,14 @@ class _TasksPageState extends State<TasksPage> {
         return a.createdAt.compareTo(b.createdAt);
       });
     return Padding(
-      padding: const EdgeInsets.fromLTRB(Space.xxl, 40, Space.xxl, 0),
+      padding: const EdgeInsets.fromLTRB(AppSpace.xxl, 40, AppSpace.xxl, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Wrap(
             alignment: WrapAlignment.spaceBetween,
-            spacing: Space.md,
-            runSpacing: Space.sm,
+            spacing: AppSpace.md,
+            runSpacing: AppSpace.sm,
             children: [
               // The title names the open view; the small control beside it
               // switches Smart Views.
@@ -837,10 +837,10 @@ class _TasksPageState extends State<TasksPage> {
               FocusTimerCard(state: s),
             ],
           ),
-          const SizedBox(height: Space.md),
+          const SizedBox(height: AppSpace.md),
           Wrap(
-            spacing: Space.sm,
-            runSpacing: Space.sm,
+            spacing: AppSpace.sm,
+            runSpacing: AppSpace.sm,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (!habits) _viewSwitcher(),
@@ -860,10 +860,10 @@ class _TasksPageState extends State<TasksPage> {
             ],
           ),
           if (_selecting && _view == TaskView.list && !habits) ...[
-            const SizedBox(height: Space.sm),
+            const SizedBox(height: AppSpace.sm),
             _bulkBar(),
           ],
-          const SizedBox(height: Space.md),
+          const SizedBox(height: AppSpace.md),
           if (!habits) ...[
             TextField(
               controller: _newTask,
@@ -874,7 +874,7 @@ class _TasksPageState extends State<TasksPage> {
               ),
               onSubmitted: (_) => _add(),
             ),
-            const SizedBox(height: Space.md),
+            const SizedBox(height: AppSpace.md),
           ],
           if (habits)
             Expanded(
@@ -1184,7 +1184,7 @@ class _TaskDetailState extends State<TaskDetail> {
             .toList()
           ..sort((a, b) => a.name.compareTo(b.name));
     return ListView(
-      padding: const EdgeInsets.all(Space.xl),
+      padding: const EdgeInsets.all(AppSpace.xl),
       children: [
         Row(
           children: [
@@ -1231,7 +1231,7 @@ class _TaskDetailState extends State<TaskDetail> {
           ),
           onChanged: (v) => _update((x) => x.copyWith(title: v)),
         ),
-        const SizedBox(height: Space.md),
+        const SizedBox(height: AppSpace.md),
         LabeledField(
           label: 'Due',
           child: Row(
@@ -1726,7 +1726,7 @@ class _TaskDetailState extends State<TaskDetail> {
           ),
           onChanged: (v) => _update((x) => x.copyWith(isExam: v)),
         ),
-        const SizedBox(height: Space.md),
+        const SizedBox(height: AppSpace.md),
         Text(
           t.isExam ? 'REVISION TASKS' : 'SUBTASKS',
           style: TextStyle(
@@ -1781,7 +1781,7 @@ class _TaskDetailState extends State<TaskDetail> {
             _sub.clear();
           },
         ),
-        const SizedBox(height: Space.md),
+        const SizedBox(height: AppSpace.md),
         TextField(
           controller: _notes,
           minLines: 3,
@@ -1792,7 +1792,7 @@ class _TaskDetailState extends State<TaskDetail> {
           ),
           onChanged: (v) => _update((x) => x.copyWith(notes: v)),
         ),
-        const SizedBox(height: Space.md),
+        const SizedBox(height: AppSpace.md),
         Wrap(
           spacing: 6,
           runSpacing: 6,
@@ -1820,10 +1820,10 @@ class _TaskDetailState extends State<TaskDetail> {
             ),
           ],
         ),
-        const SizedBox(height: Space.lg),
+        const SizedBox(height: AppSpace.lg),
         if (widget.state.ai.enabled)
           Padding(
-            padding: const EdgeInsets.only(bottom: Space.sm),
+            padding: const EdgeInsets.only(bottom: AppSpace.sm),
             child: OutlinedButton.icon(
               key: const ValueKey('task-ask-ai'),
               onPressed: () => widget.state.sendToAi(
@@ -1913,7 +1913,7 @@ class FocusTimerCard extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(width: Space.md),
+              const SizedBox(width: AppSpace.md),
               GhostIconButton(
                 icon: timer.running ? Icons.pause : Icons.play_arrow,
                 tooltip: timer.running ? 'Pause' : 'Start',

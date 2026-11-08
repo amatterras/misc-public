@@ -1,5 +1,5 @@
 // Regression tests for data-loss risks found in the sync audit
-// (SYNC_ARCHITECTURE.md §11). Real hub on 127.0.0.1, real data folders.
+// (docs/SYNC_ARCHITECTURE.md §11). Real hub on 127.0.0.1, real data folders.
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;

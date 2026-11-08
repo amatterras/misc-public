@@ -1,5 +1,5 @@
 // Where the workspace is stored and shared: one provider abstraction for the
-// three storage modes (see STORAGE_MODES.md).
+// three storage modes (see docs/STORAGE_MODES.md).
 //
 //   local   – this device only. Nothing is uploaded anywhere.
 //   pcHub   – this device + the Windows PC hub (127.0.0.1 or Tailscale).

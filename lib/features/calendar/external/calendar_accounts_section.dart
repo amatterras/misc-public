@@ -84,14 +84,14 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
       color: AppColors.textFaint,
     );
     return Padding(
-      padding: const EdgeInsets.only(bottom: Space.md),
+      padding: const EdgeInsets.only(bottom: AppSpace.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
           if (!connected) ...setup,
           Wrap(
-            spacing: Space.sm,
+            spacing: AppSpace.sm,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (!connected)
@@ -221,7 +221,7 @@ class _CalendarAccountsSectionState extends State<CalendarAccountsSection> {
           color: AppColors.textFaint,
         ),
       ),
-      const SizedBox(height: Space.sm),
+      const SizedBox(height: AppSpace.sm),
       _account('google', 'Google Calendar', [
         TextField(
           controller: _googleId,

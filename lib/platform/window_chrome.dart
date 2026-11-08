@@ -13,7 +13,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color, ThemeMode;
 import 'package:flutter/services.dart';
 
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 import '../app/theme.dart' show AppColors;
 
 abstract final class WindowChrome {
@@ -35,9 +35,9 @@ abstract final class WindowChrome {
     AppColors.mode = dark ? ThemeMode.dark : ThemeMode.light;
     final args = <String, Object>{
       'dark': dark,
-      'caption': _bgr(NewColors.background),
-      'text': _bgr(NewColors.text),
-      'border': _bgr(NewColors.border),
+      'caption': _bgr(AppColors.background),
+      'text': _bgr(AppColors.text),
+      'border': _bgr(AppColors.border),
     };
     AppColors.mode = wasMode;
     lastRequest = args;

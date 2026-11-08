@@ -4,8 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../app/design_tokens.dart';
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 import 'phone_tokens.dart';
 
 class Hairline extends StatelessWidget {
@@ -20,7 +19,7 @@ class Hairline extends StatelessWidget {
     child: SizedBox(
       height: 1,
       width: double.infinity,
-      child: ColoredBox(color: NewColors.border.withValues(alpha: 0.7)),
+      child: ColoredBox(color: AppColors.border.withValues(alpha: 0.7)),
     ),
   );
 }
@@ -62,7 +61,7 @@ class BrandBar extends StatelessWidget {
     width: width,
     height: height,
     decoration: BoxDecoration(
-      gradient: NewGradients.brand,
+      gradient: AppGradients.brand,
       borderRadius: BorderRadius.circular(height),
     ),
   );
@@ -149,13 +148,13 @@ class TickRing extends StatelessWidget {
             height: 22,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: done ? NewColors.accent : Colors.transparent,
+              color: done ? AppColors.accent : Colors.transparent,
               border: Border.all(
                 color: !enabled
-                    ? NewColors.border
+                    ? AppColors.border
                     : done
-                    ? NewColors.accent
-                    : NewColors.textFaint,
+                    ? AppColors.accent
+                    : AppColors.textFaint,
                 width: 1.5,
               ),
             ),
@@ -163,7 +162,7 @@ class TickRing extends StatelessWidget {
                 ? Icon(
                     Icons.check_rounded,
                     size: 15,
-                    color: NewColors.background,
+                    color: AppColors.background,
                   )
                 : null,
           ),
@@ -209,7 +208,7 @@ class SheetItem extends StatelessWidget {
                     style: PhoneType.title.copyWith(
                       fontSize: 21,
                       fontWeight: FontWeight.w600,
-                      color: color ?? NewColors.text,
+                      color: color ?? AppColors.text,
                     ),
                   ),
                   if (hint != null)
@@ -221,7 +220,7 @@ class SheetItem extends StatelessWidget {
               ),
             ),
             if (icon != null)
-              Icon(icon, size: 20, color: color ?? NewColors.textFaint),
+              Icon(icon, size: 20, color: color ?? AppColors.textFaint),
           ],
         ),
       ),
@@ -238,7 +237,7 @@ Future<T?> showPhoneSheet<T>(
 }) => showModalBottomSheet<T>(
   context: context,
   isScrollControlled: true,
-  backgroundColor: NewColors.surface,
+  backgroundColor: AppColors.card,
   barrierColor: AppElevation.modalBarrier,
   showDragHandle: false,
   useSafeArea: true,
@@ -246,7 +245,7 @@ Future<T?> showPhoneSheet<T>(
     borderRadius: const BorderRadius.vertical(
       top: Radius.circular(AppRadii.card),
     ),
-    side: BorderSide(color: NewColors.border.withValues(alpha: 0.8)),
+    side: BorderSide(color: AppColors.border.withValues(alpha: 0.8)),
   ),
   clipBehavior: Clip.antiAlias,
   builder: (context) => SafeArea(
@@ -267,7 +266,7 @@ Future<T?> showPhoneSheet<T>(
                   width: 34,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: NewColors.border,
+                    color: AppColors.border,
                     borderRadius: BorderRadius.circular(AppRadii.xs),
                   ),
                 ),
@@ -377,7 +376,7 @@ class GlyphButton extends StatelessWidget {
       child: SizedBox(
         width: 44,
         height: 44,
-        child: Icon(icon, size: size, color: color ?? NewColors.textMuted),
+        child: Icon(icon, size: size, color: color ?? AppColors.textMuted),
       ),
     ),
   );
@@ -407,7 +406,7 @@ class EmptyNote extends StatelessWidget {
             fontSize: 26,
             fontWeight: FontWeight.w300,
             letterSpacing: -0.8,
-            color: NewColors.textMuted,
+            color: AppColors.textMuted,
           ),
         ),
         if (hint != null) ...[
@@ -440,12 +439,12 @@ class TextLink extends StatelessWidget {
             style: TextStyle(
               fontSize: AppType.sizeBody,
               fontWeight: FontWeight.w600,
-              color: NewColors.accent,
+              color: AppColors.accent,
             ),
           ),
           if (trailing != null) ...[
             const SizedBox(width: 4),
-            Icon(trailing, size: 16, color: NewColors.accent),
+            Icon(trailing, size: 16, color: AppColors.accent),
           ],
         ],
       ),

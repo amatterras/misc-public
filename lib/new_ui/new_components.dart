@@ -3,8 +3,7 @@
 // is always an existing action.
 import 'package:flutter/material.dart';
 
-import '../app/design_tokens.dart';
-import 'new_tokens.dart';
+import '../app/theme.dart';
 
 /// The brand "+": a brand-gradient capsule with a white plus and a warm coral
 /// glow. THE one definition: Quick Add on Windows/iPad and "New" on the
@@ -31,15 +30,15 @@ class BrandPlus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: NewMotion.quick,
+      duration: AppMotion.quick,
       width: width,
       height: height,
       decoration: BoxDecoration(
-        gradient: NewGradients.brand,
-        borderRadius: BorderRadius.circular(NewRadii.capsule),
+        gradient: AppGradients.brand,
+        borderRadius: BorderRadius.circular(AppRadii.capsule),
         boxShadow: [
           BoxShadow(
-            color: NewGradients.brandRose.withValues(
+            color: BrandColors.rose.withValues(
               alpha: hovered ? 0.5 : 0.28,
             ),
             blurRadius: hovered ? 14 : 8,
@@ -51,7 +50,7 @@ class BrandPlus extends StatelessWidget {
         children: [
           const Icon(Icons.add, size: 22, color: Colors.white),
           if (label != null) ...[
-            const SizedBox(width: NewSpace.xs),
+            const SizedBox(width: AppSpace.xs),
             Flexible(
               child: Text(
                 label!,
@@ -77,8 +76,8 @@ class NewCard extends StatelessWidget {
     super.key,
     required this.child,
     this.color,
-    this.padding = const EdgeInsets.all(NewSpace.md),
-    this.radius = NewRadii.card,
+    this.padding = const EdgeInsets.all(AppSpace.md),
+    this.radius = AppRadii.card,
     this.onTap,
     this.onLongPress,
     this.borderColor,
@@ -96,10 +95,10 @@ class NewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final shape = BorderRadius.circular(radius);
     return Material(
-      color: color ?? NewColors.surface,
+      color: color ?? AppColors.card,
       shape: RoundedRectangleBorder(
         borderRadius: shape,
-        side: BorderSide(color: borderColor ?? NewColors.border),
+        side: BorderSide(color: borderColor ?? AppColors.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -123,16 +122,16 @@ class NewPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: color ?? NewColors.accentSoft,
-        borderRadius: BorderRadius.circular(NewRadii.capsule),
+        color: color ?? AppColors.accentSoft,
+        borderRadius: BorderRadius.circular(AppRadii.capsule),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         child: Text(
           text,
-          style: NewText.label.copyWith(
+          style: AppType.label.copyWith(
             fontSize: AppType.sizeMeta,
-            color: textColor ?? NewColors.accent,
+            color: textColor ?? AppColors.accent,
           ),
         ),
       ),
@@ -149,16 +148,16 @@ class NewProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(NewRadii.capsule),
+      borderRadius: BorderRadius.circular(AppRadii.capsule),
       child: SizedBox(
         height: 6,
         child: Stack(
           children: [
-            Positioned.fill(child: ColoredBox(color: NewColors.surfaceRaised)),
+            Positioned.fill(child: ColoredBox(color: AppColors.cardRaised)),
             FractionallySizedBox(
               widthFactor: value.clamp(0, 1).toDouble(),
               child: const DecoratedBox(
-                decoration: BoxDecoration(gradient: NewGradients.brand),
+                decoration: BoxDecoration(gradient: AppGradients.brand),
                 child: SizedBox.expand(),
               ),
             ),
@@ -169,38 +168,105 @@ class NewProgressBar extends StatelessWidget {
   }
 }
 
-/// Soft blurred colour pools (see [NewGradients]) fading into the page
-/// background: decoration behind headers and selected surfaces. Draws only;
-/// ignores touches.
+/// The app-wide atmosphere: soft colour pools ([AppGradients.pools]) as one
+/// continuous field. The shell paints it once behind everything (sidebar,
+/// page bar, every page), so pages leave their own background transparent
+/// and the field flows through without seams. Full-screen routes pushed
+/// over the shell use [NewAtmosphere.behind]. Draws only; ignores touches;
+/// repaints only when the window size or the light/dark theme changes.
 class NewAtmosphere extends StatelessWidget {
-  const NewAtmosphere({super.key});
+  const NewAtmosphere({super.key}) : child = null;
+
+  /// The page colour, the field, then [child] on top: for a screen that is
+  /// not inside the shell (a pushed route) and must give itself the field.
+  const NewAtmosphere.behind({super.key, required Widget this.child});
+
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: ClipRect(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            for (final layer in NewGradients.layers())
-              DecoratedBox(decoration: BoxDecoration(gradient: layer)),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    NewColors.background.withValues(alpha: 0.35),
-                    NewColors.background,
-                  ],
-                ),
-              ),
-            ),
-          ],
+    // Depending on the theme rebuilds the field when light/dark changes.
+    final light = Theme.of(context).brightness == Brightness.light;
+    final field = IgnorePointer(
+      child: RepaintBoundary(
+        child: CustomPaint(
+          size: Size.infinite,
+          painter: _AtmospherePainter(
+            light: light,
+            pools: AppGradients.pools,
+            veilBottom: AppGradients.veilBottom,
+            page: AppColors.background,
+          ),
         ),
       ),
     );
+    final child = this.child;
+    if (child == null) return field;
+    return ColoredBox(
+      color: AppColors.background,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [field, child],
+      ),
+    );
   }
+}
+
+class _AtmospherePainter extends CustomPainter {
+  _AtmospherePainter({
+    required this.light,
+    required this.pools,
+    required this.veilBottom,
+    required this.page,
+  });
+
+  final bool light;
+  final List<AtmospherePool> pools;
+  final double veilBottom;
+  final Color page;
+
+  // Smooth falloff (1-t)²(1+2t) sampled at five stops: full at the centre,
+  // 0 at the rim with a zero slope, so no ring is visible.
+  static const _stops = [0.0, 0.25, 0.5, 0.75, 1.0];
+  static const _falloff = [1.0, 0.84375, 0.5, 0.15625, 0.0];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final unit = Rect.fromCircle(center: Offset.zero, radius: 1);
+    for (final p in pools) {
+      final shader = RadialGradient(
+        colors: [
+          for (final f in _falloff) p.color.withValues(alpha: p.opacity * f),
+        ],
+        stops: _stops,
+      ).createShader(unit);
+      final center = p.center.withinRect(Offset.zero & size);
+      canvas
+        ..save()
+        ..translate(center.dx, center.dy)
+        ..scale(p.radius * size.width, p.radius * size.height)
+        ..drawCircle(Offset.zero, 1, Paint()..shader = shader)
+        ..restore();
+    }
+    final veil = Offset.zero & size;
+    canvas.drawRect(
+      veil,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            page.withValues(alpha: 0),
+            page.withValues(alpha: veilBottom),
+          ],
+        ).createShader(veil),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_AtmospherePainter old) =>
+      old.light != light || old.page != page || old.veilBottom != veilBottom;
 }
 
 /// The Archive's capsule search field, shared with Notes (and any module
@@ -226,17 +292,17 @@ class NewSearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final showClear = controller != null && controller!.text.isNotEmpty;
     OutlineInputBorder border([Color? color]) => OutlineInputBorder(
-      borderRadius: BorderRadius.circular(NewRadii.capsule),
+      borderRadius: BorderRadius.circular(AppRadii.capsule),
       borderSide: color == null ? BorderSide.none : BorderSide(color: color),
     );
     return TextField(
       controller: controller,
       onChanged: onChanged,
-      style: TextStyle(color: NewColors.text, fontSize: AppType.sizeBody),
+      style: TextStyle(color: AppColors.text, fontSize: AppType.sizeBody),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: TextStyle(color: NewColors.textFaint),
-        prefixIcon: Icon(Icons.search, size: 20, color: NewColors.textFaint),
+        hintStyle: TextStyle(color: AppColors.textFaint),
+        prefixIcon: Icon(Icons.search, size: 20, color: AppColors.textFaint),
         suffixIcon: showClear
             ? IconButton(
                 icon: const Icon(Icons.close, size: 18),
@@ -244,11 +310,11 @@ class NewSearchField extends StatelessWidget {
               )
             : null,
         filled: true,
-        fillColor: NewColors.surfaceSecondary,
+        fillColor: AppColors.surfaceSecondary,
         contentPadding: EdgeInsets.zero,
         border: border(),
         enabledBorder: border(),
-        focusedBorder: border(NewColors.accent),
+        focusedBorder: border(AppColors.accent),
       ),
     );
   }
@@ -272,7 +338,7 @@ class NewHeaderButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = filled ? Colors.white : NewColors.accent;
+    final color = filled ? Colors.white : AppColors.accent;
     final content = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -293,17 +359,17 @@ class NewHeaderButton extends StatelessWidget {
     return Opacity(
       opacity: onPressed == null ? 0.5 : 1,
       child: Material(
-        color: filled ? Colors.transparent : NewColors.accentSoft,
-        borderRadius: BorderRadius.circular(NewRadii.capsule),
+        color: filled ? Colors.transparent : AppColors.accentSoft,
+        borderRadius: BorderRadius.circular(AppRadii.capsule),
         child: Ink(
           decoration: filled
               ? BoxDecoration(
-                  gradient: NewGradients.brand,
-                  borderRadius: BorderRadius.circular(NewRadii.capsule),
+                  gradient: AppGradients.brand,
+                  borderRadius: BorderRadius.circular(AppRadii.capsule),
                 )
               : null,
           child: InkWell(
-            borderRadius: BorderRadius.circular(NewRadii.capsule),
+            borderRadius: BorderRadius.circular(AppRadii.capsule),
             onTap: onPressed,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -332,13 +398,13 @@ class NewHeaderIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => IconButton(
     tooltip: tooltip,
-    icon: Icon(icon, size: 20, color: NewColors.textMuted),
+    icon: Icon(icon, size: 20, color: AppColors.textMuted),
     onPressed: onPressed,
   );
 }
 
-/// The top section of a New page, as designed for the Archive: the soft
-/// atmosphere behind a large title, an optional second line, the page's
+/// The top section of a New page, as designed for the Archive: a large
+/// title over the app-wide atmosphere, an optional second line, the page's
 /// actions on the right and an optional search capsule below. Archive,
 /// Calendar and Notes all use it; each passes its own title, actions and
 /// search, so nothing module-specific lives here.
@@ -364,15 +430,16 @@ class NewPageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // No atmosphere of its own: the app-wide field (NewAtmosphere in the
+    // shell) shows through, so the header and the page are one surface.
     return Stack(
       children: [
-        const Positioned.fill(child: NewAtmosphere()),
         Padding(
           padding: const EdgeInsets.fromLTRB(
-            NewSpace.lg,
-            NewSpace.md,
-            NewSpace.lg,
-            NewSpace.sm,
+            AppSpace.lg,
+            AppSpace.md,
+            AppSpace.lg,
+            AppSpace.sm,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -380,8 +447,8 @@ class NewPageHeader extends StatelessWidget {
               Wrap(
                 alignment: WrapAlignment.spaceBetween,
                 crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: NewSpace.md,
-                runSpacing: NewSpace.xs,
+                spacing: AppSpace.md,
+                runSpacing: AppSpace.xs,
                 children: [
                   Column(
                     mainAxisSize: MainAxisSize.min,
@@ -389,22 +456,22 @@ class NewPageHeader extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: NewText.heading.copyWith(color: NewColors.text),
+                        style: AppType.title.copyWith(color: AppColors.text),
                       ),
                       ?subtitle,
                     ],
                   ),
                   if (actions.isNotEmpty)
                     Wrap(
-                      spacing: NewSpace.sm,
-                      runSpacing: NewSpace.xs,
+                      spacing: AppSpace.sm,
+                      runSpacing: AppSpace.xs,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: actions,
                     ),
                 ],
               ),
               if (search != null) ...[
-                const SizedBox(height: NewSpace.sm),
+                const SizedBox(height: AppSpace.sm),
                 search!,
               ],
             ],

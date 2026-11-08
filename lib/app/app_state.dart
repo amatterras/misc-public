@@ -38,8 +38,8 @@ import '../features/capture/clipboard_guard.dart';
 import '../features/capture/file_drop.dart';
 import '../features/capture/send_to.dart';
 import '../features/tasks/completion_messages.dart';
-import '../features/widgets/widget_ink.dart';
-import '../features/widgets/widget_snapshot.dart';
+import '../features/home_widgets/widget_ink.dart';
+import '../features/home_widgets/widget_snapshot.dart';
 import '../platform/ios_bridge.dart';
 import '../platform/input_hints.dart';
 import '../platform/platform.dart' as native;
@@ -2445,8 +2445,6 @@ class AppState extends ChangeNotifier {
     return index.search(query, workspace.notes.all);
   }
 
-  static const aiWindowId = 'ai';
-
   /// Gives [context] to the AI and opens the AI window. Nothing is sent
   /// yet: the user reviews it and presses Send. Returns false (with a
   /// message) when AI is off or this kind of content is not allowed.
@@ -2660,7 +2658,7 @@ class AppState extends ChangeNotifier {
 
   /// The two calendar accounts (each connected and revoked on its own).
   /// Client ids are the user's own app registrations (not secret, kept in
-  /// settings); see THEAPP_IMPLEMENTATION_HANDOFF.md for setup.
+  /// settings); see docs/history/THEAPP_IMPLEMENTATION_HANDOFF.md for setup.
   late final Map<String, ExternalCalendarSync> calendarAccounts = {
     'google': ExternalCalendarSync(
       ws: workspace,
@@ -3185,9 +3183,6 @@ class AppState extends ChangeNotifier {
   final Map<String, (CanvasDocument, int)> _unsavedCanvases = {};
   Timer? _canvasRetry;
   int _canvasRetryFailures = 0;
-
-  /// How many mindmap/notebook documents are waiting to be saved.
-  int get unsavedCanvasCount => _unsavedCanvases.length;
 
   void _scheduleCanvasRetry() {
     if (_canvasRetry?.isActive ?? false) return;

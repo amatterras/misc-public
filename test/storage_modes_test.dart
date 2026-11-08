@@ -1,4 +1,4 @@
-// Storage modes (STORAGE_MODES.md): local only, PC hub, hosted service.
+// Storage modes (docs/STORAGE_MODES.md): local only, PC hub, hosted service.
 // Real hubs on 127.0.0.1 (HubServer for the PC hub, HostedHub for the
 // hosted service) and real app state on temporary folders. These are
 // same-PC tests: no Tailscale, no second physical device, no TLS (the

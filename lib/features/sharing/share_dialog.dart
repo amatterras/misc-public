@@ -169,7 +169,7 @@ class _ShareDialogState extends State<_ShareDialog> {
             ),
             if (s.hubUrl == null)
               Padding(
-                padding: const EdgeInsets.only(top: Space.sm),
+                padding: const EdgeInsets.only(top: AppSpace.sm),
                 child: Text(
                   'This device is not connected to a hub, so there is '
                   'nothing to serve the link. Connect one in Settings → Sync.',
@@ -179,7 +179,7 @@ class _ShareDialogState extends State<_ShareDialog> {
                   ),
                 ),
               ),
-            const SizedBox(height: Space.md),
+            const SizedBox(height: AppSpace.md),
             if (_token == null)
               DropdownButton<Duration?>(
                 key: const ValueKey('share-lifetime'),
@@ -207,7 +207,7 @@ class _ShareDialogState extends State<_ShareDialog> {
                 key: const ValueKey('share-url'),
                 style: const TextStyle(fontSize: AppType.sizeLabel),
               ),
-              const SizedBox(height: Space.xs),
+              const SizedBox(height: AppSpace.xs),
               Text(
                 'It works after the next sync. Revoke it any time in '
                 'Settings → Sharing → Shared links.',

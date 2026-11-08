@@ -207,7 +207,7 @@ class ExperimentPage extends StatelessWidget {
       return Material(
         color: AppColors.background,
         child: ListView(
-          padding: const EdgeInsets.all(Space.lg),
+          padding: const EdgeInsets.all(AppSpace.lg),
           children: [
             Row(
               children: [
@@ -268,7 +268,7 @@ class ExperimentPage extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: Space.sm),
+            const SizedBox(height: AppSpace.sm),
             InkWell(
               key: const ValueKey('experiment-question'),
               onTap: () async {
@@ -290,7 +290,7 @@ class ExperimentPage extends StatelessWidget {
             ),
             if (unsupported.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: Space.sm),
+                padding: const EdgeInsets.only(top: AppSpace.sm),
                 child: Text(
                   '${unsupported.length} "verified" '
                   '${unsupported.length == 1 ? 'fact has' : 'facts have'} no '
@@ -387,7 +387,7 @@ class ExperimentPage extends StatelessWidget {
     String title, {
     required VoidCallback onAdd,
   }) => Padding(
-    padding: const EdgeInsets.only(top: Space.lg),
+    padding: const EdgeInsets.only(top: AppSpace.lg),
     child: Row(
       children: [
         Text(
@@ -515,8 +515,8 @@ class ExperimentPage extends StatelessWidget {
     return Container(
       key: ValueKey('scenario-${sc.id}'),
       width: 240,
-      margin: const EdgeInsets.only(right: Space.sm, top: Space.xs),
-      padding: const EdgeInsets.all(Space.sm),
+      margin: const EdgeInsets.only(right: AppSpace.sm, top: AppSpace.xs),
+      padding: const EdgeInsets.all(AppSpace.sm),
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(AppRadii.sm),
@@ -576,7 +576,7 @@ class ExperimentPage extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: Space.xs),
+          const SizedBox(height: AppSpace.xs),
           for (final v in sc.variables)
             Text(
               '• ${v.text}',

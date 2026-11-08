@@ -190,14 +190,6 @@ class PdfTextCache extends ChangeNotifier {
   }
 }
 
-/// Lowercase words of [query] (at most 8).
-List<String> queryTerms(String query) => query
-    .toLowerCase()
-    .split(RegExp(r'\s+'))
-    .where((t) => t.isNotEmpty)
-    .take(8)
-    .toList();
-
 /// True if every term occurs somewhere in [texts].
 bool matchesAll(List<String> terms, Iterable<String?> texts) {
   final all = texts.whereType<String>().join('\n').toLowerCase();

@@ -18,6 +18,8 @@ import '../transfer/transfer.dart';
 import 'canvas_painter.dart';
 import 'canvas_text.dart';
 import 'canvas_toolbar.dart';
+import 'empty_canvas.dart';
+import '../../app/shell.dart' show openQuickAdd;
 import '../tags/tag_ui.dart' show showTagPicker;
 import '../ink/native_ink.dart';
 import '../ink/stroke_geometry.dart';
@@ -31,7 +33,7 @@ class CanvasPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = state.canvas;
     if (controller == null) {
-      return ColoredBox(color: AppColors.canvas);
+      return const SizedBox.expand();
     }
     return CanvasView(
       key: ValueKey(controller.id),
@@ -265,6 +267,14 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     final assets = await s.capture.pickImages();
     if (!mounted || assets.isEmpty) return;
     await _insertImages(assets, _centerPoint);
+  }
+
+  /// A new, empty note, placed as a card in the middle of the view (the
+  /// same card "Place on canvas" makes) and selected.
+  void _addNoteCard() {
+    final note = s.workspace.createNote();
+    final card = c.insertNoteCard(note.id, _centerPoint);
+    c.select([card.id]);
   }
 
   /// PDFs become document cards (the link card) that open in the default
@@ -894,7 +904,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                 Positioned(
                   left: 0,
                   right: 0,
-                  top: Space.xl,
+                  top: AppSpace.xl,
                   child: Center(
                     child: CanvasContextBar(
                       controller: c,
@@ -912,14 +922,14 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                   ),
                 ),
                 Positioned(
-                  right: Space.xl,
-                  top: Space.xl + 10,
+                  right: AppSpace.xl,
+                  top: AppSpace.xl + 10,
                   child: _SaveIndicator(state: c.saveState),
                 ),
                 Positioned(
                   // iPhone: one horizontal strip along the bottom edge.
                   // Everywhere else: the vertical strip on the left.
-                  left: PhoneProfile.active ? 10 : Space.xl,
+                  left: PhoneProfile.active ? 10 : AppSpace.xl,
                   right: PhoneProfile.active ? 10 : null,
                   top: PhoneProfile.active ? null : 0,
                   bottom: PhoneProfile.active ? 12 : 0,
@@ -966,15 +976,15 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                   ),
                 ),
                 Positioned(
-                  right: Space.xl,
+                  right: AppSpace.xl,
                   // Above the iPhone's tool strip.
-                  bottom: PhoneProfile.active ? 76 : Space.xl,
+                  bottom: PhoneProfile.active ? 76 : AppSpace.xl,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       if (_showMinimap && c.items.isNotEmpty) ...[
                         _Minimap(controller: c, viewport: _size),
-                        const SizedBox(height: Space.sm),
+                        const SizedBox(height: AppSpace.sm),
                       ],
                       _ZoomControls(
                         controller: c,
@@ -986,10 +996,38 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                     ],
                   ),
                 ),
-                if (c.items.isEmpty) const _EmptyHint(),
+                if (c.id == linksBoardId) ...[
+                  if (c.items.isEmpty) const _EmptyHint(),
+                ] else
+                  // The mindmap's entry screen. It leaves (with a short
+                  // fade) as soon as anything is on the canvas, and at once
+                  // when the pen touches down, before the stroke is saved.
+                  // Positioned.fill: a non-positioned child would make this
+                  // Stack size itself to it (0×0 once the screen is gone).
+                  Positioned.fill(
+                    child: AnimatedSwitcher(
+                      duration: AppMotion.quick,
+                      child: c.items.isEmpty
+                          ? ListenableBuilder(
+                              key: const ValueKey('empty-canvas-host'),
+                              listenable: c.liveInk,
+                              builder: (context, _) => c.liveStroke != null
+                                  ? const SizedBox.shrink()
+                                  : EmptyCanvasScreen(
+                                      onAddNote: _addNoteCard,
+                                      onAddImage: _addImages,
+                                      onAddText: () =>
+                                          c.createText(_centerPoint),
+                                      onQuickAdd: () =>
+                                          openQuickAdd(context, s),
+                                    ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
                 if (c.squeezeEraser)
                   Positioned(
-                    bottom: Space.md,
+                    bottom: AppSpace.md,
                     left: 0,
                     right: 0,
                     child: IgnorePointer(
@@ -1025,7 +1063,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                   ),
                 if (c.tool == CanvasTool.connect && c.connectSource != null)
                   Positioned(
-                    top: Space.md,
+                    top: AppSpace.md,
                     left: 0,
                     right: 0,
                     child: IgnorePointer(

@@ -157,7 +157,7 @@ class _AiPanelState extends State<AiPanel> {
     builder: (context, _) {
       if (!s.ai.enabled) {
         return Padding(
-          padding: const EdgeInsets.all(Space.lg),
+          padding: const EdgeInsets.all(AppSpace.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -166,7 +166,7 @@ class _AiPanelState extends State<AiPanel> {
                 'press Send here.',
                 style: TextStyle(color: AppColors.textMuted),
               ),
-              const SizedBox(height: Space.sm),
+              const SizedBox(height: AppSpace.sm),
               OutlinedButton(
                 key: const ValueKey('ai-open-settings'),
                 onPressed: _openSettings,
@@ -192,7 +192,7 @@ class _AiPanelState extends State<AiPanel> {
   );
 
   Widget _attachments() => Padding(
-    padding: const EdgeInsets.fromLTRB(Space.md, Space.sm, Space.md, Space.sm),
+    padding: const EdgeInsets.fromLTRB(AppSpace.md, AppSpace.sm, AppSpace.md, AppSpace.sm),
     child: Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -245,7 +245,7 @@ class _AiPanelState extends State<AiPanel> {
       return Center(
         key: ValueKey('ai-empty'),
         child: Padding(
-          padding: EdgeInsets.all(Space.lg),
+          padding: EdgeInsets.all(AppSpace.lg),
           child: Text(
             'Ask a question below. Pick a tool such as Summarize or Quiz me '
             'to work with the attached material.',
@@ -258,7 +258,7 @@ class _AiPanelState extends State<AiPanel> {
     return ListView(
       key: const ValueKey('ai-messages'),
       controller: _scroll,
-      padding: const EdgeInsets.all(Space.md),
+      padding: const EdgeInsets.all(AppSpace.md),
       children: [
         for (var i = 0; i < turns.length; i++)
           _turn(turns[i], last: i == turns.length - 1),
@@ -285,7 +285,7 @@ class _AiPanelState extends State<AiPanel> {
   Widget _bubble(String text) => Align(
     alignment: Alignment.centerRight,
     child: Container(
-      margin: const EdgeInsets.only(top: Space.md, bottom: 6, left: 40),
+      margin: const EdgeInsets.only(top: AppSpace.md, bottom: 6, left: 40),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: AppColors.selected,
@@ -371,8 +371,8 @@ class _AiPanelState extends State<AiPanel> {
 
   Widget _proposals() => Container(
     key: const ValueKey('ai-proposals'),
-    margin: const EdgeInsets.only(top: Space.md),
-    padding: const EdgeInsets.all(Space.sm),
+    margin: const EdgeInsets.only(top: AppSpace.md),
+    padding: const EdgeInsets.all(AppSpace.sm),
     decoration: BoxDecoration(
       border: Border.all(color: AppColors.accent),
       borderRadius: BorderRadius.circular(AppRadii.sm),
@@ -432,10 +432,10 @@ class _AiPanelState extends State<AiPanel> {
     final kind = session.errorKind;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        Space.md,
-        Space.sm,
-        Space.md,
-        Space.sm,
+        AppSpace.md,
+        AppSpace.sm,
+        AppSpace.md,
+        AppSpace.sm,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -443,8 +443,8 @@ class _AiPanelState extends State<AiPanel> {
           if (session.error != null)
             Container(
               key: const ValueKey('ai-error'),
-              margin: const EdgeInsets.only(bottom: Space.sm),
-              padding: const EdgeInsets.all(Space.sm),
+              margin: const EdgeInsets.only(bottom: AppSpace.sm),
+              padding: const EdgeInsets.all(AppSpace.sm),
               decoration: BoxDecoration(
                 border: Border.all(color: AppColors.warm),
                 borderRadius: BorderRadius.circular(AppRadii.sm),

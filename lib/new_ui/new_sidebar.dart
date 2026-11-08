@@ -8,14 +8,13 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
-import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../app/shell.dart' show openQuickAdd;
-import '../app/sidebar.dart' show Sidebar, appDestinations;
+import '../app/navigation.dart';
 import '../features/settings/settings_dialog.dart';
 import '../platform/input_hints.dart';
 import 'new_components.dart' show BrandPlus;
-import 'new_tokens.dart';
+import '../app/theme.dart';
 
 /// Places [child] (the page area) with the floating sidebar over its right
 /// edge. In a normal window the page area keeps clear of the capsule so
@@ -85,12 +84,12 @@ class _NewSidebarLayoutState extends State<NewSidebarLayout> {
       children: [
         Positioned.fill(child: widget.child),
         Positioned(
-          right: hidden ? 0 : NewSpace.edge,
+          right: hidden ? 0 : AppSpace.edge,
           top: _clearTop,
           bottom: _clearBottom,
           child: AnimatedSwitcher(
-            duration: NewMotion.normal,
-            switchInCurve: NewMotion.curve,
+            duration: AppMotion.normal,
+            switchInCurve: AppMotion.standard,
             child: hidden
                 ? Align(
                     key: const ValueKey('new-sidebar-handle'),
@@ -105,8 +104,8 @@ class _NewSidebarLayoutState extends State<NewSidebarLayout> {
   }
 
   // Room kept for the page bar (34) and the quote line (~34) plus a margin.
-  static const _clearTop = 34.0 + NewSpace.edge;
-  static const _clearBottom = 40.0 + NewSpace.edge;
+  static const _clearTop = 34.0 + AppSpace.edge;
+  static const _clearBottom = 40.0 + AppSpace.edge;
 
   Widget _narrow() {
     return Stack(
@@ -134,9 +133,9 @@ class _NewSidebarLayoutState extends State<NewSidebarLayout> {
             ),
           ),
           Positioned(
-            right: NewSpace.sm,
-            top: NewSpace.sm,
-            bottom: NewSpace.sm,
+            right: AppSpace.sm,
+            top: AppSpace.sm,
+            bottom: AppSpace.sm,
             child: NewSidebar(
               key: const ValueKey('new-sidebar'),
               state: state,
@@ -171,7 +170,6 @@ class NewSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nav = Sidebar(state: state); // only for its drop-target rules
     final expanded = state.newSidebarExpanded && !narrow;
     return Align(
       alignment: Alignment.centerRight,
@@ -182,19 +180,20 @@ class NewSidebar extends StatelessWidget {
           builder: (context, _) => Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(height: NewSpace.md),
+              const SizedBox(height: AppSpace.md),
               _QuickAddButton(
                 expanded: expanded,
                 onTap: () => openQuickAdd(context, state),
               ),
-              const SizedBox(height: NewSpace.md),
+              const SizedBox(height: AppSpace.md),
               Flexible(
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       for (final (page, icon, label) in appDestinations)
-                        nav.navDropTarget(
+                        navDropTarget(
+                          state,
                           page,
                           _NavItem(
                             key: ValueKey('new-nav-${page.name}'),
@@ -209,17 +208,17 @@ class NewSidebar extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: NewSpace.sm),
-              Container(width: 24, height: 1, color: NewColors.glassBorder),
-              const SizedBox(height: NewSpace.sm),
+              const SizedBox(height: AppSpace.sm),
+              Container(width: 24, height: 1, color: AppColors.glassBorder),
+              const SizedBox(height: AppSpace.sm),
               if (state.timer.running)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: NewSpace.xs),
+                  padding: const EdgeInsets.only(bottom: AppSpace.xs),
                   child: Text(
                     state.timer.label,
                     style: TextStyle(
                       fontSize: AppType.sizeMicro,
-                      color: NewColors.textMuted,
+                      color: AppColors.textMuted,
                     ),
                   ),
                 ),
@@ -247,7 +246,7 @@ class NewSidebar extends StatelessWidget {
                 expanded: expanded,
                 onTap: onHide ?? state.toggleNewSidebarHidden,
               ),
-              const SizedBox(height: NewSpace.sm),
+              const SizedBox(height: AppSpace.sm),
             ],
           ),
         ),
@@ -266,32 +265,32 @@ class _GlassCapsule extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const radius = BorderRadius.all(Radius.circular(NewSizes.capsuleWidth / 2));
+    const radius = BorderRadius.all(Radius.circular(_CapsuleSizes.width / 2));
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: radius,
-        boxShadow: [...NewShadows.floating, ...NewShadows.glow],
+        boxShadow: [...AppElevation.floating, ...AppElevation.glow],
       ),
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
           filter: ImageFilter.blur(
-            sigmaX: NewBlur.glass,
-            sigmaY: NewBlur.glass,
+            sigmaX: AppBlur.glass,
+            sigmaY: AppBlur.glass,
           ),
           child: AnimatedContainer(
-            duration: NewMotion.normal,
-            curve: NewMotion.curve,
+            duration: AppMotion.normal,
+            curve: AppMotion.standard,
             width: expanded
-                ? NewSizes.capsuleExpandedWidth
-                : NewSizes.capsuleWidth,
+                ? _CapsuleSizes.expandedWidth
+                : _CapsuleSizes.width,
             decoration: BoxDecoration(
-              color: NewColors.glass,
+              color: AppColors.glass,
               borderRadius: radius,
-              border: Border.all(color: NewColors.glassBorder),
+              border: Border.all(color: AppColors.glassBorder),
             ),
             foregroundDecoration: BoxDecoration(
-              gradient: NewGradients.lighting,
+              gradient: AppGradients.lighting,
               borderRadius: radius,
             ),
             child: child,
@@ -318,7 +317,7 @@ class _QuickAddButton extends StatelessWidget {
         key: const ValueKey('new-quick-add'),
         onTap: onTap,
         child: BrandPlus(
-          width: expanded ? NewSizes.capsuleExpandedWidth - 24 : 40,
+          width: expanded ? _CapsuleSizes.expandedWidth - 24 : 40,
           hovered: hovered,
           label: expanded ? 'Quick Add' : null,
         ),
@@ -362,10 +361,10 @@ class _NavItem extends StatelessWidget {
             // sits against the border, not over it.
             width:
                 (expanded
-                    ? NewSizes.capsuleExpandedWidth
-                    : NewSizes.capsuleWidth) -
-                2 * NewSizes.border,
-            height: NewSizes.navItem,
+                    ? _CapsuleSizes.expandedWidth
+                    : _CapsuleSizes.width) -
+                2 * _CapsuleSizes.border,
+            height: _CapsuleSizes.navItem,
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -376,7 +375,7 @@ class _NavItem extends StatelessWidget {
                       width: 3,
                       height: 20,
                       decoration: const BoxDecoration(
-                        gradient: NewGradients.brand,
+                        gradient: AppGradients.brand,
                         borderRadius: BorderRadius.horizontal(
                           left: Radius.circular(AppRadii.xs),
                         ),
@@ -384,16 +383,16 @@ class _NavItem extends StatelessWidget {
                     ),
                   ),
                 AnimatedContainer(
-                  duration: NewMotion.quick,
+                  duration: AppMotion.quick,
                   margin: const EdgeInsets.symmetric(horizontal: 12),
                   height: 36,
                   decoration: BoxDecoration(
                     color: active
-                        ? NewColors.accentSoft
+                        ? AppColors.accentSoft
                         : hovered
-                        ? NewColors.hover
+                        ? AppColors.hover
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(NewRadii.md),
+                    borderRadius: BorderRadius.circular(AppRadii.popup),
                   ),
                   child: Row(
                     mainAxisAlignment: expanded
@@ -403,15 +402,15 @@ class _NavItem extends StatelessWidget {
                       if (expanded) const SizedBox(width: 6),
                       Icon(
                         icon,
-                        size: NewSizes.icon,
+                        size: _CapsuleSizes.icon,
                         color: active
-                            ? NewColors.accent
+                            ? AppColors.accent
                             : hovered
-                            ? NewColors.text
-                            : NewColors.textMuted,
+                            ? AppColors.text
+                            : AppColors.textMuted,
                       ),
                       if (expanded) ...[
-                        const SizedBox(width: NewSpace.sm),
+                        const SizedBox(width: AppSpace.sm),
                         Expanded(
                           child: Text(
                             label,
@@ -423,8 +422,8 @@ class _NavItem extends StatelessWidget {
                                   ? FontWeight.w600
                                   : FontWeight.w400,
                               color: active
-                                  ? NewColors.text
-                                  : NewColors.textMuted,
+                                  ? AppColors.text
+                                  : AppColors.textMuted,
                             ),
                           ),
                         ),
@@ -500,7 +499,7 @@ class _HoverLabelState extends State<_HoverLabel> {
             link: _link,
             targetAnchor: Alignment.centerLeft,
             followerAnchor: Alignment.centerRight,
-            offset: const Offset(-NewSpace.sm, 0),
+            offset: const Offset(-AppSpace.sm, 0),
             child: Align(
               alignment: Alignment.centerRight,
               child: IgnorePointer(child: _LabelPill(text: widget.label)),
@@ -524,16 +523,16 @@ class _LabelPill extends StatelessWidget {
       type: MaterialType.transparency,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: NewColors.surfaceRaised,
-          borderRadius: BorderRadius.circular(NewRadii.sm),
-          border: Border.all(color: NewColors.glassBorder),
-          boxShadow: NewShadows.floating,
+          color: AppColors.cardRaised,
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          border: Border.all(color: AppColors.glassBorder),
+          boxShadow: AppElevation.floating,
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Text(
             text,
-            style: NewText.label.copyWith(color: NewColors.text),
+            style: AppType.label.copyWith(color: AppColors.text),
           ),
         ),
       ),
@@ -558,20 +557,29 @@ class _Handle extends StatelessWidget {
           width: _handleWidth,
           height: 64,
           decoration: BoxDecoration(
-            color: NewColors.glass,
+            color: AppColors.glass,
             borderRadius: const BorderRadius.horizontal(
-              left: Radius.circular(NewRadii.md),
+              left: Radius.circular(AppRadii.popup),
             ),
-            border: Border.all(color: NewColors.glassBorder),
-            boxShadow: NewShadows.floating,
+            border: Border.all(color: AppColors.glassBorder),
+            boxShadow: AppElevation.floating,
           ),
           child: Icon(
             Icons.chevron_left,
             size: 18,
-            color: hovered ? NewColors.text : NewColors.textMuted,
+            color: hovered ? AppColors.text : AppColors.textMuted,
           ),
         ),
       ),
     );
   }
+}
+
+/// Measurements of the sidebar capsule (only this file draws it).
+abstract final class _CapsuleSizes {
+  static const icon = 20.0;
+  static const navItem = 44.0;
+  static const width = 60.0;
+  static const expandedWidth = 188.0;
+  static const border = 1.0;
 }

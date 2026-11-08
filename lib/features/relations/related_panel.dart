@@ -47,7 +47,7 @@ class RelatedPanel extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.only(top: Space.sm, bottom: 2),
+                    padding: const EdgeInsets.only(top: AppSpace.sm, bottom: 2),
                     child: Text(title, style: heading),
                   ),
                   for (final r in rows)

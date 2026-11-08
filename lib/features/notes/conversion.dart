@@ -104,7 +104,7 @@ Future<String?> convertSelection(
                   ),
                 ),
               ],
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               if (target == ConversionTarget.subtask)
                 DropdownButton<String>(
                   isExpanded: true,
@@ -133,7 +133,7 @@ Future<String?> convertSelection(
                 ),
               ),
               if (duplicate) ...[
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
                 Text(
                   'A ${target == ConversionTarget.subtask ? 'task' : target.label.toLowerCase()} '
                   'with this name already exists.',

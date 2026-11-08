@@ -29,8 +29,15 @@ void main() {
   });
 
   test('the Browser keeps its address bar; no global search bar entry', () {
-    final src = File('lib/app/sidebar.dart').readAsStringSync();
-    expect(src.contains('showSearchDialog'), isFalse);
+    // The sidebar capsule and the shared navigation list offer no global
+    // search entry.
+    for (final path in [
+      'lib/new_ui/new_sidebar.dart',
+      'lib/app/navigation.dart',
+    ]) {
+      final src = File(path).readAsStringSync();
+      expect(src.contains('showSearchDialog'), isFalse, reason: path);
+    }
     final browser = File('lib/features/browser/browser_page.dart')
         .readAsStringSync();
     expect(browser, contains('Search or enter an address'));

@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/app/app_state.dart';
-import 'package:flutter_application_1/app/sidebar.dart';
+import 'package:flutter_application_1/app/navigation.dart';
 import 'package:flutter_application_1/data/models/task_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
@@ -191,7 +191,7 @@ void main() {
       expect(find.byKey(const ValueKey('reminders')), findsOneWidget);
       // It sits in the workspace, never over the sidebar's controls.
       final notice = tester.getRect(find.byKey(const ValueKey('reminders')));
-      expect(notice.right, lessThanOrEqualTo(1600 - Sidebar.expandedWidth));
+      expect(notice.right, lessThanOrEqualTo(1600 - SidebarClearance.expanded));
       expect(find.text('Revise chapter 3'), findsWidgets);
       await tester.tap(find.widgetWithText(TextButton, 'Open'));
       await tester.pump();

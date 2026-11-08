@@ -356,7 +356,20 @@ void main() {
       await tester.runAsync(() => s.createCanvas(show: true)); // empty canvas
       s.goTo(AppPage.canvas);
       await settle(tester);
-      expect(find.textContaining('Double-tap anywhere'), findsOneWidget);
+      // The empty mindmap's entry screen carries the hint on its "Add
+      // text" button: tap wording on touch devices, never clicks or Ctrl.
+      expect(find.byKey(const ValueKey('empty-canvas')), findsOneWidget);
+      final hint = tester
+          .widget<Tooltip>(
+            find.descendant(
+              of: find.byKey(const ValueKey('empty-canvas-text')),
+              matching: find.byType(Tooltip),
+            ),
+          )
+          .message!;
+      expect(hint.toLowerCase(), contains('double-tap anywhere'));
+      expect(hint.toLowerCase(), isNot(contains('click')));
+      expect(hint, isNot(contains('Ctrl')));
       expect(find.textContaining('Double-click'), findsNothing);
       expect(find.text('Ctrl K'), findsNothing);
 

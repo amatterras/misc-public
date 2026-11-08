@@ -220,7 +220,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
                 ),
               ),
             ),
-          const SizedBox(height: Space.sm),
+          const SizedBox(height: AppSpace.sm),
           TextField(
             controller: _workingRules,
             minLines: 2,
@@ -290,7 +290,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
               label: Text('What was sent (${ai.activity.length})'),
             ),
           ),
-          const SizedBox(height: Space.sm),
+          const SizedBox(height: AppSpace.sm),
           Text(
             'Most text sent at once: ${ai.maxContextChars} characters',
             style: const TextStyle(fontSize: AppType.sizeBodySmall),
@@ -334,7 +334,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
                 onPressed: _testing ? null : _testConnection,
                 child: const Text('Test connection'),
               ),
-              const SizedBox(width: Space.md),
+              const SizedBox(width: AppSpace.md),
               Expanded(child: Text(_test ?? '', style: small)),
             ],
           ),

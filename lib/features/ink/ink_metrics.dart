@@ -5,7 +5,7 @@
 // app log (THEapp-log.txt; on iPad: Files → On My iPad → THEapp), so real
 // device numbers can be read without a Mac or a debugger.
 //
-// What is measured (INK_ENGINE_REPORT.md §Instrumentation):
+// What is measured (docs/INK_ENGINE_REPORT.md §Instrumentation):
 //  * samples: Flutter pointer moves, native (coalesced) Pencil samples,
 //    samples kept, samples merged away as closer than half a pixel;
 //  * input→paint: from the moment a sample is handled in Dart to the moment

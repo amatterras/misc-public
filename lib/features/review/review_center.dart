@@ -169,7 +169,7 @@ class _ReviewCenterState extends State<ReviewCenter> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: Space.md),
+                const SizedBox(width: AppSpace.md),
                 SegmentedButton<bool>(
                   segments: const [
                     ButtonSegment(value: false, label: Text('Today')),

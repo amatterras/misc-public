@@ -17,7 +17,7 @@ import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/canvas/canvas_text.dart';
 import 'package:flutter_application_1/features/links/link_tags.dart';
-import 'package:flutter_application_1/features/widgets/widget_snapshot.dart';
+import 'package:flutter_application_1/features/home_widgets/widget_snapshot.dart';
 import 'package:flutter_application_1/hub/hub_server.dart';
 import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/platform/ios_bridge.dart';

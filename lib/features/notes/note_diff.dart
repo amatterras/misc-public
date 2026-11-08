@@ -60,7 +60,7 @@ Future<void> showVersionComparison(
                 color: AppColors.textMuted,
               ),
             ),
-            const SizedBox(height: Space.sm),
+            const SizedBox(height: AppSpace.sm),
             for (var i = 0; i < lines.length; i++)
               Container(
                 width: double.infinity,
@@ -101,7 +101,7 @@ Future<void> showVersionComparison(
                 before,
                 diff.before,
               ),
-              const SizedBox(width: Space.lg),
+              const SizedBox(width: AppSpace.lg),
               column('Now', after, diff.after),
             ],
           ),

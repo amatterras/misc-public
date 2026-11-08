@@ -11,7 +11,6 @@ import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/motivation/motivation_service.dart';
 import 'package:flutter_application_1/new_ui/new_components.dart';
-import 'package:flutter_application_1/new_ui/new_tokens.dart';
 import 'package:flutter_application_1/phone/phone_profile.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -105,8 +104,8 @@ void main() {
         tester,
         find.byKey(const ValueKey('phone-new')),
       );
-      expect(phone.gradient, NewGradients.brand);
-      expect(phone.borderRadius, BorderRadius.circular(NewRadii.capsule));
+      expect(phone.gradient, AppGradients.brand);
+      expect(phone.borderRadius, BorderRadius.circular(AppRadii.capsule));
       expect(phone.boxShadow!.single.color.a, closeTo(0.28, 0.01));
       expect(
         find.descendant(

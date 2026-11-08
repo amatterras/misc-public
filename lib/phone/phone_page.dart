@@ -2,8 +2,8 @@
 // desktop page). One slim bar with a Back arrow, nothing else of its own.
 import 'package:flutter/material.dart';
 
-import '../app/design_tokens.dart';
-import '../new_ui/new_tokens.dart';
+import '../new_ui/new_components.dart' show NewAtmosphere;
+import '../app/theme.dart';
 import 'phone_tokens.dart';
 import 'phone_widgets.dart';
 
@@ -22,8 +22,9 @@ class PhonePage extends StatelessWidget {
   final List<Widget> actions;
 
   @override
+  // Transparent: [pushPhone] puts the atmosphere behind every pushed page.
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: NewColors.background,
+    backgroundColor: Colors.transparent,
     body: Column(
       children: [
         Container(
@@ -31,7 +32,7 @@ class PhonePage extends StatelessWidget {
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                color: NewColors.border.withValues(alpha: 0.7),
+                color: AppColors.border.withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -43,7 +44,7 @@ class PhonePage extends StatelessWidget {
                   icon: Icons.arrow_back_ios_new_rounded,
                   label: 'Back',
                   size: 19,
-                  color: NewColors.text,
+                  color: AppColors.text,
                   onTap: () => Navigator.maybePop(context),
                 ),
                 Expanded(
@@ -81,6 +82,9 @@ class PhonePage extends StatelessWidget {
   );
 }
 
-/// Pushes [page] with the standard iOS slide.
+/// Pushes [page] with the standard iOS slide, on its own copy of the
+/// app-wide atmosphere (a pushed route is outside the shell's field).
 Future<T?> pushPhone<T>(BuildContext context, Widget page) =>
-    Navigator.of(context).push<T>(MaterialPageRoute<T>(builder: (_) => page));
+    Navigator.of(context).push<T>(
+      MaterialPageRoute<T>(builder: (_) => NewAtmosphere.behind(child: page)),
+    );

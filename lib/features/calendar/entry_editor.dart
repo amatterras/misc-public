@@ -285,7 +285,7 @@ class _EntryEditorState extends State<_EntryEditor> {
               onTap: () =>
                   setState(() => e = e.copyWith(startMinutes: () => null)),
             ),
-            const SizedBox(width: Space.md),
+            const SizedBox(width: AppSpace.md),
             SizedBox(
               width: 120,
               child: TextField(
@@ -702,7 +702,7 @@ class _EntryEditorState extends State<_EntryEditor> {
       title: Row(
         children: [
           ColorDot(color: calendarCategoryColor(e.category), size: 12),
-          const SizedBox(width: Space.sm),
+          const SizedBox(width: AppSpace.sm),
           Text(
             widget.isNew
                 ? 'New ${e.category.label} entry'
@@ -731,23 +731,23 @@ class _EntryEditorState extends State<_EntryEditor> {
                   },
                 ),
               ),
-              const SizedBox(height: Space.sm),
+              const SizedBox(height: AppSpace.sm),
               TextField(
                 controller: _description,
                 decoration: const InputDecoration(
                   hintText: 'Short description (optional)',
                 ),
               ),
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               ..._categoryFields(),
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               TextField(
                 controller: _notes,
                 minLines: 2,
                 maxLines: 6,
                 decoration: const InputDecoration(hintText: 'Notes'),
               ),
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -788,7 +788,7 @@ class _EntryEditorState extends State<_EntryEditor> {
                 ],
               ),
               if (_error != null) ...[
-                const SizedBox(height: Space.md),
+                const SizedBox(height: AppSpace.md),
                 Text(
                   _error!,
                   style: TextStyle(
@@ -846,7 +846,7 @@ class _EntryEditorState extends State<_EntryEditor> {
             child: Text(e.archived ? 'Restore' : 'Archive'),
           ),
         ],
-        const SizedBox(width: Space.xl),
+        const SizedBox(width: AppSpace.xl),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: Text('Cancel', style: TextStyle(color: AppColors.textMuted)),

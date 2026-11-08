@@ -7,7 +7,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../data/models/calendar_models.dart';
 import '../data/models/canvas_models.dart' show newId;
@@ -16,7 +15,7 @@ import '../data/models/task_models.dart';
 import '../data/workspace.dart';
 import '../features/calendar/entry_editor.dart';
 import '../new_ui/home_agenda.dart';
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 import '../platform/platform.dart' as native;
 import '../widgets/common.dart' show confirm;
 import 'phone_task.dart';
@@ -72,7 +71,7 @@ mixin AgendaActions<T extends StatefulWidget> on State<T> {
           SheetItem(label: 'Reschedule', onTap: () => Navigator.pop(c, 'move')),
           SheetItem(
             label: 'Delete',
-            color: NewColors.danger,
+            color: AppColors.danger,
             onTap: () => Navigator.pop(c, 'delete'),
           ),
         ],
@@ -216,7 +215,7 @@ class _PhoneAgendaState extends State<PhoneAgenda> with AgendaActions {
         ..add(
           _sectionLabel(
             'Overdue',
-            color: NewColors.warm,
+            color: AppColors.warm,
             trailing: '${agenda.overdue.length}',
           ),
         )
@@ -369,7 +368,7 @@ class AgendaRow extends StatelessWidget {
                           ? Text(
                               leadingLabel!,
                               style: PhoneType.time.copyWith(
-                                color: NewColors.textFaint,
+                                color: AppColors.textFaint,
                               ),
                             )
                           : start == null
@@ -381,8 +380,8 @@ class AgendaRow extends StatelessWidget {
                                   formatClock(start),
                                   style: PhoneType.time.copyWith(
                                     color: done
-                                        ? NewColors.textFaint
-                                        : NewColors.text,
+                                        ? AppColors.textFaint
+                                        : AppColors.text,
                                   ),
                                 ),
                                 if (end != null && end > start)
@@ -390,7 +389,7 @@ class AgendaRow extends StatelessWidget {
                                     formatClock(end % (24 * 60)),
                                     style: PhoneType.time.copyWith(
                                       fontSize: AppType.sizeLabel,
-                                      color: NewColors.textFaint,
+                                      color: AppColors.textFaint,
                                     ),
                                   ),
                               ],
@@ -409,12 +408,12 @@ class AgendaRow extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: PhoneType.row.copyWith(
                               color: done
-                                  ? NewColors.textFaint
-                                  : NewColors.text,
+                                  ? AppColors.textFaint
+                                  : AppColors.text,
                               decoration: done
                                   ? TextDecoration.lineThrough
                                   : null,
-                              decorationColor: NewColors.textFaint,
+                              decorationColor: AppColors.textFaint,
                             ),
                           ),
                           const SizedBox(height: 3),
@@ -487,7 +486,7 @@ class _NowLine extends StatelessWidget {
               formatClock(minutes),
               style: PhoneType.time.copyWith(
                 fontWeight: FontWeight.w700,
-                color: NewColors.accent,
+                color: AppColors.accent,
               ),
             ),
           ),
@@ -497,8 +496,8 @@ class _NowLine extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    NewGradients.brandIris,
-                    NewGradients.brandCoral.withValues(alpha: 0),
+                    BrandColors.iris,
+                    BrandColors.coral.withValues(alpha: 0),
                   ],
                 ),
               ),

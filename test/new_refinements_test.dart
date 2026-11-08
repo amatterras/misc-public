@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/app/shell.dart';
-import 'package:flutter_application_1/app/sidebar.dart';
 import 'package:flutter_application_1/app/theme.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
@@ -216,7 +215,7 @@ void main() {
       // Not in the sidebar any more.
       expect(
         find.descendant(
-          of: find.byType(Sidebar),
+          of: find.byType(NewSidebar),
           matching: find.byKey(const ValueKey('motivational-quote')),
         ),
         findsNothing,

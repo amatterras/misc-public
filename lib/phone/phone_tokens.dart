@@ -1,14 +1,13 @@
 // Type, spacing and small helpers of the iPhone interface.
 //
-// The colours are NOT new: everything comes from NewColors (graphite and
+// The colours are NOT new: everything comes from AppColors (graphite and
 // steel blue in the dark theme, porcelain and iris in the light one, with the
 // periwinkle→coral brand gradient). What the phone adds is a stricter way of
 // using them: no cards and no filled containers, content set directly on the
 // page, divided by hairlines, with one gradient moment per screen.
 import 'package:flutter/material.dart';
 
-import '../app/design_tokens.dart';
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 
 abstract final class PhoneSpace {
   /// Left and right margin of all content.
@@ -29,7 +28,7 @@ abstract final class PhoneType {
     fontWeight: FontWeight.w700,
     letterSpacing: -1.3,
     height: 1.02,
-    color: NewColors.text,
+    color: AppColors.text,
   );
 
   /// Section titles inside a screen, pushed page titles.
@@ -38,7 +37,7 @@ abstract final class PhoneType {
     fontWeight: FontWeight.w700,
     letterSpacing: -0.6,
     height: 1.15,
-    color: NewColors.text,
+    color: AppColors.text,
   );
 
   /// The main line of a row.
@@ -47,21 +46,21 @@ abstract final class PhoneType {
     fontWeight: FontWeight.w600,
     letterSpacing: -0.3,
     height: 1.25,
-    color: NewColors.text,
+    color: AppColors.text,
   );
 
   static TextStyle get body => TextStyle(
     fontSize: 15,
     height: 1.4,
     letterSpacing: -0.1,
-    color: NewColors.textMuted,
+    color: AppColors.textMuted,
   );
 
   static TextStyle get meta => TextStyle(
     fontSize: AppType.sizeBodySmall,
     height: 1.3,
     letterSpacing: 0,
-    color: NewColors.textFaint,
+    color: AppColors.textFaint,
   );
 
   /// Small capitals above things: "OVERDUE", "TUESDAY".
@@ -70,7 +69,7 @@ abstract final class PhoneType {
     fontWeight: FontWeight.w700,
     letterSpacing: 1.5,
     height: 1.2,
-    color: NewColors.textFaint,
+    color: AppColors.textFaint,
   );
 
   /// Clock times and counts: digits keep their width.
@@ -79,7 +78,7 @@ abstract final class PhoneType {
     fontWeight: FontWeight.w500,
     height: 1.25,
     letterSpacing: 0.1,
-    color: NewColors.textMuted,
+    color: AppColors.textMuted,
     fontFeatures: _tabular,
   );
 
@@ -95,7 +94,7 @@ abstract final class PhoneType {
     fontSize: AppType.sizeHeading,
     fontWeight: FontWeight.w500,
     height: 1.1,
-    color: NewColors.text,
+    color: AppColors.text,
     fontFeatures: _tabular,
   );
 }

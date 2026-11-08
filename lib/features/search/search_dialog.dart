@@ -347,7 +347,7 @@ class _SearchDialogState extends State<_SearchDialog> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(Space.lg),
+              padding: const EdgeInsets.all(AppSpace.lg),
               child: TextField(
                 key: const ValueKey('global-search-field'),
                 autofocus: true,
@@ -356,7 +356,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                   prefixIcon: Icon(Icons.search, size: 18),
                   hintText: 'Search notes, canvases, links, calendar and tasks',
                   contentPadding: EdgeInsets.symmetric(
-                    horizontal: Space.md,
+                    horizontal: AppSpace.md,
                     vertical: 16,
                   ),
                   constraints: BoxConstraints(minHeight: 56),
@@ -374,7 +374,7 @@ class _SearchDialogState extends State<_SearchDialog> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg),
               child: Row(
                 children: [
                   Expanded(
@@ -404,7 +404,7 @@ class _SearchDialogState extends State<_SearchDialog> {
               height: 40,
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg),
                 children: [
                   for (final f in SearchFilter.values)
                     Padding(

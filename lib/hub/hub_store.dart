@@ -506,7 +506,7 @@ class HubStore {
       '$device|${c.collection}|${c.id}|${c.rev}';
 
   /// Applies pushed changes from [device] as one durable batch and returns
-  /// one result per change, in order. See SYNC_ARCHITECTURE.md §11 for the
+  /// one result per change, in order. See docs/SYNC_ARCHITECTURE.md §11 for the
   /// rules.
   Future<List<PushResult>> push(String device, List<SyncChange> changes) {
     if (changes.length > maxPushBatch) {

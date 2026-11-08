@@ -34,5 +34,5 @@ flutter test -j 1
 flutter run -d windows
 ```
 
-See `ARCHITECTURE.md`, `SYNC_ARCHITECTURE.md`, `STORAGE_MODES.md` and
-`IOS_BUILD_GUIDE.md` for how it is put together.
+See `ARCHITECTURE.md`, `docs/SYNC_ARCHITECTURE.md`, `docs/STORAGE_MODES.md` and
+`docs/IOS_BUILD_GUIDE.md` for how it is put together.

@@ -308,7 +308,7 @@ class _PaletteState extends State<_Palette> {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.all(Space.md),
+                padding: const EdgeInsets.all(AppSpace.md),
                 child: TextField(
                   key: const ValueKey('palette-input'),
                   autofocus: true,

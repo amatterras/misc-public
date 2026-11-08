@@ -1,4 +1,4 @@
-// Versioned, checkpointed data migrations (see DATA_MIGRATIONS.md).
+// Versioned, checkpointed data migrations (see docs/DATA_MIGRATIONS.md).
 //
 // The data is many JSON files, each written atomically, but there is no
 // transaction across files. So every migration run is staged:

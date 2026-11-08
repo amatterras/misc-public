@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import '../data/models/canvas_models.dart' show newId;
 import 'app_state.dart';
 import 'page_windows.dart';
-import 'sidebar.dart' show appDestinations;
+import 'navigation.dart' show appDestinations;
 import 'theme.dart';
 import '../widgets/common.dart' show promptText;
 
@@ -183,8 +183,9 @@ class TopBar extends StatelessWidget {
       return Container(
         key: const ValueKey('top-bar'),
         height: height,
+        // Transparent: the app-wide atmosphere runs through the page bar
+        // into the page below; the hairline alone separates them.
         decoration: BoxDecoration(
-          color: AppColors.sidebar,
           border: Border(bottom: BorderSide(color: AppColors.border)),
         ),
         child: Row(

@@ -4,13 +4,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../app/design_tokens.dart';
 import '../app/app_state.dart';
 import '../app/quote_footer.dart';
 import '../data/models/record.dart';
 import '../features/motivation/motivation_service.dart';
 import '../new_ui/home_agenda.dart';
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 import '../widgets/date_prefs.dart';
 import 'phone_agenda.dart';
 import 'phone_capture.dart' show PhoneDay;
@@ -93,8 +92,8 @@ class _PhoneTodayState extends State<PhoneToday> {
         final agenda = HomeAgenda.build(s.workspace, _selected);
         final isToday = daysBetween(dateOnly(DateTime.now()), _selected) == 0;
         return RefreshIndicator(
-          color: NewColors.accent,
-          backgroundColor: NewColors.surface,
+          color: AppColors.accent,
+          backgroundColor: AppColors.card,
           edgeOffset: MediaQuery.paddingOf(context).top,
           onRefresh: () async {
             if (s.syncPaired) await s.syncNow();
@@ -178,7 +177,7 @@ class _PhoneTodayState extends State<PhoneToday> {
               letters[day.weekday - 1],
               style: PhoneType.eyebrow.copyWith(
                 fontSize: AppType.sizeMeta,
-                color: selected ? NewColors.text : NewColors.textFaint,
+                color: selected ? AppColors.text : AppColors.textFaint,
               ),
             ),
             const SizedBox(height: 7),
@@ -188,17 +187,17 @@ class _PhoneTodayState extends State<PhoneToday> {
                 fontSize: 19,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
                 color: today
-                    ? NewColors.accent
+                    ? AppColors.accent
                     : selected
-                    ? NewColors.text
-                    : NewColors.textMuted,
+                    ? AppColors.text
+                    : AppColors.textMuted,
               ),
             ),
             const SizedBox(height: 7),
             SizedBox(
               height: 4,
               child: selected
-                  ? Container(width: 18, height: 2.5, color: NewColors.text)
+                  ? Container(width: 18, height: 2.5, color: AppColors.text)
                   : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -256,7 +255,7 @@ class _PhoneTodayState extends State<PhoneToday> {
                       style: TextStyle(
                         fontSize: AppType.sizeBody,
                         fontWeight: FontWeight.w600,
-                        color: NewColors.accent,
+                        color: AppColors.accent,
                       ),
                     ),
                   ),
@@ -268,13 +267,13 @@ class _PhoneTodayState extends State<PhoneToday> {
             LayoutBuilder(
               builder: (context, c) => Stack(
                 children: [
-                  Container(height: 2, color: NewColors.border),
+                  Container(height: 2, color: AppColors.border),
                   AnimatedContainer(
                     duration: AppMotion.page,
                     curve: AppMotion.standard,
                     height: 2,
                     width: c.maxWidth * a.progress,
-                    decoration: BoxDecoration(gradient: NewGradients.brand),
+                    decoration: BoxDecoration(gradient: AppGradients.brand),
                   ),
                 ],
               ),

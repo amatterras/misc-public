@@ -1,7 +1,7 @@
 # misc. feature matrix
 
 Source of requirements: the original project brief (2026-10-21, quoted in
-section numbers below) and `MASTER_SPEC.md`. Code existing is never enough:
+section numbers below) and `../MASTER_SPEC.md`. Code existing is never enough:
 "Verified" needs a passing test or a recorded real-binary check.
 
 Status: VERIFIED = implemented and verified · UNVERIFIED = implemented but
@@ -14,7 +14,7 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 | Dark, minimal design; collapsible right sidebar | P1 | W | VERIFIED | `lib/app/shell.dart`, `sidebar.dart`; `widget_test` "every page opens from the sidebar"; `spec_coverage_test` sidebar persistence | click-through on real binary not automated |
 | Navigation (2026-10-23): sidebar has six entries (decided 2026-11-03): mindmap, notes, calendar, archive, safari, ai; there is no Home page (deleted 2026-11-03); Tasks is a collapsible ~3/5 column inside Calendar (replaces the calendar below 900 px); 5 most recent notes under Notes; last page restored at start | P1 | W,i | VERIFIED (widget tests) | `sidebar.dart` `appDestinations`, `calendar_page.dart`; `widget_test`, `layout_test` (8 sizes incl. phone/iPad) | real-binary and iPad click-through |
 | [SUPERSEDED 2026-11-03, see Specification lock] Home: today's tasks, priorities, upcoming deadlines, quick capture, recent/favorite notes | P1 | W | VERIFIED (screenshot of real binary on test data + widget tests) | `lib/features/home/home_page.dart` | |
-| Canonical global, Archive/Links, Calendar and ink palettes; backed-up legacy color migration | P1 | W,i | PARTIAL | `canonical_color_migration_test`, `phase3_test` (selected-tag highlight callback); see `MASTER_SPEC.md` | Lasso tags (dots + minimap glow) implemented in Phase 3; project custom colors await an approved palette |
+| Canonical global, Archive/Links, Calendar and ink palettes; backed-up legacy color migration | P1 | W,i | PARTIAL | `canonical_color_migration_test`, `phase3_test` (selected-tag highlight callback); see `../MASTER_SPEC.md` | Lasso tags (dots + minimap glow) implemented in Phase 3; project custom colors await an approved palette |
 
 ## 2. Canvas (highest priority)
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
@@ -111,9 +111,9 @@ Platform: W = Windows, i = iPhone/iPad. Priority: P1 (core) … P3 (later).
 ## Motivation and manual verification
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |
 |---|---|---|---|---|---|
-| 600 greetings in six local-time pools; 60-second window; refresh on resume/timezone/date changes | P1 | W,i | VERIFIED by deterministic tests; no real-device test | `motivation_test`, `widget_test`; scheduling rules in `MASTER_SPEC.md` | Windows/iOS manual clock-change checks |
+| 600 greetings in six local-time pools; 60-second window; refresh on resume/timezone/date changes | P1 | W,i | VERIFIED by deterministic tests; no real-device test | `motivation_test`, `widget_test`; scheduling rules in `../MASTER_SPEC.md` | Windows/iOS manual clock-change checks |
 | 1,000 quotes rotate hourly using local time and appear in main bars | P1 | W,i | VERIFIED by injected-clock and widget tests | `motivation_test`, `widget_test` | physical-device check |
-| Canonical color migration and the four independent semantic palettes | P1 | W,i | VERIFIED by synthetic tests and analyzer | `canonical_color_migration_test`; `MASTER_SPEC.md` | project colors pending palette decision |
+| Canonical color migration and the four independent semantic palettes | P1 | W,i | VERIFIED by synthetic tests and analyzer | `canonical_color_migration_test`; `../MASTER_SPEC.md` | project colors pending palette decision |
 | Windows manual checks for colors, greeting/quote behavior, restart and sync | P1 | W | NOT RUN | perform only with a disposable profile/data directory | no manual run recorded |
 
 ## Five-phase roadmap (implemented 2026-10-23 by Claude, Phases 1–4)
@@ -287,7 +287,7 @@ Result after the audit: `flutter analyze` clean; 422 passed, 3 skipped, 0 failed
 | Dot opacity (Mindmap, Archive) | P2 | W,i | IMPLEMENTED, UNTESTED | `canvas_painter.dart`, `app_state.dart` dotOpacityFor | Codex tests this batch |
 | Collapsible tool and options strips | P2 | W,i | IMPLEMENTED, UNTESTED | `CollapsibleBar` in `canvas_toolbar.dart` | Codex tests this batch |
 | [SUPERSEDED 2026-11-03, see Specification lock] Custom tags (Archive + Mindmap, synced) | P1 | W,i | IMPLEMENTED, UNTESTED | `tag_models.dart`, `tag_ui.dart`, `workspace.dart` | Codex tests this batch |
-| System/light/dark theme and semantic light tokens | P2 | W,i | IMPLEMENTED (provisional light palette) | `theme_mode_test`; see `MASTER_SPEC.md` | Exact prior palette could not be recovered; host rendering still needs verification |
+| System/light/dark theme and semantic light tokens | P2 | W,i | IMPLEMENTED (provisional light palette) | `theme_mode_test`; see `../MASTER_SPEC.md` | Exact prior palette could not be recovered; host rendering still needs verification |
 
 ## 21. Data safety and storage modes (2026-10-25)
 | Requirement | Pri | Plat | Status | Evidence / references | Blocker |

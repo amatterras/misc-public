@@ -152,7 +152,7 @@ class _AiChatPageState extends State<AiChatPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(Space.md, Space.lg, Space.md, 4),
+          padding: const EdgeInsets.fromLTRB(AppSpace.md, AppSpace.lg, AppSpace.md, 4),
           child: Row(
             children: [
               const Expanded(
@@ -174,7 +174,7 @@ class _AiChatPageState extends State<AiChatPage> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Space.md),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
           child: TextField(
             style: const TextStyle(fontSize: AppType.sizeBodySmall),
             decoration: const InputDecoration(
@@ -184,12 +184,12 @@ class _AiChatPageState extends State<AiChatPage> {
             onChanged: (v) => setState(() => _filter = v),
           ),
         ),
-        const SizedBox(height: Space.sm),
+        const SizedBox(height: AppSpace.sm),
         Expanded(
           child: items.isEmpty
               ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(Space.lg),
+                    padding: EdgeInsets.all(AppSpace.lg),
                     child: Text(
                       'No conversations yet.',
                       style: TextStyle(color: AppColors.textFaint),

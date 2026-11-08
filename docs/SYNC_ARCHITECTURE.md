@@ -453,7 +453,7 @@ yet).
 - Damage in the *middle* (a disk fault) makes the hub stop with an error and
   change nothing. Restore a backup instead.
 
-**App backups:** see `ARCHITECTURE.md`. A restore keeps a "before-restore"
+**App backups:** see `../ARCHITECTURE.md`. A restore keeps a "before-restore"
 copy, and it now also clears the app's sync bookkeeping. If the app is paired,
 the restored data is therefore re-offered rather than overwritten by the next
 sync (§11).

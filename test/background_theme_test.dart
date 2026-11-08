@@ -106,9 +106,11 @@ void main() {
   });
 
   group('Mindmap dots', () {
-    // The painter fills the canvas colour first, so the theme the app is in
-    // (AppColors.mode) and the theme the dots are drawn for must agree, as
-    // they do in the app.
+    // The painter draws no background of its own any more: in the app the
+    // page colour (plus the app-wide atmosphere) lies underneath it. The
+    // test lays the page colour down first, the same way, so the theme the
+    // app is in (AppColors.mode) and the theme the dots are drawn for must
+    // agree, as they do in the app.
     Future<(List<int> dot, List<int> background)> dotAndBackground(
       WidgetTester tester, {
       required bool light,
@@ -123,7 +125,10 @@ void main() {
       final data = await render(
         tester,
         const Size(100, 100),
-        (canvas, s) => CanvasPainter(c, lightTheme: light).paint(canvas, s),
+        (canvas, s) {
+          canvas.drawRect(Offset.zero & s, Paint()..color = AppColors.canvas);
+          CanvasPainter(c, lightTheme: light).paint(canvas, s);
+        },
       );
       c.dispose();
       // dots are on a 24 px grid starting at the origin; (12, 12) is empty

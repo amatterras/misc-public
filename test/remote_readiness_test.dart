@@ -1,7 +1,7 @@
 // Remote sync readiness: which hub addresses devices accept and which
 // addresses the hub may listen on. Remote sync is designed to run over a
 // private Tailscale network (free personal plan); nothing is exposed
-// publicly. See SYNC_ARCHITECTURE.md §17.
+// publicly. See docs/SYNC_ARCHITECTURE.md §17.
 import 'dart:io';
 
 import 'package:flutter_application_1/hub/hub_server.dart';

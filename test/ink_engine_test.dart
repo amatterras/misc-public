@@ -1,4 +1,4 @@
-// The ink engine (INK_ENGINE_REPORT.md): curve geometry, live/finished
+// The ink engine (docs/INK_ENGINE_REPORT.md): curve geometry, live/finished
 // consistency, the pointer lifecycle, pressure capability, full-rate
 // Apple Pencil samples merged from UIKit, and the raster cache of the
 // finished drawing. Deterministic sample sequences only; what needs real

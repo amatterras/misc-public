@@ -9,7 +9,7 @@ Everything is local, in `%APPDATA%\THEapp` (Settings → "Open data folder"):
 | `data\*.json` | Notes, folders, assets (links/photos), inbox, calendar entries, calendar days, tasks, projects |
 | `attachments\` | Managed copies of photos, documents and link preview images; shared asset bytes are retained while asset ownership is ambiguous |
 | `backups\<time>-<reason>\` | Daily automatic snapshots (14 kept), weekly full ones, manual ones, `pre-v3`/`pre-level`/`pre-migration-*`/`before-switch`, `before-restore`; each new one has a checksum `manifest.json` and never holds key files |
-| `migrations\` | `state.json`: finished versioned migrations, the open checkpoint, the last failure (DATA_MIGRATIONS.md) |
+| `migrations\` | `state.json`: finished versioned migrations, the open checkpoint, the last failure (docs/DATA_MIGRATIONS.md) |
 | `inbox_requests\` | Hand-off files from Explorer "Send to" launches |
 | `sync\` | Device identity and deleted-canvas markers (for future sync) |
 | `calendar\` | Protected Google/Outlook OAuth token files, when configured |
@@ -37,12 +37,72 @@ Calendar grid labels are computed from `CalendarEntry` and `Task` records
 (`Workspace.itemsOn`) — nothing is copied, so edits show up everywhere.
 
 ## Code layout
-- `lib/data/` — models, `RecordCollection` (one JSON file per collection), `Workspace`
-  (shared records + rules such as the five-active-entries limit), storage, backups.
-- `lib/features/` — one folder per page plus `capture/` (clipboard, Quick Add,
-  link previews, Send to) and `search/`, `settings/`.
-- `lib/platform/windows_native.dart` — direct Windows calls (clipboard images, file
-  picker, open URL) via `dart:ffi`, because Flutter plugins need Developer Mode.
+Three entry points share one codebase: `lib/main.dart` (Windows and iPad),
+`lib/main_iphone.dart` (iPhone) and `bin/thehub.dart` (the sync hub, pure Dart,
+no Flutter UI).
+
+| Folder | Owns |
+|---|---|
+| `lib/data/` | Models, `RecordCollection` (one JSON file per collection), `Workspace` (shared records and their rules), storage, backups, migrations, integrity checks |
+| `lib/sync/` | Sync engine, protocol, storage modes, the client side of the hub |
+| `lib/hub/` | The hub server, its store, backups and start-up |
+| `lib/platform/` | Everything that talks to the operating system: `windows_native.dart` (dart:ffi), `ios_bridge.dart` (method channel `theapp/ios`), window chrome, app lock, device idiom |
+| `lib/app/` | The application shell: `AppState` (app-wide state and commands), shell and page bar, page windows, navigation (`navigation.dart`), start-up, and the design system (`palette.dart`, `design_tokens.dart`, `theme.dart`) |
+| `lib/features/<area>/` | One folder per product area (canvas = Mindmap, notes, calendar, tasks, library/links = Archive, ai, browser, capture, search, settings, …) |
+| `lib/new_ui/` | The interface's shared pieces: sidebar capsule, page header, atmosphere, Archive pages, folder colours |
+| `lib/phone/` | The iPhone layout (its own shell, tabs and pages over the same data) |
+| `lib/widgets/` | Small widgets used across features |
+
+Rules that hold today (keep them):
+- `lib/data/`, `lib/sync/` and `lib/hub/` never import Flutter widgets
+  (only `foundation`/`painting` value types), and the hub path
+  (`bin/thehub.dart` → `lib/hub/`) imports no Flutter at all — that is what
+  lets the hub compile as a plain Dart server (`deploy/hosted/Dockerfile`).
+- Pages never call OS APIs directly; they go through `lib/platform/`.
+- Navigation has one source: `appDestinations` and `navDropTarget` in
+  `lib/app/navigation.dart`, used by the sidebar, page bar, phone tabs and
+  command palette.
+- Windows/iPad and iPhone share data and logic; only layout differs
+  (`lib/phone/` vs the rest). The shell is picked by device, never by width.
+
+Intended direction, with the known exceptions (technical debt, documented
+2026-11-08 rather than changed blindly):
+- `data` → `platform` → `sync` → `app` → `features`/`new_ui` → `phone` is the
+  intended dependency order (lower layers never import higher ones).
+- Exceptions today: `lib/data/` imports `sync/` (clock, key stores, engine)
+  and `platform/` (file protection, Windows calls); four `lib/sync/` files
+  import `app/` (`AppState`, test environment) or `hub/` (the local hub);
+  `lib/platform/window_chrome.dart` imports the theme and
+  `lib/platform/` imports the ink feature; several features import
+  `new_ui/` or `phone/` pieces.
+- `lib/app/app_state.dart` (~3,900 lines) holds most app-wide commands; new
+  feature logic should go into the feature's own folder, not grow it.
+
+### Design system
+One set of tokens, one name per token:
+- `lib/app/palette.dart` — `AppColors` (semantic roles, light and dark),
+  `BrandColors` (fixed brand hues), `AppGradients` (brand gradient, app-wide
+  atmosphere, lighting), and the content palettes (inks, Calendar / Archive
+  categories, canvas tags — their values are spec ID-002…005).
+- `lib/app/design_tokens.dart` — `AppType`, `AppSpace`, `AppRadii`,
+  `AppSizes`, `AppStroke`, `AppElevation` (incl. the brand glow), `AppBlur`,
+  `AppMotion`, `AppStates`.
+- `lib/app/theme.dart` — builds the Material `ThemeData` from both and
+  re-exports them: `import 'theme.dart'` gives a widget the whole system.
+- The atmosphere is painted once by the shell behind every page; page roots
+  stay transparent (see `NewAtmosphere`).
+- Before 2026-11-08 the same values had up to three names (`Space` /
+  `AppSpace` / `NewSpace`, `AppColors` forwarding to `NewColors`, `NewText`
+  with title/heading swapped). Those aliases are gone; don't reintroduce them.
+
+### Documents
+- Root: `README.md`, this file, `MASTER_SPEC.md` (product decisions) and
+  `THEapp_PROGRESS.md` (dated work log).
+- `docs/` — current reference: sync, storage modes, migrations, iOS build,
+  feature matrix, requirements inventory, Archive library, ink engine,
+  phone UI, security audit, manual checklist.
+- `docs/history/` — dated audits, hand-offs and verification reports. Kept
+  as a record; they describe the code as it was then, not now.
 
 ## Testing
 - **Manual testing never uses real data.** `tool/testenv.ps1` manages a separate
@@ -93,7 +153,7 @@ version still cannot *edit* a newer field; it only leaves it untouched.
 
 ## Sync
 Implemented: Windows hub, sync engine, optional read-only mirror. See
-[SYNC_ARCHITECTURE.md](SYNC_ARCHITECTURE.md) for the protocol, conflict rules,
+[docs/SYNC_ARCHITECTURE.md](docs/SYNC_ARCHITECTURE.md) for the protocol, conflict rules,
 security, backups and commands.
 
 ## Platform-specific code
@@ -144,20 +204,20 @@ audit above; the audit remains intact as a record of its earlier inspection.
 - Windows widget/integration tests exercise exports, welcome dismissal, drawing
   gestures, inter-window drag, reading goals, note zoom, compact floating browser and
   sync. Passing tests establish code behavior, not a fresh visible native-window or
-  physical iPad/Pencil check. See `THEAPP_VERIFICATION_REPORT.md` for the exact
+  physical iPad/Pencil check. See `docs/history/THEAPP_VERIFICATION_REPORT.md` for the exact
   commands and current environment limits.
 
 ## Data safety and storage modes (2026-10-25)
 
 - Data model, version map, versioned/checkpointed migrations, backup
   manifests, recoverable deletion and the read-only integrity check:
-  [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md).
+  [docs/DATA_MIGRATIONS.md](docs/DATA_MIGRATIONS.md).
 - The three storage modes (this device only, PC hub, hosted service), one
   provider abstraction and the copy-and-verify switch:
-  [STORAGE_MODES.md](STORAGE_MODES.md).
+  [docs/STORAGE_MODES.md](docs/STORAGE_MODES.md).
 - The object-centric Library replacement, data collections, privacy boundary,
   and remaining platform/provider requirements:
-  [LIBRARY_ARCHITECTURE.md](LIBRARY_ARCHITECTURE.md).
+  [docs/LIBRARY_ARCHITECTURE.md](docs/LIBRARY_ARCHITECTURE.md).
 - Settings now has **Storage** (mode, status, Switch…) and **Data safety**
   (Check data, Recently deleted).
 

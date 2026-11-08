@@ -45,7 +45,7 @@ class NoteConnections extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Connections', style: heading),
-        const SizedBox(height: Space.sm),
+        const SizedBox(height: AppSpace.sm),
         Wrap(
           spacing: 6,
           runSpacing: 6,
@@ -140,7 +140,7 @@ class NoteConnections extends StatelessWidget {
             ],
           ),
         _OnMindmaps(state: state, noteId: note.id),
-        const SizedBox(height: Space.md),
+        const SizedBox(height: AppSpace.md),
         RelatedPanel(state: state, item: Ref(RefKind.note, note.id)),
       ],
     );
@@ -175,7 +175,7 @@ class _OnMindmapsState extends State<_OnMindmaps> {
   Widget build(BuildContext context) {
     if (_found.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(top: Space.sm),
+      padding: const EdgeInsets.only(top: AppSpace.sm),
       child: Wrap(
         spacing: 6,
         runSpacing: 6,

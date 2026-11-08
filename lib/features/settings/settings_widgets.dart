@@ -5,7 +5,6 @@
 import 'package:flutter/material.dart';
 
 import '../../app/theme.dart';
-import '../../new_ui/new_tokens.dart' show NewColors;
 
 /// Corner radius of groups; New is a little rounder than Original.
 double get _groupRadius => 18;
@@ -248,7 +247,7 @@ class SettingsSwitch extends StatelessWidget {
       onChanged: onChanged,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       thumbColor: WidgetStatePropertyAll(
-        value ? NewColors.onAccent : AppColors.textMuted,
+        value ? AppColors.onAccent : AppColors.textMuted,
       ),
       trackColor: WidgetStateProperty.resolveWith(
         (states) => states.contains(WidgetState.selected)
@@ -464,7 +463,7 @@ class SettingsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = primary ? NewColors.onAccent : AppColors.text;
+    final fg = primary ? AppColors.onAccent : AppColors.text;
     return Opacity(
       opacity: onPressed == null ? 0.45 : 1,
       child: Material(

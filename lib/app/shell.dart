@@ -25,6 +25,7 @@ import '../features/settings/settings_dialog.dart';
 import '../widgets/common.dart' show GhostIconButton;
 import '../widgets/floating_layer.dart';
 import '../new_ui/new_archive_page.dart';
+import '../new_ui/new_components.dart' show NewAtmosphere;
 import '../phone/phone_profile.dart';
 import '../phone/phone_shell.dart';
 import '../new_ui/new_sidebar.dart';
@@ -33,7 +34,7 @@ import 'quote_footer.dart';
 import 'page_windows.dart';
 import 'app_state.dart';
 import 'top_bar.dart';
-import 'sidebar.dart';
+import 'navigation.dart';
 import 'test_environment.dart';
 import 'theme.dart';
 
@@ -342,6 +343,10 @@ class _AppShellState extends State<AppShell> {
               backgroundColor: AppColors.background,
               body: Stack(
                 children: [
+                  // One continuous atmosphere behind the sidebar, the page
+                  // bar and every page (pages keep their own background
+                  // transparent so it flows through without seams).
+                  const Positioned.fill(child: NewAtmosphere()),
                   if (phone)
                     SizedBox.expand(
                       child: PhoneShell(state: state, motivation: _motivation),
@@ -582,15 +587,15 @@ class _ReminderNotice extends StatelessWidget {
         final sidebar = compact
             ? 0.0
             : state.sidebarCollapsed
-            ? Sidebar.collapsedWidth
-            : Sidebar.expandedWidth;
+            ? SidebarClearance.collapsed
+            : SidebarClearance.expanded;
         return Positioned(
           top: compact ? 56 : 28,
           right: sidebar + 16,
           child: Container(
             key: const ValueKey('reminders'),
             width: 320,
-            padding: const EdgeInsets.all(Space.md),
+            padding: const EdgeInsets.all(AppSpace.md),
             decoration: BoxDecoration(
               color: AppColors.cardRaised,
               borderRadius: BorderRadius.circular(AppRadii.md),

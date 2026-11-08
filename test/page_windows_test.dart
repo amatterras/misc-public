@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/app/floating_windows.dart';
 import 'package:flutter_application_1/app/page_windows.dart';
-import 'package:flutter_application_1/app/sidebar.dart';
+import 'package:flutter_application_1/app/navigation.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/main.dart';

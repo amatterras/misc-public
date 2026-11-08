@@ -105,7 +105,7 @@ class _SyncSectionState extends State<SyncSection> {
               if (s.syncNeedsPairing)
                 Padding(
                   key: const ValueKey('repair-notice'),
-                  padding: const EdgeInsets.only(bottom: Space.sm),
+                  padding: const EdgeInsets.only(bottom: AppSpace.sm),
                   child: Text(
                     s.syncStatus,
                     style: TextStyle(
@@ -128,14 +128,14 @@ class _SyncSectionState extends State<SyncSection> {
                 ),
               if (_shownCode != null)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: Space.sm),
+                  padding: const EdgeInsets.only(bottom: AppSpace.sm),
                   child: SelectableText(
                     _shownCode!,
                     key: const ValueKey('local-pair-result'),
                     style: const TextStyle(fontSize: AppType.sizeLabel),
                   ),
                 ),
-              const SizedBox(height: Space.sm),
+              const SizedBox(height: AppSpace.sm),
               // Address on its own line when the dialog is narrow.
               if (MediaQuery.sizeOf(context).width < 640) ...[
                 TextField(
@@ -146,7 +146,7 @@ class _SyncSectionState extends State<SyncSection> {
                     hintText: 'http://100.x.y.z:47710',
                   ),
                 ),
-                const SizedBox(height: Space.sm),
+                const SizedBox(height: AppSpace.sm),
               ],
               Row(
                 children: [
@@ -161,7 +161,7 @@ class _SyncSectionState extends State<SyncSection> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: Space.sm),
+                    const SizedBox(width: AppSpace.sm),
                   ],
                   Flexible(
                     child: SizedBox(
@@ -175,7 +175,7 @@ class _SyncSectionState extends State<SyncSection> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: Space.sm),
+                  const SizedBox(width: AppSpace.sm),
                   FilledButton(
                     onPressed: _busy ? null : _pair,
                     child: Text(_busy ? 'Pairing…' : 'Pair'),
@@ -237,10 +237,10 @@ class _SyncSectionState extends State<SyncSection> {
             if (s.syncNeedsPairing)
               Padding(
                 key: const ValueKey('reauthorize-notice'),
-                padding: const EdgeInsets.only(top: Space.sm),
+                padding: const EdgeInsets.only(top: AppSpace.sm),
                 child: Wrap(
-                  spacing: Space.sm,
-                  runSpacing: Space.xs,
+                  spacing: AppSpace.sm,
+                  runSpacing: AppSpace.xs,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
@@ -297,11 +297,11 @@ class _SyncSectionState extends State<SyncSection> {
                   ),
                 ),
               ),
-            const SizedBox(height: Space.sm),
+            const SizedBox(height: AppSpace.sm),
             DevicesSection(state: s),
-            const SizedBox(height: Space.sm),
+            const SizedBox(height: AppSpace.sm),
             Wrap(
-              spacing: Space.sm,
+              spacing: AppSpace.sm,
               children: [
                 OutlinedButton.icon(
                   onPressed: s.syncing ? null : s.syncNow,
@@ -372,7 +372,7 @@ class _ConnectGuide extends StatelessWidget {
             'to Windows ("thehub startup status" shows whether it is running). '
             'THEapp also runs the hub itself while it is open. For an '
             'iPhone/iPad away from home, install Tailscale on both (free; '
-            'SYNC_ARCHITECTURE.md §17).',
+            'docs/SYNC_ARCHITECTURE.md §17).',
       ),
       (
         mobile ? 'Pair this iPhone/iPad' : 'Pair this PC',
@@ -389,7 +389,7 @@ class _ConnectGuide extends StatelessWidget {
       children: [
         for (final (i, (title, text)) in steps.indexed)
           Padding(
-            padding: const EdgeInsets.only(bottom: Space.sm),
+            padding: const EdgeInsets.only(bottom: AppSpace.sm),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -401,7 +401,7 @@ class _ConnectGuide extends StatelessWidget {
                     style: const TextStyle(fontSize: AppType.sizeMeta),
                   ),
                 ),
-                const SizedBox(width: Space.sm),
+                const SizedBox(width: AppSpace.sm),
                 Expanded(
                   child: Text.rich(
                     TextSpan(

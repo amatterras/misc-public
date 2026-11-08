@@ -1,6 +1,6 @@
 // The hub's HTTP service. Pure Dart (dart:io only).
 //
-// Endpoints are documented in SYNC_ARCHITECTURE.md §10. Every data endpoint
+// Endpoints are documented in docs/SYNC_ARCHITECTURE.md §10. Every data endpoint
 // requires a device token; admin endpoints require the admin token and only
 // answer requests from this PC. Logs never contain record content, URLs,
 // tokens or attachment ids.

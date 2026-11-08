@@ -143,7 +143,7 @@ class CanvasToolbar extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: Space.md),
+        const SizedBox(height: AppSpace.md),
         ToolPanel(
           children: [
             ToolButton(
@@ -955,7 +955,7 @@ Future<void> showDotOpacityDialog(
                 ),
               ),
             ),
-            const SizedBox(height: Space.md),
+            const SizedBox(height: AppSpace.md),
             Text(
               'Visibility',
               style: TextStyle(
@@ -981,7 +981,7 @@ Future<void> showDotOpacityDialog(
               style: const TextStyle(fontSize: AppType.sizeLabel),
             ),
             if (saveSize != null) ...[
-              const SizedBox(height: Space.md),
+              const SizedBox(height: AppSpace.md),
               Text(
                 'Size',
                 style: TextStyle(

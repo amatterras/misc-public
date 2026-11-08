@@ -16,7 +16,7 @@ import '../features/browser/browser_page.dart';
 import '../features/motivation/motivation_service.dart';
 import '../features/notes/note_page.dart' show openNotePage;
 import '../new_ui/new_components.dart' show BrandPlus;
-import '../new_ui/new_tokens.dart';
+import '../app/theme.dart';
 import 'phone_archive.dart';
 import 'phone_calendar.dart';
 import 'phone_capture.dart';
@@ -153,8 +153,9 @@ class _PhoneShellState extends State<PhoneShell> {
           ),
         );
 
+        // Transparent: the shell's app-wide atmosphere shows through.
         return ColoredBox(
-          color: NewColors.background,
+          color: Colors.transparent,
           child: Stack(
             children: [
               Column(
@@ -214,7 +215,7 @@ class _PhoneShellState extends State<PhoneShell> {
         child: TickerMode(
           enabled: showing,
           child: ColoredBox(
-            color: NewColors.background,
+            color: AppColors.background,
             child: Column(
               children: [
                 Container(
@@ -224,7 +225,7 @@ class _PhoneShellState extends State<PhoneShell> {
                   decoration: BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
-                        color: NewColors.border.withValues(alpha: 0.7),
+                        color: AppColors.border.withValues(alpha: 0.7),
                       ),
                     ),
                   ),
@@ -237,7 +238,7 @@ class _PhoneShellState extends State<PhoneShell> {
                           icon: Icons.arrow_back_ios_new_rounded,
                           label: 'Back',
                           size: 19,
-                          color: NewColors.text,
+                          color: AppColors.text,
                           onTap: _leaveTool,
                         ),
                         Expanded(
@@ -304,11 +305,14 @@ class PhoneDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Mostly page-coloured so labels stay crisp over scrolling content, but
+    // a little of the atmosphere still reads through, so the field is
+    // unbroken down to the bottom edge.
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: NewColors.background,
+        color: AppColors.background.withValues(alpha: 0.86),
         border: Border(
-          top: BorderSide(color: NewColors.border.withValues(alpha: 0.8)),
+          top: BorderSide(color: AppColors.border.withValues(alpha: 0.8)),
         ),
       ),
       child: SafeArea(
@@ -339,16 +343,16 @@ class PhoneDock extends StatelessWidget {
                             maxLines: 1,
                             style: PhoneType.dock.copyWith(
                               color: tab == current
-                                  ? NewColors.text
-                                  : NewColors.textFaint,
+                                  ? AppColors.text
+                                  : AppColors.textFaint,
                             ),
                           ),
                           const SizedBox(height: 6),
                           AnimatedContainer(
-                            duration: NewMotion.quick,
+                            duration: AppMotion.quick,
                             height: 2,
                             width: tab == current ? 14 : 0,
-                            color: NewColors.text,
+                            color: AppColors.text,
                           ),
                         ],
                       ),
