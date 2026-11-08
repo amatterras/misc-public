@@ -245,4 +245,49 @@ void main() {
       isTrue,
     );
   });
+
+  // QA 2026-11-08: when a restore failed part-way, the folders already
+  // swapped were put back, but this device's keys and the trash (which a
+  // swap moves into the restored folder) stayed in the discarded copy, so
+  // after the "nothing changed" rollback the device had lost its sync key
+  // and its deleted items could no longer be brought back.
+  test(
+    'a restore that fails part-way keeps device keys and the trash',
+    () async {
+      final source = await _profile(base, 'source');
+      final service = BackupService(source);
+      final backup = await service.snapshot('manual', includeAttachments: true);
+      // Not in backups: a device credential and a trashed canvas.
+      await _write(source, 'sync/hub.token', utf8.encode('device-secret'));
+      await _write(source, 'canvases/.trash/c0-1.json', utf8.encode('{}'));
+      // A later folder that cannot be moved (Windows refuses to rename a
+      // folder holding an open file), so the restore fails part-way.
+      await _write(source, 'retention/ledger.json', utf8.encode('{}'));
+      final lock = File(
+        '${source.path}${_sep}retention${_sep}ledger.json',
+      ).openSync(mode: FileMode.append);
+      try {
+        await expectLater(service.restore(backup), throwsA(anything));
+      } finally {
+        lock.closeSync();
+      }
+      expect(
+        File('${source.path}${_sep}sync${_sep}hub.token').readAsStringSync(),
+        'device-secret',
+      );
+      expect(
+        File(
+          '${source.path}${_sep}canvases$_sep.trash${_sep}c0-1.json',
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        File('${source.path}${_sep}settings${_sep}app.json').existsSync(),
+        isTrue,
+      );
+    },
+    skip: Platform.isWindows
+        ? false
+        : 'needs Windows file locking to make a folder move fail',
+  );
 }

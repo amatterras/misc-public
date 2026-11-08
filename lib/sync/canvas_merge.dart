@@ -127,17 +127,35 @@ Set<String> applyCanvasChanges(
       applied.add(meta.key);
     } else if (!isPending(meta.key, localRev)) {
       final data = meta.data!;
-      s.title = data['title'] as String? ?? s.title;
-      s.folderId = data['folderId'] as String?;
-      s.kind = data['kind'] as String? ?? s.kind;
-      s.pageBackgrounds = [
-        for (final b in data['backgrounds'] as List? ?? const [])
-          PageBackground.fromJson((b as Map).cast<String, dynamic>()),
-      ];
-      s.layers = CanvasLayer.listFrom(data['layers']);
+      // Read every field before changing anything: metadata this version
+      // cannot read (e.g. from a newer version) is left on the hub, like an
+      // unreadable item, instead of failing the whole canvas every sync.
+      // Layers (Mindmap layers) are read here too, so malformed layer data
+      // is skipped the same way.
+      final String? title, folderId, kind;
+      final List<PageBackground> backgrounds;
+      final List<String> order;
+      final List<CanvasLayer> layers;
+      try {
+        title = data['title'] as String?;
+        folderId = data['folderId'] as String?;
+        kind = data['kind'] as String?;
+        backgrounds = [
+          for (final b in data['backgrounds'] as List? ?? const [])
+            PageBackground.fromJson((b as Map).cast<String, dynamic>()),
+        ];
+        order = [...?(data['order'] as List?)?.cast<String>()];
+        layers = CanvasLayer.listFrom(data['layers']);
+      } catch (_) {
+        return applied;
+      }
+      s.title = title ?? s.title;
+      s.folderId = folderId;
+      s.kind = kind ?? s.kind;
+      s.pageBackgrounds = backgrounds;
+      s.layers = layers;
       s.metaUnknownFields = unknownFields(data, _metaKeys);
       s.metaRev = meta.rev;
-      final order = [...?(data['order'] as List?)?.cast<String>()];
       if (order.isNotEmpty) {
         final rank = {for (var i = 0; i < order.length; i++) order[i]: i};
         final indexed = [

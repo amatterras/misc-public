@@ -55,12 +55,23 @@ String safeFileName(String name) {
       .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
-  return cleaned.isEmpty
-      ? 'Untitled'
-      : cleaned.length > 80
-      ? cleaned.substring(0, 80)
-      : cleaned;
+  if (cleaned.isEmpty) return 'Untitled';
+  // At most 80 UTF-16 units, cut between characters (never inside an emoji).
+  final cut = StringBuffer();
+  for (final rune in cleaned.runes) {
+    final ch = String.fromCharCode(rune);
+    if (cut.length + ch.length > 80) break;
+    cut.write(ch);
+  }
+  final result = cut.toString().trimRight();
+  // Windows reserves these device names (with any extension).
+  return _reservedWindowsName.hasMatch(result) ? '$result note' : result;
 }
+
+final _reservedWindowsName = RegExp(
+  r'^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$',
+  caseSensitive: false,
+);
 
 /// A file in [dir] named [name] that does not exist yet (" (2)" etc.).
 File freshFile(Directory dir, String name, String extension) {
