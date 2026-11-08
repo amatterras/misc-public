@@ -1067,17 +1067,29 @@ class Workspace {
       children.putIfAbsent(parent, () => []).add(f);
     }
     final result = <(Folder, int)>[];
+    final seen = <String>{};
+    int byName(Folder a, Folder b) =>
+        a.name.toLowerCase().compareTo(b.name.toLowerCase());
     void walk(String? parent, int depth) {
-      final list = [...?children[parent]];
-      list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      final list = [...?children[parent]]..sort(byName);
       for (final f in list) {
-        if (result.any((r) => r.$1.id == f.id)) continue; // cycle guard
+        if (!seen.add(f.id)) continue; // cycle guard
         result.add((f, depth));
         walk(f.id, depth + 1);
       }
     }
 
     walk(null, 0);
+    // Folders whose parents form a loop (two devices moved folders into
+    // each other) are never reached from the top: each loop is shown from
+    // its first folder by name, at the top level, so nothing disappears.
+    final unreached = folders.all.where((f) => !seen.contains(f.id)).toList()
+      ..sort(byName);
+    for (final f in unreached) {
+      if (!seen.add(f.id)) continue;
+      result.add((f, 0));
+      walk(f.id, 1);
+    }
     return result;
   }
 

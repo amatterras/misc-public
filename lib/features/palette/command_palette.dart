@@ -13,6 +13,7 @@ import '../../app/app_state.dart';
 import '../../app/page_windows.dart';
 import '../../app/top_bar.dart';
 import '../../app/theme.dart';
+import '../../data/storage/app_log.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import '../../platform/platform.dart' as native;
@@ -152,10 +153,17 @@ List<PaletteCommand> paletteCommands(
       'Export the calendar (.ics file)',
       Icons.event_available_outlined,
       (_) async {
-        final dir = exportsFolder(s);
-        await dir.create(recursive: true);
-        final f = freshFile(dir, 'misc. calendar', 'ics');
-        await f.writeAsString(calendarIcs(s.workspace));
+        final File f;
+        try {
+          final dir = exportsFolder(s);
+          await dir.create(recursive: true);
+          f = freshFile(dir, 'misc. calendar', 'ics');
+          await f.writeAsString(calendarIcs(s.workspace));
+        } on FileSystemException catch (e) {
+          AppLog.warn('Calendar export failed: ${e.message}');
+          s.showToast('The calendar file could not be saved.');
+          return;
+        }
         s.showToast('Saved ${f.path}');
         await revealExport(s, f);
       },
@@ -170,11 +178,20 @@ List<PaletteCommand> paletteCommands(
       var added = 0;
       for (final path in native.pickCalendarFiles()) {
         final file = File(path);
-        if (await file.length() > 20 * 1024 * 1024) {
-          s.showToast('That calendar file is too large (over 20 MB).');
-          continue;
+        try {
+          if (await file.length() > 20 * 1024 * 1024) {
+            s.showToast('That calendar file is too large (over 20 MB).');
+            continue;
+          }
+          added += importIcs(
+            s.workspace,
+            decodeCalendarFile(await file.readAsBytes()),
+          );
+        } on FileSystemException catch (e) {
+          // Moved, locked or unreadable since it was picked: said, not lost.
+          AppLog.warn('Calendar import could not read a file: ${e.message}');
+          s.showToast('A calendar file could not be read.');
         }
-        added += importIcs(s.workspace, await file.readAsString());
       }
       s.showToast('$added events added to the days’ notes.');
     }),

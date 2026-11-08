@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'record.dart';
 
 enum ProjectKind { project, subject }
@@ -160,11 +162,9 @@ class Task implements Record {
     final due = dueDate, before = remindBefore;
     if (due == null || before == null) return null;
     final minutes = dueMinutes ?? defaultReminderMinutes;
-    return DateTime(
-      due.year,
-      due.month,
-      due.day,
-    ).add(Duration(minutes: minutes - before));
+    // Wall-clock fields (DateTime normalises overflow), not midnight plus
+    // elapsed time, which is an hour off on a daylight-saving change day.
+    return DateTime(due.year, due.month, due.day, 0, minutes - before);
   }
 
   final DateTime createdAt;
@@ -228,7 +228,13 @@ class Task implements Record {
   DateTime nextOccurrence(DateTime from) => switch (recurrence) {
     Recurrence.daily => addDays(from, 1),
     Recurrence.weekly => addDays(from, 7),
-    Recurrence.monthly => DateTime(from.year, from.month + 1, from.day),
+    // Clamped to the month's last day: DateTime(y, m + 1, 31) would roll
+    // over into the month after and skip a month entirely.
+    Recurrence.monthly => DateTime(
+      from.year,
+      from.month + 1,
+      math.min(from.day, DateTime(from.year, from.month + 2, 0).day),
+    ),
     Recurrence.none => from,
   };
 

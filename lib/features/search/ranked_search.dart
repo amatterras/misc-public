@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
+import '../../data/models/calendar_models.dart';
 import '../../data/models/record.dart';
 import '../../new_ui/new_archive_page.dart' show openArchiveItem;
 import '../../phone/phone_archive.dart' show openPhoneArchiveItem;
@@ -75,6 +76,28 @@ SearchResult resultOf(AppState s, SearchHit h, BuildContext? context) {
   );
 }
 
+/// The day a calendar search hit opens on: where the entry starts, its
+/// first date, the date of a reading-plan page, or its first reading day
+/// (null: none, the caller uses today).
+DateTime? searchHitDay(CalendarEntry e) {
+  DateTime? first(Iterable<String> keys) {
+    final sorted = keys.toList()..sort();
+    for (final k in sorted) {
+      try {
+        return parseDayKey(k);
+      } on FormatException {
+        continue; // a damaged key is skipped
+      }
+    }
+    return null;
+  }
+
+  return e.startDate ??
+      first(e.dates) ??
+      e.readingPlanDate ??
+      first(e.readingLog.keys);
+}
+
 /// Opens a hit where the match is.
 Future<void> openHit(AppState s, SearchHit h, BuildContext? context) async {
   final id = h.doc.id;
@@ -89,16 +112,7 @@ Future<void> openHit(AppState s, SearchHit h, BuildContext? context) async {
     case DocKind.entry:
       final e = ws.entries[id];
       if (e == null) return;
-      final day =
-          e.startDate ??
-          (e.dates.isNotEmpty
-              ? parseDayKey((e.dates.toList()..sort()).first)
-              : null) ??
-          (e.readingLog.isNotEmpty
-              ? parseDayKey((e.readingLog.keys.toList()..sort()).first)
-              : null) ??
-          DateTime.now();
-      s.openCalendarDay(day);
+      s.openCalendarDay(searchHitDay(e) ?? DateTime.now());
     case DocKind.link:
       if (!await s.openLinkCard(id)) {
         final url = ws.assets[id]?.url;

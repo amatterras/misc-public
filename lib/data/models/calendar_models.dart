@@ -161,26 +161,47 @@ class CalendarEntry implements Record {
     return '${two(m ~/ 60)}:${two(m % 60)}';
   }
 
+  /// [key] moved [days] days; a damaged key is kept as it is.
+  static String _shiftedKey(String key, int days) {
+    try {
+      return dayKey(addDays(parseDayKey(key), days));
+    } on FormatException {
+      return key;
+    } on RangeError {
+      return key;
+    }
+  }
+
   /// Moves the occurrence on [from] to [to] (used by drag and drop).
   CalendarEntry movedOccurrence(DateTime from, DateTime to) {
     final shift = daysBetween(from, to);
+    // A completion tick belongs to the occurrence, so it moves with it.
+    Set<String> tickMoved() {
+      final ticks = {...checkoffs};
+      if (ticks.remove(dayKey(from))) ticks.add(dayKey(to));
+      return ticks;
+    }
+
     switch (category) {
       case CalendarCategory.events:
         return copyWith(
           startDate: () => startDate == null ? to : addDays(startDate!, shift),
           endDate: () => endDate == null ? null : addDays(endDate!, shift),
+          // The whole event moves, so every day's tick shifts with it.
+          checkoffs: {for (final k in checkoffs) _shiftedKey(k, shift)},
         );
       case CalendarCategory.other:
         return copyWith(
           dates: {...dates}
             ..remove(dayKey(from))
             ..add(dayKey(to)),
+          checkoffs: tickMoved(),
         );
       case CalendarCategory.reading:
         final log = {...readingLog};
         final pages = log.remove(dayKey(from)) ?? 0;
         log[dayKey(to)] = (log[dayKey(to)] ?? 0) + pages;
-        return copyWith(readingLog: log);
+        return copyWith(readingLog: log, checkoffs: tickMoved());
       case CalendarCategory.habits:
         return this; // Recurring: move by editing its schedule instead.
     }
