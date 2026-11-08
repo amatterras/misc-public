@@ -48,7 +48,7 @@ no Flutter UI).
 | `lib/hub/` | The hub server, its store, backups and start-up |
 | `lib/platform/` | Everything that talks to the operating system: `windows_native.dart` (dart:ffi), `ios_bridge.dart` (method channel `theapp/ios`), window chrome, app lock, device idiom |
 | `lib/app/` | The application shell: `AppState` (app-wide state and commands), shell and page bar, page windows, navigation (`navigation.dart`), start-up, and the design system (`palette.dart`, `design_tokens.dart`, `theme.dart`) |
-| `lib/features/<area>/` | One folder per product area (canvas = Mindmap, notes, calendar, tasks, library/links = Archive, ai, browser, capture, search, settings, …) |
+| `lib/features/<area>/` | One folder per product area (canvas = Mindmap incl. Time Machine, layers, alignment, Image Studio; notes; calendar incl. Workload; tasks; library/links = Archive; ai; browser; capture incl. Quick Capture; search incl. the global search strip; smartlinks; pdfanchors; reading; handoff; inspector; sync_health; settings, …) |
 | `lib/new_ui/` | The interface's shared pieces: sidebar capsule, page header, atmosphere, Archive pages, folder colours |
 | `lib/phone/` | The iPhone layout (its own shell, tabs and pages over the same data) |
 | `lib/widgets/` | Small widgets used across features |
