@@ -50,3 +50,6 @@ app.*.map.json
 # Hosted sync deployment settings (local only)
 deploy/hosted/.env
 hosted-data/
+
+# Windows release output (scripts/build_windows_release.ps1)
+/dist/
