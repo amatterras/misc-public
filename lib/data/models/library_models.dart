@@ -1,4 +1,5 @@
 import 'paper.dart';
+import 'reading_models.dart';
 import 'record.dart';
 
 /// `document` (PDF) files are stored and synced like photos and open in
@@ -28,6 +29,7 @@ class Asset implements Record {
     this.linkTags = const [],
     this.projectIds = const [],
     this.folderId,
+    this.reading,
   });
 
   @override
@@ -71,6 +73,10 @@ class Asset implements Record {
   /// Archive folder (an `archive_folders` record), or null for the top.
   final String? folderId;
 
+  /// Reading progress, if the reader keeps track of this item (see
+  /// reading_models.dart). Written only when set.
+  final ReadingProgress? reading;
+
   /// A link to a video page (YouTube, Vimeo …), shown with a video mark.
   bool get isVideo {
     final host = Uri.tryParse(url ?? '')?.host.toLowerCase() ?? '';
@@ -104,6 +110,7 @@ class Asset implements Record {
     List<String>? linkTags,
     List<String>? projectIds,
     String? Function()? folderId,
+    ReadingProgress? Function()? reading,
   }) => Asset(
     id: id,
     kind: kind,
@@ -124,6 +131,7 @@ class Asset implements Record {
     linkTags: linkTags ?? this.linkTags,
     projectIds: projectIds ?? this.projectIds,
     folderId: folderId != null ? folderId() : this.folderId,
+    reading: reading != null ? reading() : this.reading,
   );
 
   @override
@@ -147,6 +155,7 @@ class Asset implements Record {
     if (linkTags.isNotEmpty) 'linkTags': linkTags,
     if (projectIds.isNotEmpty) 'projectIds': projectIds,
     if (folderId != null) 'folderId': folderId,
+    if (reading != null) 'reading': reading!.toJson(),
   };
 
   factory Asset.fromJson(Map<String, dynamic> j) => Asset(
@@ -175,6 +184,7 @@ class Asset implements Record {
         ?(p is String ? p : null),
     ],
     folderId: j['folderId'] as String?,
+    reading: ReadingProgress.fromJson(j['reading']),
   );
 }
 
@@ -359,7 +369,7 @@ class Note implements Record {
 
   /// `[[Other note]]` references inside the body.
   Iterable<String> get linkedTitles =>
-      RegExp(r'\[\[([^\[\]]+)\]\]')
+      RegExp(r'\[\[(?!theapp:)([^\[\]]+)\]\]')
           .allMatches(body)
           .map((m) => m.group(1)!.trim());
 

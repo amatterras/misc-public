@@ -143,7 +143,9 @@ void main() {
       AppColors.mode = ThemeMode.dark;
       expect(hex(AppColors.background), 0xFF191A1D);
       expect(hex(AppColors.accent), 0xFF789BB5);
-      expect(InkColors.all.map(hex), [
+      // The canonical 19 keep their order and values; newer inks are
+      // only ever appended after them.
+      expect(InkColors.all.map(hex).take(19), [
         0xFFE3E5E8,
         0xFF789BB5,
         0xFF829CB5,
@@ -164,7 +166,7 @@ void main() {
         0xFF176B4D,
         0xFFFF3B30,
       ]);
-      expect(inkColorNames, [
+      expect(inkColorNames.take(19), [
         'Pearl',
         'Steel Blue',
         'Dusty Blue',
@@ -185,7 +187,15 @@ void main() {
         'Deep Pine',
         'Bright Red',
       ]);
-      expect(InkColors.library.map((s) => s.id).toSet().length, 19);
+      expect(InkColors.library.map((s) => s.id).toSet().length, 24);
+      expect(InkColors.byId('bright-orange')?.color, const Color(0xFFFF6A00));
+      expect(inkColorNames.skip(19), [
+        'Bright Orange',
+        'Sky Blue',
+        'Warm Brown',
+        'Graphite Gray',
+        'Jet Black',
+      ]);
       expect(
         InkColors.library.where((s) => s.color == const Color(0xFFFF3B30)),
         hasLength(1),

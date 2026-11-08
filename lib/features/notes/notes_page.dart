@@ -16,6 +16,9 @@ import '../ai/ai_session.dart';
 import '../ai/similarity.dart';
 import '../import/import_dialog.dart';
 import 'conversion.dart';
+import '../pdfanchors/pdf_notes_split.dart';
+import '../smartlinks/smart_links.dart';
+import '../smartlinks/smart_links_ui.dart';
 import 'note_connections.dart';
 import 'note_diff.dart';
 import 'note_page.dart';
@@ -670,6 +673,7 @@ class _NoteEditorState extends State<NoteEditor> {
     super.initState();
     _body.addListener(_onSelection);
     s.workspace.notes.addListener(_onNoteChanged);
+    s.activeNoteId.value = widget.noteId;
   }
 
   /// Shows changes made elsewhere (a move of selected text, Undo of a drop,
@@ -707,6 +711,7 @@ class _NoteEditorState extends State<NoteEditor> {
 
   @override
   void dispose() {
+    if (s.activeNoteId.value == widget.noteId) s.activeNoteId.value = null;
     _body.removeListener(_onSelection);
     s.workspace.notes.removeListener(_onNoteChanged);
     _title.dispose();
@@ -965,6 +970,21 @@ class _NoteEditorState extends State<NoteEditor> {
                   onTap: () =>
                       _update((x) => x.copyWith(favorite: !x.favorite)),
                 ),
+                GhostIconButton(
+                  key: const ValueKey('insert-workspace-link'),
+                  icon: Icons.add_link,
+                  tooltip:
+                      'Link to a note, mindmap, calendar item or Archive item',
+                  onTap: () async {
+                    await insertLinkInto(
+                      context,
+                      s,
+                      _body,
+                      owner: WorkspaceRef(RefKind.note, n.id),
+                    );
+                    _update((x) => x.copyWith(body: _body.text));
+                  },
+                ),
                 const SizedBox(width: AppSpace.sm),
                 ZoomStepper(
                   key: const ValueKey('note-text-zoom'),
@@ -1166,6 +1186,9 @@ class _NoteEditorState extends State<NoteEditor> {
               child: AssetChip(
                 workspace: ws,
                 asset: a,
+                onPdfNotes: a.kind == AssetKind.document
+                    ? () => openPdfNotes(s, a.id)
+                    : null,
                 onRemove: () => _update(
                   (x) => x.copyWith(assetIds: [...x.assetIds]..remove(a.id)),
                 ),
@@ -1204,6 +1227,15 @@ class _NoteEditorState extends State<NoteEditor> {
         ),
       const SizedBox(height: AppSpace.xl),
       NoteConnections(state: s, note: n, onOpenNote: widget.onOpenNote),
+      const SizedBox(height: AppSpace.xl),
+      SmartLinksPanel(
+        state: s,
+        owner: WorkspaceRef(RefKind.note, n.id),
+        text: n.body,
+        onRemoveLink: (target) => _update(
+          (x) => x.copyWith(body: removeLinkTo(x.body, target)),
+        ),
+      ),
       if (linked.isNotEmpty || backlinks.isNotEmpty) ...[
         const SizedBox(height: AppSpace.xl),
         Text(

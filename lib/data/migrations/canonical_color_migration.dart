@@ -99,6 +99,7 @@ abstract final class CanonicalColorMigration {
       metaUnknownFields: document.metaUnknownFields,
       kind: document.kind,
       pageBackgrounds: document.pageBackgrounds,
+      layers: document.layers,
     );
   }
 }

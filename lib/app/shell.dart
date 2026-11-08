@@ -164,11 +164,16 @@ class _AppShellState extends State<AppShell> {
       if (mounted) unawaited(openArchiveItem(context, state, id));
     };
     // Once, after start-up: offer a recovery code (never blocks anything).
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await Future<void>.delayed(const Duration(seconds: 4));
-      if (mounted) unawaited(offerRecoveryCodeOnce(context, state));
+    // A Timer (not Future.delayed) so closing the shell cancels it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _recoveryOffer = Timer(const Duration(seconds: 4), () {
+        if (mounted) unawaited(offerRecoveryCodeOnce(context, state));
+      });
     });
   }
+
+  Timer? _recoveryOffer;
 
   /// A page that held the focus is hidden when another page opens, which
   /// drops the focus out to the route; take it back for the shell.
@@ -199,6 +204,7 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    _recoveryOffer?.cancel();
     state.removeListener(_pageChanged);
     state.askArchiveDuplicate = null;
     state.openArchiveObject = null;

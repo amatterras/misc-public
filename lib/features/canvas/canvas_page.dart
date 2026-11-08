@@ -17,6 +17,7 @@ import 'canvas_menu.dart';
 import '../transfer/transfer.dart';
 import 'canvas_painter.dart';
 import 'canvas_text.dart';
+import 'layers_panel.dart';
 import 'canvas_toolbar.dart';
 import 'empty_canvas.dart';
 import '../../app/shell.dart' show openQuickAdd;
@@ -90,6 +91,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   final InkRasterCache _inkRaster = InkRasterCache();
   Offset? _welcomeStartPosition;
   bool _welcomeFading = false;
+  bool _layersOpen = false;
   bool _welcomeRemovalDone = false;
 
   // Apple Pencil Pro squeeze (iPhone/iPad): eraser while squeezed.
@@ -330,7 +332,9 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
         ws.setAssetTags(id, chosen);
       }
     } else {
-      c.setCustomTags([for (final i in items) i.id], chosen.toList()..sort());
+      c.applyCustomTags({
+        for (final i in items) i.id: chosen.toList()..sort(),
+      });
     }
   }
 
@@ -355,6 +359,11 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.space) {
+      // Ctrl+Shift+Space is Quick Capture (handled above this page).
+      if (HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isMetaPressed) {
+        return KeyEventResult.ignored;
+      }
       if (event is KeyDownEvent) c.spaceHeld = true;
       if (event is KeyUpEvent) c.spaceHeld = false;
       setState(() {});
@@ -913,6 +922,15 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       onEraser: s.setEraser,
                       onPenWidth: s.setCanvasPenWidth,
                       onTags: _editTags,
+                      onArrange: (c, action) {
+                        final note = c.alignSelection(action);
+                        if (note != null) s.showToast(note);
+                      },
+                      onAlignment: (c, {guides, grid}) =>
+                          s.setAlignment(c, guides: guides, grid: grid),
+                      tagChoices: c.id == linksBoardId
+                          ? null
+                          : () => s.workspace.tagsByName,
                       collapsed: s.canvasOptionsCollapsed,
                       onToggleCollapsed: () {
                         unawaited(s.toggleCanvasOptions());
@@ -926,6 +944,15 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                   top: AppSpace.xl + 10,
                   child: _SaveIndicator(state: c.saveState),
                 ),
+                if (_layersOpen)
+                  Positioned(
+                    right: AppSpace.xl,
+                    top: AppSpace.xl + 44,
+                    child: LayersPanel(
+                      controller: c,
+                      onClose: () => setState(() => _layersOpen = false),
+                    ),
+                  ),
                 Positioned(
                   // iPhone: one horizontal strip along the bottom edge.
                   // Everywhere else: the vertical strip on the left.
@@ -946,6 +973,9 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       child: CanvasToolbar(
                         horizontal: PhoneProfile.active,
                         controller: c,
+                        layersOpen: _layersOpen,
+                        onLayers: () =>
+                            setState(() => _layersOpen = !_layersOpen),
                         onAddImage: _addImages,
                         onAddLink: _addLink,
                         onAddDocument: _addDocuments,

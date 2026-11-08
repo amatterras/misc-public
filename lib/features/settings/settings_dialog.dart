@@ -439,7 +439,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             key: const ValueKey('shared-links'),
             title: 'Shared links',
             subtitle:
-                '${s.workspace.shares.all.where((l) => l.activeAt(DateTime.now())).length} '
+                '${s.workspace.shares.all.where((l) => l.kind != 'handoff' && l.activeAt(DateTime.now())).length} '
                 'active. Read-only links served by your own hub; revoke them '
                 'here.',
             onTap: () => showSharedLinks(context, s),

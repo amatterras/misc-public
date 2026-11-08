@@ -7,6 +7,23 @@
 // deleted tag is simply no longer shown (its id is never reused).
 import 'record.dart';
 
+/// Thrown when a 16th tag would be made. An [ArgumentError], so every
+/// caller that already guards tag creation with `on ArgumentError` keeps
+/// handling it.
+class TagLimitReached extends ArgumentError {
+  TagLimitReached() : super(text);
+
+  static String get text =>
+      'You already have ${CustomTag.maxTags} tags, the most there can be. '
+      'Delete one to make room for a new one.';
+
+  @override
+  String get message => text;
+
+  @override
+  String toString() => text;
+}
+
 class CustomTag implements Record {
   const CustomTag({
     required this.id,

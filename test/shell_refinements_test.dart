@@ -220,14 +220,14 @@ void main() {
     final field = find.byKey(const ValueKey('global-search-field'));
     expect(field, findsOneWidget);
     final phoneFieldSize = tester.getSize(field);
-    expect(phoneFieldSize.height, greaterThanOrEqualTo(56));
+    expect(phoneFieldSize.height, greaterThanOrEqualTo(62));
     expect(phoneFieldSize.width, greaterThan(250));
     expect(tester.takeException(), isNull);
 
     tester.view.physicalSize = const Size(1440, 1000);
     await tester.pumpAndSettle();
     expect(tester.getSize(field).width, greaterThan(phoneFieldSize.width));
-    expect(tester.getSize(field).width, lessThanOrEqualTo(588));
+    expect(tester.getSize(field).width, lessThanOrEqualTo(724));
 
     await tester.runAsync(state.flush);
     await tester.pumpWidget(const SizedBox());

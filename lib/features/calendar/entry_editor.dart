@@ -11,6 +11,8 @@ import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
 import '../../data/workspace.dart';
 import '../../widgets/common.dart';
+import '../smartlinks/smart_links.dart';
+import '../smartlinks/smart_links_ui.dart';
 import 'reading_goal.dart';
 
 const weekdayLetters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -745,7 +747,33 @@ class _EntryEditorState extends State<_EntryEditor> {
                 controller: _notes,
                 minLines: 2,
                 maxLines: 6,
-                decoration: const InputDecoration(hintText: 'Notes'),
+                decoration: InputDecoration(
+                  hintText: 'Notes',
+                  suffixIcon: InsertLinkButton(
+                    state: s,
+                    controller: _notes,
+                    owner: WorkspaceRef(RefKind.entry, e.id),
+                  ),
+                ),
+              ),
+              ListenableBuilder(
+                listenable: _notes,
+                builder: (context, _) => Padding(
+                  padding: const EdgeInsets.only(top: AppSpace.sm),
+                  child: SmartLinksPanel(
+                    state: s,
+                    owner: WorkspaceRef(RefKind.entry, e.id),
+                    text: '${_description.text}\n${_notes.text}',
+                    beforeOpen: () async {
+                      _save();
+                      return _error == null;
+                    },
+                    onRemoveLink: (t) {
+                      _notes.text = removeLinkTo(_notes.text, t);
+                      _description.text = removeLinkTo(_description.text, t);
+                    },
+                  ),
+                ),
               ),
               const SizedBox(height: AppSpace.md),
               Wrap(

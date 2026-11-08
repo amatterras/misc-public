@@ -55,9 +55,11 @@ import '../sync/secret_store.dart';
 import '../sync/sync_client.dart';
 import '../sync/sync_engine.dart';
 import '../sync/sync_key_store.dart';
+import '../sync/sync_health.dart';
 import '../sync/sync_scheduler.dart';
 import '../sync/storage_modes.dart';
 import '../data/integrity/integrity_check.dart';
+import '../features/handoff/handoff.dart';
 import '../hub/hub_host.dart';
 import 'attention_gate.dart';
 import 'maintenance.dart';
@@ -84,6 +86,9 @@ enum DotSurface { mindmap, archive }
 
 /// A simple focus (Pomodoro-style) timer that keeps running while you
 /// switch pages.
+/// Where to go back to after following a workspace link.
+typedef ReturnPoint = ({String label, Future<void> Function() restore});
+
 class FocusTimer extends ChangeNotifier {
   static const focusLength = Duration(minutes: 25);
   static const breakLength = Duration(minutes: 5);
@@ -233,6 +238,16 @@ class AppState extends ChangeNotifier {
   CanvasController? _canvas;
   CanvasController? get canvas => _canvas;
 
+  /// After a tag was deleted: takes it off the objects of the open
+  /// mindmaps (the Archive items were cleaned by the workspace). Other
+  /// mindmaps just stop showing it; its id is never reused.
+  void scrubDeletedTags() {
+    bool exists(String id) => workspace.customTags[id] != null;
+    for (final c in {_canvas, ...openNotebooks}) {
+      c?.scrubCustomTags(exists);
+    }
+  }
+
   /// The handwriting of the note open in the note editor, if any (set by
   /// the editor), so sync merges remote changes into it.
   ///
@@ -282,6 +297,42 @@ class AppState extends ChangeNotifier {
   /// Short message shown at the bottom of the window.
   final ValueNotifier<String?> toast = ValueNotifier(null);
   final ValueNotifier<String> themeModePreference = ValueNotifier('dark');
+
+  /// Per mindmap: when the last version was made and what the canvas looked
+  /// like then (for the Time Machine's automatic versions).
+  final Map<String, ({DateTime at, int fingerprint})> snapshotState = {};
+
+  /// Whether saving a mindmap may make automatic versions (tests turn it off
+  /// to control exactly which versions exist).
+  bool autoSnapshots = true;
+
+  /// The note being edited right now (set by the note editor), so Quick
+  /// Capture can offer to refer to it.
+  final ValueNotifier<String?> activeNoteId = ValueNotifier(null);
+
+  /// How a PDF is opened for a page link (tests replace it; the default
+  /// opens the file in this device's viewer).
+  Future<bool> Function(File file, int page)? pdfOpener;
+
+  /// How a saved link is opened when reading resumes (tests replace it).
+  void Function(String url)? urlOpener;
+
+  /// The PDF page last asked for by a link (a PDF window follows it).
+  final ValueNotifier<({String assetId, int page})?> pdfFocus = ValueNotifier(
+    null,
+  );
+
+  /// A note page a link asks to scroll to (the note's page view follows it).
+  final ValueNotifier<({String noteId, int page})?> notebookJump =
+      ValueNotifier(null);
+
+  /// The places the user followed workspace links from, newest last (see
+  /// smart_links.dart); the bar above the app offers 'Back'.
+  final ValueNotifier<List<ReturnPoint>> linkReturn = ValueNotifier(const []);
+
+  /// The text in the global search: kept while results are opened and while
+  /// the user moves around; only the search's own clear button empties it.
+  final ValueNotifier<String> searchQuery = ValueNotifier('');
 
   Future<void> setThemeMode(String mode) async {
     if (!const {'system', 'light', 'dark'}.contains(mode)) return;
@@ -436,6 +487,7 @@ class AppState extends ChangeNotifier {
     }
     step('Starting sync');
     await _startSyncIfPaired();
+    handoff.start();
     // Replies that were being written when the app closed are marked
     // interrupted (never shown as finished).
     for (final c in workspace.aiConversations.all.toList()) {
@@ -588,7 +640,8 @@ class AppState extends ChangeNotifier {
       } catch (e, s) {
         ok = false;
         _autoBackupFailures++;
-        autoBackupError = 'The automatic backup could not be made; it is '
+        autoBackupError =
+            'The automatic backup could not be made; it is '
             'retried by itself. Your data and earlier backups are untouched.';
         AppLog.error('Automatic backup failed', e, s);
       }
@@ -597,10 +650,7 @@ class AppState extends ChangeNotifier {
     // hourly check rides on the Windows 10-second job and on the app coming
     // back to the front.
     if (!ok && !_disposed) {
-      final minutes = (1 << (_autoBackupFailures - 1).clamp(0, 6)).clamp(
-        1,
-        60,
-      );
+      final minutes = (1 << (_autoBackupFailures - 1).clamp(0, 6)).clamp(1, 60);
       _autoBackupTimer = Timer(
         autoBackupRetryUnit * minutes,
         () => unawaited(runAutomaticBackup()),
@@ -780,6 +830,27 @@ class AppState extends ChangeNotifier {
     }
     return (code: shown.display, minutes: r.minutes, port: r.port);
   }
+
+  /// Cross-device handoff: this device's place, and the others' (see
+  /// handoff.dart). Only ids and numbers are recorded.
+  late final HandoffService handoff = HandoffService(this);
+
+  /// The last few sync attempts (newest last), for the Sync Health center.
+  /// Plain words only: no addresses, keys or note text.
+  final List<SyncAttempt> syncHistory = [];
+
+  void _noteSyncAttempt(bool ok, String text) {
+    syncHistory.add(SyncAttempt(DateTime.now(), ok, scrubDiagnostic(text)));
+    if (syncHistory.length > 20) syncHistory.removeAt(0);
+  }
+
+  /// Whether a local change to one record has not reached the hub yet.
+  Future<bool> syncRecordPending(String collection, String id) async =>
+      await _sync?.isPending(collection, id) ?? false;
+
+  /// Local records still waiting for the hub, by kind (counts only).
+  Future<Map<String, int>> syncPendingCounts() async =>
+      await _sync?.pendingCounts() ?? const {};
 
   /// The hub rejected this device's token; automatic sync is stopped until
   /// the device is paired again.
@@ -1742,19 +1813,23 @@ class AppState extends ChangeNotifier {
             'Synced — ${report.deferred} large file(s) still transferring';
       }
       if (report.deferred > 0) _scheduler?.request(Duration.zero);
+      _noteSyncAttempt(true, _lastResult);
       await _refreshList();
     } on SyncFailure catch (e) {
       if (e.code == 'unauthorized') {
         // Removed with `thehub revoke`, or the hub was replaced: retrying
         // cannot help (see [_markNeedsPairing]).
         _markNeedsPairing();
+        _noteSyncAttempt(false, 'The hub no longer accepts this device.');
       } else {
         _lastResult = e.retryable ? '${e.message} Will retry.' : e.message;
+        _noteSyncAttempt(false, _lastResult);
         if (!e.retryable) AppLog.warn('Sync stopped: ${e.code}');
       }
       rethrow;
     } catch (e, s) {
       _lastResult = 'Sync hit an unexpected error (see log).';
+      _noteSyncAttempt(false, _lastResult);
       AppLog.error('Sync error', e, s);
       rethrow;
     } finally {
@@ -1795,6 +1870,7 @@ class AppState extends ChangeNotifier {
           metaUnknownFields: doc.metaUnknownFields,
           kind: doc.kind,
           pageBackgrounds: doc.pageBackgrounds,
+          layers: doc.layers,
         ),
       );
       migrated++;
@@ -2201,9 +2277,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  static String _archiveTitle(LibraryObject o) => o.title.trim().isNotEmpty
-      ? o.title.trim()
-      : (o.sourceUrl ?? 'item');
+  static String _archiveTitle(LibraryObject o) =>
+      o.title.trim().isNotEmpty ? o.title.trim() : (o.sourceUrl ?? 'item');
 
   Future<void> _publishShareTagCatalog() async {
     final ios = this.ios;
@@ -3118,8 +3193,17 @@ class AppState extends ChangeNotifier {
               onActivate: _activateCanvasItem,
               clock: workspace.clock,
             )
-            ..setEraser(mode: eraserMode, size: eraserSize)
+            ..setEraser(
+              mode: eraserMode,
+              size: eraserSize,
+              highlighterOnly: eraserHighlighterOnly,
+            )
             ..setPen(width: canvasPenWidth)
+            ..setAlignment(
+              guides: alignGuidesPref,
+              grid: gridSnapPref,
+              size: gridSizePref,
+            )
             ..setDotOpacity(dotOpacityFor(DotSurface.mindmap))
             ..setDotSize(dotSizeFor(DotSurface.mindmap)));
       await settings.set('lastCanvasId', id);
@@ -3156,6 +3240,12 @@ class AppState extends ChangeNotifier {
     // workspace records, so they do not tell the scheduler on their own).
     // Rapid saves are batched by the scheduler's short pause.
     _editedLocally();
+    if (autoSnapshots &&
+        !isLinksBoardId(doc.id) &&
+        doc.id != calendarInkId &&
+        !isComponentsId(doc.id)) {
+      unawaited(autoSnapshot(doc));
+    }
     final index = _canvasList.indexWhere((c) => c.id == doc.id);
     final text = [
       for (final i in doc.items)
@@ -3186,7 +3276,8 @@ class AppState extends ChangeNotifier {
 
   void _scheduleCanvasRetry() {
     if (_canvasRetry?.isActive ?? false) return;
-    final ms = RecordCollection.retryDelay.inMilliseconds *
+    final ms =
+        RecordCollection.retryDelay.inMilliseconds *
         (1 << _canvasRetryFailures.clamp(0, 10));
     final max = RecordCollection.maxRetryDelay.inMilliseconds;
     _canvasRetry = Timer(
@@ -3271,8 +3362,17 @@ class AppState extends ChangeNotifier {
                 onActivate: _activateCanvasItem,
                 clock: workspace.clock,
               )
-              ..setEraser(mode: eraserMode, size: eraserSize)
+              ..setEraser(
+                mode: eraserMode,
+                size: eraserSize,
+                highlighterOnly: eraserHighlighterOnly,
+              )
               ..setPen(width: canvasPenWidth)
+              ..setAlignment(
+                guides: alignGuidesPref,
+                grid: gridSnapPref,
+                size: gridSizePref,
+              )
               ..setDotOpacity(dotOpacityFor(DotSurface.mindmap))
               ..setDotSize(dotSizeFor(DotSurface.mindmap)));
     }
@@ -3469,7 +3569,11 @@ class AppState extends ChangeNotifier {
       c.tool = CanvasTool.pen;
     }
     c.setPen(width: calendarPenWidth);
-    c.setEraser(mode: eraserMode, size: eraserSize);
+    c.setEraser(
+      mode: eraserMode,
+      size: eraserSize,
+      highlighterOnly: eraserHighlighterOnly,
+    );
     return c;
   }
 
@@ -3555,11 +3659,37 @@ class AppState extends ChangeNotifier {
       EraserMode.values.asNameMap()[settings.get<String>('eraserMode')] ??
       EraserMode.stroke;
 
+  bool get eraserHighlighterOnly =>
+      settings.get<bool>('eraserHighlighterOnly') ?? false;
+
   double get eraserSize =>
       (settings.get<num>('eraserSize')?.toDouble() ?? 16).clamp(
         CanvasController.eraserSizes.min,
         CanvasController.eraserSizes.max,
       );
+
+  // ---------------------------------------------- alignment preferences --
+
+  bool get alignGuidesPref => settings.get<bool>('alignGuides') ?? false;
+  bool get gridSnapPref => settings.get<bool>('gridSnap') ?? false;
+  double get gridSizePref {
+    final v = settings.get<num>('gridSize')?.toDouble();
+    return v != null && CanvasController.gridSizes.contains(v) ? v : 24;
+  }
+
+  /// Turns guides / grid snapping on or off, or changes the grid size, on
+  /// [c] and keeps it for next time (this device).
+  Future<void> setAlignment(
+    CanvasController c, {
+    bool? guides,
+    bool? grid,
+    double? size,
+  }) async {
+    c.setAlignment(guides: guides, grid: grid, size: size);
+    await settings.set('alignGuides', c.alignGuides);
+    await settings.set('gridSnap', c.gridSnap);
+    await settings.set('gridSize', c.gridSize);
+  }
 
   /// Changes the eraser on [c] and on the other open drawings, and keeps
   /// it for next time.
@@ -3567,21 +3697,27 @@ class AppState extends ChangeNotifier {
     CanvasController c, {
     EraserMode? mode,
     double? size,
+    bool? highlighterOnly,
   }) async {
-    c.setEraser(mode: mode, size: size);
+    c.setEraser(mode: mode, size: size, highlighterOnly: highlighterOnly);
     for (final other in {_canvas, calendarInk}) {
       if (other != null && other != c) {
-        other.setEraser(mode: c.eraserMode, size: c.eraserSize);
+        other.setEraser(
+          mode: c.eraserMode,
+          size: c.eraserSize,
+          highlighterOnly: c.eraserHighlighterOnly,
+        );
       }
     }
     await settings.set('eraserMode', c.eraserMode.name);
     await settings.set('eraserSize', c.eraserSize);
+    await settings.set('eraserHighlighterOnly', c.eraserHighlighterOnly);
   }
 
   /// Thinnest and thickest Calendar pen (world units: 1 = one point at
   /// the 38-day grid's size).
-  static const calendarPenMin = 0.5;
-  static const calendarPenMax = 20.0;
+  static const calendarPenMin = 0.3;
+  static const calendarPenMax = 30.0;
 
   /// The Calendar pen's thickness (this device's setting). Each stroke
   /// keeps the thickness it was drawn with, also through undo and sync.
@@ -3761,6 +3897,7 @@ class AppState extends ChangeNotifier {
         metaUnknownFields: trashed.metaUnknownFields,
         kind: trashed.kind ?? 'notebook',
         pageBackgrounds: trashed.pageBackgrounds,
+        layers: trashed.layers,
       ),
     );
     await workspace.forgetCanvasDeletion(id);
@@ -3829,6 +3966,7 @@ class AppState extends ChangeNotifier {
     _disposed = true;
     _canvasRetry?.cancel();
     _autoBackupTimer?.cancel();
+    handoff.stop();
     _scheduler?.stop();
     unawaited(maintenance?.stop(wait: Duration.zero));
     unawaited(hubHost?.stop());

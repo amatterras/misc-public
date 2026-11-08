@@ -1,0 +1,2402 @@
+[
+  {
+    "id": "early_morning_001",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you're awake. let's not oversell it."
+  },
+  {
+    "id": "early_morning_002",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "not you beefing with an alarm clock again."
+  },
+  {
+    "id": "early_morning_003",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "good morning. your standards can wake up later."
+  },
+  {
+    "id": "early_morning_004",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you woke up. again. consistent, if nothing else."
+  },
+  {
+    "id": "early_morning_005",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "it's 6 a.m. nobody's best work happens here."
+  },
+  {
+    "id": "early_morning_006",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "get up. the mattress is starting to think you're serious."
+  },
+  {
+    "id": "early_morning_007",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "who approved mornings? name and shame."
+  },
+  {
+    "id": "early_morning_008",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you can lie there, but time has seen the behaviour."
+  },
+  {
+    "id": "early_morning_009",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "no major decisions until you know what day it is."
+  },
+  {
+    "id": "early_morning_010",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the duvet has had enough of you. stand up."
+  },
+  {
+    "id": "early_morning_011",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the alarm rang once. the excuses are already in 4K."
+  },
+  {
+    "id": "early_morning_012",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you're not late yet. don't speedrun it."
+  },
+  {
+    "id": "early_morning_013",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the sun's up. nobody gave it permission either."
+  },
+  {
+    "id": "early_morning_014",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "morning. act like you've done this before."
+  },
+  {
+    "id": "early_morning_015",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "drink water before deciding your entire life is over."
+  },
+  {
+    "id": "early_morning_016",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "let's not let one snooze become a whole belief system."
+  },
+  {
+    "id": "early_morning_017",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "get out of bed before you start defending being in bed."
+  },
+  {
+    "id": "early_morning_018",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "being awake is not a personal achievement. move on."
+  },
+  {
+    "id": "early_morning_019",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "please locate water and one realistic expectation."
+  },
+  {
+    "id": "early_morning_020",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the day is here. don't make it weird."
+  },
+  {
+    "id": "early_morning_021",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "how many times are we going to act surprised by mornings?"
+  },
+  {
+    "id": "early_morning_022",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you're allowed to be tired. you're not allowed to act shocked."
+  },
+  {
+    "id": "early_morning_023",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you and the blanket are getting way too comfortable."
+  },
+  {
+    "id": "early_morning_024",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you've been awake for a minute and are already looking for loopholes."
+  },
+  {
+    "id": "early_morning_025",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "nobody asked for your 6 a.m. manifesto."
+  },
+  {
+    "id": "early_morning_026",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "it's too early for the laundry to feel like a personal attack."
+  },
+  {
+    "id": "early_morning_027",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "leave the phone alone for three seconds. the world can be annoying later."
+  },
+  {
+    "id": "early_morning_028",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "no, lying down with your eyes open does not count as getting up."
+  },
+  {
+    "id": "early_morning_029",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the plan was to wake up. the plan remains relevant."
+  },
+  {
+    "id": "early_morning_030",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "do not start the day by reading something that annoys you. have some self-preservation."
+  },
+  {
+    "id": "early_morning_031",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "your morning is not cursed. you just haven't moved yet."
+  },
+  {
+    "id": "early_morning_032",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "if the first thing you do is scroll, you've handed the day the aux."
+  },
+  {
+    "id": "early_morning_033",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "nobody expects a personality before coffee. let's keep it that way."
+  },
+  {
+    "id": "early_morning_034",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the alarm didn't betray you. it did exactly what you set it to do."
+  },
+  {
+    "id": "early_morning_035",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "get vertical. we can be dramatic after."
+  },
+  {
+    "id": "early_morning_036",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you're negotiating with the duvet like it can change the terms."
+  },
+  {
+    "id": "early_morning_037",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "your first thought does not need to become today's agenda."
+  },
+  {
+    "id": "early_morning_038",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "it's too early to be both tired and making bad decisions."
+  },
+  {
+    "id": "early_morning_039",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the bed is comfortable. that is not breaking news."
+  },
+  {
+    "id": "early_morning_040",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "let's not spend the whole morning preparing to begin."
+  },
+  {
+    "id": "early_morning_041",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you have a body. please operate it."
+  },
+  {
+    "id": "early_morning_042",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you said 'tomorrow' and then tomorrow had the nerve to arrive."
+  },
+  {
+    "id": "early_morning_043",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "don't confuse a slow start with a free day."
+  },
+  {
+    "id": "early_morning_044",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the excuse is still loading. get up before it finishes."
+  },
+  {
+    "id": "early_morning_045",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the day isn't personal. weird how it keeps happening, though."
+  },
+  {
+    "id": "early_morning_046",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "drink water before declaring the week a failure."
+  },
+  {
+    "id": "early_morning_047",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you're not having a crisis. you're having a morning."
+  },
+  {
+    "id": "early_morning_048",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you've lost ten minutes to arguing with a rectangle. stand up."
+  },
+  {
+    "id": "early_morning_049",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "get up now or keep pretending this is a deliberate choice."
+  },
+  {
+    "id": "early_morning_050",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "no one is making you be productive at 6 a.m. except the plans you made."
+  },
+  {
+    "id": "early_morning_051",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you're awake. no need to send a press release."
+  },
+  {
+    "id": "early_morning_052",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "please do not start mentally arguing with someone before breakfast."
+  },
+  {
+    "id": "early_morning_053",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "your sleep schedule and your plans are not on speaking terms."
+  },
+  {
+    "id": "early_morning_054",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "we're not inventing problems before we've brushed our teeth."
+  },
+  {
+    "id": "early_morning_055",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you can argue with the clock after your feet hit the floor."
+  },
+  {
+    "id": "early_morning_056",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "try not to make 'getting started' the hardest task on the list."
+  },
+  {
+    "id": "early_morning_057",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "being in bed and being at peace are two different things."
+  },
+  {
+    "id": "early_morning_058",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you can have a bad mood and still stand up."
+  },
+  {
+    "id": "early_morning_059",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "your future self will be annoyed if you make this a whole event."
+  },
+  {
+    "id": "early_morning_060",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "it's early, so maybe don't trust the first opinion you have."
+  },
+  {
+    "id": "early_morning_061",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "if you need a sign to get up, this is embarrassing but here it is."
+  },
+  {
+    "id": "early_morning_062",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you've successfully woken up. let's not turn it into a whole thing."
+  },
+  {
+    "id": "early_morning_063",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "no, the first scroll won't make you feel more awake. be serious."
+  },
+  {
+    "id": "early_morning_064",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "some people wake up happy. try not to take it personally."
+  },
+  {
+    "id": "early_morning_065",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "there is no medal for making the alarm go off seven times."
+  },
+  {
+    "id": "early_morning_066",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "your task list isn't hiding. you've just been avoiding eye contact."
+  },
+  {
+    "id": "early_morning_067",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "just because you're tired doesn't mean the day owes you an apology."
+  },
+  {
+    "id": "early_morning_068",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you have no business building a 12-step life plan before breakfast."
+  },
+  {
+    "id": "early_morning_069",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you don't have to like this hour. you do have to leave the bed eventually."
+  },
+  {
+    "id": "early_morning_070",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "phone down. you're not on call for the internet."
+  },
+  {
+    "id": "early_morning_071",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "it's okay to be at 40%. it's not okay to expect the duvet to do the work."
+  },
+  {
+    "id": "early_morning_072",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "we're not calling it a reset if nothing changes except the alarm time."
+  },
+  {
+    "id": "early_morning_073",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "your first excuse of the day has arrived suspiciously early."
+  },
+  {
+    "id": "early_morning_074",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the bed is not a permanent address."
+  },
+  {
+    "id": "early_morning_075",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "if you go back to sleep, at least stop acting like it was an accident."
+  },
+  {
+    "id": "early_morning_076",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "wake up gently if you must. just don't wake up three hours later surprised."
+  },
+  {
+    "id": "early_morning_077",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "nothing is urgent until you check your phone. consider the peace."
+  },
+  {
+    "id": "early_morning_078",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you're not obligated to love mornings. just stop losing negotiations to them."
+  },
+  {
+    "id": "early_morning_079",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you can complain about getting up while actually getting up. multitasking."
+  },
+  {
+    "id": "early_morning_080",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "before you spiral, check if you need food, water, or to stand up."
+  },
+  {
+    "id": "early_morning_081",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "your first move should not be giving a stranger online your full attention."
+  },
+  {
+    "id": "early_morning_082",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the alarm did its one job. now we have a situation."
+  },
+  {
+    "id": "early_morning_083",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "please save the dramatic soundtrack for after you've brushed your teeth."
+  },
+  {
+    "id": "early_morning_084",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "please don't launch a new personality before 8 a.m."
+  },
+  {
+    "id": "early_morning_085",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you've got plans today. remember those? the ones you made while optimistic."
+  },
+  {
+    "id": "early_morning_086",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you can't keep blaming the morning for choices you made last night."
+  },
+  {
+    "id": "early_morning_087",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "nobody needs excellence. we need one sign of life."
+  },
+  {
+    "id": "early_morning_088",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "your blanket has had you long enough. let it miss you."
+  },
+  {
+    "id": "early_morning_089",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "the first win is not making this harder than it already is."
+  },
+  {
+    "id": "early_morning_090",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you're not behind on the day yet. give it a chance."
+  },
+  {
+    "id": "early_morning_091",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you can start in a bad mood. the task won't take it personally."
+  },
+  {
+    "id": "early_morning_092",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "it's a new day, not a factory reset. same you, please cooperate."
+  },
+  {
+    "id": "early_morning_093",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "your alarm is not a suggestion just because you dislike the messenger."
+  },
+  {
+    "id": "early_morning_094",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you've spent enough time deciding whether to get up. the vote is closed."
+  },
+  {
+    "id": "early_morning_095",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "nobody asked for a full personality before 8. just stand up."
+  },
+  {
+    "id": "early_morning_096",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you're making getting out of bed look like a breakup."
+  },
+  {
+    "id": "early_morning_097",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you survived yesterday. mildly annoying that there's a sequel."
+  },
+  {
+    "id": "early_morning_098",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "okay. feet on floor. no acceptance speech."
+  },
+  {
+    "id": "early_morning_099",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "morning's here. do one thing before checking what strangers think."
+  },
+  {
+    "id": "early_morning_100",
+    "time_slot": "early_morning",
+    "label": "Early morning",
+    "start_local_time": "05:00",
+    "end_local_time": "07:59",
+    "text": "you've woken up once. no need to spend the next hour buffering."
+  },
+  {
+    "id": "noon_001",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "be so for real. what has actually happened today?"
+  },
+  {
+    "id": "noon_002",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "it's noon. you can't keep calling this 'getting ready to start'."
+  },
+  {
+    "id": "noon_003",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "thinking about the task for three hours is not a task."
+  },
+  {
+    "id": "noon_004",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the list is not a suggestion box."
+  },
+  {
+    "id": "noon_005",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've thought about doing it. incredible. now do it."
+  },
+  {
+    "id": "noon_006",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you managed to procrastinate a task that barely asked anything of you."
+  },
+  {
+    "id": "noon_007",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you're not waiting for the right moment. you're scrolling."
+  },
+  {
+    "id": "noon_008",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "this takes ten minutes. you've avoided it for ninety. explain that."
+  },
+  {
+    "id": "noon_009",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've been 'about to start' long enough for the phrase to lose meaning."
+  },
+  {
+    "id": "noon_010",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you have twelve tabs open and no new information."
+  },
+  {
+    "id": "noon_011",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the deadline is coming up. this is not breaking news."
+  },
+  {
+    "id": "noon_012",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you do not need another system. you need to use one."
+  },
+  {
+    "id": "noon_013",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "respectfully, this is a lot of drama for one email."
+  },
+  {
+    "id": "noon_014",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you cannot research your way out of having to begin."
+  },
+  {
+    "id": "noon_015",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the work is boring. unfortunately, so is being behind."
+  },
+  {
+    "id": "noon_016",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "your screen time has a better attendance record than you."
+  },
+  {
+    "id": "noon_017",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "if excuses counted, you'd be finished twice over."
+  },
+  {
+    "id": "noon_018",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've made a side quest out of answering a yes-or-no question."
+  },
+  {
+    "id": "noon_019",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "staring at the list is not the same as crossing something off."
+  },
+  {
+    "id": "noon_020",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "it's not a mystery. you just don't want to do it."
+  },
+  {
+    "id": "noon_021",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you are spending a truly impressive amount of effort not starting."
+  },
+  {
+    "id": "noon_022",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you know what to do. the mystery is entirely performative."
+  },
+  {
+    "id": "noon_023",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you opened the app. now do the thing you opened it for."
+  },
+  {
+    "id": "noon_024",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "your afternoon has been one long loading screen. click something."
+  },
+  {
+    "id": "noon_025",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you keep moving it to tomorrow like tomorrow owes you money."
+  },
+  {
+    "id": "noon_026",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the task has not become less annoying while you've ignored it."
+  },
+  {
+    "id": "noon_027",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "today's goal was 'do one thing'. why is this a negotiation?"
+  },
+  {
+    "id": "noon_028",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've changed the song six times. the task is still untouched."
+  },
+  {
+    "id": "noon_029",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you checked the same app eight times. the plot has not changed."
+  },
+  {
+    "id": "noon_030",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "start badly. your perfect imaginary version is not helping."
+  },
+  {
+    "id": "noon_031",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "why does clicking 'send' require a parliamentary inquiry?"
+  },
+  {
+    "id": "noon_032",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you can't call it a break if you haven't started."
+  },
+  {
+    "id": "noon_033",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you opened TikTok to take a break from doing nothing. impressive."
+  },
+  {
+    "id": "noon_034",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "it's literally a form. why are we acting like it knows your secrets?"
+  },
+  {
+    "id": "noon_035",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've taken the scenic route around a single checkbox."
+  },
+  {
+    "id": "noon_036",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "stop giving the excuse a backstory."
+  },
+  {
+    "id": "noon_037",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "nobody is watching you write the first draft. relax."
+  },
+  {
+    "id": "noon_038",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the deadline is on the calendar, not in folklore."
+  },
+  {
+    "id": "noon_039",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've made a very compelling case for doing anything else."
+  },
+  {
+    "id": "noon_040",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "future you is sick of cleaning up your little 'I'll do it later' mess."
+  },
+  {
+    "id": "noon_041",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the research phase has become a hiding place. leave it."
+  },
+  {
+    "id": "noon_042",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the deadline is not a jump scare. you knew it was coming."
+  },
+  {
+    "id": "noon_043",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've explained why it's hard more times than you've tried it."
+  },
+  {
+    "id": "noon_044",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "stop opening tabs like a new one will do the task for you."
+  },
+  {
+    "id": "noon_045",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you did not need to reorganise your desk to answer one message."
+  },
+  {
+    "id": "noon_046",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you checked your phone mid-sentence. please stand down."
+  },
+  {
+    "id": "noon_047",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "ten minutes of work or three hours of guilt. pick your hobby."
+  },
+  {
+    "id": "noon_048",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've mistaken being stressed about the work for doing the work."
+  },
+  {
+    "id": "noon_049",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "less backstory, more first step."
+  },
+  {
+    "id": "noon_050",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you scheduled this task three times. at this point it's a pen pal."
+  },
+  {
+    "id": "noon_051",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've spent longer avoiding the start than the start would take."
+  },
+  {
+    "id": "noon_052",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "waiting dramatically won't make the task more enjoyable."
+  },
+  {
+    "id": "noon_053",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "it's one checkbox. why are you treating it like it insulted your family?"
+  },
+  {
+    "id": "noon_054",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you can't optimise your way out of doing the basic version."
+  },
+  {
+    "id": "noon_055",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you have twenty minutes. don't spend eighteen arguing with yourself."
+  },
+  {
+    "id": "noon_056",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you were 'busy' for four hours and have a suspicious lack of receipts."
+  },
+  {
+    "id": "noon_057",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you don't need to feel ready. open the document."
+  },
+  {
+    "id": "noon_058",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the task is not beneath you. it is just unfinished."
+  },
+  {
+    "id": "noon_059",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've overthought this to the point the task should be embarrassed for you."
+  },
+  {
+    "id": "noon_060",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "checking your inbox again will not make that email nicer."
+  },
+  {
+    "id": "noon_061",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you can be annoyed and still click the button. try both."
+  },
+  {
+    "id": "noon_062",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've had this plan long enough to actually try it."
+  },
+  {
+    "id": "noon_063",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "this avoidance routine takes longer than the actual task. by a lot."
+  },
+  {
+    "id": "noon_064",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "it's not admin day if you're only staring at the admin."
+  },
+  {
+    "id": "noon_065",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you asked for a sign. the deadline is right there."
+  },
+  {
+    "id": "noon_066",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you don't need to discover who you are before opening the file."
+  },
+  {
+    "id": "noon_067",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you didn't run out of time. you donated it to distractions."
+  },
+  {
+    "id": "noon_068",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "nothing gets easier while sitting untouched in a list."
+  },
+  {
+    "id": "noon_069",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "a rough draft beats the perfect one that only exists in your head."
+  },
+  {
+    "id": "noon_070",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've spent the entire afternoon getting ready to start. impressive lack of starting."
+  },
+  {
+    "id": "noon_071",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "stop explaining the task to yourself and open the file."
+  },
+  {
+    "id": "noon_072",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "your phone has had enough of a turn."
+  },
+  {
+    "id": "noon_073",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "this is an unreasonable amount of resistance to three clicks."
+  },
+  {
+    "id": "noon_074",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you don't have to fix your life. close one loose end."
+  },
+  {
+    "id": "noon_075",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the task has waited patiently. i would've stopped asking."
+  },
+  {
+    "id": "noon_076",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you keep circling the task like it's going to become less awkward."
+  },
+  {
+    "id": "noon_077",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "why are you asking permission from yourself to do the thing you planned?"
+  },
+  {
+    "id": "noon_078",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "getting organised has become your favourite way to avoid the work."
+  },
+  {
+    "id": "noon_079",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "one task. please stop trying to fix your whole life through stationery."
+  },
+  {
+    "id": "noon_080",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the afternoon has been mostly phone. there, now we've named it."
+  },
+  {
+    "id": "noon_081",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you've turned 'open the file' into a philosophical question."
+  },
+  {
+    "id": "noon_082",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "do the easy part before inventing a harder version."
+  },
+  {
+    "id": "noon_083",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you are allowed to change the plan after actually trying it."
+  },
+  {
+    "id": "noon_084",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the excuses are convincing. the results are not."
+  },
+  {
+    "id": "noon_085",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "more tabs than completed thoughts. close two."
+  },
+  {
+    "id": "noon_086",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "this is not a personality test. answer the email."
+  },
+  {
+    "id": "noon_087",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you do have the ability. you're just not doing the thing."
+  },
+  {
+    "id": "noon_088",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "finish one thing before you remember a completely unrelated chore."
+  },
+  {
+    "id": "noon_089",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the task will not complete itself out of pity."
+  },
+  {
+    "id": "noon_090",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "stop with the preamble. open the thing."
+  },
+  {
+    "id": "noon_091",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "do one thing before your entire afternoon becomes screenshots and snacks."
+  },
+  {
+    "id": "noon_092",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "we've heard every excuse. unfortunately, the task is still there."
+  },
+  {
+    "id": "noon_093",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you added three optional tasks while claiming you had no time. okay."
+  },
+  {
+    "id": "noon_094",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "no one can do the boring part on your behalf. deeply inconvenient."
+  },
+  {
+    "id": "noon_095",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you don't need to lock in for six hours. try six minutes."
+  },
+  {
+    "id": "noon_096",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "this is a lot of theatre for a ten-minute task."
+  },
+  {
+    "id": "noon_097",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "be fr. opening the tab is not the same as working."
+  },
+  {
+    "id": "noon_098",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "do the annoying thing now so it stops narrating your afternoon."
+  },
+  {
+    "id": "noon_099",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "the day isn't gone. your attention just keeps leaving it."
+  },
+  {
+    "id": "noon_100",
+    "time_slot": "noon",
+    "label": "Noon",
+    "start_local_time": "12:00",
+    "end_local_time": "16:59",
+    "text": "you can stop preparing to start. start."
+  },
+  {
+    "id": "late_evening_001",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "close the app. it's not going to reveal the truth on the next refresh."
+  },
+  {
+    "id": "late_evening_002",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "stop handing everything to tomorrow. she didn't agree to this."
+  },
+  {
+    "id": "late_evening_003",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you don't have to solve a conversation that's already over."
+  },
+  {
+    "id": "late_evening_004",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "it's 11 p.m. you're not suddenly qualified to read minds."
+  },
+  {
+    "id": "late_evening_005",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "don't send the paragraph. keep your dignity and your battery."
+  },
+  {
+    "id": "late_evening_006",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you can reread the chat tomorrow. it will still be a chat."
+  },
+  {
+    "id": "late_evening_007",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you said you'd sleep an hour ago. the receipts are right there."
+  },
+  {
+    "id": "late_evening_008",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you've watched the same moment in your head twelve times. enough."
+  },
+  {
+    "id": "late_evening_009",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the person you're thinking about is probably just eating cereal."
+  },
+  {
+    "id": "late_evening_010",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "don't make the day worse trying to get the last word."
+  },
+  {
+    "id": "late_evening_011",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "tired you is making a lot of claims for someone with no evidence."
+  },
+  {
+    "id": "late_evening_012",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "being online is not an obligation."
+  },
+  {
+    "id": "late_evening_013",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you're not reinventing yourself at 11:46 p.m. go to bed."
+  },
+  {
+    "id": "late_evening_014",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you are not a private investigator. put the screenshots away."
+  },
+  {
+    "id": "late_evening_015",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "put the phone down. nobody interesting has appeared since the last time."
+  },
+  {
+    "id": "late_evening_016",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you are having a thought, not receiving a prophecy."
+  },
+  {
+    "id": "late_evening_017",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "not this memory again. block it."
+  },
+  {
+    "id": "late_evening_018",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "tomorrow already has enough to deal with. stop forwarding your backlog."
+  },
+  {
+    "id": "late_evening_019",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you are not required to solve your entire existence before sleeping."
+  },
+  {
+    "id": "late_evening_020",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "do not text them. you have seen enough evidence."
+  },
+  {
+    "id": "late_evening_021",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the internet will continue if you miss one more scroll."
+  },
+  {
+    "id": "late_evening_022",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you have reopened the same case with zero new information."
+  },
+  {
+    "id": "late_evening_023",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the day's over. nobody asked for your closing statement."
+  },
+  {
+    "id": "late_evening_024",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "everything sounds profound when you're tired. suspicious timing."
+  },
+  {
+    "id": "late_evening_025",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you don't need a new life plan. you need to put the phone down."
+  },
+  {
+    "id": "late_evening_026",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "one awkward moment does not need a director's cut."
+  },
+  {
+    "id": "late_evening_027",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you spent all day avoiding work. don't spend the night avoiding sleep."
+  },
+  {
+    "id": "late_evening_028",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "that person is likely not thinking about this as much as you are. brutal but freeing."
+  },
+  {
+    "id": "late_evening_029",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "stop shopping because you're bored. the package won't fix your mood."
+  },
+  {
+    "id": "late_evening_030",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "your unread messages can wait without supervision."
+  },
+  {
+    "id": "late_evening_031",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you can stop rehearsing that conversation. nobody is grading it."
+  },
+  {
+    "id": "late_evening_032",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the voice in your head has been talking for hours and not one point has landed."
+  },
+  {
+    "id": "late_evening_033",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you say 'one more scroll' like your phone doesn't know you're lying."
+  },
+  {
+    "id": "late_evening_034",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "if the idea only sounds good while lying in the dark, absolutely not."
+  },
+  {
+    "id": "late_evening_035",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you can't fix tomorrow by ruining tonight."
+  },
+  {
+    "id": "late_evening_036",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the confidence is high. the evidence is zero."
+  },
+  {
+    "id": "late_evening_037",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "close the tab. yes, that one too."
+  },
+  {
+    "id": "late_evening_038",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "nothing has changed since you checked five minutes ago."
+  },
+  {
+    "id": "late_evening_039",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "it's bedtime, not a review of every mistake you've ever made."
+  },
+  {
+    "id": "late_evening_040",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "don't turn being tired into another task."
+  },
+  {
+    "id": "late_evening_041",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "go to sleep before you start making decisions with a brain that needs charging."
+  },
+  {
+    "id": "late_evening_042",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you're tired and the app knows it. stop volunteering."
+  },
+  {
+    "id": "late_evening_043",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you don't need to decide your entire future tonight."
+  },
+  {
+    "id": "late_evening_044",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "your pillow has been waiting through an embarrassing amount of scrolling."
+  },
+  {
+    "id": "late_evening_045",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "if it wasn't a good idea at 3 p.m., the lighting won't save it now."
+  },
+  {
+    "id": "late_evening_046",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "your brain is replaying one awkward moment like it gets royalties."
+  },
+  {
+    "id": "late_evening_047",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "there is no trophy for being the last person awake and unhappy."
+  },
+  {
+    "id": "late_evening_048",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you checked the time six times. it keeps being bedtime."
+  },
+  {
+    "id": "late_evening_049",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the task can wait. sleep deprivation will collect interest."
+  },
+  {
+    "id": "late_evening_050",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "don't let a temporary mood write a permanent message."
+  },
+  {
+    "id": "late_evening_051",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you're tired. don't treat every feeling like a court ruling."
+  },
+  {
+    "id": "late_evening_052",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the day is over. it doesn't need commentary."
+  },
+  {
+    "id": "late_evening_053",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "stop opening apps looking for an answer they cannot give you."
+  },
+  {
+    "id": "late_evening_054",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "late-night you should not have admin access."
+  },
+  {
+    "id": "late_evening_055",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "sleep on it. genuinely. no hidden meaning."
+  },
+  {
+    "id": "late_evening_056",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you do not need to make a playlist about this."
+  },
+  {
+    "id": "late_evening_057",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "no new hobbies, identities, or purchases after this hour."
+  },
+  {
+    "id": "late_evening_058",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the conversation ended. stop writing the bonus scenes."
+  },
+  {
+    "id": "late_evening_059",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "one thing can remain unresolved until morning. shocking concept."
+  },
+  {
+    "id": "late_evening_060",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you are allowed to stop scrolling before the app gets bored of you."
+  },
+  {
+    "id": "late_evening_061",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "repeating the same thought is not progress. it's just reruns."
+  },
+  {
+    "id": "late_evening_062",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "being awake does not mean you're available."
+  },
+  {
+    "id": "late_evening_063",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "your brain is doing worst-case fanfiction again. close the tab."
+  },
+  {
+    "id": "late_evening_064",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the perfect comeback will not improve your sleep quality."
+  },
+  {
+    "id": "late_evening_065",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you've been on here this long and have not become happier. noted."
+  },
+  {
+    "id": "late_evening_066",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "your notes app does not need another midnight manifesto."
+  },
+  {
+    "id": "late_evening_067",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "stop checking the view count like it's going to explain their personality."
+  },
+  {
+    "id": "late_evening_068",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "no, 11:11 does not solve your problem."
+  },
+  {
+    "id": "late_evening_069",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "put your phone somewhere inconvenient. outsmart yourself for once."
+  },
+  {
+    "id": "late_evening_070",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you are allowed to stop thinking about it just because you started."
+  },
+  {
+    "id": "late_evening_071",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "please stop treating one awkward moment like your entire character reference."
+  },
+  {
+    "id": "late_evening_072",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the bed is right there. this negotiation is getting weird."
+  },
+  {
+    "id": "late_evening_073",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "your late-night ideas need adult supervision. unfortunately, you're the adult."
+  },
+  {
+    "id": "late_evening_074",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "do not send a message that begins with 'i've been thinking'."
+  },
+  {
+    "id": "late_evening_075",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you can answer everyone tomorrow. tonight you're unavailable."
+  },
+  {
+    "id": "late_evening_076",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you cannot get the day to admit it was wrong. go to sleep."
+  },
+  {
+    "id": "late_evening_077",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "your screen-time report has questions. you know the answers."
+  },
+  {
+    "id": "late_evening_078",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "your thoughts don't get more accurate because the music is sad."
+  },
+  {
+    "id": "late_evening_079",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "not every inconvenience needs a final monologue."
+  },
+  {
+    "id": "late_evening_080",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "rereading the same chat is not new research."
+  },
+  {
+    "id": "late_evening_081",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the best next move may be to shut up and sleep."
+  },
+  {
+    "id": "late_evening_082",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "tomorrow-you can handle this with a slightly less cursed brain."
+  },
+  {
+    "id": "late_evening_083",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you've consumed enough opinions for one day. log off."
+  },
+  {
+    "id": "late_evening_084",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "stop dragging bedtime out like you want it to change its mind."
+  },
+  {
+    "id": "late_evening_085",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the phone is warm. your judgment isn't. put it down."
+  },
+  {
+    "id": "late_evening_086",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "this can wait until you're not negotiating with a blanket."
+  },
+  {
+    "id": "late_evening_087",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you got through today. don't add a bonus round of being mean to yourself."
+  },
+  {
+    "id": "late_evening_088",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the next refresh is not going to reveal a secret answer."
+  },
+  {
+    "id": "late_evening_089",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you can stop being online. nobody is tracking your attendance."
+  },
+  {
+    "id": "late_evening_090",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "sleep now. tomorrow can be mediocre on its own merits."
+  },
+  {
+    "id": "late_evening_091",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "do not let tired-you send anything that rested-you has to explain."
+  },
+  {
+    "id": "late_evening_092",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you are not the closing act of everyone's evening. go to sleep."
+  },
+  {
+    "id": "late_evening_093",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "the problem will still exist tomorrow. at least you'll have slept."
+  },
+  {
+    "id": "late_evening_094",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "your phone is not a flotation device. put it down."
+  },
+  {
+    "id": "late_evening_095",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "go to bed before your brain starts assigning meaning to punctuation."
+  },
+  {
+    "id": "late_evening_096",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "you are not going to feel perfectly resolved about everything. go anyway."
+  },
+  {
+    "id": "late_evening_097",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "closure is not coming through a push notification. put the phone down."
+  },
+  {
+    "id": "late_evening_098",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "it's late. the front camera has already told you enough."
+  },
+  {
+    "id": "late_evening_099",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "we can revisit the disaster tomorrow. maybe it'll be less of a disaster."
+  },
+  {
+    "id": "late_evening_100",
+    "time_slot": "late_evening",
+    "label": "Late evening",
+    "start_local_time": "21:00",
+    "end_local_time": "23:59",
+    "text": "close the screen before your next idea makes tomorrow embarrassing."
+  }
+]

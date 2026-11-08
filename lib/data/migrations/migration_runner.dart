@@ -388,6 +388,7 @@ final canvasRevisionsV1 = MigrationStep(
           metaUnknownFields: doc.metaUnknownFields,
           kind: doc.kind,
           pageBackgrounds: doc.pageBackgrounds,
+          layers: doc.layers,
         ),
       );
       changed++;

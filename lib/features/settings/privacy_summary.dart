@@ -52,7 +52,8 @@ class PrivacyFacts {
       hubEncryptedOnly: engine?.requireSealed ?? false,
       activeShares: [
         for (final l in s.workspace.shares.all)
-          if (l.activeAt(DateTime.now())) l,
+          // Handoff records (resume-where-I-am) are not shared links.
+          if (l.kind != 'handoff' && l.activeAt(DateTime.now())) l,
       ].length,
       aiEnabled: s.ai.enabled,
       aiLocal: s.ai.isLocal,

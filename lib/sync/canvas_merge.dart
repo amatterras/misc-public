@@ -15,6 +15,7 @@ class CanvasSyncState {
     this.metaUnknownFields = const {},
     this.kind,
     this.pageBackgrounds = const [],
+    this.layers = const [],
   }) : itemUnknownFields = itemUnknownFields ?? {};
 
   List<CanvasItem> items;
@@ -32,9 +33,19 @@ class CanvasSyncState {
   /// Notebook fields (see [CanvasDocument.kind]).
   String? kind;
   List<PageBackground> pageBackgrounds;
+
+  /// The mindmap's layers (see [CanvasDocument.layers]).
+  List<CanvasLayer> layers;
 }
 
-const _metaKeys = {'title', 'folderId', 'order', 'kind', 'backgrounds'};
+const _metaKeys = {
+  'title',
+  'folderId',
+  'order',
+  'kind',
+  'backgrounds',
+  'layers',
+};
 
 /// Data sent for a canvas's metadata record; [unknown] are metadata fields
 /// from a newer version, sent back unchanged.
@@ -45,6 +56,7 @@ Map<String, dynamic> canvasMetaData(
   Map<String, dynamic>? unknown,
   String? kind,
   List<PageBackground> backgrounds = const [],
+  List<CanvasLayer> layers = const [],
 ]) => withUnknownFields({
   'title': title,
   'folderId': folderId,
@@ -52,6 +64,7 @@ Map<String, dynamic> canvasMetaData(
   'kind': ?kind,
   if (backgrounds.isNotEmpty)
     'backgrounds': [for (final b in backgrounds) b.toJson()],
+  if (layers.isNotEmpty) 'layers': [for (final l in layers) l.toJson()],
 }, unknown);
 
 /// Applies incoming `canvases` / `canvas_items` changes for one canvas.
@@ -121,6 +134,7 @@ Set<String> applyCanvasChanges(
         for (final b in data['backgrounds'] as List? ?? const [])
           PageBackground.fromJson((b as Map).cast<String, dynamic>()),
       ];
+      s.layers = CanvasLayer.listFrom(data['layers']);
       s.metaUnknownFields = unknownFields(data, _metaKeys);
       s.metaRev = meta.rev;
       final order = [...?(data['order'] as List?)?.cast<String>()];

@@ -21,6 +21,7 @@ import '../canvas/canvas_toolbar.dart' show EraserPanel;
 import '../transfer/transfer.dart';
 import 'calendar_ink.dart';
 import 'calendar_views.dart';
+import 'workload.dart';
 import 'entry_editor.dart';
 import 'reading_goal.dart';
 import 'calendar_handwriting.dart';
@@ -84,6 +85,9 @@ class _CalendarPageState extends State<CalendarPage> {
 
   /// Draw mode: pointer input on days draws instead of selecting.
   bool _drawing = false;
+
+  /// Workload view (optional): how full each day is. Remembered per device.
+  late bool _workload = s.settings.get<bool>('calendarWorkload') ?? false;
 
   /// Ink input on only for a held Pencil squeeze (the eraser): unlike
   /// [_drawing], it changes nothing in the toolbar. Showing the Draw tools
@@ -503,7 +507,18 @@ class _CalendarPageState extends State<CalendarPage> {
       _tabs(),
       SizedBox(height: gap),
       Expanded(
-        child: _tab == null && _view != CalendarView.range
+        child: _tab == null && _workload
+            ? CalendarWorkloadView(
+                state: s,
+                anchor: _anchor,
+                onDay: (d) => setState(() {
+                  _workload = false;
+                  _anchor = d;
+                  _selectedDay = d;
+                  unawaited(s.settings.set('calendarWorkload', false));
+                }),
+              )
+            : _tab == null && _view != CalendarView.range
             ? _otherView()
             : _tab == null
             ? Row(
@@ -612,6 +627,11 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
+  void _setWorkload(bool on) {
+    setState(() => _workload = on);
+    unawaited(s.settings.set('calendarWorkload', on));
+  }
+
   /// View choice, and (outside the range view) back / today / forward.
   Widget _viewBar() {
     final v = _view;
@@ -638,7 +658,10 @@ class _CalendarPageState extends State<CalendarPage> {
               ),
           ],
           selected: {v},
-          onSelectionChanged: (c) => _setView(c.first),
+          onSelectionChanged: (c) {
+            if (_workload) _setWorkload(false);
+            _setView(c.first);
+          },
         ),
         if (_ink != null &&
             _tab == null &&
@@ -1012,9 +1035,21 @@ class _CalendarPageState extends State<CalendarPage> {
               children: [
                 tab(
                   '${s.calendarDays}-Day Grid',
-                  _tab == null,
-                  () => setState(() => _tab = null),
+                  _tab == null && !_workload,
+                  () {
+                    setState(() => _tab = null);
+                    if (_workload) _setWorkload(false);
+                  },
                   icon: Icons.grid_on,
+                ),
+                tab(
+                  'Workload',
+                  _tab == null && _workload,
+                  () {
+                    setState(() => _tab = null);
+                    _setWorkload(true);
+                  },
+                  icon: Icons.stacked_bar_chart,
                 ),
                 for (final c in CalendarCategory.values)
                   tab(

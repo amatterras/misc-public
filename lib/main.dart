@@ -26,6 +26,7 @@ import 'features/capture/send_to.dart';
 import 'platform/app_lock.dart';
 import 'platform/device_idiom.dart';
 import 'platform/file_protection.dart';
+import 'features/search/global_search_bar.dart';
 import 'platform/ios_bridge.dart';
 import 'sync/secret_store.dart';
 
@@ -244,6 +245,8 @@ class TheApp extends StatefulWidget {
 class _TheAppState extends State<TheApp> {
   late final AppLifecycleListener _lifecycle;
   late final PlatformBrightnessListener _brightness;
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  final _searchRoutes = SearchRouteObserver();
 
   ThemeMode get _mode =>
       ThemeMode.values.asNameMap()[widget.state.themeModePreference.value] ??
@@ -329,10 +332,23 @@ class _TheAppState extends State<TheApp> {
           // No cross-fade: palette colours switch in one frame, so Theme
           // colours must too (otherwise they disagree for ~200 ms).
           themeAnimationDuration: Duration.zero,
-          builder: widget.appLock == null
-              ? null
-              : (context, child) =>
-                    AppLockGate(controller: widget.appLock!, child: child!),
+          navigatorKey: _navigatorKey,
+          navigatorObservers: [_searchRoutes],
+          builder: (context, child) {
+            Widget app = child ?? const SizedBox.shrink();
+            // Search, Quick Capture, Continue (handoff) and the link Back
+            // button stay reachable above every page, also an open note.
+            if (widget.state.dataProblem == null) {
+              app = GlobalSearchHost(
+                state: widget.state,
+                navigatorKey: _navigatorKey,
+                routes: _searchRoutes,
+                child: app,
+              );
+            }
+            final lock = widget.appLock;
+            return lock == null ? app : AppLockGate(controller: lock, child: app);
+          },
           home: widget.state.dataProblem == null
               ? AppShell(state: widget.state)
               : _DataProblemPage(state: widget.state),

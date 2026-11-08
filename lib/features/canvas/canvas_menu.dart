@@ -10,12 +10,15 @@ import '../../data/models/canvas_models.dart';
 import '../../widgets/common.dart';
 import '../ai/ai_service.dart';
 import '../ai/ai_session.dart';
-import '../export/exports.dart';
+import '../export/export_dialog.dart';
 import 'branch_conversion.dart';
 import 'canvas_controller.dart';
 import 'canvas_toolbar.dart' show showDotOpacityDialog;
+import 'time_machine.dart';
 import 'canvas_export.dart';
 import '../interaction/item_actions.dart';
+import '../smartlinks/smart_links.dart';
+import '../smartlinks/smart_links_ui.dart';
 
 Future<void> showCanvasMenu(
   BuildContext context,
@@ -49,13 +52,34 @@ Future<void> showCanvasMenu(
   final choice = await showMenu<String>(
     context: context,
     position: RelativeRect.fromLTRB(global.dx, global.dy, global.dx, global.dy),
-    items: selected.isNotEmpty
+    items: hit is ConnectorItem
+        ? [
+            item('connColor', 'Line color…', Icons.palette_outlined),
+            item('connCurved', 'Curved', Icons.gesture),
+            item('connStraight2', 'Straight', Icons.show_chart),
+            item('connElbow', 'Elbow (right angles)', Icons.stacked_line_chart),
+            item(
+              'connAuto',
+              hit.auto ? 'Manual routing' : 'Route around objects',
+              Icons.alt_route,
+            ),
+            if (hit.bends.isNotEmpty) ...[
+              item('connStraight', 'Straighten', Icons.horizontal_rule),
+            ],
+            const PopupMenuDivider(),
+            if (!locked) item('delete', 'Delete line', Icons.delete_outline),
+          ]
+        : selected.isNotEmpty
         ? [
             if (hit is LinkItem ||
                 hit is NoteCardItem ||
                 (hit is TextItem && hit.sourceNoteId != null))
               item('open', 'Open', Icons.open_in_new),
             item('duplicate', 'Duplicate', Icons.copy_all_outlined),
+            if (hit is TextItem)
+              item('linkTo', 'Insert a link…', Icons.add_link),
+            if (selected.length == 1)
+              item('smartLinks', 'Links & backlinks…', Icons.link),
             item('toNote', 'Copy to a note…', Icons.note_add_outlined),
             item(
               'moveToNote',
@@ -123,16 +147,102 @@ Future<void> showCanvasMenu(
                 Icons.layers_clear_outlined,
               ),
             item('selectAll', 'Select all', Icons.select_all),
+            item(
+              'alignGuides',
+              c.alignGuides ? 'Alignment guides: on (turn off)' : 'Alignment guides: off (turn on)',
+              Icons.straighten,
+            ),
+            item(
+              'gridSnap',
+              c.gridSnap ? 'Snap to grid: on (turn off)' : 'Snap to grid: off (turn on)',
+              Icons.grid_4x4,
+            ),
+            item('gridSize', 'Grid size: ${c.gridSize.round()}…', Icons.grid_on),
             item('dots', 'Background dots…', Icons.grain),
           ],
   );
   if (choice == null || !context.mounted) return;
   final items = c.selectedItems;
   switch (choice) {
+    case 'connColor':
+      final color = await showMenu<Color>(
+        context: context,
+        position: RelativeRect.fromLTRB(global.dx, global.dy, global.dx, global.dy),
+        items: [
+          for (final swatch in InkColors.library)
+            PopupMenuItem(
+              value: swatch.color,
+              height: 30,
+              child: Row(
+                children: [
+                  Container(width: 40, height: 14, color: swatch.color),
+                  const SizedBox(width: 8),
+                  Text(swatch.name, style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+        ],
+      );
+      if (color != null) c.setConnectorColor(color);
+    case 'connCurved':
+      c.setConnectorStyle(ConnectorStyle.curved);
+    case 'connStraight2':
+      c.setConnectorStyle(ConnectorStyle.straight);
+    case 'connElbow':
+      c.setConnectorStyle(ConnectorStyle.orthogonal);
+    case 'connAuto':
+      c.setConnectorAuto(!(hit! as ConnectorItem).auto);
+    case 'connStraight':
+      c.straightenSelectedConnectors();
     case 'open':
       s.activateCanvasItem(hit!);
     case 'duplicate':
       c.duplicateSelection();
+    case 'linkTo':
+      final token = await pickWorkspaceLink(
+        context,
+        s,
+        exclude: WorkspaceRef(RefKind.object, c.id, hit!.id),
+      );
+      if (token == null) return;
+      c.updateSelectedTexts(
+        (t) => t.copyWith(text: '${t.text}${t.text.isEmpty ? '' : ' '}$token'),
+      );
+    case 'smartLinks':
+      final owner = WorkspaceRef(RefKind.object, c.id, hit!.id);
+      final body = hit is TextItem ? hit.text : '';
+      await showDialog<void>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('Links & backlinks', style: TextStyle(fontSize: 16)),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: SmartLinksPanel(
+                state: s,
+                owner: owner,
+                text: body,
+                beforeOpen: () async {
+                  Navigator.pop(dialog);
+                  return true;
+                },
+                onRemoveLink: (target) {
+                  c.updateSelectedTexts(
+                    (t) => t.copyWith(text: removeLinkTo(t.text, target)),
+                  );
+                  Navigator.pop(dialog);
+                },
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
     case 'toNote' || 'moveToNote':
       final noteId = await _pickNote(context, s);
       if (noteId == null) return;
@@ -252,9 +362,27 @@ Future<void> showCanvasMenu(
     case 'versions':
       await showCanvasVersions(context, s, c);
     case 'exportPicture' || 'exportWeb':
-      await exportCanvasFromMenu(s, c, web: choice == 'exportWeb');
+      await showExportDialog(context, s, c, web: choice == 'exportWeb');
     case 'release':
       c.releaseReferences();
+    case 'alignGuides':
+      await s.setAlignment(c, guides: !c.alignGuides);
+    case 'gridSnap':
+      await s.setAlignment(c, grid: !c.gridSnap);
+    case 'gridSize':
+      final size = await showMenu<double>(
+        context: context,
+        position: RelativeRect.fromLTRB(global.dx, global.dy, global.dx, global.dy),
+        items: [
+          for (final g in CanvasController.gridSizes)
+            PopupMenuItem(
+              value: g,
+              height: 30,
+              child: Text('${g.round()}${g == c.gridSize ? '  (now)' : ''}'),
+            ),
+        ],
+      );
+      if (size != null) await s.setAlignment(c, size: size);
     case 'selectAll':
       c.selectAll();
     case 'dots':
@@ -265,63 +393,6 @@ Future<void> showCanvasMenu(
         saveSize: s.setDotSize,
       );
   }
-}
-
-/// Lists the saved versions of [c]; restoring one is a single undo step.
-Future<void> showCanvasVersions(
-  BuildContext context,
-  AppState s,
-  CanvasController c,
-) async {
-  final list = await s.snapshotsOf(c.id);
-  if (!context.mounted) return;
-  await showAppDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text(
-        'Versions of this mindmap',
-        style: TextStyle(fontSize: AppType.sizeHeading),
-      ),
-      content: SizedBox(
-        width: 420,
-        child: list.isEmpty
-            ? Text(
-                'No versions saved yet. Right-click the empty canvas and '
-                'choose “Save a version…”.',
-                style: TextStyle(color: AppColors.textFaint),
-              )
-            : ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final v in list)
-                    ListTile(
-                      title: Text(v.name),
-                      subtitle: Text(
-                        '${formatShortDate(v.savedAt)} · ${v.itemCount} items',
-                        style: const TextStyle(fontSize: AppType.sizeLabel),
-                      ),
-                      trailing: TextButton(
-                        onPressed: () async {
-                          final ok = await s.restoreSnapshot(c, v.key);
-                          if (context.mounted) Navigator.pop(context);
-                          s.showToast(
-                            ok ? 'Restored “${v.name}”. Undo takes it back.' : 'That version could not be read; nothing changed.',
-                          );
-                        },
-                        child: const Text('Restore'),
-                      ),
-                    ),
-                ],
-              ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
-        ),
-      ],
-    ),
-  );
 }
 
 Future<String?> _pickNote(BuildContext context, AppState s) {

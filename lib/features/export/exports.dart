@@ -16,6 +16,7 @@ import '../../platform/platform.dart' as native;
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/storage/app_log.dart';
+import '../../data/storage/json_file_store.dart' show iosDocuments, iosFolder;
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_export.dart';
 import '../notes/notebook_layout.dart';
@@ -30,8 +31,22 @@ Directory exportsFolder(AppState s) {
       Platform.environment.containsKey('FLUTTER_TEST')) {
     return Directory('${s.workspace.root.path}${sep}exports');
   }
+  if (Platform.isIOS) {
+    // iOS sets no HOME: "null/Documents/..." made iOS answer "operation not
+    // permitted". Use the Documents folder iOS reported (as the data folder).
+    final docs = iosFolder(
+      'Documents',
+      reported: iosDocuments,
+      home: Platform.environment['HOME'],
+      systemTemp: Directory.systemTemp.path,
+    );
+    return Directory('$docs${sep}THEapp Exports');
+  }
   final home =
       Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'];
+  if (home == null || home.isEmpty) {
+    return Directory('${Directory.systemTemp.path}${sep}THEapp Exports');
+  }
   return Directory('$home${sep}Documents${sep}THEapp Exports');
 }
 
@@ -70,6 +85,68 @@ class ExportResult {
   const ExportResult(this.file, {this.missingImages = 0});
   final File file;
   final int missingImages;
+}
+
+/// The background of an exported picture.
+enum ExportBackground {
+  /// As on screen.
+  canvas,
+
+  /// No background at all (PNG keeps the transparency).
+  transparent,
+}
+
+/// Picture sizes offered: the longest side in pixels (a small mindmap is
+/// never blown up beyond 2x).
+const exportResolutions = <(String, int)>[
+  ('Small', 1200),
+  ('Standard', 2400),
+  ('Large', 4800),
+];
+
+/// What a picture export should look like. Remembered between exports.
+class ExportOptions {
+  const ExportOptions({
+    this.background = ExportBackground.canvas,
+    this.maxSide = 2400,
+  });
+
+  final ExportBackground background;
+  final int maxSide;
+
+  Color? get color =>
+      background == ExportBackground.transparent ? const Color(0x00000000) : null;
+
+  ExportOptions copyWith({ExportBackground? background, int? maxSide}) =>
+      ExportOptions(
+        background: background ?? this.background,
+        maxSide: maxSide ?? this.maxSide,
+      );
+
+  Map<String, Object> toJson() => {
+    'background': background.name,
+    'maxSide': maxSide,
+  };
+
+  /// Safe from anything stored: unknown values give the defaults.
+  factory ExportOptions.fromJson(Object? json) {
+    if (json is! Map) return const ExportOptions();
+    final bg = ExportBackground.values.asNameMap()[json['background']];
+    final side = json['maxSide'];
+    return ExportOptions(
+      background: bg ?? ExportBackground.canvas,
+      maxSide: exportResolutions.any((r) => r.$2 == side) ? side as int : 2400,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ExportOptions &&
+      other.background == background &&
+      other.maxSide == maxSide;
+
+  @override
+  int get hashCode => Object.hash(background, maxSide);
 }
 
 /// Checks that [png] opens as a picture (before anything is saved).
@@ -118,12 +195,20 @@ Future<ExportResult?> exportCanvasPicture(
   CanvasController c, {
   Directory? to,
   File? file,
+  String? name,
+  ExportOptions options = const ExportOptions(),
 }) async {
-  final picture = await renderItemsPicture(c, margin: 48);
+  final picture = await renderItemsPicture(
+    c,
+    margin: 48,
+    maxSide: options.maxSide.toDouble(),
+    background: options.color,
+  );
   if (picture == null) return null;
   await checkPicture(picture.png);
   final f =
-      file ?? freshFile(to ?? exportsFolder(s), safeFileName(c.title), 'png');
+      file ??
+      freshFile(to ?? exportsFolder(s), safeFileName(name ?? c.title), 'png');
   return ExportResult(
     await saveChecked(f, picture.png),
     missingImages: picture.missingImages,
@@ -145,8 +230,60 @@ bool hasExportDialog =
 Future<File> Function(File source, File destination) replaceExportFile =
     native.replaceFile;
 
+/// Asks where to save until the destination works: after a failed write
+/// the dialog opens again so another place can be chosen (cancel stops).
+/// [save] gets the chosen file (null: no dialog here, the exports folder).
+/// Returns false when cancelled or when no destination worked.
+Future<bool> saveWithRetry(
+  AppState s, {
+  required String name,
+  required String ext,
+  required String typeLabel,
+  required Future<void> Function(File? target) save,
+}) async {
+  while (true) {
+    File? target;
+    if (hasExportDialog) {
+      final folder = exportsFolder(s);
+      try {
+        await folder.create(recursive: true);
+      } on FileSystemException {
+        // The dialog then opens in its own default folder.
+      }
+      final path = askExportPath(
+        suggestedName: '${safeFileName(name)}.$ext',
+        extension: ext,
+        typeLabel: typeLabel,
+        initialDir: folder.path,
+      );
+      if (path == null) {
+        s.showToast('Export cancelled. Nothing was saved.');
+        return false;
+      }
+      target = File(path);
+    }
+    try {
+      await save(target);
+      return true;
+    } on ExportFailure catch (e) {
+      s.showToast(e.message);
+      return false;
+    } on FileSystemException catch (e, stack) {
+      AppLog.error('Export could not be saved', e, stack);
+      final why = e.osError?.message.trim() ?? '';
+      s.showToast(
+        'Could not save the export${target == null ? '' : ' to ${target.path}'}'
+        '${why.isEmpty ? '' : ': $why'}. Nothing was changed.'
+        '${hasExportDialog ? ' Choose another place.' : ''}',
+      );
+      if (!hasExportDialog) return false;
+    }
+  }
+}
+
 /// Export from a menu: asks where (if this platform can), saves, checks
-/// the file, and reports in plain words. Cancelling saves nothing.
+/// the file, and reports in plain words. Cancelling saves nothing; a failed
+/// write offers the dialog again.
 Future<void> exportCanvasFromMenu(
   AppState s,
   CanvasController c, {
@@ -156,50 +293,26 @@ Future<void> exportCanvasFromMenu(
     s.showToast('This mindmap is empty.');
     return;
   }
-  final ext = web ? 'html' : 'png';
-  File? target;
-  if (hasExportDialog) {
-    final folder = exportsFolder(s);
-    try {
-      await folder.create(recursive: true);
-    } on FileSystemException {
-      // The dialog then opens in its own default folder.
-    }
-    final path = askExportPath(
-      suggestedName: '${safeFileName(c.title)}.$ext',
-      extension: ext,
-      typeLabel: web ? 'Web page' : 'PNG picture',
-      initialDir: folder.path,
-    );
-    if (path == null) {
-      s.showToast('Export cancelled. Nothing was saved.');
-      return;
-    }
-    target = File(path);
-  }
-  try {
-    final r = web
-        ? await exportCanvasWebPage(s, c, file: target)
-        : await exportCanvasPicture(s, c, file: target);
-    if (r == null) {
-      s.showToast('This mindmap is empty.');
-      return;
-    }
-    s.showToast(
-      'Saved ${r.file.path}'
-      '${r.missingImages == 0 ? '' : ' (${r.missingImages} photo(s) could not be read and show as a placeholder)'}',
-    );
-    if (target == null) await revealExport(s, r.file);
-  } on ExportFailure catch (e) {
-    s.showToast(e.message);
-  } on FileSystemException catch (e, stack) {
-    AppLog.error('Export could not be saved', e, stack);
-    s.showToast(
-      'Could not save the export there'
-      '${e.osError?.message.trim().isNotEmpty ?? false ? ': ${e.osError!.message.trim()}' : ''}. '
-      'Nothing was changed.',
-    );
-  }
+  await saveWithRetry(
+    s,
+    name: c.title,
+    ext: web ? 'html' : 'png',
+    typeLabel: web ? 'Web page' : 'PNG picture',
+    save: (target) async {
+      final r = web
+          ? await exportCanvasWebPage(s, c, file: target)
+          : await exportCanvasPicture(s, c, file: target);
+      if (r == null) {
+        s.showToast('This mindmap is empty.');
+        return;
+      }
+      s.showToast(
+        'Saved ${r.file.path}'
+        '${r.missingImages == 0 ? '' : ' (${r.missingImages} photo(s) could not be read and show as a placeholder)'}',
+      );
+      if (target == null) await revealExport(s, r.file);
+    },
+  );
 }
 
 String _escape(String s) => const HtmlEscape().convert(s);
@@ -244,12 +357,19 @@ Future<ExportResult?> exportCanvasWebPage(
   CanvasController c, {
   Directory? to,
   File? file,
+  String? name,
+  ExportOptions options = const ExportOptions(),
 }) async {
-  final picture = await renderItemsPicture(c, margin: 48);
+  final picture = await renderItemsPicture(
+    c,
+    margin: 48,
+    maxSide: options.maxSide.toDouble(),
+  );
   if (picture == null) return null;
   await checkPicture(picture.png);
   final f =
-      file ?? freshFile(to ?? exportsFolder(s), safeFileName(c.title), 'html');
+      file ??
+      freshFile(to ?? exportsFolder(s), safeFileName(name ?? c.title), 'html');
   final missing = picture.missingImages;
   final html = viewOnlyPage(
     c.title,
@@ -295,6 +415,7 @@ Future<ExportResult> exportNoteWebPage(
   Note n, {
   Directory? to,
   File? file,
+  String? name,
 }) async {
   final pictures = await notePagePictures(s, n);
   final ws = s.workspace;
@@ -342,7 +463,11 @@ Future<ExportResult> exportNoteWebPage(
   }
   final f =
       file ??
-      freshFile(to ?? exportsFolder(s), safeFileName(n.displayTitle), 'html');
+      freshFile(
+        to ?? exportsFolder(s),
+        safeFileName(name ?? n.displayTitle),
+        'html',
+      );
   final html = viewOnlyPage(
     n.displayTitle,
     '<h1>${_escape(n.displayTitle)}</h1>'
@@ -371,8 +496,14 @@ Future<File> exportNoteMarkdown(
   Note n, {
   Directory? to,
   File? file,
+  String? name,
 }) => saveChecked(
-  file ?? freshFile(to ?? exportsFolder(s), safeFileName(n.displayTitle), 'md'),
+  file ??
+      freshFile(
+        to ?? exportsFolder(s),
+        safeFileName(name ?? n.displayTitle),
+        'md',
+      ),
   utf8.encode(noteMarkdown(n)),
 );
 
@@ -428,7 +559,12 @@ Future<({List<Uint8List> pages, int pdfPagesMissing})> notePagePictures(
   }
 }
 
-Future<List<File>> exportNotePages(AppState s, Note n, {Directory? to}) async {
+Future<List<File>> exportNotePages(
+  AppState s,
+  Note n, {
+  Directory? to,
+  String? name,
+}) async {
   final pictures = await notePagePictures(s, n);
   final dir = to ?? exportsFolder(s);
   await dir.create(recursive: true);
@@ -436,7 +572,7 @@ Future<List<File>> exportNotePages(AppState s, Note n, {Directory? to}) async {
   for (var i = 0; i < pictures.pages.length; i++) {
     final f = freshFile(
       dir,
-      '${safeFileName(n.displayTitle)} page ${i + 1}',
+      '${safeFileName(name ?? n.displayTitle)} page ${i + 1}',
       'png',
     );
     await checkPicture(pictures.pages[i]);
@@ -461,34 +597,28 @@ Future<void> exportNoteFromMenu(AppState s, Note n, String kind) async {
       return;
     }
     final ext = kind == 'md' ? 'md' : 'html';
-    File? target;
-    if (hasExportDialog) {
-      final path = askExportPath(
-        suggestedName: '${safeFileName(n.displayTitle)}.$ext',
-        extension: ext,
-        typeLabel: kind == 'md' ? 'Markdown text' : 'Web page',
-        initialDir: exportsFolder(s).path,
-      );
-      if (path == null) {
-        s.showToast('Export cancelled. Nothing was saved.');
-        return;
-      }
-      target = File(path);
-    }
-    final File saved;
-    var missing = 0;
-    if (kind == 'md') {
-      saved = await exportNoteMarkdown(s, n, file: target);
-    } else {
-      final r = await exportNoteWebPage(s, n, file: target);
-      saved = r.file;
-      missing = r.missingImages;
-    }
-    s.showToast(
-      'Saved ${saved.path}'
-      '${missing == 0 ? '' : ' ($missing attachment(s) could not be included)'}',
+    await saveWithRetry(
+      s,
+      name: n.displayTitle,
+      ext: ext,
+      typeLabel: kind == 'md' ? 'Markdown text' : 'Web page',
+      save: (target) async {
+        final File saved;
+        var missing = 0;
+        if (kind == 'md') {
+          saved = await exportNoteMarkdown(s, n, file: target);
+        } else {
+          final r = await exportNoteWebPage(s, n, file: target);
+          saved = r.file;
+          missing = r.missingImages;
+        }
+        s.showToast(
+          'Saved ${saved.path}'
+          '${missing == 0 ? '' : ' ($missing attachment(s) could not be included)'}',
+        );
+        if (target == null) await revealExport(s, saved);
+      },
     );
-    if (target == null) await revealExport(s, saved);
   } on ExportFailure catch (e) {
     s.showToast(e.message);
   } on FileSystemException catch (e, stack) {
@@ -496,7 +626,6 @@ Future<void> exportNoteFromMenu(AppState s, Note n, String kind) async {
     s.showToast('Could not save the export there. Nothing was changed.');
   }
 }
-
 /// What happens after an export: show the file (Windows: open the
 /// folder; iPhone/iPad: the share sheet, to send it to another app).
 Future<void> revealExport(AppState s, File file) async {

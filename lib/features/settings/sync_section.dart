@@ -14,6 +14,7 @@ import '../../hub/hub_host.dart';
 import '../../sync/local_hub.dart';
 import '../../sync/sync_client.dart';
 import '../../sync/storage_modes.dart';
+import '../sync_health/sync_health_center.dart';
 import 'storage_section.dart';
 
 /// Address pre-filled in the pairing form: the hub this device used before
@@ -112,6 +113,16 @@ class _SyncSectionState extends State<SyncSection> {
                       fontSize: AppType.sizeBodySmall,
                       color: AppColors.danger,
                     ),
+                  ),
+                ),
+              if (s.syncNeedsPairing)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: const ValueKey('open-sync-health'),
+                    onPressed: () => showSyncHealthCenter(context, s),
+                    icon: const Icon(Icons.health_and_safety_outlined, size: 16),
+                    label: const Text('Sync health'),
                   ),
                 ),
               _ConnectGuide(mobile: mobile),
@@ -300,6 +311,26 @@ class _SyncSectionState extends State<SyncSection> {
             const SizedBox(height: AppSpace.sm),
             DevicesSection(state: s),
             const SizedBox(height: AppSpace.sm),
+            SwitchListTile(
+              key: const ValueKey('handoff-enabled'),
+              contentPadding: EdgeInsets.zero,
+              value: s.handoff.enabled,
+              onChanged: (on) async {
+                await s.handoff.setEnabled(on);
+                if (mounted) setState(() {});
+              },
+              title: const Text(
+                'Let my other devices resume where I am',
+                style: TextStyle(fontSize: 14),
+              ),
+              subtitle: Text(
+                'Records which page, note or mindmap is open here (ids '
+                'only, no text) so another device can offer to continue. '
+                'Nothing opens by itself.',
+                style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+              ),
+            ),
+            const SizedBox(height: AppSpace.sm),
             Wrap(
               spacing: AppSpace.sm,
               children: [
@@ -307,6 +338,12 @@ class _SyncSectionState extends State<SyncSection> {
                   onPressed: s.syncing ? null : s.syncNow,
                   icon: const Icon(Icons.sync, size: 16),
                   label: const Text('Sync now'),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey('open-sync-health'),
+                  onPressed: () => showSyncHealthCenter(context, s),
+                  icon: const Icon(Icons.health_and_safety_outlined, size: 16),
+                  label: const Text('Sync health'),
                 ),
                 if (conflicts > 0)
                   OutlinedButton.icon(

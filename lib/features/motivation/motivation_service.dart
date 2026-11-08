@@ -119,15 +119,17 @@ class MotivationService extends ChangeNotifier with WidgetsBindingObserver {
     quotes = parseQuotes(quoteSource);
     _deck.clear();
     slots = parseGreetingSlots(greetingSource);
-    if (quotes.length != 1000 ||
+    // At least the original 1,000 quotes and 100 greetings per slot; the
+    // user's own additions come after them.
+    if (quotes.length < 1000 ||
         !quotes.asMap().entries.every(
           (entry) => entry.value.order == entry.key + 1,
         ) ||
-        quotes.map((quote) => quote.id).toSet().length != 1000 ||
+        quotes.map((quote) => quote.id).toSet().length != quotes.length ||
         slots.length != 6 ||
-        slots.any((slot) => slot.greetings.length != 100)) {
+        slots.any((slot) => slot.greetings.length < 100)) {
       throw const FormatException(
-        'Expected 1,000 quotes and six slots of 100 greetings',
+        'Expected 1,000+ quotes and six slots of 100+ greetings',
       );
     }
     _loaded = true;

@@ -33,7 +33,7 @@ import '../ink/native_ink.dart';
 import '../ink/pen_sizes.dart';
 import '../ink/stroke_geometry.dart';
 import 'notebook_layout.dart';
-import '../export/exports.dart';
+import '../export/export_dialog.dart';
 import 'paper_dialog.dart';
 import 'paper_painter.dart';
 import 'notes_page.dart' show NoteEditor;
@@ -153,11 +153,12 @@ class _NotePageState extends State<NotePage> {
   @override
   void initState() {
     super.initState();
+    s.notebookJump.addListener(_onJump);
     _scroll.addListener(_onNotebookScroll);
     _horizontalScroll.addListener(_onNotebookScroll);
     final savedZoom = s.settings.get<num>(_zoomSetting)?.toDouble();
     _zoom = savedZoom != null && savedZoom.isFinite
-        ? savedZoom.clamp(0.4, 3.0)
+        ? NotebookZoom.clampZoom(savedZoom)
         : 1;
     _fingerDraws = s.settings.get<bool>('notebookFingerDraws') ?? false;
     unawaited(_open());
@@ -224,7 +225,7 @@ class _NotePageState extends State<NotePage> {
     setState(() => _zoom = nextZoom);
     final anchor = _pinchDocumentAnchor;
     final prefix = _pinchPrefix;
-    final nextScale = (_fitScale * nextZoom).clamp(0.2, 4.0);
+    final nextScale = NotebookZoom.clampScale(_fitScale * nextZoom);
     // The note header is fixed size; page coordinates alone scale. Use the
     // measured page origin to compensate both axes around the pinch centroid.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -347,6 +348,28 @@ class _NotePageState extends State<NotePage> {
       active: () => mounted && (ModalRoute.of(context)?.isCurrent ?? true),
     );
     setState(() => _c = c);
+    _onJump(); // a link may have asked for a page of this note
+  }
+
+  /// A PDF page link asked to show a page of this note: scroll there. The
+  /// text and handwriting are not touched.
+  void _onJump() {
+    final j = s.notebookJump.value;
+    if (j == null || j.noteId != widget.noteId || _c == null) return;
+    s.notebookJump.value = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final layout = _currentLayout;
+      if (!mounted || layout == null || !_scroll.hasClients) return;
+      final page = j.page.clamp(0, layout.pageCount - 1);
+      final top = layout.pageRect(page).top * (_c?.scale ?? 1);
+      _scroll.jumpTo(top.clamp(0.0, _scroll.position.maxScrollExtent));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _pageKeys[page]?.currentContext;
+        if (mounted && ctx != null) {
+          Scrollable.ensureVisible(ctx, duration: Duration.zero);
+        }
+      });
+    });
   }
 
   void Function()? _unregisterTap;
@@ -384,6 +407,7 @@ class _NotePageState extends State<NotePage> {
     for (final cache in _inkRaster.values) {
       cache.dispose();
     }
+    s.notebookJump.removeListener(_onJump);
     _squeeze?.cancel();
     _unregisterTap?.call();
     _lifecycle?.dispose();
@@ -1141,7 +1165,19 @@ class _NotePageState extends State<NotePage> {
         final note = s.workspace.notes[widget.noteId];
         if (note == null) return;
         await c.flush();
-        await exportNoteFromMenu(s, note, what);
+        if (!mounted) return;
+        // The Export window: preview, background and size, file name,
+        // remembered folder, success / failure with Show / Open.
+        await showNoteExportDialog(
+          context,
+          s,
+          note,
+          switch (what) {
+            'png' => ExportFormat.pages,
+            'html' => ExportFormat.web,
+            _ => ExportFormat.markdown,
+          },
+        );
       },
       itemBuilder: (_) => [
         const PopupMenuItem(value: 'md', child: Text('Export text (Markdown)')),

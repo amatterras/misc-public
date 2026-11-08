@@ -222,6 +222,103 @@ class TextItem extends BoxItem {
 
 /// A photo placed on the canvas; the file lives in the attachments folder
 /// and is described by a shared Asset record.
+/// Non-destructive edits of a photo: the file itself is never changed, the
+/// item only remembers how to show it. Everything here is reversible (reset
+/// crop / reset all) and travels with the item through save, sync and export.
+class ImageEdit {
+  const ImageEdit({this.crop, this.turns = 0, this.flip = false});
+
+  static const none = ImageEdit();
+
+  /// The part of the photo that is shown, as fractions (0..1) of the
+  /// original, before turning. Null shows all of it.
+  final Rect? crop;
+
+  /// Quarter turns clockwise (0-3), applied after the crop.
+  final int turns;
+
+  /// Mirrored left-right (before turning).
+  final bool flip;
+
+  bool get isNone => crop == null && turns == 0 && !flip;
+
+  /// The shown part's width / height for an original of [w] x [h] pixels,
+  /// after cropping and turning.
+  double aspect(double w, double h) {
+    final c = crop;
+    final cw = (c?.width ?? 1) * w, ch = (c?.height ?? 1) * h;
+    final ratio = ch <= 0 ? 1.0 : cw / ch;
+    return turns.isOdd ? 1 / ratio : ratio;
+  }
+
+  /// The shown part's size in original pixels, after turning.
+  Size shown(double w, double h) {
+    final c = crop;
+    final cw = (c?.width ?? 1) * w, ch = (c?.height ?? 1) * h;
+    return turns.isOdd ? Size(ch, cw) : Size(cw, ch);
+  }
+
+  ImageEdit copyWith({
+    Rect? Function()? crop,
+    int? turns,
+    bool? flip,
+  }) => ImageEdit(
+    crop: crop != null ? crop() : this.crop,
+    turns: turns == null ? this.turns : ((turns % 4) + 4) % 4,
+    flip: flip ?? this.flip,
+  );
+
+  /// Keeps a crop inside the photo and at least 2% wide / high.
+  static Rect? cleanCrop(Rect? r) {
+    if (r == null) return null;
+    final l = r.left.clamp(0.0, 0.98), t = r.top.clamp(0.0, 0.98);
+    final rr = r.right.clamp(l + 0.02, 1.0), bb = r.bottom.clamp(t + 0.02, 1.0);
+    final c = Rect.fromLTRB(l, t, rr, bb);
+    return c.left <= 0 && c.top <= 0 && c.right >= 1 && c.bottom >= 1
+        ? null
+        : c;
+  }
+
+  Map<String, dynamic> toJson() => {
+    if (crop != null) 'crop': [crop!.left, crop!.top, crop!.right, crop!.bottom],
+    if (turns != 0) 'turns': turns,
+    if (flip) 'flip': true,
+  };
+
+  /// Damaged values fall back to "no edit".
+  factory ImageEdit.fromJson(Object? raw) {
+    if (raw is! Map) return none;
+    Rect? crop;
+    final c = raw['crop'];
+    if (c is List && c.length == 4 && c.every((v) => v is num)) {
+      crop = cleanCrop(
+        Rect.fromLTRB(
+          (c[0] as num).toDouble(),
+          (c[1] as num).toDouble(),
+          (c[2] as num).toDouble(),
+          (c[3] as num).toDouble(),
+        ),
+      );
+    }
+    final turns = raw['turns'];
+    return ImageEdit(
+      crop: crop,
+      turns: turns is int ? ((turns % 4) + 4) % 4 : 0,
+      flip: raw['flip'] == true,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ImageEdit &&
+      other.crop == crop &&
+      other.turns == turns &&
+      other.flip == flip;
+
+  @override
+  int get hashCode => Object.hash(crop, turns, flip);
+}
+
 class ImageItem extends BoxItem {
   const ImageItem({
     required super.id,
@@ -229,9 +326,11 @@ class ImageItem extends BoxItem {
     required super.width,
     required super.minHeight,
     required this.assetId,
+    this.edit = ImageEdit.none,
   });
 
   final String assetId;
+  final ImageEdit edit;
   double get height => minHeight;
 
   @override
@@ -239,15 +338,26 @@ class ImageItem extends BoxItem {
       ImageItem(
         id: id,
         assetId: assetId,
+        edit: edit,
         position: position ?? this.position,
         width: width ?? this.width,
         minHeight: minHeight ?? this.minHeight,
       );
 
+  ImageItem withEdit(ImageEdit edit) => ImageItem(
+    id: id,
+    assetId: assetId,
+    edit: edit,
+    position: position,
+    width: width,
+    minHeight: minHeight,
+  );
+
   @override
   ImageItem withId(String id) => ImageItem(
     id: id,
     assetId: assetId,
+    edit: edit,
     position: position,
     width: width,
     minHeight: minHeight,
@@ -262,11 +372,13 @@ class ImageItem extends BoxItem {
     'y': position.dy,
     'w': width,
     'h': minHeight,
+    if (!edit.isNone) 'edit': edit.toJson(),
   };
 
   factory ImageItem.fromJson(Map<String, dynamic> j) => ImageItem(
     id: j['id'] as String,
     assetId: j['assetId'] as String,
+    edit: ImageEdit.fromJson(j['edit']),
     position: Offset((j['x'] as num).toDouble(), (j['y'] as num).toDouble()),
     width: (j['w'] as num).toDouble(),
     minHeight: (j['h'] as num).toDouble(),
@@ -386,6 +498,18 @@ double distanceToSegment(Offset p, Offset a, Offset b) {
   return (p - (a + ab * t)).distance;
 }
 
+/// How a connection is drawn between its waypoints.
+enum ConnectorStyle {
+  /// A smooth curve (a straight line while it has no bends).
+  curved,
+
+  /// Straight pieces with sharp corners.
+  straight,
+
+  /// Horizontal and vertical pieces only (elbows).
+  orthogonal,
+}
+
 /// A mind-map connection between two items on the same canvas. It stores
 /// only the two item ids (never copies), so it follows them when they move;
 /// it is hidden while either end is missing.
@@ -396,6 +520,10 @@ class ConnectorItem extends CanvasItem {
     required this.toId,
     this.fromT,
     this.toT,
+    this.color,
+    this.bends = const [],
+    this.style = ConnectorStyle.curved,
+    this.auto = false,
   });
 
   final String fromId;
@@ -410,22 +538,78 @@ class ConnectorItem extends CanvasItem {
   final double? fromT;
   final double? toT;
 
+  /// The line's own color (null: the default connector color). Optional.
+  final Color? color;
+
+  /// Waypoints the line is bent through, in world coordinates, in order
+  /// from the start to the end. The line is a smooth curve through them.
+  /// Empty: a straight line. Optional and written only when set.
+  final List<Offset> bends;
+
+  /// How the line is drawn (curved, straight or elbow).
+  final ConnectorStyle style;
+
+  /// Automatic routing: the line goes around the other objects by itself.
+  /// The manual [bends] are kept (unused) and come back when this is off.
+  final bool auto;
+
+  ConnectorItem copyWith({
+    Color? Function()? color,
+    List<Offset>? bends,
+    ConnectorStyle? style,
+    bool? auto,
+  }) => ConnectorItem(
+    id: id,
+    fromId: fromId,
+    toId: toId,
+    fromT: fromT,
+    toT: toT,
+    color: color != null ? color() : this.color,
+    bends: bends ?? this.bends,
+    style: style ?? this.style,
+    auto: auto ?? this.auto,
+  );
+
   /// The line's real extent depends on the two items; the controller
   /// computes it (see `CanvasController.itemBounds`).
   @override
   Rect get bounds => Rect.zero;
 
-  /// Moves with its ends, not by itself.
+  /// Moves with its ends, not by itself (the controller shifts [bends]
+  /// when both ends move).
   @override
   ConnectorItem translated(Offset delta) => this;
 
+  /// The same line with its waypoints moved by [delta].
+  ConnectorItem bendsShifted(Offset delta) => bends.isEmpty
+      ? this
+      : copyWith(bends: [for (final b in bends) b + delta]);
+
   @override
-  ConnectorItem withId(String id) =>
-      ConnectorItem(id: id, fromId: fromId, toId: toId, fromT: fromT, toT: toT);
+  ConnectorItem withId(String id) => ConnectorItem(
+    id: id,
+    fromId: fromId,
+    toId: toId,
+    fromT: fromT,
+    toT: toT,
+    color: color,
+    bends: bends,
+    style: style,
+    auto: auto,
+  );
 
   /// The same connection between other items (copies keep their anchors).
-  ConnectorItem rejoined(String id, String from, String to) =>
-      ConnectorItem(id: id, fromId: from, toId: to, fromT: fromT, toT: toT);
+  ConnectorItem rejoined(String id, String from, String to) => ConnectorItem(
+    id: id,
+    fromId: from,
+    toId: to,
+    fromT: fromT,
+    toT: toT,
+    color: color,
+    bends: bends,
+    style: style,
+    auto: auto,
+  );
 
   bool touches(String itemId) => fromId == itemId || toId == itemId;
 
@@ -440,10 +624,29 @@ class ConnectorItem extends CanvasItem {
     'to': toId,
     'fromT': ?fromT,
     'toT': ?toT,
+    if (color != null) 'color': color!.toARGB32(),
+    if (bends.isNotEmpty)
+      'bends': [
+        for (final b in bends) [b.dx, b.dy],
+      ],
+    if (style != ConnectorStyle.curved) 'style': style.name,
+    if (auto) 'auto': true,
   };
 
   static double? _t(Object? v) =>
       v is num && v.isFinite ? v.toDouble().clamp(0.0, 1.0) : null;
+
+  static List<Offset> _bends(Object? v) {
+    if (v is! List) return const [];
+    final out = <Offset>[];
+    for (final p in v) {
+      if (p is List && p.length >= 2 && p[0] is num && p[1] is num) {
+        final x = (p[0] as num).toDouble(), y = (p[1] as num).toDouble();
+        if (x.isFinite && y.isFinite) out.add(Offset(x, y));
+      }
+    }
+    return out;
+  }
 
   factory ConnectorItem.fromJson(Map<String, dynamic> j) => ConnectorItem(
     id: j['id'] as String,
@@ -451,6 +654,11 @@ class ConnectorItem extends CanvasItem {
     toId: j['to'] as String,
     fromT: _t(j['fromT']),
     toT: _t(j['toT']),
+    color: j['color'] is int ? Color(j['color'] as int) : null,
+    bends: _bends(j['bends']),
+    style:
+        ConnectorStyle.values.asNameMap()[j['style']] ?? ConnectorStyle.curved,
+    auto: j['auto'] == true,
   );
 }
 
@@ -604,6 +812,70 @@ class CanvasViewport {
 }
 
 /// A whole canvas board as it is stored on disk.
+/// A named layer of a mindmap (see CanvasController layers).
+class CanvasLayer {
+  const CanvasLayer({
+    required this.id,
+    required this.name,
+    this.hidden = false,
+    this.locked = false,
+  });
+
+  final String id;
+  final String name;
+  final bool hidden;
+  final bool locked;
+
+  CanvasLayer copyWith({String? name, bool? hidden, bool? locked}) =>
+      CanvasLayer(
+        id: id,
+        name: name ?? this.name,
+        hidden: hidden ?? this.hidden,
+        locked: locked ?? this.locked,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    if (hidden) 'hidden': true,
+    if (locked) 'locked': true,
+  };
+
+  /// Null for anything that is not a usable layer record.
+  static CanvasLayer? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['id'], name = raw['name'];
+    if (id is! String || id.isEmpty || name is! String) return null;
+    return CanvasLayer(
+      id: id,
+      name: name,
+      hidden: raw['hidden'] == true,
+      locked: raw['locked'] == true,
+    );
+  }
+
+  /// A list read from stored data: unusable records and repeated ids are
+  /// left out.
+  static List<CanvasLayer> listFrom(Object? raw) {
+    final seen = <String>{};
+    return [
+      for (final r in raw as List? ?? const [])
+        if (fromJson(r) case final l? when seen.add(l.id)) l,
+    ];
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is CanvasLayer &&
+      other.id == id &&
+      other.name == name &&
+      other.hidden == hidden &&
+      other.locked == locked;
+
+  @override
+  int get hashCode => Object.hash(id, name, hidden, locked);
+}
+
 class CanvasDocument {
   CanvasDocument({
     required this.id,
@@ -622,6 +894,7 @@ class CanvasDocument {
     this.metaUnknownFields = const {},
     this.kind,
     this.pageBackgrounds = const [],
+    this.layers = const [],
   });
 
   /// 2: note styling, images, link and note cards.
@@ -672,6 +945,9 @@ class CanvasDocument {
   /// Notebook pages that show a PDF page underneath (see [PageBackground]).
   final List<PageBackground> pageBackgrounds;
 
+  /// The mindmap's layers, bottom to top (empty: none).
+  final List<CanvasLayer> layers;
+
   /// Whether this document is a note's handwriting. The id prefix also
   /// counts, in case a version that drops [kind] passed it on.
   bool get isNotebook => isNotebookId(id, kind);
@@ -693,6 +969,7 @@ class CanvasDocument {
     'metaUnknownFields',
     'kind',
     'pageBackgrounds',
+    'layers',
   };
 
   /// [item] as stored and synced, including fields this version does not
@@ -723,6 +1000,7 @@ class CanvasDocument {
       metaUnknownFields: metaUnknownFields,
       kind: kind,
       pageBackgrounds: pageBackgrounds,
+      layers: layers,
     );
   }
 
@@ -742,6 +1020,7 @@ class CanvasDocument {
     'kind': ?kind,
     if (pageBackgrounds.isNotEmpty)
       'pageBackgrounds': [for (final b in pageBackgrounds) b.toJson()],
+    if (layers.isNotEmpty) 'layers': [for (final l in layers) l.toJson()],
   };
 
   factory CanvasDocument.fromJson(Map<String, dynamic> json) {
@@ -783,6 +1062,7 @@ class CanvasDocument {
         for (final b in json['pageBackgrounds'] as List? ?? const [])
           PageBackground.fromJson(b as Map<String, dynamic>),
       ],
+      layers: CanvasLayer.listFrom(json['layers']),
     );
   }
 }

@@ -13,6 +13,7 @@ import '../../data/models/record.dart';
 import '../../platform/platform.dart' as native;
 import '../../widgets/common.dart';
 import '../links/link_tags.dart';
+import '../smartlinks/smart_links.dart' show plainLinkText;
 
 class SearchResult {
   const SearchResult({
@@ -38,8 +39,11 @@ class SearchResult {
 List<SearchResult> searchEverything(AppState s, String query) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return const [];
-  bool has(String? text) => text != null && text.toLowerCase().contains(q);
-  String snippet(String text) {
+  // Workspace links are read as their labels (no ids in matches/snippets).
+  bool has(String? text) =>
+      text != null && plainLinkText(text).toLowerCase().contains(q);
+  String snippet(String raw) {
+    final text = plainLinkText(raw);
     final i = text.toLowerCase().indexOf(q);
     if (i < 0) return text.length > 90 ? '${text.substring(0, 90)}…' : text;
     final start = (i - 30).clamp(0, text.length);
@@ -290,13 +294,30 @@ String _pdfLine(AppState s) {
 }
 
 class _SearchDialogState extends State<_SearchDialog> {
-  String _query = '';
+  late String _query = widget.state.searchQuery.value;
+  late final TextEditingController _text = TextEditingController(text: _query)
+    ..selection = TextSelection(baseOffset: 0, extentOffset: _query.length);
   SearchFilter _filter = SearchFilter.all;
 
   @override
   void initState() {
     super.initState();
     unawaited(widget.state.pdfTexts.indexAll());
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  /// Opens a result. The query stays (in the bar and when search opens
+  /// again); a note or page on top is closed (its work is saved as it
+  /// closes) so the result is visible.
+  void _pick(SearchResult r) {
+    final nav = Navigator.of(context);
+    nav.popUntil((route) => route.isFirst);
+    r.open();
   }
 
   /// Results of a search by meaning (local AI), until the text changes.
@@ -335,12 +356,12 @@ class _SearchDialogState extends State<_SearchDialog> {
           context: widget.rootContext,
         );
     final viewport = MediaQuery.sizeOf(context);
-    final dialogWidth = (viewport.width - 24).clamp(0.0, 620.0).toDouble();
-    final dialogHeight = (viewport.height - 24).clamp(180.0, 460.0).toDouble();
+    final dialogWidth = (viewport.width - 24).clamp(0.0, 720.0).toDouble();
+    final dialogHeight = (viewport.height - 24).clamp(180.0, 520.0).toDouble();
     return Dialog(
       alignment: const Alignment(0, -0.5),
       insetPadding: const EdgeInsets.all(12),
-      constraints: const BoxConstraints(minWidth: 0, maxWidth: 620),
+      constraints: const BoxConstraints(minWidth: 0, maxWidth: 720),
       child: SizedBox(
         width: dialogWidth,
         height: dialogHeight,
@@ -350,26 +371,45 @@ class _SearchDialogState extends State<_SearchDialog> {
               padding: const EdgeInsets.all(AppSpace.lg),
               child: TextField(
                 key: const ValueKey('global-search-field'),
+                controller: _text,
                 autofocus: true,
-                style: const TextStyle(fontSize: 15),
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search, size: 18),
-                  hintText: 'Search notes, canvases, links, calendar and tasks',
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: AppSpace.md,
-                    vertical: 16,
+                style: const TextStyle(fontSize: 16.5),
+                decoration: InputDecoration(
+                  prefixIcon: const Padding(
+                    padding: EdgeInsets.only(left: 6, right: 4),
+                    child: Icon(Icons.search, size: 22),
                   ),
-                  constraints: BoxConstraints(minHeight: 56),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          key: const ValueKey('search-field-clear'),
+                          tooltip: 'Clear the search',
+                          icon: const Icon(Icons.close, size: 20),
+                          constraints: const BoxConstraints(
+                            minWidth: 44,
+                            minHeight: 44,
+                          ),
+                          onPressed: () => setState(() {
+                            _text.clear();
+                            _query = '';
+                            _meaning = null;
+                            widget.state.searchQuery.value = '';
+                          }),
+                        ),
+                  hintText: 'Search notes, canvases, links, calendar and tasks',
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppSpace.md,
+                    vertical: 18,
+                  ),
+                  constraints: const BoxConstraints(minHeight: 62),
                 ),
                 onChanged: (v) => setState(() {
                   _query = v;
                   _meaning = null;
+                  widget.state.searchQuery.value = v;
                 }),
                 onSubmitted: (_) {
-                  if (results.isNotEmpty) {
-                    Navigator.pop(context);
-                    results.first.open();
-                  }
+                  if (results.isNotEmpty) _pick(results.first);
                 },
               ),
             ),
@@ -446,7 +486,8 @@ class _SearchDialogState extends State<_SearchDialog> {
                       itemBuilder: (context, i) {
                         final r = results[i];
                         return ListTile(
-                          dense: true,
+                          dense: false,
+                          minVerticalPadding: 6,
                           leading: Icon(
                             r.icon,
                             size: 18,
@@ -471,10 +512,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                               color: AppColors.textFaint,
                             ),
                           ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            r.open();
-                          },
+                          onTap: () => _pick(r),
                         );
                       },
                     ),

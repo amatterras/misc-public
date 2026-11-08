@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart' show HardwareKeyboard;
 
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
@@ -15,6 +16,9 @@ import '../../sync/canvas_merge.dart';
 import '../../sync/protocol.dart';
 import 'canvas_resources.dart';
 import 'canvas_text.dart';
+import 'alignment.dart';
+import 'connector_geometry.dart';
+import 'connector_routing.dart';
 import '../ink/stroke_geometry.dart';
 import '../ink/partial_erase.dart';
 import '../ink/ink_metrics.dart';
@@ -25,7 +29,7 @@ export 'canvas_text.dart' show kTextPadding, canvasTextStyle;
 enum CanvasTool { select, lasso, pan, pen, highlighter, eraser, text, connect }
 
 /// What the eraser removes (see [CanvasController.eraserMode]).
-enum EraserMode { stroke, partial }
+enum EraserMode { stroke, partial, precision }
 
 enum SaveState { saved, pending, saving, failed }
 
@@ -42,6 +46,8 @@ enum _Drag {
   connect,
   // Connect tool, second tap (choosing the target of a tapped source).
   connectTap,
+  // Dragging a bend point of the selected connection (or pulling a new one out of the line).
+  bend,
 }
 
 /// Owns the state of one open canvas: its items, camera, selection, current
@@ -76,6 +82,8 @@ class CanvasController extends ChangeNotifier {
        _metaUnknownFields = document.metaUnknownFields,
        _docKind = document.kind,
        _pageBackgrounds = document.pageBackgrounds,
+       _layers = document.layers,
+       _layerIndex = {for (final l in document.layers) l.id: l},
        _savedTitle = document.title,
        _savedFolderId = document.folderId,
        _savedItems = {for (final i in document.items) i.id: i} {
@@ -323,8 +331,24 @@ class CanvasController extends ChangeNotifier {
   double eraserSize = 16;
   static const eraserSizes = (min: 4.0, max: 80.0);
 
-  void setEraser({EraserMode? mode, double? size}) {
+  /// When on, the eraser only touches highlighter strokes (see-through
+  /// ink); ordinary pen strokes under it stay.
+  bool eraserHighlighterOnly = false;
+
+  /// The precision eraser is a much smaller disc than the chosen size.
+  static const precisionFactor = 0.3;
+
+  /// The diameter (screen pixels) the eraser really has in its current mode.
+  double get effectiveEraserSize => eraserMode == EraserMode.precision
+      ? math.max(2.0, eraserSize * precisionFactor)
+      : eraserSize;
+
+  /// Highlighter ink is the see-through kind.
+  static bool isHighlighter(StrokeItem s) => s.color.a < 0.99;
+
+  void setEraser({EraserMode? mode, double? size, bool? highlighterOnly}) {
     eraserMode = mode ?? eraserMode;
+    eraserHighlighterOnly = highlighterOnly ?? eraserHighlighterOnly;
     eraserSize = (size ?? eraserSize).clamp(eraserSizes.min, eraserSizes.max);
     notifyListeners();
   }
@@ -357,7 +381,7 @@ class CanvasController extends ChangeNotifier {
     // Reference overlays are never selected (so never deleted by accident).
     select([
       for (final i in _items)
-        if (!isReference(i.id)) i.id,
+        if (!isReference(i.id) && !isHidden(i.id)) i.id,
     ]);
   }
 
@@ -433,7 +457,9 @@ class CanvasController extends ChangeNotifier {
   /// Every unit of the canvas that has a tag, with its bounds: one pair of
   /// dots per unit. A group shows its tag when all its members share it.
   List<(Rect, int)> get taggedUnits => [
-    for (final unit in unitsOf(_items.where((i) => !isReference(i.id))))
+    for (final unit in unitsOf(
+      _items.where((i) => !isReference(i.id) && !isHidden(i.id)),
+    ))
       if (tagOf(unit.first.id) case final tag?
           when unit.every((i) => tagOf(i.id) == tag))
         (boundsOf(unit)!, tag),
@@ -452,7 +478,8 @@ class CanvasController extends ChangeNotifier {
   Object? markOf(String id, String key) => _itemUnknownFields[id]?[key];
 
   /// Locked items cannot be moved, resized, edited, erased or deleted.
-  bool isLocked(String id) => markOf(id, lockedMark) == true;
+  bool isLocked(String id) =>
+      markOf(id, lockedMark) == true || layerOfItem(id)?.locked == true;
 
   /// Index into the lasso/tag colors, or null.
   int? tagOf(String id) {
@@ -473,6 +500,109 @@ class CanvasController extends ChangeNotifier {
   /// Sets the custom tags of [ids] (empty removes them).
   void setCustomTags(Iterable<String> ids, List<String> tagIds) =>
       setMark(ids, customTagsMark, tagIds.isEmpty ? null : [...tagIds]);
+
+  // ------------------------------------------------ custom tags (undo) --
+  //
+  // Tag changes are one undo step each. Marks are not part of the item
+  // history, so each state of the items remembers which tags every item had
+  // ([_tagsAt]); undo and redo put exactly those tags back and leave other
+  // marks (locks, groups) alone.
+
+  final Expando<Map<String, List<String>>> _tagsAt = Expando();
+
+  /// Puts back an earlier state of the items as it was (the same list, so
+  /// its remembered tags are found) together with its tags.
+  void _restoreItems(List<CanvasItem> state) {
+    _items = state;
+    _markDirty();
+    _restoreTags(_tagsAt[state]);
+    _restoreLayerState(_layersAt[state]);
+  }
+
+  Map<String, List<String>> _tagSnapshot() => {
+    for (final i in _items)
+      if (customTagsOf(i.id).isNotEmpty) i.id: customTagsOf(i.id),
+  };
+
+  void _restoreTags(Map<String, List<String>>? snapshot) {
+    if (snapshot == null) return;
+    final ids = {
+      for (final i in _items)
+        if (customTagsOf(i.id).isNotEmpty) i.id,
+      ...snapshot.keys,
+    };
+    for (final id in ids) {
+      final want = snapshot[id] ?? const <String>[];
+      if (!listEquals(customTagsOf(id), want)) {
+        setCustomTags([id], want);
+      }
+    }
+  }
+
+  /// Gives each item in [next] exactly the listed tags, as ONE undo step.
+  /// Items that already have them are skipped; nothing else about an item
+  /// (content, place, connections, other marks) is touched.
+  void applyCustomTags(Map<String, List<String>> next) {
+    final changes = {
+      for (final e in next.entries)
+        if (itemById(e.key) != null &&
+            !listEquals(customTagsOf(e.key), e.value))
+          e.key: e.value,
+    };
+    if (changes.isEmpty) return;
+    cancelPendingLineStraightening();
+    _tagsAt[_items] = _tagSnapshot();
+    _pushUndo(_items);
+    _setItems(List.of(_items)); // a new state to come back to / return from
+    for (final e in changes.entries) {
+      setCustomTags([e.key], e.value);
+    }
+    _tagsAt[_items] = _tagSnapshot();
+    notifyListeners();
+  }
+
+  /// How many of [ids] carry tag [tagId]: all, some or none.
+  ({int with_, int total}) tagCoverage(Iterable<String> ids, String tagId) {
+    final list = ids.toList();
+    return (
+      with_: list.where((id) => customTagsOf(id).contains(tagId)).length,
+      total: list.length,
+    );
+  }
+
+  /// Quick toggle for the selection: if every item has [tagId] it is taken
+  /// off all of them, else put on all of them (one undo step).
+  void toggleCustomTag(Iterable<String> ids, String tagId) {
+    final list = ids.where((id) => itemById(id) != null).toList();
+    if (list.isEmpty) return;
+    final cov = tagCoverage(list, tagId);
+    final remove = cov.with_ == cov.total;
+    applyCustomTags({
+      for (final id in list)
+        id: remove
+            ? [
+                for (final t in customTagsOf(id))
+                  if (t != tagId) t,
+              ]
+            : [
+                ...customTagsOf(id),
+                if (!customTagsOf(id).contains(tagId)) tagId,
+              ],
+    });
+  }
+
+  /// Takes every tag in [ids]... off items: used when a tag is deleted or
+  /// no longer exists. Not an undo step (the tag itself is gone).
+  void scrubCustomTags(bool Function(String tagId) exists) {
+    for (final i in _items) {
+      final have = customTagsOf(i.id);
+      final keep = [
+        for (final t in have)
+          if (exists(t)) t,
+      ];
+      if (keep.length != have.length) setCustomTags([i.id], keep);
+    }
+  }
 
   /// The custom tags shown on [item]: its own (mindmaps) and, for a link
   /// or photo, its Archive resource's.
@@ -732,13 +862,519 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ------------------------------------------------- alignment studio --
+  //
+  // Optional helpers while moving (guides, spacing marks, grid snapping) and
+  // explicit commands (align, distribute). Off by default; the settings are
+  // kept per device by the app. Nothing here moves an object that is not
+  // selected, and a move only ever changes the selected objects' places.
+
+  /// Guide lines and spacing marks while dragging.
+  bool alignGuides = false;
+
+  /// Snap the moved objects' top-left corner to the grid.
+  bool gridSnap = false;
+
+  /// Grid size in canvas units.
+  double gridSize = 24;
+  static const gridSizes = [8.0, 12.0, 16.0, 24.0, 32.0, 48.0, 64.0];
+
+  /// Distance, in screen pixels, within which edges stick together.
+  static const snapReachPixels = 6.0;
+
+  /// Guides and gaps to show right now (while moving).
+  List<AlignGuide> activeGuides = const [];
+  List<SpacingMark> activeSpacing = const [];
+
+  /// Whether the move overlay (guides, grid) is being shown.
+  bool get showingAlignOverlay =>
+      _drag == _Drag.move && (alignGuides || gridSnap);
+
+  void setAlignment({bool? guides, bool? grid, double? size}) {
+    alignGuides = guides ?? alignGuides;
+    gridSnap = grid ?? gridSnap;
+    if (size != null && size.isFinite && size > 0) gridSize = size;
+    activeGuides = const [];
+    activeSpacing = const [];
+    notifyListeners();
+  }
+
+  Rect? _moveBounds0;
+  Offset _moveApplied = Offset.zero;
+
+  /// The step to move the selection by now. With guides or grid on, the
+  /// whole selection is placed where the pointer says (from where it
+  /// started) plus the small snap correction; holding Alt suspends snapping.
+  Offset _snappedStep(Offset world, Offset plainStep) {
+    if (!alignGuides && !gridSnap) return plainStep;
+    final movable = [
+      for (final item in selectedItems)
+        if (!isLocked(item.id) && item is! ConnectorItem) item,
+    ];
+    final start = _moveBounds0 ??= boundsOf(movable);
+    if (start == null) return plainStep;
+    final total = world - _dragStartWorld;
+    var adjustment = Offset.zero;
+    if (HardwareKeyboard.instance.isAltPressed) {
+      activeGuides = const [];
+      activeSpacing = const [];
+    } else {
+      final others = [
+        for (final i in _items)
+          if (i is! ConnectorItem &&
+              !_selection.contains(i.id) &&
+              !isReference(i.id))
+            itemBounds(i),
+      ];
+      final result = snapMove(
+        moving: start.shift(total),
+        others: others,
+        reach: snapReachPixels / _scale,
+        guides: alignGuides,
+        grid: gridSnap ? gridSize : null,
+      );
+      adjustment = result.adjustment;
+      activeGuides = result.guides;
+      activeSpacing = result.spacing;
+    }
+    final desired = total + adjustment;
+    final step = desired - _moveApplied;
+    _moveApplied = desired;
+    return step;
+  }
+
+  void _endMoveSnapping() {
+    _moveBounds0 = null;
+    _moveApplied = Offset.zero;
+    if (activeGuides.isNotEmpty || activeSpacing.isNotEmpty) {
+      activeGuides = const [];
+      activeSpacing = const [];
+    }
+  }
+
+  /// Aligns or distributes the selected objects (a group counts as one).
+  /// One undo step. Locked objects stay where they are. Returns a short
+  /// note when it did not (or only partly) do what was asked, else null.
+  String? alignSelection(AlignAction action) {
+    final units = <List<CanvasItem>>[];
+    var lockedUnits = 0;
+    for (final unit in selectionUnits) {
+      final free = [
+        for (final i in unit)
+          if (!isLocked(i.id)) i,
+      ];
+      if (free.isEmpty) {
+        lockedUnits++;
+      } else {
+        units.add(free);
+      }
+    }
+    if (units.length < action.minimum) {
+      return lockedUnits > 0
+          ? 'Locked objects stay where they are, so there is nothing to ${action.minimum == 3 ? 'space out' : 'align'}.'
+          : 'Select at least ${action.minimum} objects first.';
+    }
+    final rects = [for (final u in units) boundsOf(u)!];
+    final deltas = alignDeltas(action, rects);
+    if (deltas.every((d) => d.distance < 1e-9)) return 'Already like that.';
+    final byItem = <String, Offset>{};
+    for (var k = 0; k < units.length; k++) {
+      for (final i in units[k]) {
+        byItem[i.id] = deltas[k];
+      }
+    }
+    final changes = <String, CanvasItem>{
+      for (final e in byItem.entries)
+        if (e.value.distance >= 1e-9)
+          e.key: itemById(e.key)!.translated(e.value),
+    };
+    // A bent line follows when both its ends moved the same way.
+    for (final c in _items.whereType<ConnectorItem>()) {
+      final a = byItem[c.fromId], b = byItem[c.toId];
+      if (c.bends.isNotEmpty && a != null && a == b && a.distance >= 1e-9) {
+        changes[c.id] = c.bendsShifted(a);
+      }
+    }
+    _commit([for (final i in _items) changes[i.id] ?? i]);
+    notifyListeners();
+    return lockedUnits > 0
+        ? '$lockedUnits locked object${lockedUnits == 1 ? '' : 's'} stayed where ${lockedUnits == 1 ? 'it was' : 'they were'}.'
+        : null;
+  }
+
+
+
+  // -------------------------------------------------------------- layers --
+  //
+  // Named layers of a mindmap. The layer list (names, order, hidden, locked)
+  // is saved and synced with the canvas metadata; which layer an object is on
+  // is a mark on the object (`layer`), so it travels with the object.
+  //   - order: layers draw bottom to top; objects with no layer sit on the
+  //     base, below all layers;
+  //   - hidden: not drawn, not hit, not selected by marquee/lasso/select-all,
+  //     not exported; still in the document;
+  //   - locked: drawn and selectable but they resist moving, drawing over,
+  //     deleting and editing (the same rule as a single locked object);
+  //   - moving objects between layers never changes their coordinates or
+  //     connections.
+
+  static const layerMark = 'layer';
+
+  List<CanvasLayer> _layers;
+  List<CanvasLayer> get layers => _layers;
+  Map<String, CanvasLayer> _layerIndex;
+
+  /// The layer new objects are put on (null: the base).
+  String? activeLayerId;
+
+  Map<String, CanvasLayer> get _byId => _layerIndex;
+
+  void _setLayersRaw(List<CanvasLayer> next) {
+    _layers = List.unmodifiable(next);
+    _layerIndex = {for (final l in _layers) l.id: l};
+    if (activeLayerId != null && !_layerIndex.containsKey(activeLayerId)) {
+      activeLayerId = null;
+    }
+    _drawOrderFor = null;
+    _metaChanged = true;
+    _markDirty();
+  }
+
+  /// The layer [id] is on, or null (the base, or a layer that is gone).
+  CanvasLayer? layerOfItem(String id) {
+    final v = markOf(id, layerMark);
+    return v is String ? _byId[v] : null;
+  }
+
+  bool isHidden(String id) => layerOfItem(id)?.hidden == true;
+
+  /// Position of [id]'s layer in the stack: -1 for the base.
+  int layerRank(String id) {
+    final l = layerOfItem(id);
+    return l == null ? -1 : _layers.indexOf(l);
+  }
+
+  List<CanvasItem>? _drawOrderFor;
+  List<CanvasItem> _drawOrder = const [];
+
+  /// The items bottom to top as they are drawn and hit: by layer, and in
+  /// their own order within a layer. Hidden objects are left out.
+  List<CanvasItem> get drawOrder {
+    if (_layers.isEmpty) return _items;
+    if (!identical(_drawOrderFor, _items)) {
+      final ranked = <(int, int, CanvasItem)>[];
+      for (var i = 0; i < _items.length; i++) {
+        final item = _items[i];
+        if (item is ConnectorItem) {
+          ranked.add((-1, i, item)); // lines are drawn under all objects
+          continue;
+        }
+        final l = layerOfItem(item.id);
+        if (l?.hidden == true) continue;
+        ranked.add((l == null ? -1 : _layers.indexOf(l), i, item));
+      }
+      ranked.sort((a, b) {
+        final c = a.$1.compareTo(b.$1);
+        return c != 0 ? c : a.$2.compareTo(b.$2);
+      });
+      _drawOrder = [for (final r in ranked) r.$3];
+      _drawOrderFor = _items;
+    }
+    return _drawOrder;
+  }
+
+  /// Whether a connection is hidden because one of its ends is.
+  bool connectorHidden(ConnectorItem c) =>
+      isHidden(c.fromId) || isHidden(c.toId);
+
+  /// How many objects are on layer [id] (null: the base).
+  int countOnLayer(String? id) => _items.where((i) {
+    if (i is ConnectorItem) return false;
+    final v = markOf(i.id, layerMark);
+    final on = v is String && _byId.containsKey(v) ? v : null;
+    return on == id;
+  }).length;
+
+  final Expando<(List<CanvasLayer>, Map<String, String>)> _layersAt = Expando();
+
+  (List<CanvasLayer>, Map<String, String>) _layerSnapshot() => (
+    _layers,
+    {
+      for (final i in _items)
+        if (markOf(i.id, layerMark) case final String l) i.id: l,
+    },
+  );
+
+  void _restoreLayerState((List<CanvasLayer>, Map<String, String>)? snap) {
+    if (snap == null) return;
+    final ids = {
+      for (final i in _items)
+        if (markOf(i.id, layerMark) != null) i.id,
+      ...snap.$2.keys,
+    };
+    for (final id in ids) {
+      final want = snap.$2[id];
+      if (markOf(id, layerMark) != want) {
+        setMark([id], layerMark, want);
+      }
+    }
+    _setLayersRaw(snap.$1);
+  }
+
+  /// Changes the layer list and/or which layer objects are on, as ONE undo
+  /// step (undo restores both).
+  void applyLayerChange(
+    List<CanvasLayer> next, {
+    Map<String, String?> assign = const {},
+  }) {
+    final changed =
+        !listEquals(next, _layers) ||
+        assign.entries.any((e) => markOf(e.key, layerMark) != e.value);
+    if (!changed) return;
+    cancelPendingLineStraightening();
+    _layersAt[_items] = _layerSnapshot();
+    _pushUndo(_items);
+    _setItems(List.of(_items));
+    for (final e in assign.entries) {
+      if (itemById(e.key) != null) setMark([e.key], layerMark, e.value);
+    }
+    _setLayersRaw(next);
+    _layersAt[_items] = _layerSnapshot();
+    _pruneSelection();
+    notifyListeners();
+  }
+
+  /// Chooses the layer new objects go on (null: the base).
+  void setActiveLayer(String? id) {
+    activeLayerId = id == null || _byId.containsKey(id) ? id : activeLayerId;
+    notifyListeners();
+  }
+
+  /// Adds a layer on top and makes it the active one.
+  CanvasLayer addLayer([String? name]) {
+    final layer = CanvasLayer(
+      id: newId(),
+      name: (name == null || name.trim().isEmpty)
+          ? 'Layer ${_layers.length + 1}'
+          : name.trim(),
+    );
+    applyLayerChange([..._layers, layer]);
+    activeLayerId = layer.id;
+    notifyListeners();
+    return layer;
+  }
+
+  void renameLayer(String id, String name) {
+    final clean = name.trim();
+    if (clean.isEmpty) return;
+    applyLayerChange([
+      for (final l in _layers) l.id == id ? l.copyWith(name: clean) : l,
+    ]);
+  }
+
+  void setLayerHidden(String id, bool hidden) => applyLayerChange([
+    for (final l in _layers) l.id == id ? l.copyWith(hidden: hidden) : l,
+  ]);
+
+  void setLayerLocked(String id, bool locked) => applyLayerChange([
+    for (final l in _layers) l.id == id ? l.copyWith(locked: locked) : l,
+  ]);
+
+  /// Moves layer [id] one step up (later: drawn above) or down.
+  void moveLayer(String id, {required bool up}) {
+    final i = _layers.indexWhere((l) => l.id == id);
+    final j = up ? i + 1 : i - 1;
+    if (i < 0 || j < 0 || j >= _layers.length) return;
+    final next = [..._layers];
+    final t = next[i];
+    next[i] = next[j];
+    next[j] = t;
+    applyLayerChange(next);
+  }
+
+  /// Takes layer [id] away. Its objects are NOT deleted: they move to the
+  /// base, where they were drawn and keep every coordinate and connection.
+  void deleteLayer(String id) => applyLayerChange(
+    [
+      for (final l in _layers)
+        if (l.id != id) l,
+    ],
+    assign: {
+      for (final i in _items)
+        if (markOf(i.id, layerMark) == id) i.id: null,
+    },
+  );
+
+  /// Puts [ids] on layer [layerId] (null: the base). Deliberate and
+  /// therefore allowed for locked objects too. Coordinates and connections
+  /// do not change.
+  void moveToLayer(Iterable<String> ids, String? layerId) {
+    if (layerId != null && !_byId.containsKey(layerId)) return;
+    applyLayerChange(
+      _layers,
+      assign: {
+        for (final id in ids)
+          if (itemById(id) != null && itemById(id) is! ConnectorItem)
+            id: layerId,
+      },
+    );
+  }
+
+  /// Selects everything on layer [id] (hidden layers included: this is the
+  /// deliberate way to reach their objects).
+  void selectLayer(String? id) {
+    select([
+      for (final i in _items)
+        if (i is! ConnectorItem &&
+            ((markOf(i.id, layerMark) is String &&
+                    _byId.containsKey(markOf(i.id, layerMark)))
+                ? markOf(i.id, layerMark) == id
+                : id == null))
+          i.id,
+    ]);
+  }
+
+  /// New objects go on the active layer (unless it is hidden or locked, in
+  /// which case they go to the base so they are not lost from view).
+  void _putOnActiveLayer(Iterable<CanvasItem> added) {
+    final layer = activeLayerId == null ? null : _byId[activeLayerId];
+    if (layer == null || layer.hidden || layer.locked) return;
+    for (final i in added) {
+      if (i is ConnectorItem) continue;
+      if (markOf(i.id, layerMark) == null) {
+        setMark([i.id], layerMark, layer.id);
+      }
+    }
+  }
+
+  String? _bendId;
+
+  int _bendIndex = -1;
+  Offset _bendStart = Offset.zero;
+
+  /// The selected connection and waypoint index when [world] is on one of
+  /// its waypoint handles (a bigger target than the line: it is grabbed by
+  /// finger or pen too).
+  (ConnectorItem, int)? _bendHandleAt(Offset world) {
+    if (_tool != CanvasTool.select || _selection.length != 1) return null;
+    final c = itemById(_selection.first);
+    if (c is! ConnectorItem || c.auto || c.bends.isEmpty) return null;
+    final reach = 14 / _scale;
+    var best = -1;
+    var bestD = reach;
+    for (var i = 0; i < c.bends.length; i++) {
+      final d = (c.bends[i] - world).distance;
+      if (d <= bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best < 0 ? null : (c, best);
+  }
+
+  void _dragBend(Offset world) {
+    var c = itemById(_bendId ?? '');
+    if (c is! ConnectorItem) return;
+    var bends = [...c.bends];
+    var manual = c;
+    if (_bendIndex < 0) {
+      if ((world - _bendStart).distance * _scale < 4) return;
+      if (c.auto) {
+        // Grabbing an automatic line makes it manual, keeping its shape:
+        // the route's corner points become the waypoints.
+        final shape = connectorShape(c);
+        if (shape == null) return;
+        bends = shape.points.sublist(1, shape.points.length - 1);
+        manual = c.copyWith(auto: false, bends: bends);
+      }
+      final a = itemById(c.fromId), b = itemById(c.toId);
+      if (a == null || b == null) return;
+      final ends = _manualEnds(manual, a, b);
+      final control = [ends.$1, ...bends, ends.$2];
+      final near = nearestOnConnector(
+        _bendStart,
+        control,
+        smooth: c.style == ConnectorStyle.curved,
+      );
+      _bendIndex = near.span.clamp(0, bends.length);
+      bends.insert(_bendIndex, near.point);
+    }
+    bends[_bendIndex] = world;
+    _replaceItems({c.id: manual.copyWith(bends: bends)});
+  }
+
+  /// Removes waypoint [index] of connection [id] (one undo step).
+  void removeBend(String id, int index) {
+    final c = itemById(id);
+    if (c is! ConnectorItem || index < 0 || index >= c.bends.length) return;
+    _commit([
+      for (final i in _items)
+        if (i.id == id)
+          c.copyWith(bends: [...c.bends]..removeAt(index))
+        else
+          i,
+    ]);
+    notifyListeners();
+  }
+
+  /// Sets how the selected connections are drawn (one undo step).
+  void setConnectorStyle(ConnectorStyle style) {
+    final changes = <String, CanvasItem>{
+      for (final i in selectedItems)
+        if (i is ConnectorItem && i.style != style)
+          i.id: i.copyWith(style: style),
+    };
+    if (changes.isEmpty) return;
+    _commit([for (final i in _items) changes[i.id] ?? i]);
+    notifyListeners();
+  }
+
+  /// Switches the selected connections between automatic routing (around
+  /// the other objects) and their own waypoints, which are kept untouched
+  /// meanwhile (one undo step).
+  void setConnectorAuto(bool auto) {
+    final changes = <String, CanvasItem>{
+      for (final i in selectedItems)
+        if (i is ConnectorItem && i.auto != auto)
+          i.id: i.copyWith(auto: auto),
+    };
+    if (changes.isEmpty) return;
+    _commit([for (final i in _items) changes[i.id] ?? i]);
+    notifyListeners();
+  }
+
+  /// Makes the selected connections straight again (one undo step).
+  void straightenSelectedConnectors() {
+    final changes = <String, CanvasItem>{
+      for (final i in selectedItems)
+        if (i is ConnectorItem && i.bends.isNotEmpty)
+          i.id: i.copyWith(bends: const []),
+    };
+    if (changes.isEmpty) return;
+    _commit([for (final i in _items) changes[i.id] ?? i]);
+    notifyListeners();
+  }
+
+  /// Colors the selected connections (null: back to the default color).
+  void setConnectorColor(Color? color) {
+    final changes = <String, CanvasItem>{
+      for (final i in selectedItems)
+        if (i is ConnectorItem) i.id: i.copyWith(color: () => color),
+    };
+    if (changes.isEmpty) return;
+    _commit([for (final i in _items) changes[i.id] ?? i]);
+    notifyListeners();
+  }
+
   /// Recolors the selected strokes and texts (one undo step). Locked items
   /// keep their colors.
   void recolorSelection(Color color) {
     final changes = <String, CanvasItem>{
       for (final item in selectedItems)
         if (!isLocked(item.id))
-          if (item is StrokeItem)
+          if (item is ConnectorItem)
+            item.id: item.copyWith(color: () => color)
+          else if (item is StrokeItem)
             item.id: item.recolored(color)
           else if (item is TextItem)
             item.id: item.copyWith(textColor: () => color),
@@ -794,6 +1430,7 @@ class CanvasController extends ChangeNotifier {
     if (items.isEmpty) return;
     endEditing();
     _commit([..._items, ...items]);
+    _putOnActiveLayer(items);
     _tool = CanvasTool.select;
     _selection = Set.unmodifiable(items.map((i) => i.id));
     notifyListeners();
@@ -838,6 +1475,118 @@ class CanvasController extends ChangeNotifier {
     );
     addItems([item]);
     return item;
+  }
+
+  // ------------------------------------------------------ photo editing --
+  // Non-destructive: the file never changes, the item only remembers its
+  // crop / turns / mirror. Each call is one undo step; nothing but the
+  // edited photo's own box changes, so text, drawings and other objects
+  // never move.
+
+  /// The one selected photo, if exactly one photo is selected.
+  ImageItem? get selectedImage {
+    final s = selectedItems;
+    return s.length == 1 && s.first is ImageItem ? s.first as ImageItem : null;
+  }
+
+  /// Original size of [item]'s photo in pixels, if known.
+  Size? imageSourceSize(ImageItem item) {
+    final a = resources?.asset(item.assetId);
+    final w = a?.width, h = a?.height;
+    return w == null || h == null || w <= 0 || h <= 0
+        ? null
+        : Size(w.toDouble(), h.toDouble());
+  }
+
+  /// Applies [change] to photo [id]'s edit. The picture keeps its scale; the
+  /// box follows the new shape (around its centre when the photo is turned
+  /// or mirrored, from its top-left corner otherwise).
+  void editImage(String id, ImageEdit Function(ImageEdit) change) {
+    final item = _items.whereType<ImageItem>().where((i) => i.id == id).firstOrNull;
+    if (item == null || isLocked(id)) return;
+    final next = change(item.edit);
+    if (next == item.edit) return;
+    final src = imageSourceSize(item);
+    var width = item.width, height = item.minHeight;
+    if (src != null) {
+      final old = item.edit.shown(src.width, src.height);
+      final now = next.shown(src.width, src.height);
+      final scale = item.width / math.max(1, old.width);
+      width = math.max(8.0, now.width * scale);
+      height = math.max(8.0, now.height * scale);
+    } else if (next.turns.isOdd != item.edit.turns.isOdd) {
+      width = item.minHeight;
+      height = item.width;
+    }
+    final turned = next.turns != item.edit.turns || next.flip != item.edit.flip;
+    final position = turned
+        ? item.bounds.center - Offset(width / 2, height / 2)
+        : item.position;
+    final edited = item
+        .withEdit(next)
+        .withBox(position: position, width: width, minHeight: height);
+    _commit([for (final i in _items) i.id == id ? edited : i]);
+    notifyListeners();
+  }
+
+  /// Points photo [id] at another picture of the same shown shape, with no
+  /// edits left to apply (used by "Replace with the edited copy").
+  void swapImageAsset(String id, String assetId) {
+    final item = _items.whereType<ImageItem>().where((i) => i.id == id).firstOrNull;
+    if (item == null || isLocked(id)) return;
+    final swapped = ImageItem(
+      id: id,
+      assetId: assetId,
+      position: item.position,
+      width: item.width,
+      minHeight: item.minHeight,
+    );
+    _commit([for (final i in _items) i.id == id ? swapped : i]);
+    notifyListeners();
+  }
+
+  void rotateImage(String id, {bool clockwise = true}) => editImage(
+    id,
+    (e) => e.copyWith(turns: e.turns + (clockwise ? 1 : 3)),
+  );
+
+  void flipImage(String id) => editImage(id, (e) => e.copyWith(flip: !e.flip));
+
+  /// Shows only [crop] (fractions of the original); null shows it all.
+  void cropImage(String id, Rect? crop) =>
+      editImage(id, (e) => e.copyWith(crop: () => ImageEdit.cleanCrop(crop)));
+
+  void resetImageCrop(String id) => cropImage(id, null);
+
+  /// Back to the untouched photo: no crop, turn or mirror.
+  void resetImageEdits(String id) => editImage(id, (_) => ImageEdit.none);
+
+  /// Crops (centred, within the current crop) to a shown width / height of
+  /// [ratio]; null returns to the whole photo.
+  void setImageAspect(String id, double? ratio) {
+    final item = _items.whereType<ImageItem>().where((i) => i.id == id).firstOrNull;
+    if (item == null) return;
+    if (ratio == null) return resetImageCrop(id);
+    final src = imageSourceSize(item);
+    if (src == null || ratio <= 0) return;
+    editImage(id, (e) {
+      final cur = e.crop ?? const Rect.fromLTWH(0, 0, 1, 1);
+      final cw = cur.width * src.width, ch = cur.height * src.height;
+      final q = e.turns.isOdd ? 1 / ratio : ratio; // in source space
+      var nw = cw, nh = ch;
+      if (cw / ch > q) {
+        nw = ch * q;
+      } else {
+        nh = cw / q;
+      }
+      final fw = nw / src.width, fh = nh / src.height;
+      final c = cur.center;
+      return e.copyWith(
+        crop: () => ImageEdit.cleanCrop(
+          Rect.fromCenter(center: c, width: fw, height: fh),
+        ),
+      );
+    });
   }
 
   LinkItem insertLink(Asset asset, Offset world) {
@@ -934,6 +1683,7 @@ class CanvasController extends ChangeNotifier {
     );
     _beginTransaction();
     _setItems([..._items, item]);
+    _putOnActiveLayer([item]);
     _editingId = item.id;
     _selection = {item.id};
     notifyListeners();
@@ -978,7 +1728,7 @@ class CanvasController extends ChangeNotifier {
     endEditing();
     if (_undo.isEmpty) return;
     _redo.add(_items);
-    _setItems(_undo.removeLast());
+    _restoreItems(_undo.removeLast());
     _pruneSelection();
     notifyListeners();
   }
@@ -988,14 +1738,17 @@ class CanvasController extends ChangeNotifier {
     endEditing();
     if (_redo.isEmpty) return;
     _undo.add(_items);
-    _setItems(_redo.removeLast());
+    _restoreItems(_redo.removeLast());
     _pruneSelection();
     notifyListeners();
   }
 
   void _pruneSelection() {
     final ids = _items.map((i) => i.id).toSet();
-    _selection = Set.unmodifiable(_selection.where(ids.contains));
+    // Objects on a hidden layer cannot stay selected (they are not shown).
+    _selection = Set.unmodifiable(
+      _selection.where((id) => ids.contains(id) && !isHidden(id)),
+    );
   }
 
   // --------------------------------------------------------------- layout --
@@ -1077,26 +1830,115 @@ class CanvasController extends ChangeNotifier {
       case StrokeItem():
         return item.bounds;
       case ConnectorItem():
-        final ends = connectorEnds(item);
-        return ends == null ? Rect.zero : Rect.fromPoints(ends.$1, ends.$2);
+        final shape = connectorShape(item);
+        return shape == null
+            ? Rect.zero
+            : connectorBounds(shape.points, smooth: shape.smooth);
     }
   }
 
+
   /// Where [c]'s line starts and ends: on the edges of the two connected
-  /// items, along the line between their centres. Null while an end is
-  /// missing (deleted, or not synced yet), so the line is not drawn.
+  /// items. Null while an end is missing (deleted, or not synced yet), so
+  /// the line is not drawn.
   (Offset, Offset)? connectorEnds(ConnectorItem c) {
+    final shape = connectorShape(c);
+    return shape == null ? null : (shape.points.first, shape.points.last);
+  }
+
+  /// The points the line of [c] is drawn through (corner points for the
+  /// straight and elbow styles, curve points for the curved style).
+  List<Offset>? connectorPoints(ConnectorItem c) => connectorShape(c)?.points;
+
+  /// The line of [c] as it is drawn: its points and whether a smooth curve
+  /// is drawn through them (else straight pieces).
+  ({List<Offset> points, bool smooth})? connectorShape(ConnectorItem c) {
     final a = itemById(c.fromId), b = itemById(c.toId);
     if (!isConnectable(a) || !isConnectable(b)) return null;
-    // A stroke end is a fixed point on its ink; a box end sits on its edge
-    // facing the other end.
+    if (c.auto) return _autoShape(c, a!, b!);
+    final ends = _manualEnds(c, a!, b!);
+    final control = [ends.$1, ...c.bends, ends.$2];
+    return switch (c.style) {
+      ConnectorStyle.curved => (points: control, smooth: true),
+      ConnectorStyle.straight => (points: control, smooth: false),
+      ConnectorStyle.orthogonal => (
+        points: orthogonalize(control),
+        smooth: false,
+      ),
+    };
+  }
+
+  /// The ends of a hand-made line: a stroke end is a fixed point on its ink;
+  /// a box end sits on its edge facing the first / last waypoint (or the
+  /// other end).
+  (Offset, Offset) _manualEnds(ConnectorItem c, CanvasItem a, CanvasItem b) {
     final pa = a is StrokeItem ? strokeAnchor(a, c.fromT ?? 0) : null;
     final pb = b is StrokeItem ? strokeAnchor(b, c.toT ?? 1) : null;
-    final ra = itemBounds(a!), rb = itemBounds(b!);
-    return (
-      pa ?? _edgePoint(ra, pb ?? rb.center),
-      pb ?? _edgePoint(rb, pa ?? ra.center),
-    );
+    final ra = itemBounds(a), rb = itemBounds(b);
+    final towardsA = c.bends.isEmpty ? (pb ?? rb.center) : c.bends.first;
+    final towardsB = c.bends.isEmpty ? (pa ?? ra.center) : c.bends.last;
+    return (pa ?? _edgePoint(ra, towardsA), pb ?? _edgePoint(rb, towardsB));
+  }
+
+  final Map<String, ({String key, List<Offset> points})> _routeCache = {};
+
+  /// The automatically routed line of [c]: around every other object (not
+  /// its own two ends). The result is remembered until something that
+  /// matters moves, so dragging redraws without searching again.
+  ({List<Offset> points, bool smooth})? _autoShape(
+    ConnectorItem c,
+    CanvasItem a,
+    CanvasItem b,
+  ) {
+    final ra = itemBounds(a), rb = itemBounds(b);
+    final pa = a is StrokeItem ? strokeAnchor(a, c.fromT ?? 0) : ra.center;
+    final pb = b is StrokeItem ? strokeAnchor(b, c.toT ?? 1) : rb.center;
+    final obstacles = <Rect>[
+      for (final i in _items)
+        if (i is BoxItem && i.id != c.fromId && i.id != c.toId)
+          if (!isReference(i.id)) itemBounds(i),
+    ];
+    final orthogonal = c.style == ConnectorStyle.orthogonal;
+    final key = [
+      orthogonal,
+      pa,
+      pb,
+      a is StrokeItem ? '' : ra,
+      b is StrokeItem ? '' : rb,
+      ...obstacles,
+    ].join('|');
+    var points = _routeCache[c.id]?.key == key
+        ? _routeCache[c.id]!.points
+        : null;
+    if (points == null) {
+      var route = routeAround(pa, pb, obstacles, orthogonal: orthogonal);
+      // The line starts and ends on the edges of the objects, not inside.
+      if (a is! StrokeItem) {
+        route = trimInside(route, ra, atStart: true) ?? route;
+      }
+      if (b is! StrokeItem) {
+        route = trimInside(route, rb, atStart: false) ?? route;
+      }
+      points = route;
+      _routeCache[c.id] = (key: key, points: points);
+      if (_routeCache.length > 400) _routeCache.remove(_routeCache.keys.first);
+    }
+    // A curve through the corner points could swing into an object: curve
+    // only when the curve stays clear, else keep the straight pieces.
+    var smooth = c.style == ConnectorStyle.curved && points.length > 2;
+    if (smooth) {
+      final samples = connectorSamples(points);
+      final zones = [for (final o in obstacles) o.inflate(2)];
+      for (var i = 0; i + 1 < samples.length && smooth; i++) {
+        for (final z in zones) {
+          if (segmentCrossesRect(samples[i].$1, samples[i + 1].$1, z)) {
+            smooth = false;
+            break;
+          }
+        }
+      }
+    }
+    return (points: points, smooth: smooth);
   }
 
   /// Objects and drawn lines can be connected (not connections themselves).
@@ -1165,7 +2007,7 @@ class CanvasController extends ChangeNotifier {
   /// never hit.
   CanvasItem? hitTest(Offset world) {
     final tolerance = 6 / _scale;
-    for (final item in _items.reversed) {
+    for (final item in drawOrder.reversed) {
       if (isReference(item.id)) continue; // behind the ink, not selectable
       switch (item) {
         case BoxItem():
@@ -1177,9 +2019,15 @@ class CanvasController extends ChangeNotifier {
       }
     }
     for (final item in _items.reversed.whereType<ConnectorItem>()) {
-      final ends = connectorEnds(item);
-      if (ends != null &&
-          distanceToSegment(world, ends.$1, ends.$2) <= tolerance) {
+      if (connectorHidden(item)) continue;
+      final shape = connectorShape(item);
+      if (shape != null &&
+          nearestOnConnector(
+                world,
+                shape.points,
+                smooth: shape.smooth,
+              ).distance <=
+              tolerance) {
         return item;
       }
     }
@@ -1280,7 +2128,9 @@ class CanvasController extends ChangeNotifier {
     return _livePoints.last.offset + ahead;
   }
 
-  /// A line-like stroke is straightened after a 1.2-second dwell.
+  /// A completed line-like stroke is straightened after a 1.2-second dwell
+  /// (the newer decision on the ui/new-design line). Only pen strokes:
+  /// highlighter strokes are never straightened.
   static Duration holdToStraighten = const Duration(milliseconds: 1200);
   Timer? _holdTimer;
   Offset? _holdAnchor;
@@ -1314,14 +2164,31 @@ class CanvasController extends ChangeNotifier {
     if (hadPreview && !_disposed) (liveInk as _Ping).ping();
   }
 
+  /// The clean circle / ellipse / rectangle for the stroke being drawn, or
+  /// null (open curves, handwriting, scribbles, triangles and lines are not
+  /// turned into shapes by holding).
+  List<StrokePoint>? _holdShape(List<StrokePoint> points) {
+    if (_tool == CanvasTool.highlighter || points.length < 8) return null;
+    final match = recognizeShape(points);
+    if (match == null) return null;
+    return switch (match.shape) {
+      RecognizedShape.ellipse || RecognizedShape.rectangle => match.points,
+      _ => null,
+    };
+  }
+
   void _restartLineHold() {
+    // Pen jitter never gets here: points that stay within a few screen
+    // pixels of [_holdAnchor] don't restart the hold (see where pen points
+    // are added). One anchor, in screen pixels, for straightening and for
+    // hold-to-perfect-shape alike.
     _holdTimer?.cancel();
     _holdTimer = null;
     _liveLinePreview = null;
     // Whether the stroke is line-like is judged when the hold timer fires
     // (below), not at every pen movement: that check walks every point, so
     // doing it per movement made a long stroke slower the longer it got.
-    if (_livePoints.length < 2) {
+    if (_tool == CanvasTool.highlighter || _livePoints.length < 2) {
       (liveInk as _Ping).ping();
       return;
     }
@@ -1333,11 +2200,19 @@ class CanvasController extends ChangeNotifier {
         return;
       }
       if (_drag == _Drag.draw) {
-        if (!looksLikeLine(_livePoints, _scale)) return;
-        _liveLinePreview = straightened(_livePoints);
+        if (looksLikeLine(_livePoints, _scale)) {
+          _liveLinePreview = straightened(_livePoints);
+          (liveInk as _Ping).ping();
+          return;
+        }
+        // A circle or rectangle drawn and held at its end.
+        final shape = _holdShape(_livePoints);
+        if (shape == null) return;
+        _liveLinePreview = shape;
         (liveInk as _Ping).ping();
         return;
       }
+
       final original = _pendingStraighten;
       _pendingStraighten = null;
       _pendingStraightenTool = null;
@@ -1360,7 +2235,8 @@ class CanvasController extends ChangeNotifier {
   }
 
   void _scheduleLineStraightening(StrokeItem stroke) {
-    if (!looksLikeLine(stroke.points, _scale)) {
+    if (_tool == CanvasTool.highlighter ||
+        !looksLikeLine(stroke.points, _scale)) {
       cancelPendingLineStraightening();
       return;
     }
@@ -1720,6 +2596,21 @@ class CanvasController extends ChangeNotifier {
       return;
     }
 
+    final bendHit = _bendHandleAt(world);
+    if (bendHit != null && !shift) {
+      endEditing();
+      if (isDouble) {
+        removeBend(bendHit.$1.id, bendHit.$2);
+        return;
+      }
+      _beginTransaction();
+      _drag = _Drag.bend;
+      _bendId = bendHit.$1.id;
+      _bendIndex = bendHit.$2;
+      _bendStart = world;
+      return;
+    }
+
     final hit = hitTest(world);
     final opensSomething =
         hit is LinkItem ||
@@ -1741,6 +2632,18 @@ class CanvasController extends ChangeNotifier {
     }
     if (_editingId != null && hit?.id == _editingId) return;
     endEditing();
+
+    if (hit is ConnectorItem && !shift && !ctrl) {
+      // Select the line; dragging it bends it (a new waypoint is pulled out
+      // of the line where it was grabbed).
+      _selection = Set.unmodifiable({hit.id});
+      _beginTransaction();
+      _drag = _Drag.bend;
+      _bendId = hit.id;
+      _bendIndex = -1;
+      _bendStart = world;
+      return;
+    }
 
     // Tapping selects only photos and links (and keeps what a lasso already
     // selected movable); everything else is selected with the lasso tool.
@@ -1774,6 +2677,8 @@ class CanvasController extends ChangeNotifier {
       if (_selection.contains(hit.id)) {
         _beginTransaction();
         _drag = _Drag.move;
+        _moveBounds0 = null;
+        _moveApplied = Offset.zero;
       }
     } else {
       // No marquee: only the lasso tool selects areas.
@@ -1797,11 +2702,23 @@ class CanvasController extends ChangeNotifier {
         _offset += delta;
         _markDirty();
       case _Drag.move:
-        final worldDelta = delta / _scale;
+        final worldDelta = _snappedStep(world, delta / _scale);
+        final moved = {
+          for (final item in selectedItems)
+            if (!isLocked(item.id) && item is! ConnectorItem) item.id,
+        };
         _replaceItems({
           for (final item in selectedItems)
             if (!isLocked(item.id)) item.id: item.translated(worldDelta),
+          // A bent line whose two ends move together keeps its shape.
+          for (final c in _items.whereType<ConnectorItem>())
+            if (c.bends.isNotEmpty &&
+                moved.contains(c.fromId) &&
+                moved.contains(c.toId))
+              c.id: c.bendsShifted(worldDelta),
         });
+      case _Drag.bend:
+        _dragBend(world);
       case _Drag.resize:
         final original = _resizeOriginal;
         final bounds = _resizeBounds;
@@ -1822,7 +2739,9 @@ class CanvasController extends ChangeNotifier {
           withGroups({
             ..._selectionAtDragStart,
             for (final item in _items)
-              if (!isReference(item.id) && _marquee!.overlaps(itemBounds(item)))
+              if (!isReference(item.id) &&
+                  !isHidden(item.id) &&
+                  _marquee!.overlaps(itemBounds(item)))
                 item.id,
           }),
         );
@@ -1904,6 +2823,7 @@ class CanvasController extends ChangeNotifier {
           );
           _setItems([..._items, stored]);
           appended = stored;
+          _putOnActiveLayer([stored]);
           if (displayedPoints != null) {
             _holdTimer?.cancel();
             _holdTimer = null;
@@ -1914,11 +2834,14 @@ class CanvasController extends ChangeNotifier {
         }
         _endTransaction();
       case _Drag.move || _Drag.resize || _Drag.erase:
+        _endMoveSnapping();
         final narrow = _narrowTo;
         if (narrow != null &&
             (_lastScreen - toScreen(_dragStartWorld)).distance < 4) {
           _selection = {narrow};
         }
+        _endTransaction();
+      case _Drag.bend:
         _endTransaction();
       case _Drag.marquee:
         _marquee = null;
@@ -1927,6 +2850,7 @@ class CanvasController extends ChangeNotifier {
           final hits = <String>{};
           for (final item in _items) {
             if (!isReference(item.id) &&
+                !isHidden(item.id) &&
                 _lassoContainsOrIntersects(itemBounds(item), _lassoPoints)) {
               hits.add(item.id);
             }
@@ -2222,8 +3146,8 @@ class CanvasController extends ChangeNotifier {
   /// Erases along the segment [from]→[to]: whole strokes it touches, or
   /// (partial mode) only the parts under the eraser.
   void _eraseAt(Offset from, Offset to) {
-    final tolerance = eraserSize / 2 / _scale;
-    if (eraserMode == EraserMode.partial) {
+    final tolerance = effectiveEraserSize / 2 / _scale;
+    if (eraserMode != EraserMode.stroke) {
       _erasePartAt(from, to, tolerance);
       return;
     }
@@ -2235,6 +3159,7 @@ class CanvasController extends ChangeNotifier {
       for (final item in _items)
         if (item is StrokeItem &&
             !isLocked(item.id) &&
+            _erasable(item) &&
             samples.any((p) => item.hitTest(p, tolerance)))
           item.id,
     };
@@ -2249,6 +3174,16 @@ class CanvasController extends ChangeNotifier {
     ]);
   }
 
+  bool _erasable(StrokeItem s) => !eraserHighlighterOnly || isHighlighter(s);
+
+  static double _polylineLength(List<StrokePoint> p) {
+    var sum = 0.0;
+    for (var i = 0; i + 1 < p.length; i++) {
+      sum += (p[i + 1].offset - p[i].offset).distance;
+    }
+    return sum;
+  }
+
   /// Cuts the parts of strokes within [radius] of [from]→[to] out; what is
   /// left of a stroke stays (the first piece keeps the stroke's id, others
   /// get new ones), with its colour, width and pressure. One undo step per
@@ -2261,6 +3196,7 @@ class CanvasController extends ChangeNotifier {
     for (final item in _items) {
       if (item is! StrokeItem ||
           isLocked(item.id) ||
+          !_erasable(item) ||
           !item.bounds.overlaps(swept)) {
         next.add(item);
         continue;
@@ -2268,11 +3204,21 @@ class CanvasController extends ChangeNotifier {
       // Touching the visible ink erases it: the centre line is cut within
       // the eraser plus half the line's width (more for pressure lines).
       final half = item.strokeWidth * (item.pressureWidth ? 0.8 : 0.5);
-      final pieces = erasePolyline(item.points, from, to, radius + half);
-      if (pieces == null) {
+      final cut = erasePolyline(item.points, from, to, radius + half);
+      if (cut == null) {
         next.add(item);
         continue;
       }
+      // No specks: pieces shorter than the line is wide (or a couple of
+      // pixels) are what a careless sweep leaves behind. The precision
+      // eraser keeps even tiny pieces.
+      final speck = eraserMode == EraserMode.precision
+          ? 0.5 / _scale
+          : math.max(half, 2 / _scale);
+      final pieces = [
+        for (final p in cut)
+          if (p.length >= 2 && _polylineLength(p) >= speck) p,
+      ];
       changed = true;
       if (pieces.isEmpty) removed.add(item.id);
       for (var i = 0; i < pieces.length; i++) {
@@ -2421,6 +3367,7 @@ class CanvasController extends ChangeNotifier {
       metaUnknownFields: _metaUnknownFields,
       kind: _docKind,
       pageBackgrounds: _pageBackgrounds,
+      layers: _layers,
     );
     final applied = applyCanvasChanges(state, _id, changes, (key, rev) {
       final itemId = key.substring(key.lastIndexOf('/') + 1);
@@ -2449,6 +3396,9 @@ class CanvasController extends ChangeNotifier {
       ..addAll(state.itemUnknownFields);
     _metaUnknownFields = state.metaUnknownFields;
     _pageBackgrounds = state.pageBackgrounds;
+    _layers = List.unmodifiable(state.layers);
+    _layerIndex = {for (final l in _layers) l.id: l};
+    _drawOrderFor = null;
     // Remote versions count as saved, so they are not stamped as local edits.
     _savedItems = {
       for (final i in _items)
@@ -2518,6 +3468,7 @@ class CanvasController extends ChangeNotifier {
     metaUnknownFields: _metaUnknownFields,
     kind: _docKind,
     pageBackgrounds: _pageBackgrounds,
+    layers: _layers,
   );
 
   /// Saves immediately if there are unsaved changes.

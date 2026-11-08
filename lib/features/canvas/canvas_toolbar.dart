@@ -6,9 +6,12 @@ import 'package:flutter/material.dart';
 import '../../app/background_palette.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
+import '../../data/models/tag_models.dart';
 import '../../platform/input_hints.dart';
 import '../ink/pen_sizes.dart';
+import 'alignment.dart';
 import 'canvas_controller.dart';
+import 'image_studio.dart';
 
 List<Color> get _canvasFormatColors => [
   AppColors.text,
@@ -38,10 +41,16 @@ class CanvasToolbar extends StatelessWidget {
     this.onMore,
     this.onPenDoubleTap,
     this.horizontal = false,
+    this.onLayers,
+    this.layersOpen = false,
   });
 
   /// One scrolling strip instead of two stacked panels (iPhone).
   final bool horizontal;
+
+  /// Opens / closes the Layers panel.
+  final VoidCallback? onLayers;
+  final bool layersOpen;
 
   final CanvasController controller;
   final VoidCallback onAddImage;
@@ -156,6 +165,14 @@ class CanvasToolbar extends StatelessWidget {
               tooltip: 'Redo  (Ctrl+Y)',
               onPressed: controller.canRedo ? controller.redo : null,
             ),
+            if (onLayers != null)
+              ToolButton(
+                key: const ValueKey('canvas-layers'),
+                icon: const Icon(Icons.layers_outlined, size: 18),
+                tooltip: 'Layers',
+                active: layersOpen,
+                onPressed: onLayers,
+              ),
             if (onMore != null)
               Builder(
                 builder: (context) => ToolButton(
@@ -201,7 +218,21 @@ class CanvasContextBar extends StatelessWidget {
     this.collapsed = false,
     this.onToggleCollapsed,
     this.onTags,
+    this.tagChoices,
+    this.onArrange,
+    this.onAlignment,
   });
+
+  /// Aligns / distributes the selection (shows the app's note if any).
+  final void Function(CanvasController c, AlignAction action)? onArrange;
+
+  /// Turns alignment guides / grid snapping on or off (kept per device).
+  final Future<void> Function(CanvasController c, {bool? guides, bool? grid})?
+  onAlignment;
+
+  /// The tags to offer for one-tap apply / remove on the selection (the
+  /// Mindmap); null: only the full picker ([onTags]).
+  final List<CustomTag> Function()? tagChoices;
 
   /// Opens the tag picker for the selected items (Mindmap: the items;
   /// Archive board: their resources).
@@ -258,13 +289,10 @@ class CanvasContextBar extends StatelessWidget {
       return ToolPanel(
         horizontal: true,
         children: [
-          for (final swatch in InkColors.library)
-            _Swatch(
-              color: swatch.color,
-              label: swatch.name,
-              active: c.penColor == swatch.color,
-              onTap: () => c.setPen(color: swatch.color),
-            ),
+          _SwatchGrid(
+            active: (color) => c.penColor == color,
+            onPick: (color) => c.setPen(color: color),
+          ),
           const _PanelDivider(vertical: true),
           for (final width in penSizes)
             ToolButton(
@@ -275,8 +303,8 @@ class CanvasContextBar extends StatelessWidget {
                   ? onPenWidth!(c, width)
                   : c.setPen(width: width),
               icon: Container(
-                width: (width + 2).clamp(2.5, 20.0),
-                height: (width + 2).clamp(2.5, 20.0),
+                width: (width + 2).clamp(2.5, 26.0),
+                height: (width + 2).clamp(2.5, 26.0),
                 decoration: BoxDecoration(
                   color: AppColors.text,
                   shape: BoxShape.circle,
@@ -303,13 +331,10 @@ class CanvasContextBar extends StatelessWidget {
       return ToolPanel(
         horizontal: true,
         children: [
-          for (final swatch in InkColors.library)
-            _Swatch(
-              color: swatch.color,
-              label: swatch.name,
-              active: c.highlighterColor == swatch.color,
-              onTap: () => c.setHighlighter(color: swatch.color),
-            ),
+          _SwatchGrid(
+            active: (color) => c.highlighterColor == color,
+            onPick: (color) => c.setHighlighter(color: color),
+          ),
           const _PanelDivider(vertical: true),
           for (final width in _highlighterWidths)
             ToolButton(
@@ -350,6 +375,65 @@ class CanvasContextBar extends StatelessWidget {
             onPressed: () => onTags!(c, selected),
             icon: const Icon(Icons.sell_outlined, size: 17),
           ),
+          if (tagChoices != null)
+            PopupMenuButton<String>(
+              key: const ValueKey('selection-tag-quick'),
+              tooltip: 'Add or remove a tag on the selected objects',
+              position: PopupMenuPosition.under,
+              icon: const Icon(Icons.label_outline, size: 17),
+              onOpened: c.cancelPendingLineStraightening,
+              onSelected: (id) {
+                if (id.isEmpty) {
+                  onTags!(c, selected);
+                } else {
+                  c.toggleCustomTag([for (final i in selected) i.id], id);
+                }
+              },
+              itemBuilder: (_) {
+                final ids = [for (final i in selected) i.id];
+                return [
+                  for (final t in tagChoices!())
+                    PopupMenuItem(
+                      key: ValueKey('quick-tag-${t.id}'),
+                      value: t.id,
+                      height: 34,
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 18,
+                            child: switch (c.tagCoverage(ids, t.id)) {
+                              (:final with_, :final total) when with_ == total =>
+                                const Icon(Icons.check, size: 16),
+                              (:final with_, total: _) when with_ > 0 =>
+                                const Icon(Icons.remove, size: 16),
+                              _ => null,
+                            },
+                          ),
+                          Container(
+                            width: 12,
+                            height: 12,
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: Color(t.color),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          Flexible(
+                            child: Text(t.name, overflow: TextOverflow.ellipsis),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    key: ValueKey('quick-tag-manage'),
+                    value: '',
+                    height: 34,
+                    child: Text('Make, rename, recolour, delete…'),
+                  ),
+                ];
+              },
+            ),
           const _PanelDivider(vertical: true),
         ],
         if (first != null) ...[
@@ -428,6 +512,78 @@ class CanvasContextBar extends StatelessWidget {
           ),
           const _PanelDivider(vertical: true),
         ],
+        if (single is ImageItem) ...[
+          ToolButton(
+            key: const ValueKey('image-rotate'),
+            tooltip: 'Rotate photo 90 degrees',
+            onPressed: () => c.rotateImage(single.id),
+            icon: const Icon(Icons.rotate_right, size: 17),
+          ),
+          ToolButton(
+            key: const ValueKey('image-flip'),
+            tooltip: 'Mirror photo',
+            active: single.edit.flip,
+            onPressed: () => c.flipImage(single.id),
+            icon: const Icon(Icons.flip, size: 17),
+          ),
+          ToolButton(
+            key: const ValueKey('image-crop'),
+            tooltip: 'Crop photo',
+            active: single.edit.crop != null,
+            onPressed: () => showImageCropDialog(context, c, single),
+            icon: const Icon(Icons.crop, size: 17),
+          ),
+          PopupMenuButton<String>(
+            key: const ValueKey('image-more'),
+            tooltip: 'More photo edits',
+            position: PopupMenuPosition.under,
+            onSelected: (v) {
+              switch (v) {
+                case 'reset':
+                  c.resetImageEdits(single.id);
+                case 'copy':
+                  saveEditedImage(context, c, single, replace: false);
+                case 'replace':
+                  saveEditedImage(context, c, single, replace: true);
+                default:
+                  c.setImageAspect(single.id, aspectChoices[v]);
+              }
+            },
+            itemBuilder: (_) => [
+              for (final e in aspectChoices.entries)
+                PopupMenuItem(
+                  value: e.key,
+                  height: 30,
+                  child: Text(
+                    e.key == 'Original' ? 'Whole photo' : 'Crop to ${e.key}',
+                  ),
+                ),
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'reset',
+                height: 30,
+                enabled: !single.edit.isNone,
+                child: const Text('Reset all edits'),
+              ),
+              const PopupMenuItem(
+                value: 'copy',
+                height: 30,
+                child: Text('Save edited copy'),
+              ),
+              const PopupMenuItem(
+                value: 'replace',
+                height: 30,
+                child: Text('Replace with edited copy…'),
+              ),
+            ],
+            child: SizedBox(
+              width: 36,
+              height: 36,
+              child: Icon(Icons.tune, size: 17, color: AppColors.textMuted),
+            ),
+          ),
+          const _PanelDivider(vertical: true),
+        ],
         if (single is NoteCardItem) ...[
           ToolButton(
             tooltip: 'Open note  (double-click)',
@@ -436,10 +592,64 @@ class CanvasContextBar extends StatelessWidget {
           ),
           const _PanelDivider(vertical: true),
         ],
-        if (selected.any((i) => i is StrokeItem || i is TextItem))
+        if (selected.any((i) => i is ConnectorItem)) ...[
+          PopupMenuButton<ConnectorStyle>(
+            key: const ValueKey('canvas-connector-style'),
+            tooltip: 'Line style',
+            position: PopupMenuPosition.under,
+            onSelected: c.setConnectorStyle,
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: ConnectorStyle.curved,
+                height: 30,
+                child: Text('Curved'),
+              ),
+              PopupMenuItem(
+                value: ConnectorStyle.straight,
+                height: 30,
+                child: Text('Straight'),
+              ),
+              PopupMenuItem(
+                value: ConnectorStyle.orthogonal,
+                height: 30,
+                child: Text('Elbow (right angles)'),
+              ),
+            ],
+            child: SizedBox(
+              width: 36,
+              height: 36,
+              child: Icon(
+                Icons.timeline,
+                size: 17,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+          ToolButton(
+            key: const ValueKey('canvas-connector-auto'),
+            tooltip: selected.whereType<ConnectorItem>().every((i) => i.auto)
+                ? 'Automatic routing is on - tap for manual (your bends return)'
+                : 'Route around other objects automatically',
+            active: selected.whereType<ConnectorItem>().every((i) => i.auto),
+            onPressed: () => c.setConnectorAuto(
+              !selected.whereType<ConnectorItem>().every((i) => i.auto),
+            ),
+            icon: const Icon(Icons.alt_route, size: 17),
+          ),
+        ],
+        if (selected.any((i) => i is ConnectorItem && i.bends.isNotEmpty))
+          ToolButton(
+            key: const ValueKey('canvas-straighten-connector'),
+            tooltip: 'Straighten the line (remove its bends)',
+            onPressed: c.straightenSelectedConnectors,
+            icon: const Icon(Icons.horizontal_rule, size: 17),
+          ),
+        if (selected.any(
+          (i) => i is StrokeItem || i is TextItem || i is ConnectorItem,
+        ))
           PopupMenuButton<Color>(
             key: const ValueKey('canvas-recolor'),
-            tooltip: 'Recolor ink and text',
+            tooltip: 'Recolor ink, text and lines',
             position: PopupMenuPosition.under,
             onOpened: c.cancelPendingLineStraightening,
             onSelected: c.recolorSelection,
@@ -502,6 +712,46 @@ class CanvasContextBar extends StatelessWidget {
             ),
           ),
         ),
+        if (onArrange != null)
+          PopupMenuButton<Object>(
+            key: const ValueKey('canvas-arrange'),
+            tooltip: 'Arrange: align, space evenly, guides and grid',
+            position: PopupMenuPosition.under,
+            icon: const Icon(Icons.align_horizontal_left, size: 17),
+            onOpened: c.cancelPendingLineStraightening,
+            onSelected: (v) {
+              if (v is AlignAction) {
+                onArrange!(c, v);
+              } else if (v == 'guides') {
+                onAlignment?.call(c, guides: !c.alignGuides);
+              } else if (v == 'grid') {
+                onAlignment?.call(c, grid: !c.gridSnap);
+              }
+            },
+            itemBuilder: (_) => [
+              for (final a in AlignAction.values)
+                PopupMenuItem<Object>(
+                  key: ValueKey('arrange-${a.name}'),
+                  value: a,
+                  height: 32,
+                  enabled: c.selectionUnits.length >= a.minimum,
+                  child: Text(a.label),
+                ),
+              const PopupMenuDivider(),
+              CheckedPopupMenuItem<Object>(
+                key: const ValueKey('arrange-guides'),
+                value: 'guides',
+                checked: c.alignGuides,
+                child: const Text('Alignment guides while moving'),
+              ),
+              CheckedPopupMenuItem<Object>(
+                key: const ValueKey('arrange-grid'),
+                value: 'grid',
+                checked: c.gridSnap,
+                child: Text('Snap to grid (${c.gridSize.round()})'),
+              ),
+            ],
+          ),
         ToolButton(
           key: const ValueKey('canvas-lock'),
           tooltip: selected.every((i) => c.isLocked(i.id))
@@ -754,6 +1004,31 @@ class ToolButton extends StatelessWidget {
   }
 }
 
+/// The shared color library as a grid of 12 per row, so the library can
+/// grow without the strip growing wider than the window.
+class _SwatchGrid extends StatelessWidget {
+  const _SwatchGrid({required this.active, required this.onPick});
+
+  final bool Function(Color color) active;
+  final ValueChanged<Color> onPick;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 12 * 28.0,
+    child: Wrap(
+      children: [
+        for (final swatch in InkColors.library)
+          _Swatch(
+            color: swatch.color,
+            label: swatch.name,
+            active: active(swatch.color),
+            onTap: () => onPick(swatch.color),
+          ),
+      ],
+    ),
+  );
+}
+
 class _Swatch extends StatelessWidget {
   const _Swatch({
     required this.color,
@@ -852,6 +1127,7 @@ typedef EraserChange = Future<void> Function(
   CanvasController c, {
   EraserMode? mode,
   double? size,
+  bool? highlighterOnly,
 });
 
 /// The eraser's options: whole strokes or only the part under the eraser,
@@ -864,12 +1140,21 @@ class EraserPanel extends StatelessWidget {
 
   static const sizes = [8.0, 16.0, 32.0, 56.0];
 
-  void _set({EraserMode? mode, double? size}) {
+  void _set({EraserMode? mode, double? size, bool? highlighterOnly}) {
     final save = onChange;
     if (save != null) {
-      save(controller, mode: mode, size: size);
+      save(
+        controller,
+        mode: mode,
+        size: size,
+        highlighterOnly: highlighterOnly,
+      );
     } else {
-      controller.setEraser(mode: mode, size: size);
+      controller.setEraser(
+        mode: mode,
+        size: size,
+        highlighterOnly: highlighterOnly,
+      );
     }
   }
 
@@ -893,6 +1178,22 @@ class EraserPanel extends StatelessWidget {
           active: c.eraserMode == EraserMode.partial,
           onPressed: () => _set(mode: EraserMode.partial),
           icon: const Icon(Icons.content_cut, size: 18),
+        ),
+        ToolButton(
+          key: const ValueKey('eraser-mode-precision'),
+          tooltip: 'Precision eraser (small, for fine details)',
+          active: c.eraserMode == EraserMode.precision,
+          onPressed: () => _set(mode: EraserMode.precision),
+          icon: const Icon(Icons.adjust, size: 18),
+        ),
+        ToolButton(
+          key: const ValueKey('eraser-highlighter-only'),
+          tooltip: c.eraserHighlighterOnly
+              ? 'Erasing highlighter only (pen strokes stay) - tap for all ink'
+              : 'Erase all ink - tap to erase highlighter only',
+          active: c.eraserHighlighterOnly,
+          onPressed: () => _set(highlighterOnly: !c.eraserHighlighterOnly),
+          icon: const Icon(Icons.border_color, size: 18),
         ),
         const _PanelDivider(vertical: true),
         for (final size in sizes)

@@ -16,6 +16,38 @@ import 'dart:ui';
 
 import '../../data/models/canvas_models.dart';
 
+/// The page zoom range of a note: a multiple of 'fit the page width'. Zooming
+/// out goes to a thousandth (the whole page becomes a speck in the
+/// workspace); zooming in keeps its old limit. The drawing scale itself
+/// never drops below [minScale], where coordinates are still exact.
+abstract final class NotebookZoom {
+  static const min = 0.001;
+  static const max = 3.0;
+  static const minScale = 1e-5;
+  static const maxScale = 4.0;
+
+  static double clampZoom(double z) =>
+      z.isFinite ? z.clamp(min, max).toDouble() : 1.0;
+
+  static double clampScale(double s) =>
+      s.isFinite ? s.clamp(minScale, maxScale).toDouble() : 1.0;
+
+  /// The next zoom for a zoom-out / zoom-in step: 25% steps normally,
+  /// bigger steps once the page is small so the range is reachable.
+  static double step(double zoom, {required bool inward}) {
+    final factor = zoom < 0.4 ? 2.0 : 1.25;
+    return clampZoom(inward ? zoom * factor : zoom / factor);
+  }
+
+  /// '100%', '12%', '0.5%', '0.10%' - enough digits to tell steps apart.
+  static String label(double zoom) {
+    final pct = zoom * 100;
+    if (pct >= 10) return '${pct.round()}%';
+    if (pct >= 1) return '${pct.toStringAsFixed(1)}%';
+    return '${pct.toStringAsFixed(2)}%';
+  }
+}
+
 class NotebookLayout {
   NotebookLayout({
     List<PageBackground> backgrounds = const [],

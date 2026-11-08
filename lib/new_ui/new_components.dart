@@ -174,6 +174,33 @@ class NewProgressBar extends StatelessWidget {
 /// and the field flows through without seams. Full-screen routes pushed
 /// over the shell use [NewAtmosphere.behind]. Draws only; ignores touches;
 /// repaints only when the window size or the light/dark theme changes.
+/// Where the surfaces below sit in the window, so each one paints its own
+/// slice of ONE window-wide atmosphere: the search strip above the pages
+/// paints the top slice, the shell and full-screen pages the slice below it,
+/// and the pools line up across the boundary. Without a frame (a widget
+/// test, or no strip) a surface paints the field over its own size.
+class AtmosphereFrame extends InheritedWidget {
+  const AtmosphereFrame({
+    super.key,
+    required this.window,
+    required this.top,
+    required super.child,
+  });
+
+  /// The whole window the field is laid out in.
+  final Size window;
+
+  /// How far below the window's top the surfaces under this frame start.
+  final double top;
+
+  static AtmosphereFrame? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AtmosphereFrame>();
+
+  @override
+  bool updateShouldNotify(AtmosphereFrame old) =>
+      old.window != window || old.top != top;
+}
+
 class NewAtmosphere extends StatelessWidget {
   const NewAtmosphere({super.key}) : child = null;
 
@@ -187,6 +214,7 @@ class NewAtmosphere extends StatelessWidget {
   Widget build(BuildContext context) {
     // Depending on the theme rebuilds the field when light/dark changes.
     final light = Theme.of(context).brightness == Brightness.light;
+    final frame = AtmosphereFrame.maybeOf(context);
     final field = IgnorePointer(
       child: RepaintBoundary(
         child: CustomPaint(
@@ -196,6 +224,8 @@ class NewAtmosphere extends StatelessWidget {
             pools: AppGradients.pools,
             veilBottom: AppGradients.veilBottom,
             page: AppColors.background,
+            window: frame?.window,
+            top: frame?.top ?? 0,
           ),
         ),
       ),
@@ -218,7 +248,14 @@ class _AtmospherePainter extends CustomPainter {
     required this.pools,
     required this.veilBottom,
     required this.page,
+    this.window,
+    this.top = 0,
   });
+
+  /// The field's layout box (the whole window) and how far below its top
+  /// this surface starts; null: the field fills just this surface.
+  final Size? window;
+  final double top;
 
   final bool light;
   final List<AtmospherePool> pools;
@@ -233,6 +270,16 @@ class _AtmospherePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
+    // Paint this surface's slice of the window-wide field.
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    canvas.translate(0, -top);
+    final field = window ?? size;
+    _paintField(canvas, field);
+    canvas.restore();
+  }
+
+  void _paintField(Canvas canvas, Size size) {
     final unit = Rect.fromCircle(center: Offset.zero, radius: 1);
     for (final p in pools) {
       final shader = RadialGradient(
@@ -266,7 +313,11 @@ class _AtmospherePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_AtmospherePainter old) =>
-      old.light != light || old.page != page || old.veilBottom != veilBottom;
+      old.light != light ||
+      old.page != page ||
+      old.veilBottom != veilBottom ||
+      old.window != window ||
+      old.top != top;
 }
 
 /// The Archive's capsule search field, shared with Notes (and any module

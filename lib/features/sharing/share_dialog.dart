@@ -262,7 +262,7 @@ Future<void> showSharedLinks(BuildContext context, AppState s) =>
         builder: (context, _) {
           final now = DateTime.now();
           final tokens = _tokens(s);
-          final list = s.workspace.shares.all.toList()
+          final list = s.workspace.shares.all.where((l) => l.kind != 'handoff').toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
           return AlertDialog(
             title: const Text(

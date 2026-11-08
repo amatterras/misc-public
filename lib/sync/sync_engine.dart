@@ -223,6 +223,34 @@ class SyncEngine {
     await workspace.store.read('sync', _file('client_state')),
   );
 
+  /// How many local records still wait to reach the hub, by collection name
+  /// (counts only: nothing about what they contain). Same test as the push.
+  Future<Map<String, int>> pendingCounts() async {
+    final state = await loadState();
+    final out = <String, int>{};
+    for (final MapEntry(key: name, value: collection)
+        in workspace.syncCollections.entries) {
+      for (final v in collection.versions()) {
+        if (state.base['$name/${v.id}'] == v.rev) continue;
+        if (!v.deleted && collection[v.id] == null) continue;
+        out[name] = (out[name] ?? 0) + 1;
+      }
+    }
+    return out;
+  }
+
+  /// Whether record [id] of [collection] has a local change the hub does
+  /// not have yet.
+  Future<bool> isPending(String collection, String id) async {
+    final c = workspace.syncCollections[collection];
+    if (c == null) return false;
+    final state = await loadState();
+    for (final v in c.versions()) {
+      if (v.id == id) return state.base['$collection/$id'] != v.rev;
+    }
+    return false;
+  }
+
   Future<void> _saveState(SyncState s) =>
       workspace.store.write('sync', _file('client_state'), s.toJson());
 
@@ -371,6 +399,7 @@ class SyncEngine {
           doc.metaUnknownFields,
           doc.kind,
           doc.pageBackgrounds,
+          doc.layers,
         ),
       );
     }
@@ -750,6 +779,7 @@ class SyncEngine {
         metaUnknownFields: doc.metaUnknownFields,
         kind: doc.kind,
         pageBackgrounds: merged,
+        layers: doc.layers,
       ),
     );
     return true;
@@ -1439,6 +1469,7 @@ class SyncEngine {
         metaUnknownFields: doc?.metaUnknownFields ?? const {},
         kind: doc?.kind,
         pageBackgrounds: doc?.pageBackgrounds ?? const [],
+        layers: doc?.layers ?? const [],
       );
       applied = applyCanvasChanges(s, canvasId, changes, isPending);
       if (applied.isNotEmpty) {
@@ -1459,6 +1490,7 @@ class SyncEngine {
             metaUnknownFields: s.metaUnknownFields,
             kind: s.kind,
             pageBackgrounds: s.pageBackgrounds,
+            layers: s.layers,
           ),
         );
       }

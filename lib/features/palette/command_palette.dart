@@ -17,6 +17,12 @@ import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
 import '../../platform/platform.dart' as native;
 import '../calendar/ics.dart';
+import '../canvas/time_machine.dart';
+import '../notes/notes_page.dart' show showNoteHistory;
+import '../capture/quick_capture.dart';
+import '../reading/reading_progress.dart';
+import '../pdfanchors/pdf_notes_split.dart';
+import '../../data/models/library_models.dart' show AssetKind;
 import '../export/exports.dart';
 import '../sharing/share_dialog.dart';
 import '../review/review_center.dart';
@@ -66,6 +72,65 @@ List<PaletteCommand> paletteCommands(
       (_) => s.goTo(AppPage.links),
     ),
     PaletteCommand('Show tasks', Icons.checklist, (_) => s.goTo(AppPage.tasks)),
+    PaletteCommand(
+      'Time Machine (earlier versions of this note or mindmap)',
+      Icons.history,
+      (context) {
+        final noteId = s.activeNoteId.value;
+        if (noteId != null && s.workspace.notes.contains(noteId)) {
+          showNoteHistory(context, s.workspace, noteId);
+        } else if (s.page == AppPage.canvas && s.canvas != null) {
+          showCanvasVersions(context, s, s.canvas!);
+        } else {
+          s.showToast('Open a note or a mindmap first.');
+        }
+      },
+    ),
+    PaletteCommand(
+      'PDF and its notes, side by side',
+      Icons.vertical_split_outlined,
+      (context) async {
+        final docs = s.workspace.assets.all
+            .where((a) => a.kind == AssetKind.document)
+            .toList();
+        if (docs.isEmpty) {
+          s.showToast('No PDFs in the Archive yet.');
+          return;
+        }
+        final focus = s.pdfFocus.value?.assetId;
+        final pick = docs.where((a) => a.id == focus).firstOrNull ?? docs.first;
+        openPdfNotes(s, pick.id);
+      },
+    ),
+    PaletteCommand(
+      'Reading progress',
+      Icons.menu_book_outlined,
+      (context) => showReadingOverview(context, s),
+    ),
+    PaletteCommand(
+      'Resume reading',
+      Icons.play_arrow,
+      (context) async {
+        final a = latestReading(s.workspace);
+        if (a == null) {
+          s.showToast('Nothing is marked as reading yet.');
+          return;
+        }
+        await resumeReading(s, a.id);
+      },
+    ),
+    PaletteCommand(
+      'Quick capture',
+      Icons.bolt,
+      (context) => showQuickCapture(context, s),
+      hint: touchFirst ? '' : 'Ctrl+Shift+Space',
+    ),
+    PaletteCommand(
+      'Restore workspace layout',
+      Icons.dashboard_customize_outlined,
+      (_) => s.floating.restoreLayout(),
+      hint: 'floating windows',
+    ),
     PaletteCommand(
       'Quick Add',
       Icons.add_circle_outline,

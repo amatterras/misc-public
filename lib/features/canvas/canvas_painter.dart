@@ -9,6 +9,7 @@ import '../../app/canvas_ops.dart' show canvasLinkTarget;
 import '../../data/models/canvas_models.dart';
 import '../tags/tag_ui.dart' show tagForeground;
 import 'canvas_controller.dart';
+import 'connector_geometry.dart';
 import 'canvas_text.dart';
 import '../ink/ink_metrics.dart';
 import '../ink/stroke_geometry.dart';
@@ -97,6 +98,10 @@ class CanvasPainter extends CustomPainter {
     _toWorld(canvas, size);
     _paintMarks(canvas, scale, visible);
     _paintSelection(canvas, scale);
+    // Alignment guides and the eraser's footprint follow the pointer, so
+    // they are overlay (never baked into the cached ink image).
+    _paintAlignOverlay(canvas, scale, visible);
+    _paintEraserRing(canvas, scale);
     canvas.restore();
   }
 
@@ -135,22 +140,33 @@ class CanvasPainter extends CustomPainter {
 
     // Mind-map connections first, so they run underneath the items.
     final selectedIds = controller.selection;
-    for (final c in controller.items.whereType<ConnectorItem>()) {
-      final ends = controller.connectorEnds(c);
-      if (ends == null) continue;
+    for (final c in controller.drawOrder.whereType<ConnectorItem>()) {
+      if (controller.connectorHidden(c)) continue;
+      final shape = controller.connectorShape(c);
+      if (shape == null) continue;
       _paintConnector(
         canvas,
-        ends,
+        shape.points,
         scale,
+        smooth: shape.smooth,
         selected: selectedIds.contains(c.id),
+        color: c.color,
+        handles: selectedIds.contains(c.id) && selectedIds.length == 1 && !c.auto
+            ? c.bends
+            : const [],
       );
     }
     final liveConnection = controller.liveConnection;
     if (liveConnection != null) {
-      _paintConnector(canvas, liveConnection, scale, selected: true);
+      _paintConnector(
+        canvas,
+        [liveConnection.$1, liveConnection.$2],
+        scale,
+        selected: true,
+      );
     }
 
-    for (final item in controller.items) {
+    for (final item in controller.drawOrder) {
       if (item is ConnectorItem || controller.isReference(item.id)) continue;
       final bounds = controller.itemBounds(item);
       if (!bounds.overlaps(visible)) continue;
@@ -353,16 +369,7 @@ class CanvasPainter extends CustomPainter {
       _paintIcon(canvas, Icons.image_outlined, bounds.center, 28);
       return;
     }
-    canvas.save();
-    canvas.clipRRect(rrect);
-    paintImage(
-      canvas: canvas,
-      rect: bounds,
-      image: image,
-      fit: BoxFit.cover,
-      filterQuality: FilterQuality.medium,
-    );
-    canvas.restore();
+    paintEditedImage(canvas, image, bounds, item.edit, rrect: rrect);
   }
 
   void _paintLink(Canvas canvas, LinkItem item, Rect bounds) {
@@ -504,22 +511,131 @@ class CanvasPainter extends CustomPainter {
     cachedShape: _shapeCache[stroke] ??= strokeShape(stroke),
   );
 
-  /// A connection: a line with small dots where it meets the two items.
+  /// A connection: a smooth line through [pts] with small dots where it
+  /// meets the two items, and round handles on its waypoints when selected.
   void _paintConnector(
     Canvas canvas,
-    (Offset, Offset) ends,
+    List<Offset> pts,
     double scale, {
     required bool selected,
+    bool smooth = true,
+    Color? color,
+    List<Offset> handles = const [],
   }) {
-    final color = selected ? AppColors.accent : AppColors.textMuted;
+    final base = color ?? AppColors.textMuted;
+    if (selected) {
+      canvas.drawPath(
+        connectorPath(pts, smooth: smooth),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = AppColors.accent.withValues(alpha: 0.35)
+          ..strokeWidth = 7 / scale
+          ..strokeCap = StrokeCap.round,
+      );
+    }
     final line = Paint()
-      ..color = color
+      ..style = PaintingStyle.stroke
+      ..color = base
       ..strokeWidth = (selected ? 2.5 : 1.6) / scale
       ..strokeCap = StrokeCap.round;
-    canvas.drawLine(ends.$1, ends.$2, line);
-    final dot = Paint()..color = color;
-    canvas.drawCircle(ends.$1, 3 / scale, dot);
-    canvas.drawCircle(ends.$2, 3 / scale, dot);
+    canvas.drawPath(connectorPath(pts, smooth: smooth), line);
+    final dot = Paint()..color = base;
+    canvas.drawCircle(pts.first, 3 / scale, dot);
+    canvas.drawCircle(pts.last, 3 / scale, dot);
+    for (final h in handles) {
+      canvas.drawCircle(h, 6 / scale, Paint()..color = AppColors.canvas);
+      canvas.drawCircle(
+        h,
+        6 / scale,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = AppColors.accent
+          ..strokeWidth = 2 / scale,
+      );
+    }
+  }
+
+  /// Guides, gaps and (with grid snapping) the grid, while objects are moved.
+  void _paintAlignOverlay(Canvas canvas, double scale, Rect visible) {
+    if (!controller.showingAlignOverlay) return;
+    const guideColor = Color(0xFFE56BDA);
+    if (controller.gridSnap) {
+      final step = controller.gridSize;
+      // Skip a grid too fine to see (closer than 6 screen pixels).
+      if (step * scale >= 6) {
+        final paint = Paint()
+          ..color = AppColors.textFaint.withValues(alpha: 0.18)
+          ..strokeWidth = 1 / scale;
+        final startX = (visible.left / step).floor() * step;
+        final startY = (visible.top / step).floor() * step;
+        for (var x = startX; x <= visible.right; x += step) {
+          canvas.drawLine(Offset(x, visible.top), Offset(x, visible.bottom), paint);
+        }
+        for (var y = startY; y <= visible.bottom; y += step) {
+          canvas.drawLine(Offset(visible.left, y), Offset(visible.right, y), paint);
+        }
+      }
+    }
+    final line = Paint()
+      ..color = guideColor
+      ..strokeWidth = 1 / scale;
+    for (final g in controller.activeGuides) {
+      if (g.vertical) {
+        canvas.drawLine(Offset(g.at, g.from), Offset(g.at, g.to), line);
+      } else {
+        canvas.drawLine(Offset(g.from, g.at), Offset(g.to, g.at), line);
+      }
+    }
+    for (final m in controller.activeSpacing) {
+      if (m.distance <= 0) continue;
+      canvas.drawLine(m.a, m.b, line);
+      final tick = 4 / scale;
+      final horizontal = (m.a.dy - m.b.dy).abs() < 1e-6;
+      for (final p in [m.a, m.b]) {
+        horizontal
+            ? canvas.drawLine(p - Offset(0, tick), p + Offset(0, tick), line)
+            : canvas.drawLine(p - Offset(tick, 0), p + Offset(tick, 0), line);
+      }
+      final text = TextPainter(
+        text: TextSpan(
+          text: m.distance.round().toString(),
+          style: TextStyle(
+            fontSize: 11 / scale,
+            color: const Color(0xFFFFFFFF),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final mid = Offset.lerp(m.a, m.b, 0.5)!;
+      final box = Rect.fromCenter(
+        center: mid,
+        width: text.width + 8 / scale,
+        height: text.height + 4 / scale,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(box, Radius.circular(4 / scale)),
+        Paint()..color = guideColor,
+      );
+      text.paint(canvas, box.topLeft + Offset(4 / scale, 2 / scale));
+      text.dispose();
+    }
+  }
+
+  /// The eraser's footprint under the pointer: a ring of its real size.
+  void _paintEraserRing(Canvas canvas, double scale) {
+    final at = controller.hoverPosition;
+    if (controller.tool != CanvasTool.eraser || at == null) return;
+    final center = controller.toWorld(at);
+    final r = controller.effectiveEraserSize / 2 / scale;
+    canvas.drawCircle(
+      center,
+      r,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..color = AppColors.text.withValues(alpha: 0.7)
+        ..strokeWidth = 1.2 / scale,
+    );
   }
 
   void _paintSelection(Canvas canvas, double scale) {
@@ -949,4 +1065,36 @@ class InkRasterCache {
     _drop();
     _lastSeenView = null;
   }
+}
+
+/// Draws [image] into [bounds] the way [edit] says: cropped, mirrored and
+/// turned, never stretched. Transparency is kept (nothing is filled behind
+/// it). [bounds] is the final, already-turned box.
+void paintEditedImage(
+  Canvas canvas,
+  ui.Image image,
+  Rect bounds,
+  ImageEdit edit, {
+  RRect? rrect,
+}) {
+  final iw = image.width.toDouble(), ih = image.height.toDouble();
+  final c = edit.crop;
+  final src = c == null
+      ? Rect.fromLTWH(0, 0, iw, ih)
+      : Rect.fromLTRB(c.left * iw, c.top * ih, c.right * iw, c.bottom * ih);
+  canvas.save();
+  if (rrect != null) canvas.clipRRect(rrect);
+  canvas.translate(bounds.center.dx, bounds.center.dy);
+  canvas.rotate(edit.turns * math.pi / 2);
+  if (edit.flip) canvas.scale(-1, 1);
+  // In the turned frame the box is swapped for odd turns.
+  final w = edit.turns.isOdd ? bounds.height : bounds.width;
+  final h = edit.turns.isOdd ? bounds.width : bounds.height;
+  canvas.drawImageRect(
+    image,
+    src,
+    Rect.fromCenter(center: Offset.zero, width: w, height: h),
+    Paint()..filterQuality = FilterQuality.medium,
+  );
+  canvas.restore();
 }
