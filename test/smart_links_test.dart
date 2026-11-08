@@ -67,7 +67,8 @@ void main() {
       const ref = WorkspaceRef(RefKind.note, 'abc123');
       final token = ref.token('Weekly [plan] | goals');
       expect(token, '[[theapp:note/abc123|Weekly plan goals]]');
-      final text = 'See $token for more, and '
+      final text =
+          'See $token for more, and '
           '${const WorkspaceRef(RefKind.object, 'c1', 'i9').token('Idea')}.';
       final found = findLinks(text);
       expect(found.map((t) => t.ref), [
@@ -81,19 +82,33 @@ void main() {
       expect(findLinks(removeLinkTo(text, ref)), hasLength(1));
     });
 
-    test('damaged or foreign tokens are ignored, plain [[Title]] untouched', () {
-      expect(findLinks('[[theapp:nope/x]] [[theapp:note/]] [[Other note]]'), isEmpty);
-      expect(findLinks('[[theapp:obj/c1]]'), isEmpty, reason: 'needs an object');
-      expect(findLinks('[[theapp:note/a#b]]'), isEmpty, reason: 'no object here');
-      final note = Note(
-        id: 'n',
-        title: 't',
-        body: '[[Other note]] [[theapp:note/abc|X]]',
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
-      );
-      expect(note.linkedTitles.toList(), ['Other note']);
-    });
+    test(
+      'damaged or foreign tokens are ignored, plain [[Title]] untouched',
+      () {
+        expect(
+          findLinks('[[theapp:nope/x]] [[theapp:note/]] [[Other note]]'),
+          isEmpty,
+        );
+        expect(
+          findLinks('[[theapp:obj/c1]]'),
+          isEmpty,
+          reason: 'needs an object',
+        );
+        expect(
+          findLinks('[[theapp:note/a#b]]'),
+          isEmpty,
+          reason: 'no object here',
+        );
+        final note = Note(
+          id: 'n',
+          title: 't',
+          body: '[[Other note]] [[theapp:note/abc|X]]',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        expect(note.linkedTitles.toList(), ['Other note']);
+      },
+    );
   });
 
   group('targets change', () {
@@ -124,8 +139,10 @@ void main() {
       final other = ws.createNote(title: 'Renamed');
       expect(other.id, isNot(target.id));
       expect(resolveRef(s, ref).health, LinkHealth.deleted);
-      expect(resolveRef(s, WorkspaceRef(RefKind.note, other.id)).health,
-          LinkHealth.ok);
+      expect(
+        resolveRef(s, WorkspaceRef(RefKind.note, other.id)).health,
+        LinkHealth.ok,
+      );
 
       // Restored: the same link works again.
       ws.restoreNoteVersion(ws.deletedNotes().first.id);
@@ -144,8 +161,10 @@ void main() {
       expect(resolveRef(s, ref).health, LinkHealth.archived);
       expect(resolveRef(s, ref).opens, isTrue);
       ws.entries.remove('e1');
-      expect(resolveRef(s, ref, fallbackLabel: 'Dentist').health,
-          LinkHealth.deleted);
+      expect(
+        resolveRef(s, ref, fallbackLabel: 'Dentist').health,
+        LinkHealth.deleted,
+      );
       expect(resolveRef(s, ref, fallbackLabel: 'Dentist').title, 'Dentist');
     });
 
@@ -216,14 +235,20 @@ void main() {
       await s.flush();
 
       final back = backlinksTo(s, ref);
+      expect(back.map((b) => b.source.kind).toSet(), {
+        RefKind.note,
+        RefKind.entry,
+        RefKind.asset,
+        RefKind.canvas,
+      });
       expect(
-        back.map((b) => b.source.kind).toSet(),
-        {RefKind.note, RefKind.entry, RefKind.asset, RefKind.canvas},
+        back.firstWhere((b) => b.source.kind == RefKind.note).title,
+        'Source note',
       );
-      expect(back.firstWhere((b) => b.source.kind == RefKind.note).title,
-          'Source note');
-      expect(back.firstWhere((b) => b.source.kind == RefKind.note).snippet,
-          contains('Target'));
+      expect(
+        back.firstWhere((b) => b.source.kind == RefKind.note).snippet,
+        contains('Target'),
+      );
       // A note linking to itself is not its own backlink.
       ws.notes.put(ws.notes[target.id]!.copyWith(body: 'me: $token'));
       expect(backlinksTo(s, ref).any((b) => b.source == ref), isFalse);
@@ -241,81 +266,93 @@ void main() {
       );
     });
 
-    test('survive a sync: the records on another device give the same', () async {
-      final ws = s.workspace;
-      final target = ws.createNote(title: 'Shared');
-      final ref = WorkspaceRef(RefKind.note, target.id);
-      final src = ws.createNote(title: 'Writer');
-      ws.notes.put(src.copyWith(body: 'about ${ref.token('Shared')}'));
-      await s.flush();
+    test(
+      'survive a sync: the records on another device give the same',
+      () async {
+        final ws = s.workspace;
+        final target = ws.createNote(title: 'Shared');
+        final ref = WorkspaceRef(RefKind.note, target.id);
+        final src = ws.createNote(title: 'Writer');
+        ws.notes.put(src.copyWith(body: 'about ${ref.token('Shared')}'));
+        await s.flush();
 
-      // The other device receives the same records (as JSON, like sync).
-      final dir2 = Directory.systemTemp.createTempSync('theapp_smartlinks2_');
-      addTearDown(() {
-        try {
-          dir2.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-      final s2 = await boot(dir2);
-      addTearDown(() async {
-        await s2.flush();
-        s2.dispose();
-      });
-      for (final n in ws.notes.all) {
-        s2.workspace.notes.put(
-          Note.fromJson(jsonDecode(jsonEncode(n.toJson())) as Map<String, dynamic>),
-        );
-      }
-      expect(resolveRef(s2, ref).title, 'Shared');
-      expect(backlinksTo(s2, ref).map((b) => b.title), ['Writer']);
-      // Deleting on one device shows as deleted on the other once it syncs.
-      s2.workspace.deleteNote(target.id);
-      expect(resolveRef(s2, ref).health, LinkHealth.deleted);
-      expect(resolveRef(s, ref).health, LinkHealth.ok);
-    });
+        // The other device receives the same records (as JSON, like sync).
+        final dir2 = Directory.systemTemp.createTempSync('theapp_smartlinks2_');
+        addTearDown(() {
+          try {
+            dir2.deleteSync(recursive: true);
+          } catch (_) {}
+        });
+        final s2 = await boot(dir2);
+        addTearDown(() async {
+          await s2.flush();
+          s2.dispose();
+        });
+        for (final n in ws.notes.all) {
+          s2.workspace.notes.put(
+            Note.fromJson(
+              jsonDecode(jsonEncode(n.toJson())) as Map<String, dynamic>,
+            ),
+          );
+        }
+        expect(resolveRef(s2, ref).title, 'Shared');
+        expect(backlinksTo(s2, ref).map((b) => b.title), ['Writer']);
+        // Deleting on one device shows as deleted on the other once it syncs.
+        s2.workspace.deleteNote(target.id);
+        expect(resolveRef(s2, ref).health, LinkHealth.deleted);
+        expect(resolveRef(s, ref).health, LinkHealth.ok);
+      },
+    );
   });
 
   group('navigation', () {
-    test('opens the target, keeps a way back, refuses deleted targets', () async {
-      final ws = s.workspace;
-      final from = ws.createNote(title: 'From');
-      final to = ws.createNote(title: 'To');
-      s.openNote(from.id);
-      final fromRef = WorkspaceRef(RefKind.note, from.id);
+    test(
+      'opens the target, keeps a way back, refuses deleted targets',
+      () async {
+        final ws = s.workspace;
+        final from = ws.createNote(title: 'From');
+        final to = ws.createNote(title: 'To');
+        s.openNote(from.id);
+        final fromRef = WorkspaceRef(RefKind.note, from.id);
 
-      expect(
-        await openWorkspaceRef(
-          s,
-          WorkspaceRef(RefKind.note, to.id),
-          from: fromRef,
-        ),
-        isTrue,
-      );
-      expect(s.page, AppPage.notes);
-      expect(s.selectedNoteId, to.id);
-      expect(s.linkReturn.value.single.label, 'From');
+        expect(
+          await openWorkspaceRef(
+            s,
+            WorkspaceRef(RefKind.note, to.id),
+            from: fromRef,
+          ),
+          isTrue,
+        );
+        expect(s.page, AppPage.notes);
+        expect(s.selectedNoteId, to.id);
+        expect(s.linkReturn.value.single.label, 'From');
 
-      s.selectedNoteId = null;
-      await goBackFromLink(s);
-      expect(s.selectedNoteId, from.id);
-      expect(s.linkReturn.value, isEmpty, reason: 'going back leaves no trail');
+        s.selectedNoteId = null;
+        await goBackFromLink(s);
+        expect(s.selectedNoteId, from.id);
+        expect(
+          s.linkReturn.value,
+          isEmpty,
+          reason: 'going back leaves no trail',
+        );
 
-      // A deleted target is not opened and nothing is remembered.
-      ws.deleteNote(to.id);
-      s.selectedNoteId = null;
-      expect(
-        await openWorkspaceRef(
-          s,
-          WorkspaceRef(RefKind.note, to.id),
-          from: fromRef,
-          label: 'To',
-        ),
-        isFalse,
-      );
-      expect(s.selectedNoteId, isNull);
-      expect(s.toast.value, contains('was deleted'));
-      expect(s.linkReturn.value, isEmpty);
-    });
+        // A deleted target is not opened and nothing is remembered.
+        ws.deleteNote(to.id);
+        s.selectedNoteId = null;
+        expect(
+          await openWorkspaceRef(
+            s,
+            WorkspaceRef(RefKind.note, to.id),
+            from: fromRef,
+            label: 'To',
+          ),
+          isFalse,
+        );
+        expect(s.selectedNoteId, isNull);
+        expect(s.toast.value, contains('was deleted'));
+        expect(s.linkReturn.value, isEmpty);
+      },
+    );
 
     test('a mindmap object is revealed and selected', () async {
       final c = s.canvas!;
@@ -359,7 +396,9 @@ void main() {
     final t = ws.createNote(title: 'Pelican');
     final n = ws.createNote(title: 'Holder');
     ws.notes.put(
-      n.copyWith(body: 'remember ${WorkspaceRef(RefKind.note, t.id).token('Pelican')}'),
+      n.copyWith(
+        body: 'remember ${WorkspaceRef(RefKind.note, t.id).token('Pelican')}',
+      ),
     );
     expect(searchEverything(s, 'theapp'), isEmpty);
     expect(searchEverything(s, t.id), isEmpty);
@@ -367,6 +406,36 @@ void main() {
     expect(hit.map((r) => r.title), contains('Holder'));
     expect(hit.first.subtitle, contains('remember Pelican'));
   });
+
+  // Regression (integration of master into ui/new-design): deleting a
+  // linked note and following links must leave nothing that keeps a flush
+  // (close, backup, sync) waiting.
+  test(
+    'after deleting a linked note and following links, flush completes',
+    () async {
+      final ws = s.workspace;
+      final live = ws.createNote(title: 'Live');
+      final gone = ws.createNote(title: 'Gone');
+      final owner = ws.createNote(title: 'Owner');
+      ws.notes.put(
+        owner.copyWith(
+          body:
+              '${WorkspaceRef(RefKind.note, live.id).token('Live')} '
+              '${WorkspaceRef(RefKind.note, gone.id).token('Gone')}',
+        ),
+      );
+      ws.deleteNote(gone.id);
+      expect(
+        await openWorkspaceRef(s, WorkspaceRef(RefKind.note, gone.id)),
+        isFalse,
+      );
+      expect(
+        await openWorkspaceRef(s, WorkspaceRef(RefKind.note, live.id)),
+        isTrue,
+      );
+      await s.flush().timeout(const Duration(seconds: 10));
+    },
+  );
 
   group('on screen', () {
     testWidgets('panel: links, hover preview, deleted marking, backlinks', (
@@ -376,19 +445,27 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final ws = s.workspace;
-      final live = ws.createNote(title: 'Live note');
-      ws.notes.put(live.copyWith(body: 'first words of the live note'));
-      final gone = ws.createNote(title: 'Gone note');
-      final goneRef = WorkspaceRef(RefKind.note, gone.id);
-      final owner = ws.createNote(title: 'Owner');
-      final writer = ws.createNote(title: 'Writer');
-      final ownerRef = WorkspaceRef(RefKind.note, owner.id);
-      final text =
-          'a ${WorkspaceRef(RefKind.note, live.id).token('Live note')} '
-          'b ${goneRef.token('Gone note')}';
-      ws.notes.put(owner.copyWith(body: text));
-      ws.notes.put(writer.copyWith(body: 'x ${ownerRef.token('Owner')}'));
-      ws.deleteNote(gone.id);
+      // Data first, in real time: on this branch saves are encrypted on a
+      // background isolate, which never finishes inside the fake clock.
+      late final Note live, gone, owner, writer;
+      late final WorkspaceRef goneRef, ownerRef;
+      late final String text;
+      await tester.runAsync(() async {
+        live = ws.createNote(title: 'Live note');
+        ws.notes.put(live.copyWith(body: 'first words of the live note'));
+        gone = ws.createNote(title: 'Gone note');
+        goneRef = WorkspaceRef(RefKind.note, gone.id);
+        owner = ws.createNote(title: 'Owner');
+        writer = ws.createNote(title: 'Writer');
+        ownerRef = WorkspaceRef(RefKind.note, owner.id);
+        text =
+            'a ${WorkspaceRef(RefKind.note, live.id).token('Live note')} '
+            'b ${goneRef.token('Gone note')}';
+        ws.notes.put(owner.copyWith(body: text));
+        ws.notes.put(writer.copyWith(body: 'x ${ownerRef.token('Owner')}'));
+        ws.deleteNote(gone.id);
+        await s.flush();
+      });
       String? removed;
       await tester.pumpWidget(
         MaterialApp(
@@ -427,6 +504,16 @@ void main() {
       expect(s.selectedNoteId, live.id);
       expect(s.linkReturn.value.last.label, 'Owner');
       await tester.pump(const Duration(seconds: 4));
+      // Let the saves started above finish: on this branch a save is
+      // encrypted on a background isolate and then continues in the
+      // test's fake-time zone, so real time and pumps must alternate
+      // (otherwise the tearDown flush waits forever).
+      for (var i = 0; i < 8; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 30)),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+      }
     });
 
     testWidgets('the picker finds things and returns a link token', (
@@ -444,7 +531,8 @@ void main() {
           theme: buildAppTheme(),
           home: Builder(
             builder: (context) => TextButton(
-              onPressed: () async => token = await pickWorkspaceLink(context, s),
+              onPressed: () async =>
+                  token = await pickWorkspaceLink(context, s),
               child: const Text('open'),
             ),
           ),

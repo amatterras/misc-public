@@ -11,7 +11,7 @@ import '../../widgets/common.dart';
 
 /// Text on a tag colour, at least 4.5:1 on every colour, in both themes:
 /// the palette's ink or white, whichever reads better; pure black only
-/// where the ink would fall short.
+/// where neither reaches 4.5:1.
 Color tagForeground(Color background) {
   double ratio(Color a, Color b) {
     final la = a.computeLuminance() + 0.05, lb = b.computeLuminance() + 0.05;
@@ -21,8 +21,11 @@ Color tagForeground(Color background) {
   const ink = Color(0xFF181C25), white = Color(0xFFFFFFFF);
   const black = Color(0xFF000000);
   final onInk = ratio(ink, background), onWhite = ratio(white, background);
-  if (onWhite >= onInk) return white;
-  return onInk >= 4.5 || ratio(black, background) <= onInk ? ink : black;
+  // The palette's ink or white, whichever reads better, when it reaches
+  // 4.5:1; otherwise the stronger of pure black and white (for mid-tones
+  // black can pass where neither the ink nor white does).
+  if (onInk >= 4.5 || onWhite >= 4.5) return onInk >= onWhite ? ink : white;
+  return ratio(black, background) >= onWhite ? black : white;
 }
 
 class TagChip extends StatelessWidget {

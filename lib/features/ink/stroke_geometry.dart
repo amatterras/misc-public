@@ -629,7 +629,61 @@ bool looksLikeLine(List<StrokePoint> points, double scale) {
   return deviation <= math.max(10, screenLength * 0.11) &&
       rms <= math.max(4, screenLength * 0.045) &&
       efficient <= 1.25 &&
-      backtrackRatio <= 0.1;
+      backtrackRatio <= 0.1 &&
+      !_isDeliberateWave(points, a, b, scale);
+}
+
+/// How far (screen pixels) a swing away from the chord must reach before it
+/// counts as drawn on purpose. Hand wobble stays well under this; a wave
+/// someone draws goes past it.
+const double waveLobeReach = 8;
+
+/// Swings within this distance of the chord (screen pixels) are noise: they
+/// never start a new lobe.
+const double _waveNoise = 1.5;
+
+/// A gentle wave and a shaky straight line can be equally close to their
+/// chord and equally "long" for their length, so those measures alone
+/// cannot tell them apart. What differs is the swings: wobble flips side
+/// every few pixels and stays a few pixels from the line; a wave makes
+/// repeated, alternating lobes that each reach well away from it. Two or
+/// more alternating lobes reaching [waveLobeReach] make a wave. One long
+/// bow (a slightly curved line) is still a line.
+bool _isDeliberateWave(
+  List<StrokePoint> points,
+  Offset a,
+  Offset b,
+  double scale,
+) {
+  final d = b - a;
+  final length = d.distance;
+  if (length == 0) return false;
+  final normal = Offset(-d.dy, d.dx) / length;
+  var side = 0; // sign of the current lobe; 0 before the first
+  var reach = 0.0; // furthest distance in the current lobe
+  var lobes = 0; // finished-or-current lobes that reached far enough
+  var lastFarSide = 0;
+  void close() {
+    if (side != 0 && reach >= waveLobeReach) {
+      if (side != lastFarSide) lobes++;
+      lastFarSide = side;
+    }
+  }
+
+  for (final p in points) {
+    final off = p.offset - a;
+    final signed = (off.dx * normal.dx + off.dy * normal.dy) * scale;
+    if (signed.abs() < _waveNoise) continue;
+    final s = signed > 0 ? 1 : -1;
+    if (s != side) {
+      close();
+      side = s;
+      reach = 0;
+    }
+    reach = math.max(reach, signed.abs());
+  }
+  close();
+  return lobes >= 2;
 }
 
 /// Shortest straight line (screen pixels) that a hold can produce.

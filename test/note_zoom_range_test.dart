@@ -1,6 +1,11 @@
-// Notes page zoom range: zooming out reaches a thousandth of "fit page",
-// zooming in keeps its old limit, content stays exactly where it was in
-// document coordinates, and Fit page recovers the view at any point.
+// Notes page zoom range. Product decision (2026-11-04, ui/new-design):
+// zooming out stops where the tallest page is fully visible with about
+// 2.5 cm around it (never below; the earlier "a thousandth of fit page"
+// from master was superseded). Zooming in keeps its old limit (300%),
+// content stays exactly where it was in document coordinates, Fit page
+// recovers the view, pinch obeys the same limits, and the zoom is restored
+// when the note is opened again. NotebookZoom remains the safety clamp for
+// saved and pinched values (finite, never zero).
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -67,9 +72,8 @@ void main() {
     expect(NotebookZoom.label(0.05), '5.0%');
   });
 
-  testWidgets('zoom out to 1/1000, content untouched, Fit page recovers', (
-    tester,
-  ) async {
+  testWidgets('zoom out stops with the whole page in view; content '
+      'untouched; Fit page, pinch and reopening behave', (tester) async {
     tester.view.physicalSize = const Size(1700, 1050);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -117,33 +121,75 @@ void main() {
     await pen.up();
     await tester.pump();
     final controller = state.openNotebooks.single;
-    final strokeBefore = controller.items.whereType<StrokeItem>().single.points
+    final strokeBefore = controller.items
+        .whereType<StrokeItem>()
+        .single
+        .points
         .map((p) => p.offset)
         .toList();
     final fitScale = controller.scale;
 
-    // Zoom out all the way (and keep pressing).
+    // Zoom out all the way (and keep pressing past the limit).
+    String label() => tester
+        .widget<Text>(find.byKey(const ValueKey('note-zoom-value')))
+        .data!;
     for (var i = 0; i < 30; i++) {
-      await tester.tap(find.byTooltip('Smaller pages'));
+      await tester.tap(find.byTooltip('Smaller pages'), warnIfMissed: false);
       await tester.pump();
     }
-    expect(find.text('0.10%'), findsOneWidget);
-    expect(controller.scale, closeTo(fitScale * 0.001, fitScale * 1e-6));
-    expect(controller.scale.isFinite, isTrue);
-    // The whole page is a tiny object in the workspace.
-    final tiny = pageBox(tester);
-    expect(tiny.width, lessThan(2));
-    expect(tiny.width, greaterThan(0));
+    final minLabel = label();
+    final minScale = controller.scale;
+    expect(minScale.isFinite, isTrue);
+    expect(minScale, lessThan(fitScale), reason: 'it did zoom out');
+    // The whole page is in view with room around it (not a dot).
+    final whole = pageBox(tester);
+    final view = tester.getRect(
+      find.byKey(const ValueKey('notebook-page-0')).first,
+    );
+    expect(whole.width, greaterThan(100), reason: 'still a readable page');
+    expect(whole.height, lessThanOrEqualTo(1050), reason: 'fits the window');
+    expect(view.width, greaterThan(0));
+    // More presses change nothing.
+    await tester.tap(find.byTooltip('Smaller pages'), warnIfMissed: false);
+    await tester.pump();
+    expect(label(), minLabel);
+    expect(controller.scale, closeTo(minScale, 1e-9));
     // Nothing in the document changed.
     expect(
-      controller.items.whereType<StrokeItem>().single.points.map((p) => p.offset),
+      controller.items.whereType<StrokeItem>().single.points.map(
+        (p) => p.offset,
+      ),
       strokeBefore,
     );
+
+    // Pinching further in (fingers together) also stops at the limit.
+    final f1 = await tester.createGesture(
+      kind: PointerDeviceKind.touch,
+      pointer: 11,
+    );
+    final f2 = await tester.createGesture(
+      kind: PointerDeviceKind.touch,
+      pointer: 12,
+    );
+    final mid = whole.center;
+    await f1.down(mid - const Offset(150, 0));
+    await f2.down(mid + const Offset(150, 0));
+    await tester.pump();
+    for (var i = 1; i <= 10; i++) {
+      await f1.moveTo(mid - Offset(150 - i * 13.0, 0));
+      await f2.moveTo(mid + Offset(150 - i * 13.0, 0));
+      await tester.pump();
+    }
+    await f1.up();
+    await f2.up();
+    await tester.pump();
+    expect(controller.scale, greaterThanOrEqualTo(minScale - 1e-9));
+    expect(label(), minLabel);
 
     // Zoom back in a little, then Fit page restores exactly.
     await tester.tap(find.byTooltip('Larger pages'));
     await tester.pump();
-    expect(find.text('0.10%'), findsNothing);
+    expect(label(), isNot(minLabel));
     await tester.tap(find.byTooltip('Fit page width'));
     await tester.pump();
     expect(find.text('100%'), findsOneWidget);
@@ -157,6 +203,7 @@ void main() {
       await tester.pump();
     }
     expect(find.text('300%'), findsOneWidget);
+    // Leave it at 300%: the zoom is restored when the note opens again.
 
     // Closed and reopened: still the same ink, at its document coordinates.
     await tester.pumpWidget(const SizedBox());
@@ -175,6 +222,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     final reopened = state.openNotebooks.single;
+    expect(label(), '300%', reason: 'saved zoom restored');
     expect(
       reopened.items.whereType<StrokeItem>().single.points.map((p) => p.offset),
       strokeBefore,
