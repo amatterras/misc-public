@@ -161,7 +161,8 @@ void main() {
       for (final slot in MotivationService.parseGreetingSlots(greetings))
         ...slot.greetings,
     ];
-    expect(all, hasLength(600));
+    // 600 + master's 300-line v3 batch + the 'meh.' line in six pools.
+    expect(all, hasLength(906));
     expect(all, contains(m.greeting));
     await close(tester, state, m);
     // the phone layer keeps no copy of its own

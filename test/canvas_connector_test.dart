@@ -103,16 +103,18 @@ void main() {
     expect(lines(c), hasLength(3));
   });
 
-  test('the lasso selects only the connection; Delete removes it', () {
+  test('a click or the lasso selects only the connection; Delete removes it', () {
     final c = twoBoxes();
     connect(c, aCentre, bCentre);
     final ends = c.connectorEnds(lines(c).single)!;
     c.tool = CanvasTool.select;
     final mid = Offset.lerp(ends.$1, ends.$2, 0.5)!;
-    // Clicking the line does not select it (only photos and links are
-    // selected by a click).
+    // Clicking the line selects it (so it can be bent or styled; master's
+    // connector work). Other objects still need the lasso.
     c.pointerDown(mid);
     c.pointerUp();
+    expect(c.selection, {lines(c).single.id});
+    c.select(const []);
     expect(c.selection, isEmpty);
     c.tool = CanvasTool.lasso;
     c.pointerDown(mid + const Offset(-6, -6));
