@@ -19,7 +19,8 @@ void main() {
       multiLine: true,
     ).allMatches(greetings).map((m) => m.group(1)).toList();
     final supplied = read('test/fixtures/share_greetings.txt')
-        .split('\n')
+        // CRLF or LF, whichever the checkout uses (core.autocrlf).
+        .split(RegExp(r'\r?\n'))
         .where((l) => l.isNotEmpty)
         .toList();
     expect(supplied.length, 120);
