@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/app/app_state.dart';
 import 'package:flutter_application_1/data/models/canvas_models.dart';
+import 'package:flutter_application_1/data/models/object_library_models.dart';
 import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/capture/quick_capture.dart';
@@ -40,13 +41,13 @@ void main() {
   }
 
   group('saving', () {
-    test('a thought: one Inbox item, safe to repeat', () async {
+    test('a thought: one Archive item, safe to repeat', () async {
       final s = await boot();
       addTearDown(() async {
         await s.flush();
         s.dispose();
       });
-      final before = s.workspace.inbox.length;
+      final before = s.workspace.libraryObjects.length;
       for (var i = 0; i < 3; i++) {
         final r = await saveQuickCapture(
           s,
@@ -54,10 +55,13 @@ void main() {
           text: '  buy oat milk  ',
           kind: QuickKind.thought,
         );
-        expect(r.message, 'Saved to the Inbox');
+        expect(r.message, 'Saved to the Archive');
       }
-      expect(s.workspace.inbox.length, before + 1);
-      expect(s.workspace.inbox['cap1']!.text, 'buy oat milk');
+      expect(s.workspace.libraryObjects.length, before + 1);
+      final saved = quickCaptureSaved(s, 'cap1')!;
+      expect(saved.type, LibraryObjectType.note);
+      expect(saved.content, 'buy oat milk');
+      expect(saved.title, 'buy oat milk');
     });
 
     test('a task: one Task, notes keep the rest, nothing scheduled', () async {
@@ -81,7 +85,7 @@ void main() {
       expect(t.done, isFalse);
     });
 
-    test('a link: the saved reference is reused, one Inbox item', () async {
+    test('a link: one Archive item; the same address is reused', () async {
       final s = await boot();
       addTearDown(() async {
         await s.flush();
@@ -90,12 +94,17 @@ void main() {
       await saveQuickCapture(s, id: 'l1', text: 'https://example.com/a', kind: QuickKind.link);
       await saveQuickCapture(s, id: 'l1', text: 'https://example.com/a', kind: QuickKind.link);
       await saveQuickCapture(s, id: 'l2', text: 'https://example.com/a', kind: QuickKind.link);
-      final item = s.workspace.inbox['l1']!;
-      expect(s.workspace.assets[item.assetId]!.url, 'https://example.com/a');
+      final item = quickCaptureSaved(s, 'l1')!;
+      expect(item.type, LibraryObjectType.website);
+      expect(item.sourceUrl, 'https://example.com/a');
+      final r = await saveQuickCapture(s, id: 'l3', text: 'https://example.com/a', kind: QuickKind.link);
+      expect(r.message, 'Already in the Archive');
       expect(
-        s.workspace.assets.all.where((a) => a.url == 'https://example.com/a'),
+        s.workspace.libraryObjects.all.where(
+          (o) => !o.deleted && o.sourceUrl == 'https://example.com/a',
+        ),
         hasLength(1),
-        reason: 'the same address is one saved reference',
+        reason: 'the same address is one Archive item',
       );
     });
 
@@ -105,7 +114,7 @@ void main() {
         await s.flush();
         s.dispose();
       });
-      final before = s.workspace.inbox.length;
+      final before = s.workspace.libraryObjects.length;
       await expectLater(
         saveQuickCapture(s, id: 'x', text: '   ', kind: QuickKind.thought),
         throwsA(isA<QuickCaptureFailure>()),
@@ -114,7 +123,7 @@ void main() {
         saveQuickCapture(s, id: 'x', text: 'not an address', kind: QuickKind.link),
         throwsA(isA<QuickCaptureFailure>()),
       );
-      expect(s.workspace.inbox.length, before);
+      expect(s.workspace.libraryObjects.length, before);
     });
 
     test('a failed save keeps the text; the retry makes no second copy', () async {
@@ -195,7 +204,10 @@ void main() {
         kind: QuickKind.thought,
         contexts: options.take(1).toList(),
       );
-      expect(s.workspace.inbox['ref2']!.text, contains('[[theapp:note/${note.id}'));
+      expect(
+        quickCaptureSaved(s, 'ref2')!.content,
+        contains('[[theapp:note/${note.id}'),
+      );
     });
   });
 
@@ -264,7 +276,9 @@ void main() {
         expect(s.page, page, reason: 'still where it was');
         n++;
         expect(
-          s.workspace.inbox.all.where((i) => (i.text ?? '').startsWith('from ')).length,
+          s.workspace.libraryObjects.all
+              .where((o) => (o.content ?? '').startsWith('from '))
+              .length,
           n,
         );
       }
@@ -309,8 +323,10 @@ void main() {
       expect(find.byType(NotePage), findsOneWidget, reason: 'still on the note');
       expect(tester.widget<TextField>(body).controller!.text, before);
       expect(s.workspace.notes[note.id]!.body, before);
-      final captured = s.workspace.inbox.all.firstWhere((i) => i.text == null ? false : i.text!.startsWith('idea for later'));
-      expect(captured.text, contains('[[theapp:note/${note.id}|Draft]]'));
+      final captured = s.workspace.libraryObjects.all.firstWhere(
+        (o) => (o.content ?? '').startsWith('idea for later'),
+      );
+      expect(captured.content, contains('[[theapp:note/${note.id}|Draft]]'));
       await finish(tester);
     });
 
@@ -330,10 +346,14 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const ValueKey('quick-capture-text')), 'keep me');
-      final inbox = s.workspace.inbox.length;
+      final archived = s.workspace.libraryObjects.length;
       await tester.tap(find.byKey(const ValueKey('quick-capture-save')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      // The Archive save does real file work first; wait for the message.
+      for (var i = 0; i < 100; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.byKey(const ValueKey('quick-capture-error')).evaluate().isNotEmpty) break;
+      }
       expect(find.byKey(const ValueKey('quick-capture-error')), findsOneWidget);
       expect(
         tester.widget<TextField>(find.byKey(const ValueKey('quick-capture-text'))).controller!.text,
@@ -344,7 +364,11 @@ void main() {
       await untilClosed(tester);
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('quick-capture')), findsNothing);
-      expect(s.workspace.inbox.length, inbox + 1, reason: 'one item, not two');
+      expect(
+        s.workspace.libraryObjects.length,
+        archived + 1,
+        reason: 'one item, not two',
+      );
       await finish(tester);
     });
   });

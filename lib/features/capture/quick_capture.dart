@@ -1,6 +1,6 @@
 // Quick Capture: a small window you can open from anywhere (Ctrl+Shift+Space
 // on Windows, the bolt button in the bar on every device) to put a thought,
-// a task or a link into the Inbox / Tasks without leaving what you are doing.
+// a task or a link into the Archive / Tasks without leaving what you are doing.
 // Opening and closing it never touches the page underneath, so unsaved
 // edits stay exactly as they were. Saving is safe to repeat: the item has a
 // fixed id for as long as the window is open, so a retry after a failure
@@ -14,7 +14,9 @@ import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
+import '../../data/models/object_library_models.dart';
 import '../../data/models/task_models.dart';
+import '../../data/repositories/library_repository.dart';
 import '../smartlinks/smart_links.dart';
 
 enum QuickKind { thought, task, link }
@@ -116,25 +118,26 @@ Future<QuickResult> saveQuickCapture(
       if (url == null) {
         throw const QuickCaptureFailure('That does not look like a web address.');
       }
-      final asset = s.capture.link(url);
-      ws.inbox.put(
-        InboxItem(
-          id: id,
-          assetId: asset.id,
-          text: refs.isEmpty ? null : 'From $refs',
-          createdAt: ws.inbox[id]?.createdAt ?? now,
-        ),
+      done = await _saveToArchive(
+        s,
+        id: id,
+        type: LibraryObjectType.website,
+        sourceUrl: url,
+        description: refs.isEmpty ? null : 'From $refs',
+        saved: 'Link saved to the Archive',
       );
-      done = 'Link saved to the Inbox';
     case QuickKind.thought:
-      ws.inbox.put(
-        InboxItem(
-          id: id,
-          text: refs.isEmpty ? body : '$body\n\nFrom $refs',
-          createdAt: ws.inbox[id]?.createdAt ?? now,
-        ),
+      final firstLine = body.split('\n').first.trim();
+      done = await _saveToArchive(
+        s,
+        id: id,
+        type: LibraryObjectType.note,
+        title: firstLine.length > 80
+            ? '${firstLine.substring(0, 80)}…'
+            : firstLine,
+        content: refs.isEmpty ? body : '$body\n\nFrom $refs',
+        saved: 'Saved to the Archive',
       );
-      done = 'Saved to the Inbox';
     case QuickKind.task:
       final lines = body.split('\n');
       final title = lines.first.trim();
@@ -166,6 +169,51 @@ Future<QuickResult> saveQuickCapture(
     );
   }
   return QuickResult(done);
+}
+
+/// The Archive item an earlier attempt of capture [id] saved, if any.
+LibraryObject? quickCaptureSaved(AppState s, String id) {
+  for (final o in s.workspace.libraryObjects.all) {
+    if (!o.deleted && o.metadata['quickCapture'] == id) return o;
+  }
+  return null;
+}
+
+/// Saves a thought or link into the Archive (the New design has no Inbox
+/// screen; the old Inbox was moved into the Archive). A retry of the same
+/// capture [id] never makes a second item, and something already in the
+/// Archive is reused instead of copied.
+Future<String> _saveToArchive(
+  AppState s, {
+  required String id,
+  required LibraryObjectType type,
+  required String saved,
+  String title = '',
+  String? sourceUrl,
+  String? content,
+  String? description,
+}) async {
+  if (quickCaptureSaved(s, id) != null) return saved;
+  final LibrarySaveResult result;
+  try {
+    result = await s.library.saveWithResult(
+      type: type,
+      title: title,
+      sourceUrl: sourceUrl,
+      content: content,
+      description: description,
+      metadata: {'quickCapture': id},
+    );
+  } on ArgumentError {
+    throw const QuickCaptureFailure(
+      'Only public web addresses (http or https) can be saved.',
+    );
+  } catch (_) {
+    throw const QuickCaptureFailure(
+      'Could not save to this device. Your text is kept; try again.',
+    );
+  }
+  return result.reused == null ? saved : 'Already in the Archive';
 }
 
 /// Opens the capture window above whatever is showing.
@@ -317,7 +365,7 @@ class _QuickCaptureState extends State<_QuickCapture> {
                 child: Text(
                   _kind == QuickKind.task
                       ? 'Goes to Tasks. Nothing is scheduled.'
-                      : 'Goes to the Inbox on Home; file it later.',
+                      : 'Goes to the Archive; file it later.',
                   style: TextStyle(fontSize: 11.5, color: AppColors.textFaint),
                 ),
               ),
