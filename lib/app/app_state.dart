@@ -701,6 +701,8 @@ class AppState extends ChangeNotifier {
   /// Closing the app: lets a backup or sync that is running finish (up to
   /// 20 s), saves everything, then stops the hub this app runs.
   Future<void> shutdown() async {
+    // No Handoff write may land after the final flush (or on closed data).
+    handoff.stop();
     await maintenance?.stop();
     _scheduler?.stop();
     await peerSync.stop();
