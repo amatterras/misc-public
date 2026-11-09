@@ -10,6 +10,7 @@ import 'package:flutter_application_1/data/repositories/canvas_repository.dart';
 import 'package:flutter_application_1/data/workspace.dart';
 import 'package:flutter_application_1/features/handoff/handoff.dart';
 import 'package:flutter_application_1/features/handoff/handoff_dialog.dart';
+import 'package:flutter_application_1/features/palette/command_palette.dart';
 import 'package:flutter_application_1/hub/hub_server.dart';
 import 'package:flutter_application_1/sync/sync_client.dart';
 import 'package:flutter_application_1/sync/sync_engine.dart';
@@ -241,6 +242,19 @@ void main() {
     pc.app.openNote(pc.ws.createNote(title: 'T', body: 'b').id);
     expect(pc.app.handoff.publishNow(), isFalse);
     expect(pc.app.handoff.own, isNull);
+  });
+
+  test('Commands offers Continue (the iPhone main screens hide the bar)', () async {
+    final pc = await device('pc');
+    void none(BuildContext _) {}
+    final labels = paletteCommands(
+      pc.app,
+      quickAdd: none,
+      search: none,
+      settings: none,
+      appSwitcher: none,
+    ).map((c) => c.label);
+    expect(labels, contains('Continue from another device'));
   });
 
   test('handoff records stay out of the shared links list', () async {

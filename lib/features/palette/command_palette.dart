@@ -21,6 +21,7 @@ import '../calendar/ics.dart';
 import '../canvas/time_machine.dart';
 import '../notes/notes_page.dart' show showNoteHistory;
 import '../capture/quick_capture.dart';
+import '../handoff/handoff_dialog.dart';
 import '../reading/reading_progress.dart';
 import '../pdfanchors/pdf_notes_split.dart';
 import '../../data/models/library_models.dart' show AssetKind;
@@ -125,6 +126,13 @@ List<PaletteCommand> paletteCommands(
       Icons.bolt,
       (context) => showQuickCapture(context, s),
       hint: touchFirst ? '' : 'Ctrl+Shift+Space',
+    ),
+    // Cross-Device Handoff. Also here because the iPhone's main screens
+    // hide the bar that holds the Continue button.
+    PaletteCommand(
+      'Continue from another device',
+      Icons.devices_outlined,
+      (context) => showContinueDialog(context, s),
     ),
     PaletteCommand(
       'Restore workspace layout',
