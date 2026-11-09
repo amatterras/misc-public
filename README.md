@@ -20,7 +20,9 @@ keep their data and keep working without a reinstall:
 - the hub protocol markers, the `theapp://` link scheme and the method-channel
   names
 - the `.theappbackup` file extension
-- the Windows executable name (`flutter_application_1.exe`)
+- the Windows executable name in the build folder (`flutter_application_1.exe`);
+  the release packages from `scripts\build_windows_release.ps1` ship the same
+  file renamed to `misc.exe` (see "Windows release" below)
 
 Anything the user can read (window title, iOS home-screen name, permission
 prompts, settings, messages, the Windows Send-to entry) says **misc.**
@@ -36,3 +38,23 @@ flutter run -d windows
 
 See `ARCHITECTURE.md`, `docs/SYNC_ARCHITECTURE.md`, `docs/STORAGE_MODES.md` and
 `docs/IOS_BUILD_GUIDE.md` for how it is put together.
+
+## Windows release
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\build_windows_release.ps1
+```
+
+Checks Flutter and Visual Studio, runs `pub get`, `analyze` and
+`build windows --release`, then writes (git-ignored):
+
+- `dist\windows\misc-windows-x64\` - portable app: `misc.exe`, Flutter and
+  Visual C++ runtime DLLs, `data\`
+- `dist\windows\misc-windows-x64.zip` - the same folder, zipped
+- `dist\windows\misc-Setup.exe` - per-user installer (Windows IExpress, no
+  admin rights): installs to `%LOCALAPPDATA%\Programs\misc`, Start Menu
+  shortcut, optional desktop shortcut, entry in Settings > Apps. Upgrades
+  replace only the program files; uninstalling keeps `%APPDATA%\THEapp`.
+
+Options: `-SkipAnalyze`, `-RunTests` (slow), `-SkipInstaller`. Installer
+sources: `scripts\installer\install.ps1` and `uninstall.ps1`.
