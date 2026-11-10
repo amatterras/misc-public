@@ -23,6 +23,7 @@ import '../ink/stroke_geometry.dart';
 import '../ink/partial_erase.dart';
 import '../ink/ink_metrics.dart';
 import '../ink/shape_recognition.dart';
+import '../ink/stylus_pressure.dart';
 
 export 'canvas_text.dart' show kTextPadding, canvasTextStyle;
 
@@ -286,9 +287,24 @@ class CanvasController extends ChangeNotifier {
   Color penColor = AppColors.text;
   double penWidth = 2.5;
 
-  void setPen({Color? color, double? width}) {
+  /// How solid pen ink is drawn, 1 = fully (the pen only: the highlighter
+  /// has its own fixed see-through look, and this is neither the page nor
+  /// the dot opacity). Stored in each stroke's colour.
+  double penOpacity = 1;
+  static const penOpacityMin = 0.1;
+
+  /// The pen line widens as the Pencil is laid flat (shading with the side
+  /// of the tip). Only for pens that report their angle; others draw as
+  /// always.
+  bool penTiltShading = false;
+
+  void setPen({Color? color, double? width, double? opacity, bool? tilt}) {
     penColor = color ?? penColor;
     penWidth = width ?? penWidth;
+    if (opacity != null && opacity.isFinite) {
+      penOpacity = opacity.clamp(penOpacityMin, 1.0).toDouble();
+    }
+    penTiltShading = tilt ?? penTiltShading;
     notifyListeners();
   }
 
@@ -344,7 +360,7 @@ class CanvasController extends ChangeNotifier {
       : eraserSize;
 
   /// Highlighter ink is the see-through kind.
-  static bool isHighlighter(StrokeItem s) => s.color.a < 0.99;
+  static bool isHighlighter(StrokeItem s) => s.isHighlighter;
 
   void setEraser({EraserMode? mode, double? size, bool? highlighterOnly}) {
     eraserMode = mode ?? eraserMode;
@@ -843,19 +859,11 @@ class CanvasController extends ChangeNotifier {
     }
     final c = area.center;
     final cos = math.cos(radians), sin = math.sin(radians);
-    StrokeItem turn(StrokeItem s) => StrokeItem(
-      id: s.id,
-      points: [
-        for (final p in s.points)
-          StrokePoint(
-            c.dx + (p.x - c.dx) * cos - (p.y - c.dy) * sin,
-            c.dy + (p.x - c.dx) * sin + (p.y - c.dy) * cos,
-            p.pressure,
-          ),
-      ],
-      color: s.color,
-      strokeWidth: s.strokeWidth,
-      pressureWidth: s.pressureWidth,
+    StrokeItem turn(StrokeItem s) => s.mapped(
+      (x, y) => Offset(
+        c.dx + (x - c.dx) * cos - (y - c.dy) * sin,
+        c.dy + (x - c.dx) * sin + (y - c.dy) * cos,
+      ),
     );
     final changes = {for (final s in strokes) s.id: turn(s)};
     _commit([for (final i in _items) changes[i.id] ?? i]);
@@ -2128,10 +2136,11 @@ class CanvasController extends ChangeNotifier {
     return _livePoints.last.offset + ahead;
   }
 
-  /// A completed line-like stroke is straightened after a 1.2-second dwell
-  /// (the newer decision on the ui/new-design line). Only pen strokes:
-  /// highlighter strokes are never straightened.
-  static Duration holdToStraighten = const Duration(milliseconds: 1200);
+  /// A line-like stroke is straightened (and a held circle or rectangle
+  /// made clean) after the pen rests for 0.9 seconds (the user's decision
+  /// of 2026-11-10; it was 1.2 s). Only pen strokes: highlighter strokes
+  /// are never straightened.
+  static Duration holdToStraighten = const Duration(milliseconds: 900);
   Timer? _holdTimer;
   Offset? _holdAnchor;
   StrokeItem? _pendingStraighten;
@@ -2140,15 +2149,7 @@ class CanvasController extends ChangeNotifier {
   StrokeItem? get lineStraightenPreview {
     final live = _liveLinePreview;
     final base = _liveStroke;
-    if (live != null && base != null) {
-      return StrokeItem(
-        id: base.id,
-        color: base.color,
-        strokeWidth: base.strokeWidth,
-        pressureWidth: base.pressureWidth,
-        points: live,
-      );
-    }
+    if (live != null && base != null) return base.withPoints(live);
     return null;
   }
 
@@ -2172,7 +2173,9 @@ class CanvasController extends ChangeNotifier {
     final match = recognizeShape(points);
     if (match == null) return null;
     return switch (match.shape) {
-      RecognizedShape.ellipse || RecognizedShape.rectangle => match.points,
+      // The clean outline keeps how the pen pressed along the way.
+      RecognizedShape.ellipse ||
+      RecognizedShape.rectangle => withStrokeProfile(match.points, points),
       _ => null,
     };
   }
@@ -2219,13 +2222,7 @@ class CanvasController extends ChangeNotifier {
       if (original == null) return;
       final current = itemById(original.id);
       if (current != original || current is! StrokeItem) return;
-      final replacement = StrokeItem(
-        id: original.id,
-        color: original.color,
-        strokeWidth: original.strokeWidth,
-        pressureWidth: original.pressureWidth,
-        points: straightened(original.points),
-      );
+      final replacement = original.withPoints(straightened(original.points));
       _commit([
         for (final item in _items) item.id == original.id ? replacement : item,
       ]);
@@ -2334,8 +2331,11 @@ class CanvasController extends ChangeNotifier {
     bool shift = false,
     bool ctrl = false,
     Duration timeStamp = Duration.zero,
+    double? altitude,
+    double? azimuth,
   }) {
     cancelPendingLineStraightening();
+    inkChanges.clear();
     _lastScreen = screen;
     lastInput = ++_inputCount;
     lastPointer = screen;
@@ -2412,16 +2412,19 @@ class CanvasController extends ChangeNotifier {
         _beginTransaction();
         _drag = _Drag.draw;
         _liveIsStylus = kind == PointerDeviceKind.stylus;
-        _firstPressure = pressure;
-        // Pressure-shaped ink only once this Pencil has shown it reports
-        // pressure (Apple Pencil USB-C and some pens do not): see
-        // [_addLiveSample]. Until then the line keeps the chosen width.
-        _livePressure = _liveIsStylus && pencilPressureSeen;
+        // A pen's stroke is pressure ink from its first sample, unless the
+        // pen has shown that it reports no pressure (stylus_pressure.dart).
+        // Mouse and finger never are.
+        _livePressure =
+            _liveIsStylus && StylusPressure.instance.begin(pressure);
         _velocity = null;
         _externalPrediction = null;
         _hasExternalPrediction = false;
         _lastMoveTime = timeStamp;
-        _livePoints = [StrokePoint(world.dx, world.dy, pressure)];
+        _strokeStart = timeStamp;
+        _livePoints = [
+          StrokePoint(world.dx, world.dy, pressure, null, altitude, azimuth),
+        ];
         _updateLiveStroke();
         InkMetrics.instance
           ..strokeStarted()
@@ -2690,6 +2693,8 @@ class CanvasController extends ChangeNotifier {
     Offset screen, {
     double pressure = 0.5,
     Duration? timeStamp,
+    double? altitude,
+    double? azimuth,
   }) {
     final delta = screen - _lastScreen;
     _lastScreen = screen;
@@ -2751,12 +2756,35 @@ class CanvasController extends ChangeNotifier {
         if ((world - last).distance * _scale >= 2.0) {
           _lassoPoints.add(world);
         }
+        // The lasso line is drawn over the drawing, not into it: the
+        // painter's picture of the drawing stays valid.
+        _notifyQuiet();
+        return;
       case _Drag.draw:
         // Only the live stroke repaints (see [liveInk]); no full rebuild.
-        _addLiveSample(world, screen, pressure, timeStamp);
+        _addLiveSample(
+          world,
+          screen,
+          pressure,
+          timeStamp,
+          altitude: altitude,
+          azimuth: azimuth,
+        );
         return;
       case _Drag.erase:
+        final before = _items;
+        final epoch = _paintEpoch;
+        _eraseDirty = null;
         _eraseAt(toWorld(screen - delta), world);
+        if (identical(before, _items)) {
+          // Nothing was under the eraser: only its ring moved.
+          _notifyQuiet();
+          return;
+        }
+        notifyListeners();
+        final dirty = _eraseDirty;
+        if (dirty != null) _logInkChange(epoch, before, erased: dirty);
+        return;
       case _Drag.connect:
         _connectEnd = world;
       case _Drag.connectTap:
@@ -2799,7 +2827,7 @@ class CanvasController extends ChangeNotifier {
             restartHold: false,
           );
         }
-        final stroke = liveStroke;
+        var stroke = liveStroke;
         _liveStroke = null;
         _liveStale = false;
         _velocity = null;
@@ -2807,19 +2835,20 @@ class CanvasController extends ChangeNotifier {
         _hasExternalPrediction = false;
         (liveInk as _Ping).ping();
         if (stroke != null) {
+          // A pen that sent one unchanging value all stroke long reports
+          // no pressure: its line is stored at the chosen width.
+          if (_liveIsStylus &&
+              !StylusPressure.instance.end(wasPressure: stroke.pressureWidth) &&
+              stroke.pressureWidth) {
+            stroke = stroke.withPressureWidth(false);
+          }
           final displayedPoints = _liveLinePreview;
           _liveLinePreview = null;
           if (displayedPoints != null) (liveInk as _Ping).ping();
           final stored = _cleanShape(
             displayedPoints == null
                 ? stroke
-                : StrokeItem(
-                    id: stroke.id,
-                    color: stroke.color,
-                    strokeWidth: stroke.strokeWidth,
-                    pressureWidth: stroke.pressureWidth,
-                    points: displayedPoints,
-                  ),
+                : stroke.withPoints(displayedPoints),
           );
           _setItems([..._items, stored]);
           appended = stored;
@@ -2848,12 +2877,21 @@ class CanvasController extends ChangeNotifier {
       case _Drag.lasso:
         if (_lassoPoints.length >= 3) {
           final hits = <String>{};
+          final lasso = _lassoPoints;
+          var area = Rect.fromPoints(lasso.first, lasso.first);
+          for (final p in lasso) {
+            area = area.expandToInclude(Rect.fromPoints(p, p));
+          }
           for (final item in _items) {
-            if (!isReference(item.id) &&
-                !isHidden(item.id) &&
-                _lassoContainsOrIntersects(itemBounds(item), _lassoPoints)) {
-              hits.add(item.id);
-            }
+            if (isReference(item.id) || isHidden(item.id)) continue;
+            // A drawn line is chosen by its ink (some of it lies inside
+            // the lasso), not by its bounding box: a long diagonal line is
+            // no longer picked up by a lasso drawn in the empty corner
+            // beside it.
+            final hit = item is StrokeItem
+                ? item.bounds.overlaps(area) && lassoHitsStroke(item, lasso)
+                : _lassoContainsOrIntersects(itemBounds(item), lasso);
+            if (hit) hits.add(item.id);
           }
           // A grouped item brings its whole group, as everywhere else.
           select(withGroups(hits));
@@ -2882,6 +2920,9 @@ class CanvasController extends ChangeNotifier {
             after: _items,
             stroke: appended,
           );
+    if (appended != null) {
+      _logInkChange(epochBefore, itemsBefore, stroke: appended);
+    }
     if (wasDrawing) {
       InkMetrics.instance.strokeFinished(
         InkMetrics.instance.elapsedSince(finishStart),
@@ -2897,22 +2938,30 @@ class CanvasController extends ChangeNotifier {
     double pressure,
     Duration? timeStamp, {
     bool restartHold = true,
+    double? altitude,
+    double? azimuth,
   }) {
     final metrics = InkMetrics.instance;
     if (_liveIsStylus &&
-        !_livePressure &&
-        _tool != CanvasTool.highlighter &&
-        (pressure - _firstPressure).abs() > 0.02) {
-      // This Pencil reports pressure: from now on (this stroke included,
-      // within its first few milliseconds) ink follows it.
-      pencilPressureSeen = true;
+        StylusPressure.instance.sample(pressure) &&
+        !_livePressure) {
+      // A pen believed to report no pressure does after all (another pen
+      // was picked up): this stroke follows it from here on.
       _livePressure = true;
       _liveStale = true;
     }
-    final last = _livePoints.last.offset;
+    final lastPoint = _livePoints.last;
+    final last = lastPoint.offset;
     // Samples closer than half a screen pixel are one position (keeps
     // files small; a still pen reports the same spot many times).
     if ((world - last).distance * _scale < 0.5) {
+      // Pressing harder on the spot still shows: the point keeps the
+      // firmest pressure it saw (a dot grows as a real pen's would).
+      if (_livePressure && pressure > lastPoint.pressure) {
+        _livePoints[_livePoints.length - 1] = lastPoint.withPressure(pressure);
+        _liveStale = true;
+        (liveInk as _Ping).ping();
+      }
       metrics.sampleMerged();
       return;
     }
@@ -2927,7 +2976,18 @@ class CanvasController extends ChangeNotifier {
       _velocity = old == null || ms >= 4 ? v : Offset.lerp(old, v, 0.5);
     }
     _lastMoveTime = timeStamp ?? _lastMoveTime;
-    _livePoints.add(StrokePoint(world.dx, world.dy, pressure));
+    // When the sample was taken, in milliseconds into the stroke (only
+    // when the input gives times; never invented).
+    int? time;
+    if (timeStamp != null) {
+      time = math.max(0, (timeStamp - _strokeStart).inMilliseconds);
+      if (_livePoints.first.time == null) {
+        _livePoints[0] = _livePoints.first.withTime(0);
+      }
+    }
+    _livePoints.add(
+      StrokePoint(world.dx, world.dy, pressure, time, altitude, azimuth),
+    );
     _liveStale = true;
     metrics.sampleKept();
     // A resting pen still jitters by a pixel or two; only real movement
@@ -2951,13 +3011,10 @@ class CanvasController extends ChangeNotifier {
     (liveInk as _Ping).ping();
   }
 
-  /// Set once any Pencil stroke in this session showed varying pressure.
-  /// Pens that report none (Apple Pencil USB-C) then draw at exactly the
-  /// chosen width instead of a made-up pressure width.
-  static bool pencilPressureSeen = false;
-
   bool _liveIsStylus = false;
-  double _firstPressure = 0.5;
+
+  /// Time stamp of the live stroke's first sample.
+  Duration _strokeStart = Duration.zero;
   Offset? _externalPrediction;
   bool _hasExternalPrediction = false;
 
@@ -2971,6 +3028,42 @@ class CanvasController extends ChangeNotifier {
   /// painter add one stroke to its cached picture of the document instead
   /// of drawing every stroke again.
   StrokeAppend? lastStrokeAppend;
+
+  /// The latest changes that touched only a known part of the drawing (a
+  /// finished stroke, what the eraser removed), one after the other with
+  /// nothing else in between. The painter brings its cached picture of the
+  /// drawing up to date from these by redrawing just those parts, instead
+  /// of every stroke (see InkRasterCache).
+  final List<InkChange> inkChanges = [];
+
+  void _logInkChange(
+    int fromEpoch,
+    List<CanvasItem> before, {
+    StrokeItem? stroke,
+    List<StrokeItem> erased = const [],
+  }) {
+    if (inkChanges.isNotEmpty &&
+        (inkChanges.last.toEpoch != fromEpoch ||
+            !identical(inkChanges.last.after, before))) {
+      inkChanges.clear(); // something else changed in between
+    }
+    if (inkChanges.length >= 64) inkChanges.removeAt(0);
+    inkChanges.add(
+      InkChange(
+        fromEpoch: fromEpoch,
+        toEpoch: _paintEpoch,
+        before: before,
+        after: _items,
+        stroke: stroke,
+        erased: erased,
+      ),
+    );
+  }
+
+  /// The strokes the eraser removed or cut in the current movement (as
+  /// they were before); null when it also removed something drawn
+  /// elsewhere (a connection).
+  List<StrokeItem>? _eraseDirty;
 
   @override
   void notifyListeners() {
@@ -3016,19 +3109,11 @@ class CanvasController extends ChangeNotifier {
         final sb = original.bounds;
         final sx = math.max(8, corner.dx - sb.left) / math.max(1, sb.width);
         final sy = math.max(8, sb.bottom - corner.dy) / math.max(1, sb.height);
-        return StrokeItem(
-          id: original.id,
-          color: original.color,
-          strokeWidth: original.strokeWidth,
-          pressureWidth: original.pressureWidth,
-          points: [
-            for (final p in original.points)
-              StrokePoint(
-                sb.left + (p.x - sb.left) * sx,
-                sb.bottom - (sb.bottom - p.y) * sy,
-                p.pressure,
-              ),
-          ],
+        return original.mapped(
+          (x, y) => Offset(
+            sb.left + (x - sb.left) * sx,
+            sb.bottom - (sb.bottom - y) * sy,
+          ),
         );
     }
   }
@@ -3039,19 +3124,7 @@ class CanvasController extends ChangeNotifier {
     Offset at(Offset p) => anchor + (p - anchor) * f;
     switch (item) {
       case StrokeItem():
-        return StrokeItem(
-          id: item.id,
-          color: item.color,
-          strokeWidth: item.strokeWidth,
-          pressureWidth: item.pressureWidth,
-          points: [
-            for (final p in item.points)
-              () {
-                final q = at(Offset(p.x, p.y));
-                return StrokePoint(q.dx, q.dy, p.pressure);
-              }(),
-          ],
-        );
+        return item.mapped((x, y) => at(Offset(x, y)));
       case TextItem():
         return item
             .withBox(
@@ -3083,13 +3156,10 @@ class CanvasController extends ChangeNotifier {
     if (!recognizeShapes) return stroke;
     final match = recognizeShape(stroke.points);
     if (match == null) return stroke;
-    return StrokeItem(
-      id: stroke.id,
-      points: match.points,
-      color: stroke.color,
-      strokeWidth: stroke.strokeWidth,
-      pressureWidth: false,
-    );
+    // The clean shape keeps the stroke's own look: its pressure along the
+    // way, and with it the same kind of line (it used to become one even
+    // width).
+    return stroke.withPoints(withStrokeProfile(match.points, stroke.points));
   }
 
   /// The platform took the pointer away (a system gesture, an alert, the
@@ -3137,9 +3207,13 @@ class CanvasController extends ChangeNotifier {
       points: List.unmodifiable(_livePoints),
       color: isHighlighter
           ? highlighterColor.withValues(alpha: 0.38)
-          : penColor,
+          : penOpacity >= 0.995
+          ? penColor
+          : penColor.withValues(alpha: penColor.a * penOpacity),
       strokeWidth: isHighlighter ? highlighterWidth : penWidth,
       pressureWidth: _livePressure && !isHighlighter,
+      penInk: !isHighlighter && penColor.a * penOpacity < 0.99,
+      tiltWidth: _liveIsStylus && penTiltShading && !isHighlighter,
     );
   }
 
@@ -3155,23 +3229,36 @@ class CanvasController extends ChangeNotifier {
     final samples = [
       for (var i = 0; i <= steps; i++) Offset.lerp(from, to, i / steps)!,
     ];
-    final erased = {
-      for (final item in _items)
-        if (item is StrokeItem &&
-            !isLocked(item.id) &&
-            _erasable(item) &&
-            samples.any((p) => item.hitTest(p, tolerance)))
-          item.id,
-    };
+    final swept = Rect.fromPoints(from, to).inflate(tolerance);
+    // A line goes when the eraser touches its ink as drawn: a pressure
+    // line is tested with its width at each place ([StrokeItem.hitTest]).
+    final erased = <String>{};
+    final dirty = <StrokeItem>[];
+    for (final item in _items) {
+      if (item is StrokeItem &&
+          item.bounds.overlaps(swept) &&
+          _erasable(item) &&
+          !isLocked(item.id) &&
+          samples.any((p) => item.hitTest(p, tolerance))) {
+        erased.add(item.id);
+        dirty.add(item);
+      }
+    }
     if (erased.isEmpty) return;
     // Connections to an erased line go with it (same undo step), so none
     // is left pointing at nothing.
+    var connections = false;
     _setItems([
       for (final item in _items)
-        if (!erased.contains(item.id) &&
-            !(item is ConnectorItem && erased.any(item.touches)))
+        if (item is ConnectorItem && erased.any(item.touches))
+          ...() {
+            connections = true;
+            return const <CanvasItem>[];
+          }()
+        else if (!erased.contains(item.id))
           item,
     ]);
+    _eraseDirty = connections ? null : dirty;
   }
 
   bool _erasable(StrokeItem s) => !eraserHighlighterOnly || isHighlighter(s);
@@ -3190,54 +3277,91 @@ class CanvasController extends ChangeNotifier {
   /// eraser drag, like the whole-stroke eraser.
   void _erasePartAt(Offset from, Offset to, double radius) {
     final swept = Rect.fromPoints(from, to).inflate(radius);
-    final removed = <String>{};
-    var changed = false;
-    final next = <CanvasItem>[];
-    for (final item in _items) {
+    // First find what the eraser touches (the box test comes first: it
+    // rules out nearly every stroke of a large drawing at once). The
+    // item list is rebuilt only when something was cut.
+    Map<int, List<List<StrokePoint>>>? cuts;
+    for (var index = 0; index < _items.length; index++) {
+      final item = _items[index];
       if (item is! StrokeItem ||
-          isLocked(item.id) ||
+          !item.bounds.overlaps(swept) ||
           !_erasable(item) ||
-          !item.bounds.overlaps(swept)) {
-        next.add(item);
+          isLocked(item.id)) {
         continue;
       }
       // Touching the visible ink erases it: the centre line is cut within
-      // the eraser plus half the line's width (more for pressure lines).
-      final half = item.strokeWidth * (item.pressureWidth ? 0.8 : 0.5);
-      final cut = erasePolyline(item.points, from, to, radius + half);
-      if (cut == null) {
-        next.add(item);
-        continue;
-      }
+      // the eraser plus half the line's width where it is touched (a
+      // pressure line's own width there, not one guess for the whole line).
+      final varies = item.pressureWidth || item.tiltWidth;
+      final half = item.strokeWidth * (varies ? 0.8 : 0.5);
+      final cut = erasePolyline(
+        item.points,
+        from,
+        to,
+        radius,
+        halfWidth: varies ? item.halfWidthAt : (_) => item.strokeWidth / 2,
+        maxHalfWidth: half * (item.tiltWidth ? 3 : 1),
+      );
+      if (cut == null) continue;
       // No specks: pieces shorter than the line is wide (or a couple of
       // pixels) are what a careless sweep leaves behind. The precision
       // eraser keeps even tiny pieces.
       final speck = eraserMode == EraserMode.precision
           ? 0.5 / _scale
           : math.max(half, 2 / _scale);
-      final pieces = [
+      (cuts ??= {})[index] = [
         for (final p in cut)
           if (p.length >= 2 && _polylineLength(p) >= speck) p,
       ];
-      changed = true;
-      if (pieces.isEmpty) removed.add(item.id);
+    }
+    if (cuts == null) return;
+    final removed = <String>{};
+    final dirty = <StrokeItem>[];
+    final next = <CanvasItem>[];
+    for (var index = 0; index < _items.length; index++) {
+      final item = _items[index];
+      final pieces = cuts[index];
+      if (pieces == null) {
+        next.add(item);
+        continue;
+      }
+      final stroke = item as StrokeItem;
+      dirty.add(stroke);
+      if (pieces.isEmpty) removed.add(stroke.id);
       for (var i = 0; i < pieces.length; i++) {
         next.add(
-          StrokeItem(
-            id: i == 0 ? item.id : newId(),
-            points: pieces[i],
-            color: item.color,
-            strokeWidth: item.strokeWidth,
-            pressureWidth: item.pressureWidth,
-          ),
+          stroke.withPoints(pieces[i], id: i == 0 ? stroke.id : newId()),
         );
       }
     }
-    if (!changed) return;
-    _setItems([
-      for (final item in next)
-        if (!(item is ConnectorItem && removed.any(item.touches))) item,
-    ]);
+    // Connections to a line that is gone go with it.
+    var connections = false;
+    if (removed.isNotEmpty) {
+      next.removeWhere((item) {
+        final gone = item is ConnectorItem && removed.any(item.touches);
+        connections = connections || gone;
+        return gone;
+      });
+    }
+    _setItems(next);
+    _eraseDirty = connections ? null : dirty;
+  }
+
+  /// Whether some of [stroke]'s centre line lies inside the closed lasso
+  /// [poly] (checked at its points and along long pieces between them).
+  static bool lassoHitsStroke(StrokeItem stroke, List<Offset> poly) {
+    final points = stroke.points;
+    if (points.isEmpty || poly.length < 3) return false;
+    if (_pointInPolygon(points.first.offset, poly)) return true;
+    for (var i = 1; i < points.length; i++) {
+      final a = points[i - 1].offset, b = points[i].offset;
+      if (_pointInPolygon(b, poly)) return true;
+      final steps = ((b - a).distance / 8).floor();
+      for (var k = 1; k < steps; k++) {
+        if (_pointInPolygon(Offset.lerp(a, b, k / steps)!, poly)) return true;
+      }
+    }
+    return false;
   }
 
   /// Whether [poly] contains or intersects [bounds].
@@ -3291,10 +3415,26 @@ class CanvasController extends ChangeNotifier {
   Future<void>? _inFlight;
   bool _disposed = false;
 
+  /// This controller was disposed (late input must not reach it).
+  bool get disposed => _disposed;
+
   void _markDirty() {
     _saveState = SaveState.pending;
     _saveTimer?.cancel();
-    _saveTimer = Timer(saveDelay, () => unawaited(flush()));
+    _saveTimer = Timer(saveDelay, _autosave);
+  }
+
+  /// Saves once the hand is off the page. A save that began in the middle
+  /// of a stroke took the UI thread for the encoding of the whole document
+  /// while ink was being drawn; it waits for the stroke to end instead.
+  /// (Leaving the page, [flush], still saves at once.)
+  void _autosave() {
+    if (_disposed) return;
+    if (_drag == _Drag.draw || _drag == _Drag.erase) {
+      _saveTimer = Timer(const Duration(milliseconds: 200), _autosave);
+      return;
+    }
+    unawaited(flush());
   }
 
   // Sync bookkeeping: which item instances were last saved, so each save
@@ -3531,6 +3671,33 @@ class StrokeAppend {
   final List<CanvasItem> before;
   final List<CanvasItem> after;
   final StrokeItem stroke;
+}
+
+/// One change to the drawing that touched only a known part of it: a
+/// finished [stroke] added on top, or the strokes in [erased] removed or
+/// cut by the eraser (what is left of them lies within their old ink).
+/// [before] became [after], and the paint epoch went from [fromEpoch] to
+/// [toEpoch] for it.
+class InkChange {
+  const InkChange({
+    required this.fromEpoch,
+    required this.toEpoch,
+    required this.before,
+    required this.after,
+    this.stroke,
+    this.erased = const [],
+  });
+
+  final int fromEpoch;
+  final int toEpoch;
+  final List<CanvasItem> before;
+  final List<CanvasItem> after;
+
+  /// The stroke that was added; null for erasing.
+  final StrokeItem? stroke;
+
+  /// The strokes the eraser touched, as they were before.
+  final List<StrokeItem> erased;
 }
 
 /// A ChangeNotifier that can be told to notify from outside.

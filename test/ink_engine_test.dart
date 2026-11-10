@@ -15,6 +15,7 @@ import 'package:flutter_application_1/features/canvas/canvas_controller.dart';
 import 'package:flutter_application_1/features/canvas/canvas_painter.dart';
 import 'package:flutter_application_1/features/ink/native_ink.dart';
 import 'package:flutter_application_1/features/ink/stroke_geometry.dart';
+import 'package:flutter_application_1/features/ink/stylus_pressure.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/ink_samples.dart';
@@ -95,7 +96,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    CanvasController.pencilPressureSeen = false;
+    StylusPressure.instance.reset();
     NativeInk.instance.resetForTest();
   });
 
@@ -349,14 +350,22 @@ void main() {
     test('pens without pressure draw at exactly the chosen width', () {
       final c = make();
       c.tool = CanvasTool.pen;
-      // Apple Pencil USB-C: the same pressure on every sample.
+      // Apple Pencil USB-C: the same pressure on every sample. The pen is
+      // not known yet, so the stroke is finished at the chosen width once
+      // it has shown that nothing varies.
       c.pointerDown(const Offset(0, 0), kind: PointerDeviceKind.stylus);
-      for (var i = 1; i < 10; i++) {
+      for (var i = 1; i < 20; i++) {
         c.pointerMove(Offset(i * 5.0, 0));
       }
-      expect(c.liveStroke!.pressureWidth, isFalse);
       c.pointerUp();
       expect((c.items.single as StrokeItem).pressureWidth, isFalse);
+      expect(StylusPressure.instance.state, StylusPressureState.flat);
+      // From then on its strokes are even from the first sample.
+      c.pointerDown(const Offset(0, 10), kind: PointerDeviceKind.stylus);
+      c.pointerMove(const Offset(5, 10));
+      expect(c.liveStroke!.pressureWidth, isFalse);
+      c.pointerUp();
+      expect((c.items.last as StrokeItem).pressureWidth, isFalse);
       // A Pencil that reports pressure switches it on (this stroke on).
       c.pointerDown(const Offset(0, 20), kind: PointerDeviceKind.stylus,
           pressure: 0.2);
@@ -364,7 +373,7 @@ void main() {
       expect(c.liveStroke!.pressureWidth, isTrue);
       c.pointerUp();
       expect((c.items.last as StrokeItem).pressureWidth, isTrue);
-      expect(CanvasController.pencilPressureSeen, isTrue);
+      expect(StylusPressure.instance.state, StylusPressureState.varies);
       c.dispose();
     });
 
@@ -411,7 +420,7 @@ void main() {
       final feed = PencilFeed()
         ..begin(
           down(1000, const Offset(110, 110), shift: const Offset(-100, -100)),
-          move: (l, p, t) => got.add((l, p, t.inMicroseconds)),
+          move: (l, s) => got.add((l, s.pressure, s.timeMicros)),
           predict: predicted.add,
         );
       expect(feed.native, isTrue);
@@ -449,7 +458,7 @@ void main() {
       final feed = PencilFeed()
         ..begin(
           down(2000, const Offset(5, 5)),
-          move: (l, p, t) => got.add(l),
+          move: (l, s) => got.add(l),
           predict: (_) {},
         );
       expect(feed.native, isFalse);
@@ -471,7 +480,7 @@ void main() {
       final feed = PencilFeed()
         ..begin(
           down(3000, Offset.zero),
-          move: (l, p, t) => got.add(l),
+          move: (l, s) => got.add(l),
           predict: (_) {},
         );
       ink.handle(nativeMessage(1, 999999, [(4000, const Offset(50, 50), 1)]));
@@ -483,7 +492,7 @@ void main() {
       final feed = PencilFeed()
         ..begin(
           down(1000, Offset.zero),
-          move: (_, _, _) => fail('no native samples expected'),
+          move: (_, _) => fail('no native samples expected'),
           predict: (_) => fail('no native prediction expected'),
         );
       expect(feed.native, isFalse);

@@ -13,6 +13,9 @@ import 'dart:ui';
 
 import '../../data/models/canvas_models.dart';
 
+export '../../data/models/canvas_models.dart'
+    show pressureFactor, tiltWidthFactor, inkWidthFactor;
+
 /// Pen pressure as 0..1. Flutter reports Apple Pencil force on iOS as a raw
 /// value up to `pressureMax` (about 4.2), mice report nothing.
 double normalizedPressure(double pressure, double pressureMax) {
@@ -21,34 +24,14 @@ double normalizedPressure(double pressure, double pressureMax) {
   return pressure.clamp(0.0, 1.0);
 }
 
-/// Width factor for a pressure (0..1).
+/// The drawn shape of one stroke: one filled or stroked [path].
 ///
-/// Ordinary handwriting presses an Apple Pencil at about 0.15–0.4 of its
-/// range, so the curve is steep at the light end and flat at the firm
-/// end: normal writing comes out at about the chosen pen size (factor
-/// ≈ 0.85–1.05), the lightest touch at 62 % and the firmest at 138 %.
-/// (The earlier straight line 0.45 + 1.1·p drew ordinary writing at only
-/// 60–90 % of the chosen size and let the width swing 3.4×, which read
-/// as uneven thickness.)
-double pressureFactor(double pressure) {
-  // A table instead of math.pow per sample (the live stroke recomputes
-  // every sample's width each frame). Pressure steps of 1/1024 change the
-  // width by under 0.1 %.
-  final i = (pressure.clamp(0.0, 1.0) * 1024).round();
-  return (_pressureTable ??= _buildPressureTable())[i];
-}
-
-List<double>? _pressureTable;
-List<double> _buildPressureTable() => [
-  for (var i = 0; i <= 1024; i++)
-    0.62 + 0.76 * math.pow(i / 1024, 0.6).toDouble(),
-];
-
-/// The drawn shape of one stroke: a filled or stroked [path], plus round
-/// [discs] (centre, radius) at sharp turns of a pressure stroke, painted
-/// with the same paint. The discs give a hairpin turn (the top of an "n",
-/// the point of a "v") the round tip a real pen leaves; an offset outline
-/// alone pinches there.
+/// A pressure stroke's path holds its outline and, at sharp turns, round
+/// [discs] (centre, radius; listed for tests and diagnosis). The discs give
+/// a hairpin turn (the top of an "n", the point of a "v") the round tip a
+/// real pen leaves; an offset outline alone pinches there. Everything is
+/// in ONE path filled once, so see-through ink has the same opacity
+/// everywhere: nothing is painted twice where the parts overlap.
 class StrokeShape {
   StrokeShape(this.path, {this.discs = const [], this.filled = true});
 
@@ -58,12 +41,21 @@ class StrokeShape {
   /// Filled outline (pressure ink) or a centre line stroked with round caps.
   final bool filled;
 
-  void paint(Canvas canvas, Paint paint) {
-    canvas.drawPath(path, paint);
-    for (final (centre, radius) in discs) {
-      canvas.drawCircle(centre, radius, paint);
-    }
-  }
+  void paint(Canvas canvas, Paint paint) => canvas.drawPath(path, paint);
+}
+
+/// A disc as a polygon wound the same way as a stroke outline (see
+/// [_pressureRange]), so that inside one non-zero-filled path it adds to
+/// the outline instead of cutting a hole into it.
+List<Offset> _discPolygon(Offset centre, double radius) {
+  final steps = (radius * 12).ceil().clamp(12, 64);
+  return [
+    for (var k = 0; k < steps; k++)
+      Offset(
+        centre.dx + radius * math.cos(2 * math.pi * k / steps),
+        centre.dy - radius * math.sin(2 * math.pi * k / steps),
+      ),
+  ];
 }
 
 // ----------------------------------------------------------- the curve --
@@ -191,20 +183,56 @@ Path centreLine(
   Offset? predicted,
   double width = 0,
 ]) {
-  final pts = _distinct(points, predicted);
-  if (pts.isEmpty) return Path();
-  // Set-down/lift-off wobble would show as a hook under the round cap.
-  if (width > 0) trimLiftJitter(pts, width, width);
-  if (pts.length == 1) {
+  final dense = centreLinePoints(points, predicted, width);
+  if (dense.isEmpty) return Path();
+  if (dense.length == 1) {
     // A dot: a zero-length line still gets its round cap.
     return Path()
-      ..moveTo(pts.first.dx, pts.first.dy)
-      ..lineTo(pts.first.dx, pts.first.dy);
+      ..moveTo(dense.first.dx, dense.first.dy)
+      ..lineTo(dense.first.dx, dense.first.dy);
   }
-  final dense = <Offset>[];
-  catmullRomDense(pts, null, 0.04, dense);
   // One call for the whole line (see pressureShape).
   return Path()..addPolygon(dense, false);
+}
+
+/// The points [centreLine] joins: the smooth curve through [points] as
+/// dense samples (one point for a dot, none for no points). Also what an
+/// export strokes, so exported lines are the lines on screen.
+List<Offset> centreLinePoints(
+  List<StrokePoint> points, [
+  Offset? predicted,
+  double width = 0,
+]) {
+  final pts = _distinct(points, predicted);
+  if (pts.isEmpty) return pts;
+  // Set-down/lift-off wobble would show as a hook under the round cap.
+  if (width > 0) trimLiftJitter(pts, width, width);
+  if (pts.length == 1) return pts;
+  final dense = <Offset>[];
+  catmullRomDense(pts, null, 0.04, dense);
+  return dense;
+}
+
+/// The closed outlines [strokeShape] fills for [stroke] (its edge, and the
+/// discs at sharp turns), all wound the same way for a non-zero fill; null
+/// for a stroke that is drawn as an even line (see [centreLinePoints]).
+/// For exports that must draw exactly the ink on screen.
+List<List<Offset>>? inkContours(StrokeItem stroke) {
+  if (!isPressureInk(stroke)) return null;
+  final prep = _PressurePrep(
+    stroke.points,
+    stroke.strokeWidth,
+    null,
+    stroke.pressureWidth,
+    stroke.tiltWidth,
+  );
+  if (prep.p.isEmpty) return const [];
+  if (prep.p.length == 1) {
+    return [_discPolygon(prep.p.first, prep.w.first / 2)];
+  }
+  final contours = <List<Offset>>[];
+  _pressureRange(prep, 0, prep.p.length - 1, contours: contours);
+  return contours;
 }
 
 /// Filled outline of a pressure-sensitive stroke (see [pressureShape]).
@@ -214,18 +242,28 @@ Path pressureOutline(
   Offset? predicted,
 ]) => pressureShape(points, baseWidth, predicted).path;
 
+/// The most set-down or lift-off samples [trimLiftJitter] removes at one
+/// end. Real wobble is one or two samples; without a limit a thick pen
+/// writing a small zigzag had its whole stroke trimmed away.
+const int maxLiftTrim = 2;
+
 /// Turns sharper than this (cosine of the angle between the incoming and
 /// outgoing direction) get a round disc: about 75°.
 const double _sharpTurnCos = 0.26;
 
 /// Pressure ink: two edges offset from the curved centre line by half the
 /// local width, joined by round ends, plus round discs at sharp turns.
+///
+/// [pressure] / [tilt]: which of the samples' measurements set the width
+/// (see [inkWidthFactor]).
 StrokeShape pressureShape(
   List<StrokePoint> points,
   double baseWidth, [
   Offset? predicted,
+  bool pressure = true,
+  bool tilt = false,
 ]) {
-  final prep = _PressurePrep(points, baseWidth, predicted);
+  final prep = _PressurePrep(points, baseWidth, predicted, pressure, tilt);
   if (prep.p.isEmpty) return StrokeShape(Path());
   if (prep.p.length == 1) return _dot(prep.p.first, prep.w.first);
   return _pressureRange(prep, 0, prep.p.length - 1);
@@ -235,10 +273,19 @@ StrokeShape pressureShape(
 /// widths from pressure (softened), the prediction appended, set-down and
 /// lift-off wobble trimmed. Cheap (no curve work).
 class _PressurePrep {
-  _PressurePrep(List<StrokePoint> points, double baseWidth, Offset? predicted) {
+  _PressurePrep(
+    List<StrokePoint> points,
+    double baseWidth,
+    Offset? predicted, [
+    bool pressure = true,
+    bool tilt = false,
+  ]) {
     for (final s in points) {
       final o = s.offset;
-      final width = baseWidth * pressureFactor(s.pressure);
+      final width =
+          baseWidth *
+          (pressure ? pressureFactor(s.pressure) : 1) *
+          (tilt ? tiltWidthFactor(s.altitude) : 1);
       // Repeated positions (a still pen) have no direction: keep one, at
       // the widest pressure seen there.
       if (p.isNotEmpty && (o - p.last).distanceSquared < _same * _same) {
@@ -289,6 +336,7 @@ StrokeShape _pressureRange(
   int from,
   int to, {
   int? discsFrom,
+  List<List<Offset>>? contours,
 }) {
   final p = prep.p, w = prep.w;
   final dense = <Offset>[], dw = <double>[];
@@ -352,6 +400,7 @@ StrokeShape _pressureRange(
   outline.addAll(right.reversed);
   _cap(outline, dense.first, startNormal, dw.first / 2, ahead: false);
   final path = Path()..addPolygon(outline, true);
+  contours?.add(outline);
 
   final discs = <(Offset, double)>[];
   final firstDisc = math.max(1, discsFrom ?? from);
@@ -360,7 +409,12 @@ StrokeShape _pressureRange(
     final la = a.distance, lb = b.distance;
     if (la == 0 || lb == 0) continue;
     final cos = (a.dx * b.dx + a.dy * b.dy) / (la * lb);
-    if (cos < _sharpTurnCos) discs.add((p[i], w[i] / 2));
+    if (cos < _sharpTurnCos) {
+      discs.add((p[i], w[i] / 2));
+      final disc = _discPolygon(p[i], w[i] / 2);
+      path.addPolygon(disc, true);
+      contours?.add(disc);
+    }
   }
   return StrokeShape(path, discs: discs);
 }
@@ -379,6 +433,8 @@ StrokeShape _pressureRange(
 class LiveInkGeometry {
   String? _id;
   double _width = 0;
+  bool _pressure = true;
+  bool _tilt = false;
   int _trimmedStart = 0;
   int _frozenTo = 0;
   int _pieces = 0;
@@ -415,18 +471,28 @@ class LiveInkGeometry {
       reset();
       return [strokeShape(stroke, predicted: predicted)];
     }
-    final prep = _PressurePrep(stroke.points, stroke.strokeWidth, predicted);
+    final prep = _PressurePrep(
+      stroke.points,
+      stroke.strokeWidth,
+      predicted,
+      stroke.pressureWidth,
+      stroke.tiltWidth,
+    );
     if (prep.p.length < 2) {
       reset();
-      return [pressureShape(stroke.points, stroke.strokeWidth, predicted)];
+      return [strokeShape(stroke, predicted: predicted)];
     }
     if (stroke.id != _id ||
         stroke.strokeWidth != _width ||
+        stroke.pressureWidth != _pressure ||
+        stroke.tiltWidth != _tilt ||
         prep.trimmedStart != _trimmedStart ||
         _frozenTo > prep.real - settle) {
       reset();
       _id = stroke.id;
       _width = stroke.strokeWidth;
+      _pressure = stroke.pressureWidth;
+      _tilt = stroke.tiltWidth;
       _trimmedStart = prep.trimmedStart;
     }
     final settled = prep.real - settle;
@@ -520,26 +586,33 @@ void trimLiftJitter(
     return d1.dx * d2.dx + d1.dy * d2.dy < 0;
   }
 
+  var trimmed = 0;
   while (end &&
+      trimmed < maxLiftTrim &&
       p.length > 2 &&
       (p.last - p[p.length - 2]).distance < endWidth / 3 &&
       turnsBack(p[p.length - 3], p[p.length - 2], p.last)) {
     p.removeLast();
     widths?.removeLast();
+    trimmed++;
   }
+  trimmed = 0;
   while (start &&
+      trimmed < maxLiftTrim &&
       p.length > 2 &&
       (p[1] - p.first).distance < startWidth / 3 &&
       turnsBack(p[2], p[1], p.first)) {
     p.removeAt(0);
     widths?.removeAt(0);
+    trimmed++;
   }
 }
 
-/// Whether [stroke] is drawn as a filled pressure outline (Pencil pen
-/// ink); highlighters and see-through colours stay one even width.
+/// Whether [stroke] is drawn as a filled outline whose width follows the
+/// pen (pressure and / or tilt), at any opacity. Highlighter lines and
+/// lines from input without pressure stay one even width.
 bool isPressureInk(StrokeItem stroke) =>
-    stroke.pressureWidth && stroke.color.a >= 0.99;
+    (stroke.pressureWidth || stroke.tiltWidth) && !stroke.isHighlighter;
 
 /// Draws one stroke the same way on every surface. [predicted]: where the
 /// pen is expected to be next (drawn only, never stored). [cachedShape]:
@@ -574,7 +647,13 @@ Paint strokePaint(StrokeItem stroke, StrokeShape shape) {
 /// immutable object, stays the same).
 StrokeShape strokeShape(StrokeItem stroke, {Offset? predicted}) {
   if (isPressureInk(stroke)) {
-    return pressureShape(stroke.points, stroke.strokeWidth, predicted);
+    return pressureShape(
+      stroke.points,
+      stroke.strokeWidth,
+      predicted,
+      stroke.pressureWidth,
+      stroke.tiltWidth,
+    );
   }
   final distinct = _distinct(stroke.points, predicted);
   if (distinct.length == 1) return _dot(distinct.first, stroke.strokeWidth);
@@ -689,21 +768,91 @@ bool _isDeliberateWave(
 /// Shortest straight line (screen pixels) that a hold can produce.
 const double minLineLength = 30;
 
-/// The straight replacement for a held stroke: same start and end points
-/// (and pressures), with points in between so erasing and hit-testing work
-/// along its whole length.
+/// The straight replacement for a held stroke: same start and end
+/// positions, with points in between so erasing and hit-testing work along
+/// its whole length. The line keeps the stroke's character: each point
+/// takes the pressure (and pen angle and time) the pen had at the same
+/// share of the way along the original, so a line that started light and
+/// ended firm still does.
 List<StrokePoint> straightened(List<StrokePoint> points) {
   final a = points.first, b = points.last;
   final length = (b.offset - a.offset).distance;
   final steps = math.max(1, (length / 6).ceil());
-  final pressure =
-      points.map((p) => p.pressure).reduce((x, y) => x + y) / points.length;
+  final profile = StrokeProfile(points);
   return [
     for (var i = 0; i <= steps; i++)
-      StrokePoint(
-        a.x + (b.x - a.x) * i / steps,
-        a.y + (b.y - a.y) * i / steps,
-        pressure,
-      ),
+      profile
+          .at(i / steps)
+          .at(a.x + (b.x - a.x) * i / steps, a.y + (b.y - a.y) * i / steps),
   ];
+}
+
+/// The clean [shape] (a recognized circle, rectangle, triangle or line)
+/// carrying what the pen did along [original]: each point of the shape
+/// takes the pressure, pen angle and time found at the same share of the
+/// way along the original stroke. A closed shape's last stretch eases back
+/// to the pressure it started with, so its outline has no step in width
+/// where it closes.
+List<StrokePoint> withStrokeProfile(
+  List<StrokePoint> shape,
+  List<StrokePoint> original,
+) {
+  if (shape.isEmpty || original.isEmpty) return shape;
+  final along = List<double>.filled(shape.length, 0);
+  for (var i = 1; i < shape.length; i++) {
+    along[i] = along[i - 1] + (shape[i].offset - shape[i - 1].offset).distance;
+  }
+  final length = along.last;
+  final profile = StrokeProfile(original);
+  final closed =
+      shape.length > 3 &&
+      (shape.first.offset - shape.last.offset).distance < 1e-6;
+  final first = original.first.pressure;
+  const ease = 0.15; // the share of the outline that eases back
+  return [
+    for (var i = 0; i < shape.length; i++)
+      () {
+        final t = length <= 0 ? 0.0 : along[i] / length;
+        var p = profile.at(t).at(shape[i].x, shape[i].y);
+        if (closed && t > 1 - ease) {
+          final k = (t - (1 - ease)) / ease;
+          p = p.withPressure(p.pressure + (first - p.pressure) * k);
+        }
+        return p;
+      }(),
+  ];
+}
+
+/// What the pen did along a stroke (pressure, angle, time) by the share of
+/// its length, to carry over to a cleaned-up version of the same stroke
+/// (a straight line, a recognized shape).
+class StrokeProfile {
+  StrokeProfile(this.points) : _along = List.filled(points.length, 0) {
+    var sum = 0.0;
+    for (var i = 1; i < points.length; i++) {
+      sum += (points[i].offset - points[i - 1].offset).distance;
+      _along[i] = sum;
+    }
+    _length = sum;
+  }
+
+  final List<StrokePoint> points;
+  final List<double> _along;
+  double _length = 0;
+  int _cursor = 0;
+
+  /// The pen's sample at share [t] (0..1) of the stroke's length. The
+  /// position is the original one; callers move it with [StrokePoint.at].
+  /// Fastest when asked in rising order of [t].
+  StrokePoint at(double t) {
+    if (points.length == 1 || _length <= 0) return points.first;
+    final want = t.clamp(0.0, 1.0) * _length;
+    if (_along[_cursor] > want) _cursor = 0;
+    while (_cursor < points.length - 2 && _along[_cursor + 1] < want) {
+      _cursor++;
+    }
+    final from = _along[_cursor], to = _along[_cursor + 1];
+    final u = to <= from ? 0.0 : ((want - from) / (to - from)).clamp(0.0, 1.0);
+    return StrokePoint.lerp(points[_cursor], points[_cursor + 1], u);
+  }
 }

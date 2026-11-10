@@ -662,26 +662,98 @@ class ConnectorItem extends CanvasItem {
   );
 }
 
-/// One sampled point of a freehand stroke.
+//// One sampled point of a freehand stroke, as the pen delivered it.
 ///
-/// [pressure] is stored now so pen/stylus input (e.g. Apple Pencil) can use
-/// it later without a data migration. Mouse input records 0.5.
+/// Mouse and finger input record pressure 0.5. The pen's angle and the
+/// sample's time are kept whenever the hardware reports them (Apple Pencil
+/// through the native observer); they are never made up, so they are null
+/// for input that has none and for strokes saved by earlier versions.
 class StrokePoint {
-  const StrokePoint(this.x, this.y, [this.pressure = 0.5]);
+  const StrokePoint(
+    this.x,
+    this.y, [
+    this.pressure = 0.5,
+    this.time,
+    this.altitude,
+    this.azimuth,
+  ]);
 
   final double x;
   final double y;
   final double pressure;
 
+  /// Milliseconds since the stroke's first sample.
+  final int? time;
+
+  /// The pen's angle above the surface in radians (pi/2: upright).
+  final double? altitude;
+
+  /// The direction the pen leans towards, in radians (0: along +x).
+  final double? azimuth;
+
   Offset get offset => Offset(x, y);
 
-  List<double> toJson() => [x, y, pressure];
+  /// The same sample at another position (moving, scaling, rotating).
+  StrokePoint at(double x, double y) =>
+      StrokePoint(x, y, pressure, time, altitude, azimuth);
 
-  factory StrokePoint.fromJson(List<dynamic> json) => StrokePoint(
-    (json[0] as num).toDouble(),
-    (json[1] as num).toDouble(),
-    json.length > 2 ? (json[2] as num).toDouble() : 0.5,
-  );
+  /// The same sample with another pressure.
+  StrokePoint withPressure(double pressure) =>
+      StrokePoint(x, y, pressure, time, altitude, azimuth);
+
+  /// The same sample taken at [time] (milliseconds into the stroke).
+  StrokePoint withTime(int time) =>
+      StrokePoint(x, y, pressure, time, altitude, azimuth);
+
+  /// The sample a share [t] of the way from [a] to [b]: position, pressure
+  /// and, when both have them, time and pen angle.
+  static StrokePoint lerp(StrokePoint a, StrokePoint b, double t) {
+    final ta = a.time, tb = b.time;
+    final la = a.altitude, lb = b.altitude;
+    final za = a.azimuth, zb = b.azimuth;
+    double? azimuth;
+    if (za != null && zb != null) {
+      // The short way round the circle.
+      var d = (zb - za) % (2 * math.pi);
+      if (d > math.pi) d -= 2 * math.pi;
+      azimuth = za + d * t;
+    }
+    return StrokePoint(
+      a.x + (b.x - a.x) * t,
+      a.y + (b.y - a.y) * t,
+      a.pressure + (b.pressure - a.pressure) * t,
+      ta != null && tb != null ? (ta + (tb - ta) * t).round() : null,
+      la != null && lb != null ? la + (lb - la) * t : null,
+      azimuth,
+    );
+  }
+
+  static double _milli(double v) => (v * 1000).roundToDouble() / 1000;
+
+  /// `[x, y, pressure]`, then the time and the pen angle only when known,
+  /// so strokes without them are stored exactly as before.
+  List<num> toJson() {
+    final t = time, altitude = this.altitude, azimuth = this.azimuth;
+    if (altitude != null && azimuth != null) {
+      return [x, y, pressure, t ?? -1, _milli(altitude), _milli(azimuth)];
+    }
+    return t == null ? [x, y, pressure] : [x, y, pressure, t];
+  }
+
+  factory StrokePoint.fromJson(List<dynamic> json) {
+    final n = json.length;
+    final t = n > 3 ? json[3] : null;
+    final altitude = n > 5 ? json[4] : null;
+    final azimuth = n > 5 ? json[5] : null;
+    return StrokePoint(
+      (json[0] as num).toDouble(),
+      (json[1] as num).toDouble(),
+      n > 2 ? (json[2] as num).toDouble() : 0.5,
+      t is num && t.isFinite && t >= 0 ? t.round() : null,
+      altitude is num && altitude.isFinite ? altitude.toDouble() : null,
+      azimuth is num && azimuth.isFinite ? azimuth.toDouble() : null,
+    );
+  }
 }
 
 class StrokeItem extends CanvasItem {
@@ -691,7 +763,12 @@ class StrokeItem extends CanvasItem {
     required this.color,
     required this.strokeWidth,
     this.pressureWidth = false,
-  }) : bounds = _computeBounds(points, strokeWidth * (pressureWidth ? 1.6 : 1));
+    this.penInk = false,
+    this.tiltWidth = false,
+  }) : bounds = _computeBounds(
+         points,
+         strokeWidth * (pressureWidth ? 1.6 : 1) * (tiltWidth ? 3 : 1),
+       );
 
   final List<StrokePoint> points;
   final Color color;
@@ -700,6 +777,18 @@ class StrokeItem extends CanvasItem {
   /// Drawn with a width that follows the pen pressure (Apple Pencil strokes
   /// from Phase 2 on; pressure stored 0..1). Older strokes keep one width.
   final bool pressureWidth;
+
+  /// Drawn by the pen at less than full opacity. Tells a see-through pen
+  /// line from a highlighter line (which older files mark only by being
+  /// see-through). Written only when set.
+  final bool penInk;
+
+  /// The line widens as the pen is laid flat (shading with the side of the
+  /// tip), for points that carry the pen's angle. Written only when set.
+  final bool tiltWidth;
+
+  /// A highlighter line: see-through and not drawn by the pen.
+  bool get isHighlighter => color.a < 0.99 && !penInk;
 
   @override
   final Rect bounds;
@@ -717,17 +806,42 @@ class StrokeItem extends CanvasItem {
     return Rect.fromLTRB(minX, minY, maxX, maxY).inflate(width / 2);
   }
 
-  @override
-  StrokeItem translated(Offset delta) => StrokeItem(
-    id: id,
-    points: [
-      for (final p in points)
-        StrokePoint(p.x + delta.dx, p.y + delta.dy, p.pressure),
-    ],
+  /// The same stroke (colour, width, kind) through other [points].
+  StrokeItem withPoints(List<StrokePoint> points, {String? id}) => StrokeItem(
+    id: id ?? this.id,
+    points: points,
     color: color,
     strokeWidth: strokeWidth,
     pressureWidth: pressureWidth,
+    penInk: penInk,
+    tiltWidth: tiltWidth,
   );
+
+  /// The same stroke drawn at one even width (a pen that turned out to
+  /// report no pressure) or following the pressure.
+  StrokeItem withPressureWidth(bool pressureWidth) => StrokeItem(
+    id: id,
+    points: points,
+    color: color,
+    strokeWidth: strokeWidth,
+    pressureWidth: pressureWidth,
+    penInk: penInk,
+    tiltWidth: tiltWidth,
+  );
+
+  /// The same stroke with every point moved by [map].
+  StrokeItem mapped(Offset Function(double x, double y) map) => withPoints([
+    for (final p in points)
+      () {
+        final q = map(p.x, p.y);
+        return p.at(q.dx, q.dy);
+      }(),
+  ]);
+
+  @override
+  StrokeItem translated(Offset delta) => withPoints([
+    for (final p in points) p.at(p.x + delta.dx, p.y + delta.dy),
+  ]);
 
   /// The same stroke in [newColor], keeping its own opacity (a highlighter
   /// stays see-through) and its shape.
@@ -737,35 +851,45 @@ class StrokeItem extends CanvasItem {
     color: newColor.withValues(alpha: color.a),
     strokeWidth: strokeWidth,
     pressureWidth: pressureWidth,
+    penInk: penInk,
+    tiltWidth: tiltWidth,
   );
 
   @override
-  StrokeItem withId(String id) => StrokeItem(
-    id: id,
-    points: points,
-    color: color,
-    strokeWidth: strokeWidth,
-    pressureWidth: pressureWidth,
-  );
+  StrokeItem withId(String id) => withPoints(points, id: id);
 
-  /// Whether [point] lies within [tolerance] of any segment of this stroke.
+  /// Half the drawn width at [p]: the chosen width, or what the pressure
+  /// (and the pen's angle) make of it, as the stroke is painted.
+  double halfWidthAt(StrokePoint p) =>
+      strokeWidth * inkWidthFactor(this, p) / 2;
+
+  /// Whether [point] lies within [tolerance] of the ink of this stroke as
+  /// it is drawn (a pressure line is tested with its width at each place,
+  /// not one width for the whole line).
   bool hitTest(Offset point, double tolerance) {
     if (!bounds.inflate(tolerance).contains(point)) return false;
-    final limit = tolerance + strokeWidth / 2;
     if (points.length == 1) {
-      return (points.first.offset - point).distance <= limit;
+      return (points.first.offset - point).distance <=
+          tolerance + halfWidthAt(points.first);
     }
+    final varies = pressureWidth || tiltWidth;
+    final flat = tolerance + strokeWidth / 2;
     for (var i = 0; i < points.length - 1; i++) {
-      if (_distanceToSegment(point, points[i].offset, points[i + 1].offset) <=
-          limit) {
-        return true;
+      final a = points[i], b = points[i + 1];
+      final limit = varies
+          ? tolerance + math.max(halfWidthAt(a), halfWidthAt(b))
+          : flat;
+      // Cheap rejection before the exact distance.
+      if (point.dx < math.min(a.x, b.x) - limit ||
+          point.dx > math.max(a.x, b.x) + limit ||
+          point.dy < math.min(a.y, b.y) - limit ||
+          point.dy > math.max(a.y, b.y) + limit) {
+        continue;
       }
+      if (distanceToSegment(point, a.offset, b.offset) <= limit) return true;
     }
     return false;
   }
-
-  static double _distanceToSegment(Offset p, Offset a, Offset b) =>
-      distanceToSegment(p, a, b);
 
   @override
   Map<String, dynamic> toJson() => {
@@ -775,6 +899,8 @@ class StrokeItem extends CanvasItem {
     'width': strokeWidth,
     'points': [for (final p in points) p.toJson()],
     if (pressureWidth) 'pw': true,
+    if (penInk) 'pen': true,
+    if (tiltWidth) 'tw': true,
   };
 
   factory StrokeItem.fromJson(Map<String, dynamic> json) => StrokeItem(
@@ -782,13 +908,49 @@ class StrokeItem extends CanvasItem {
     color: Color(json['color'] as int),
     strokeWidth: (json['width'] as num).toDouble(),
     pressureWidth: json['pw'] == true,
+    penInk: json['pen'] == true,
+    tiltWidth: json['tw'] == true,
     points: [
       for (final p in json['points'] as List) StrokePoint.fromJson(p as List),
     ],
   );
 }
 
-/// Saved camera position so a canvas reopens where you left it.
+/// Width factor for a pen pressure (0..1).
+///
+/// Ordinary handwriting presses an Apple Pencil at about 0.15-0.4 of its
+/// range, so the curve is steep at the light end and flat at the firm
+/// end: normal writing comes out at about the chosen pen size (factor
+/// about 0.85-1.05), the lightest touch at 62 % and the firmest at 138 %.
+/// A table instead of math.pow per sample; pressure steps of 1/1024 change
+/// the width by under 0.1 %.
+double pressureFactor(double pressure) {
+  final i = (pressure.clamp(0.0, 1.0) * 1024).round();
+  return (_pressureTable ??= [
+    for (var k = 0; k <= 1024; k++)
+      0.62 + 0.76 * math.pow(k / 1024, 0.6).toDouble(),
+  ])[i];
+}
+
+List<double>? _pressureTable;
+
+/// Width factor of the pen's angle: 1 while the pen is held as for writing
+/// (60 degrees or more above the surface), growing smoothly to 3 as it is
+/// laid flat (20 degrees or less), like the side of a pencil tip. 1 for
+/// points without a pen angle.
+double tiltWidthFactor(double? altitude) {
+  if (altitude == null) return 1;
+  const upright = 60 * math.pi / 180, flat = 20 * math.pi / 180;
+  final t = ((upright - altitude) / (upright - flat)).clamp(0.0, 1.0);
+  return 1 + 2 * t * t * (3 - 2 * t);
+}
+
+/// The drawn width of [stroke] at [p] as a multiple of its chosen width.
+double inkWidthFactor(StrokeItem stroke, StrokePoint p) =>
+    (stroke.pressureWidth ? pressureFactor(p.pressure) : 1) *
+    (stroke.tiltWidth ? tiltWidthFactor(p.altitude) : 1);
+
+// Saved camera position so a canvas reopens where you left it.
 class CanvasViewport {
   const CanvasViewport({this.offset = Offset.zero, this.scale = 1});
 

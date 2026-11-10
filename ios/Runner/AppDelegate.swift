@@ -473,10 +473,17 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     }
   }
 
+  /// Draws one stroke the way the app draws it (the shapes are computed
+  /// by the app's own ink geometry, lib/features/ink/stroke_geometry.dart,
+  /// and only filled or stroked here):
+  ///  * "fill": closed outlines (flat x, y lists), filled once with the
+  ///    non-zero winding rule: pressure ink;
+  ///  * "line" + "width": one smooth centre line stroked once with round
+  ///    ends: even lines and highlighter.
+  /// One fill or stroke per line, so see-through ink has one opacity.
+  /// "points" ([[x, y, width]]) is the older form, kept as a fallback.
+  /// UNTESTED on a device: compiled only by the cloud build.
   private static func drawStroke(_ stroke: [String: Any], in cg: CGContext) {
-    guard let points = stroke["points"] as? [[Double]], let first = points.first,
-      first.count >= 3
-    else { return }
     let argb = (stroke["color"] as? NSNumber)?.uint32Value ?? 0xFF00_0000
     let color = UIColor(
       red: CGFloat((argb >> 16) & 0xFF) / 255, green: CGFloat((argb >> 8) & 0xFF) / 255,
@@ -485,6 +492,42 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
     cg.setFillColor(color.cgColor)
     cg.setLineCap(.round)
     cg.setLineJoin(.round)
+    if let contours = stroke["fill"] as? [[Double]] {
+      let path = CGMutablePath()
+      for contour in contours where contour.count >= 6 {
+        path.move(to: CGPoint(x: contour[0], y: contour[1]))
+        var i = 2
+        while i + 1 < contour.count {
+          path.addLine(to: CGPoint(x: contour[i], y: contour[i + 1]))
+          i += 2
+        }
+        path.closeSubpath()
+      }
+      cg.addPath(path)
+      cg.fillPath(using: .winding)
+      return
+    }
+    if let line = stroke["line"] as? [Double], line.count >= 2,
+      let width = (stroke["width"] as? NSNumber)?.doubleValue
+    {
+      if line.count == 2 {
+        let r = width / 2
+        cg.fillEllipse(in: CGRect(x: line[0] - r, y: line[1] - r, width: r * 2, height: r * 2))
+        return
+      }
+      cg.setLineWidth(CGFloat(width))
+      cg.move(to: CGPoint(x: line[0], y: line[1]))
+      var i = 2
+      while i + 1 < line.count {
+        cg.addLine(to: CGPoint(x: line[i], y: line[i + 1]))
+        i += 2
+      }
+      cg.strokePath()
+      return
+    }
+    guard let points = stroke["points"] as? [[Double]], let first = points.first,
+      first.count >= 3
+    else { return }
     if points.count == 1 {
       let r = first[2] / 2
       cg.fillEllipse(in: CGRect(x: first[0] - r, y: first[1] - r, width: r * 2, height: r * 2))

@@ -3200,7 +3200,11 @@ class AppState extends ChangeNotifier {
               size: eraserSize,
               highlighterOnly: eraserHighlighterOnly,
             )
-            ..setPen(width: canvasPenWidth)
+            ..setPen(
+              width: canvasPenWidth,
+              opacity: penOpacity,
+              tilt: penTiltShading,
+            )
             ..setAlignment(
               guides: alignGuidesPref,
               grid: gridSnapPref,
@@ -3369,7 +3373,11 @@ class AppState extends ChangeNotifier {
                 size: eraserSize,
                 highlighterOnly: eraserHighlighterOnly,
               )
-              ..setPen(width: canvasPenWidth)
+              ..setPen(
+              width: canvasPenWidth,
+              opacity: penOpacity,
+              tilt: penTiltShading,
+            )
               ..setAlignment(
                 guides: alignGuidesPref,
                 grid: gridSnapPref,
@@ -3570,7 +3578,11 @@ class AppState extends ChangeNotifier {
     if (c.tool != CanvasTool.pen && c.tool != CanvasTool.eraser) {
       c.tool = CanvasTool.pen;
     }
-    c.setPen(width: calendarPenWidth);
+    c.setPen(
+      width: calendarPenWidth,
+      opacity: penOpacity,
+      tilt: penTiltShading,
+    );
     c.setEraser(
       mode: eraserMode,
       size: eraserSize,
@@ -3647,6 +3659,28 @@ class AppState extends ChangeNotifier {
   /// The canvas pen thickness (this device; see pen_sizes.dart). Older
   /// saved values in range load as they were; anything else is made safe.
   double get canvasPenWidth => savedPenWidth(settings.get<num>('penWidth'));
+
+  /// How solid the pen draws, 0.1..1 (this device; every drawing surface).
+  double get penOpacity {
+    final v = settings.get<num>('penOpacity')?.toDouble();
+    return v == null || !v.isFinite
+        ? 1
+        : v.clamp(CanvasController.penOpacityMin, 1.0).toDouble();
+  }
+
+  /// The pen line widens as the Pencil is laid flat.
+  bool get penTiltShading => settings.get<bool>('penTiltShading') ?? false;
+
+  /// Keeps the pen's opacity and / or tilt shading for next time.
+  Future<void> setPenLook({double? opacity, bool? tilt}) async {
+    if (opacity != null && opacity.isFinite) {
+      await settings.set(
+        'penOpacity',
+        opacity.clamp(CanvasController.penOpacityMin, 1.0).toDouble(),
+      );
+    }
+    if (tilt != null) await settings.set('penTiltShading', tilt);
+  }
 
   /// Uses [width] for new strokes on [c] and keeps it for next time.
   Future<void> setCanvasPenWidth(CanvasController c, double width) {

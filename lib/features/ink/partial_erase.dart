@@ -12,21 +12,31 @@ import '../../data/models/canvas_models.dart';
 /// The pieces of [points] left after erasing the capsule a→b of radius
 /// [radius]; null when the capsule does not touch the line at all (so the
 /// stroke is left as it is). An empty list means the whole stroke goes.
+///
+/// [halfWidth]: half the drawn width of the line at a point, added to the
+/// eraser's reach there, so the eraser cuts where it touches the ink as
+/// drawn (a pressure line is wider where the pen pressed). [maxHalfWidth]
+/// is its largest value (for the quick far-away test). Without them the
+/// centre line alone is tested against [radius].
 List<List<StrokePoint>>? erasePolyline(
   List<StrokePoint> points,
   Offset a,
   Offset b,
-  double radius,
-) {
+  double radius, {
+  double Function(StrokePoint p)? halfWidth,
+  double maxHalfWidth = 0,
+}) {
   if (points.isEmpty) return null;
-  bool inside(Offset p) => distanceToSegment(p, a, b) <= radius;
-  if (points.length == 1) return inside(points.first.offset) ? const [] : null;
+  bool inside(StrokePoint p) =>
+      distanceToSegment(p.offset, a, b) <=
+      radius + (halfWidth == null ? 0 : halfWidth(p));
+  if (points.length == 1) return inside(points.first) ? const [] : null;
 
-  final capsule = Rect.fromPoints(a, b).inflate(radius);
+  final capsule = Rect.fromPoints(a, b).inflate(radius + maxHalfWidth);
   final pieces = <List<StrokePoint>>[];
   var current = <StrokePoint>[];
   var touched = false;
-  if (!inside(points.first.offset)) {
+  if (!inside(points.first)) {
     current.add(points.first);
   } else {
     touched = true;
@@ -34,8 +44,14 @@ List<List<StrokePoint>>? erasePolyline(
 
   for (var i = 0; i < points.length - 1; i++) {
     final p = points[i], q = points[i + 1];
-    final seg = Rect.fromPoints(p.offset, q.offset);
-    if (!seg.overlaps(capsule)) {
+    // Strictly apart only: a point exactly on the eraser's edge counts
+    // as inside below, so a piece that merely touches the box must be
+    // looked at (Rect.overlaps calls touching boxes apart, and the piece
+    // kept so far was then dropped when the line left the eraser).
+    if (math.max(p.x, q.x) < capsule.left ||
+        math.min(p.x, q.x) > capsule.right ||
+        math.max(p.y, q.y) < capsule.top ||
+        math.min(p.y, q.y) > capsule.bottom) {
       // Far from the eraser: both ends are outside, nothing changes.
       current.add(q);
       continue;
@@ -45,10 +61,10 @@ List<List<StrokePoint>>? erasePolyline(
     final length = (q.offset - p.offset).distance;
     final n = math.max(1, (length / (radius / 2)).ceil()).clamp(1, 4000);
     var prevT = 0.0;
-    var prevIn = inside(p.offset);
+    var prevIn = inside(p);
     for (var k = 1; k <= n; k++) {
       final t = k / n;
-      final curIn = inside(_at(p, q, t).offset);
+      final curIn = inside(_at(p, q, t));
       if (curIn != prevIn) {
         touched = true;
         final cut = _at(p, q, _edge(p, q, prevT, t, prevIn, inside));
@@ -75,12 +91,10 @@ List<List<StrokePoint>>? erasePolyline(
   ];
 }
 
-/// The point at [t] along p→q, pressure included.
-StrokePoint _at(StrokePoint p, StrokePoint q, double t) => StrokePoint(
-  p.x + (q.x - p.x) * t,
-  p.y + (q.y - p.y) * t,
-  p.pressure + (q.pressure - p.pressure) * t,
-);
+/// The point at [t] along p→q, with the pen's pressure, angle and time
+/// there.
+StrokePoint _at(StrokePoint p, StrokePoint q, double t) =>
+    StrokePoint.lerp(p, q, t);
 
 /// Where between [t0] (inside: [startsIn]) and [t1] the line crosses the
 /// capsule's edge, to well under a hundredth of a unit.
@@ -90,12 +104,12 @@ double _edge(
   double t0,
   double t1,
   bool startsIn,
-  bool Function(Offset) inside,
+  bool Function(StrokePoint) inside,
 ) {
   var lo = t0, hi = t1;
   for (var i = 0; i < 30; i++) {
     final mid = (lo + hi) / 2;
-    if (inside(_at(p, q, mid).offset) == startsIn) {
+    if (inside(_at(p, q, mid)) == startsIn) {
       lo = mid;
     } else {
       hi = mid;

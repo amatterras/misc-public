@@ -14,9 +14,8 @@ import '../../data/models/record.dart';
 import '../../platform/input_hints.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
-import '../ink/native_ink.dart';
+import '../ink/ink_input.dart';
 import '../ink/pen_sizes.dart';
-import '../ink/stroke_geometry.dart';
 
 /// Size of one day in the ink document (world units, the 38-day grid's
 /// cell size).
@@ -63,9 +62,7 @@ class CalendarInkArbiter extends ChangeNotifier {
   /// The Pencil is on the screen (palm rejection).
   bool get stylusDown => _stylus != null;
 
-  bool _isStylus(PointerEvent e) =>
-      e.kind == PointerDeviceKind.stylus ||
-      e.kind == PointerDeviceKind.invertedStylus;
+  bool _isStylus(PointerEvent e) => isStylusKind(e.kind);
 
   /// Every pointer that goes down on the grid (repeats are harmless).
   void down(PointerDownEvent e) {
@@ -88,13 +85,11 @@ class CalendarInkArbiter extends ChangeNotifier {
   /// Whether [e] (going down) starts a stroke; if so it owns the stroke.
   bool claim(PointerDownEvent e) {
     if (drawingPointer != null) return false;
-    final ok = switch (e.kind) {
-      PointerDeviceKind.stylus || PointerDeviceKind.invertedStylus => true,
-      PointerDeviceKind.mouse => e.buttons & kPrimaryButton != 0,
-      PointerDeviceKind.touch =>
-        !touchFirst && _touches.length <= 1 && _stylus == null,
-      _ => false,
-    };
+    final ok = mayUseTool(
+      e,
+      finger: !touchFirst && _touches.length <= 1,
+      stylusDown: _stylus != null,
+    );
     if (ok) {
       drawingPointer = e.pointer;
       _drawingKind = e.kind;
@@ -145,12 +140,13 @@ class _DayInkLayerState extends State<DayInkLayer> {
   late CalendarInkArbiter _own = CalendarInkArbiter(widget.controller);
   CalendarInkArbiter get _arbiter => widget.arbiter ?? _own;
 
-  /// Every Apple Pencil sample for the stroke being written (iPad).
-  final PencilFeed _pencilFeed = PencilFeed();
+  /// The stroke being written here, with every Apple Pencil sample on
+  /// iPad (see InkStrokeInput).
+  final InkStrokeInput _strokeInput = InkStrokeInput();
 
   @override
   void dispose() {
-    _pencilFeed.end();
+    _strokeInput.dispose();
     super.dispose();
   }
 
@@ -192,59 +188,22 @@ class _DayInkLayerState extends State<DayInkLayer> {
           final arbiter = _arbiter..down(e);
           if (!arbiter.claim(e)) return;
           c.setView(Offset.zero, scale);
-          c.pointerDown(
-            screen(e.localPosition),
-            kind: e.kind,
-            pressure: e.kind == PointerDeviceKind.stylus
-                ? normalizedPressure(e.pressure, e.pressureMax)
-                : 0.5,
-            timeStamp: e.timeStamp,
-          );
-          final pointer = e.pointer;
-          _pencilFeed.begin(
-            e,
-            move: (local, pressure, timeStamp) {
-              if (!_arbiter.owns(pointer)) return;
-              c.pointerMove(
-                screen(local),
-                pressure: pressure,
-                timeStamp: timeStamp,
-              );
-            },
-            predict: (local) {
-              if (_arbiter.owns(pointer)) {
-                c.setPredictedPoint(local == null ? null : screen(local));
-              }
-            },
-          );
+          _strokeInput.down(e, c, screen);
         },
         onPointerMove: (e) {
-          if (!_arbiter.owns(e.pointer)) return;
-          // Native Pencil samples may already have delivered this moment.
-          if (!_pencilFeed.flutterMove(e)) return;
-          c.pointerMove(
-            screen(e.localPosition),
-            pressure: e.kind == PointerDeviceKind.stylus
-                ? normalizedPressure(e.pressure, e.pressureMax)
-                : 0.5,
-            timeStamp: e.timeStamp,
-          );
+          if (_arbiter.owns(e.pointer)) _strokeInput.move(e);
         },
         onPointerUp: (e) {
           final owned = _arbiter.owns(e.pointer);
           _arbiter.release(e.pointer);
-          if (owned) {
-            _pencilFeed.end();
-            c.pointerUp(screen: screen(e.localPosition), timeStamp: e.timeStamp);
-          }
+          if (owned) _strokeInput.up(e);
         },
         onPointerCancel: (e) {
           final owned = _arbiter.owns(e.pointer);
           _arbiter.release(e.pointer);
+          // Pencil writing interrupted by the system is kept.
           if (owned) {
-            _pencilFeed.end();
-            // Pencil writing interrupted by the system is kept.
-            c.pointerCancel(keepInk: e.kind == PointerDeviceKind.stylus);
+            _strokeInput.cancel(keepInk: e.kind == PointerDeviceKind.stylus);
           }
         },
         child: paint,

@@ -1,6 +1,6 @@
 // Hold-to-perfect-shape: a rough circle/ellipse or rectangle becomes a
 // clean one when the pen is held still at the end of the drawing for the hold time
-// (CanvasController.holdToStraighten, 1.2 s).
+// (CanvasController.holdToStraighten, 0.9 s).
 // Open curves, handwriting, scribbles and triangles stay as drawn; one
 // shape only; undo/redo and save/reload keep it.
 import 'dart:convert';

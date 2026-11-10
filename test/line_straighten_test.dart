@@ -1,5 +1,5 @@
 // Automatic line straightening: the hold time (CanvasController
-// .holdToStraighten, 1.2 s) after a stroke is finished, a
+// .holdToStraighten, 0.9 s) after a stroke is finished, a
 // freehand stroke that is close to a straight line becomes one (any angle,
 // any length, shaky hands), keeping its look; curves, handwriting, shapes,
 // highlighter strokes and anything changed meanwhile stay as they are.
@@ -193,7 +193,7 @@ void main() {
     var c = make();
     c.tool = CanvasTool.pen;
     stroke(c, shakyLine(const Offset(0, 0), const Offset(300, 10)));
-    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pump(const Duration(milliseconds: 600));
     c.select([c.items.single.id]);
     c.deleteSelection();
     await tester.pump(const Duration(seconds: 2));
@@ -205,7 +205,7 @@ void main() {
     c.tool = CanvasTool.pen;
     stroke(c, shakyLine(const Offset(0, 0), const Offset(300, 10)));
     final length = (c.items.single as StrokeItem).points.length;
-    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pump(const Duration(milliseconds: 600));
     c.select([c.items.single.id]);
     c.recolorSelection(const Color(0xFFFF3B30));
     await tester.pump(const Duration(seconds: 2));
@@ -219,7 +219,7 @@ void main() {
     c.tool = CanvasTool.pen;
     stroke(c, shakyLine(const Offset(0, 0), const Offset(300, 10)));
     final first = c.items.single;
-    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pump(const Duration(milliseconds: 600));
     c.pointerDown(const Offset(50, 300), kind: PointerDeviceKind.stylus);
     await tester.pump(const Duration(seconds: 2));
     c.pointerUp();

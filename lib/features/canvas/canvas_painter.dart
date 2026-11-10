@@ -106,9 +106,13 @@ class CanvasPainter extends CustomPainter {
   }
 
   /// Background, grid and every item: what [InkRasterCache] keeps.
-  void _paintContent(Canvas canvas, Size size) {
+  /// [only]: draw just the items that reach into this world rectangle (the
+  /// caller clips to it), for bringing a part of the cached picture up to
+  /// date.
+  void _paintContent(Canvas canvas, Size size, {Rect? only}) {
     final page = this.page;
-    final (scale, visible) = _view(size);
+    var (scale, visible) = _view(size);
+    if (only != null) visible = visible.intersect(only);
     canvas.save();
     if (page == null) {
       // No background fill: the infinite canvas sits on the app-wide
@@ -503,6 +507,13 @@ class CanvasPainter extends CustomPainter {
       center - Offset(painter.width / 2, painter.height / 2),
     );
     painter.dispose();
+  }
+
+  /// The world rectangle [stroke]'s ink is drawn in.
+  Rect _drawnBounds(StrokeItem stroke) {
+    final shape = _shapeCache[stroke] ??= strokeShape(stroke);
+    final bounds = shape.path.getBounds();
+    return shape.filled ? bounds : bounds.inflate(stroke.strokeWidth / 2);
   }
 
   void _paintStroke(Canvas canvas, StrokeItem stroke) => paintStroke(
@@ -922,7 +933,10 @@ class LiveInkPainter extends CustomPainter {
 /// With it, a frame while writing draws one image plus the live stroke.
 ///
 /// * A finished stroke is added by drawing just that stroke over the old
-///   image ([CanvasController.lastStrokeAppend]), not the whole drawing.
+///   image, and what the eraser removed or cut is brought up to date by
+///   redrawing only the touched area ([CanvasController.inkChanges]), not
+///   the whole drawing. Erasing in a drawing of thousands of strokes costs
+///   what the strokes under the eraser cost.
 /// * Any other change (paint epoch), a new size, zoom or position, or a
 ///   theme switch makes a new image; while the view is moving (panning,
 ///   pinching) items are drawn directly and no image is made, so moving
@@ -991,31 +1005,55 @@ class InkRasterCache {
       lastPaint = 'image';
       return true;
     }
-    final append = c.lastStrokeAppend;
     if (image != null &&
         _view == view &&
-        append != null &&
-        _epoch == append.fromEpoch &&
-        epoch == append.toEpoch &&
-        identical(_items, append.before) &&
-        identical(c.items, append.after) &&
         c.dimmed == null &&
         c.highlighted == null) {
-      final (_, visible) = painter._view(size);
-      final recorder = ui.PictureRecorder();
-      final target = Canvas(recorder);
-      target.drawImage(image, Offset.zero, Paint());
-      if (append.stroke.bounds.overlaps(visible)) {
-        target.scale(dpr);
-        painter._toWorld(target, size);
-        painter._paintStroke(target, append.stroke);
+      final dirty = _pending(c, epoch);
+      if (dirty != null) {
+        final recorder = ui.PictureRecorder();
+        final target = Canvas(recorder);
+        target.drawImage(image, Offset.zero, Paint());
+        var mode = 'append';
+        final (scale, visible) = painter._view(size);
+        for (final change in dirty) {
+          final stroke = change.stroke;
+          // Where the ink really is (a curve can swing a little outside
+          // the box around its points).
+          Rect? ink;
+          for (final s in stroke != null ? [stroke] : change.erased) {
+            final b = painter._drawnBounds(s);
+            ink = ink?.expandToInclude(b) ?? b;
+          }
+          if (ink == null || !ink.overlaps(visible)) continue;
+          target.save();
+          target.scale(dpr);
+          if (stroke != null) {
+            // A new stroke lies on top of everything: draw it alone.
+            painter._toWorld(target, size);
+            painter._paintStroke(target, stroke);
+          } else {
+            // Erased ink: empty the touched area (whole physical pixels,
+            // so no seam is left at its edge) and draw what remains
+            // there again.
+            mode = 'region';
+            // Two physical pixels more than the ink's bounds: the soft
+            // edge of a line reaches a little past them.
+            final world = ink.inflate(2 / (dpr * scale));
+            final area = _pixelRect(painter, world, size, dpr);
+            target.clipRect(area, doAntiAlias: false);
+            target.drawRect(area, Paint()..blendMode = BlendMode.clear);
+            painter._paintContent(target, size, only: world);
+          }
+          target.restore();
+        }
+        _replace(recorder.endRecording(), width, height);
+        _epoch = epoch;
+        _items = c.items;
+        _blit(canvas, _image!, dpr);
+        lastPaint = mode;
+        return true;
       }
-      _replace(recorder.endRecording(), width, height);
-      _epoch = epoch;
-      _items = c.items;
-      _blit(canvas, _image!, dpr);
-      lastPaint = 'append';
-      return true;
     }
     if (_lastSeenView != view) {
       // The view is moving (or this is the first paint): draw directly.
@@ -1035,6 +1073,45 @@ class InkRasterCache {
     _blit(canvas, _image!, dpr);
     lastPaint = 'rebuild';
     return true;
+  }
+
+  /// The changes that lead from the drawing in the image to the drawing
+  /// now, when every one of them touched only a known area; else null.
+  List<InkChange>? _pending(CanvasController c, int epoch) {
+    final log = c.inkChanges;
+    if (log.isEmpty ||
+        log.last.toEpoch != epoch ||
+        !identical(log.last.after, c.items)) {
+      return null;
+    }
+    for (var i = log.length - 1; i >= 0; i--) {
+      if (log[i].fromEpoch == _epoch && identical(log[i].before, _items)) {
+        return log.sublist(i);
+      }
+    }
+    return null;
+  }
+
+  /// [world] in widget pixels, grown outwards to whole physical pixels.
+  static Rect _pixelRect(
+    CanvasPainter painter,
+    Rect world,
+    Size size,
+    double dpr,
+  ) {
+    final page = painter.page;
+    final scale = page == null ? painter.controller.scale : painter.pageScale;
+    final origin = page == null
+        ? painter.controller.offset
+        : Offset(-page.left * scale, -page.top * scale);
+    double down(double v) => (v * dpr).floorToDouble() / dpr;
+    double up(double v) => (v * dpr).ceilToDouble() / dpr;
+    return Rect.fromLTRB(
+      down(world.left * scale + origin.dx),
+      down(world.top * scale + origin.dy),
+      up(world.right * scale + origin.dx),
+      up(world.bottom * scale + origin.dy),
+    ).intersect(Offset.zero & size);
   }
 
   void _replace(ui.Picture picture, int width, int height) {

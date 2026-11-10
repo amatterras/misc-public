@@ -215,6 +215,7 @@ class CanvasContextBar extends StatelessWidget {
     required this.onRefreshLink,
     this.onEraser,
     this.onPenWidth,
+    this.onPenLook,
     this.collapsed = false,
     this.onToggleCollapsed,
     this.onTags,
@@ -253,6 +254,9 @@ class CanvasContextBar extends StatelessWidget {
 
   /// Keeps the chosen pen thickness for next time (else this canvas only).
   final void Function(CanvasController c, double width)? onPenWidth;
+
+  /// Opens the pen opacity dialog (the button is shown only with it).
+  final void Function(BuildContext context, CanvasController c)? onPenLook;
 
   static const _highlighterWidths = [12.0, 18.0, 26.0, 36.0];
   static const _fontSizes = {'S': 13.0, 'M': 16.0, 'L': 22.0, 'XL': 32.0};
@@ -312,6 +316,14 @@ class CanvasContextBar extends StatelessWidget {
               ),
             ),
           const _PanelDivider(vertical: true),
+          if (onPenLook != null)
+            ToolButton(
+              key: const ValueKey('pen-opacity'),
+              tooltip: 'Pen opacity (${(c.penOpacity * 100).round()} %)',
+              active: c.penOpacity < 0.995 || c.penTiltShading,
+              onPressed: () => onPenLook!(context, c),
+              icon: const Icon(Icons.opacity, size: 17),
+            ),
           ToolButton(
             key: const ValueKey('canvas-shapes'),
             tooltip: c.recognizeShapes

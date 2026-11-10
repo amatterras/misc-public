@@ -29,7 +29,8 @@ import '../../widgets/common.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
 import '../canvas/canvas_toolbar.dart' show EraserPanel;
-import '../ink/native_ink.dart';
+import '../ink/ink_input.dart';
+import '../ink/pen_look.dart';
 import '../ink/pen_sizes.dart';
 import '../ink/stroke_geometry.dart';
 import 'notebook_layout.dart';
@@ -141,7 +142,18 @@ class _NotePageState extends State<NotePage> {
   bool _pointerIsStylus = false;
 
   /// Every Apple Pencil sample for the stroke being written (iPad).
-  final PencilFeed _pencilFeed = PencilFeed();
+  final InkStrokeInput _strokeInput = InkStrokeInput();
+
+  // A finger tap with the Type tool on iPad / iPhone (see [_down]).
+  int? _tapPointer;
+  Offset _tapDownAt = Offset.zero;
+  Offset _tapScreen = Offset.zero;
+  Duration _tapDownTime = Duration.zero;
+
+  /// How far a finger may move, and how long it may stay down, and still
+  /// be a tap that places text (anything else scrolls or zooms the note).
+  static const double _tapSlop = 12;
+  static const Duration _tapTime = Duration(milliseconds: 500);
 
   /// Each page's finished ink kept as one image while the pen writes.
   final Map<int, InkRasterCache> _inkRaster = {};
@@ -190,9 +202,11 @@ class _NotePageState extends State<NotePage> {
     _c?.cancelPendingLineStraightening();
     _noteTouches[e.pointer] = e.localPosition;
     if (_noteTouches.length == 2) {
+      _tapPointer = null; // a pinch, not a tap
       final c = _c;
       if (_pointer != null && !_pointerIsStylus && c != null) {
         _pointer = null;
+        _strokeInput.release();
         c.pointerCancel();
       }
       final points = _noteTouches.values.toList();
@@ -332,6 +346,7 @@ class _NotePageState extends State<NotePage> {
       resources: s.resources,
       clock: s.workspace.clock,
     );
+    c.setPen(opacity: s.penOpacity, tilt: s.penTiltShading);
     // Windows and iPhone: clicking or tapping a page types; Draw must be
     // chosen. iPad: Type or Draw is always chosen (Pencil-first).
     c.tool = notebookStartsWithPen(MediaQuery.sizeOf(context))
@@ -403,7 +418,7 @@ class _NotePageState extends State<NotePage> {
   @override
   void dispose() {
     _stylusDownNow.dispose();
-    _pencilFeed.end();
+    _strokeInput.dispose();
     for (final cache in _inkRaster.values) {
       cache.dispose();
     }
@@ -425,36 +440,47 @@ class _NotePageState extends State<NotePage> {
 
   // ---------------------------------------------------------- pointers --
 
-  bool _accepts(PointerEvent e, CanvasController c) => switch (e.kind) {
-    PointerDeviceKind.stylus || PointerDeviceKind.invertedStylus => true,
-    PointerDeviceKind.mouse => e.buttons & kPrimaryButton != 0,
-    // iOS reports Pencil through Flutter's stylus kind. Touch never starts
-    // ink there, including when the legacy finger-draw preference is on.
-    PointerDeviceKind.touch =>
-      !touchFirst &&
-          !_stylusDown &&
-          (_fingerDraws || c.tool == CanvasTool.text),
-    _ => false,
-  };
+  /// Whether a pointer going down acts with the current tool at once.
+  ///
+  /// iOS reports the Pencil through Flutter's stylus kind; a finger never
+  /// starts ink there (it scrolls and zooms the note), including when the
+  /// legacy finger-draw preference is on. With the Type tool a finger TAP
+  /// places text, on iPad and iPhone alike: see [_down].
+  bool _accepts(PointerDownEvent e, CanvasController c) => mayUseTool(
+    e,
+    finger: !touchFirst && (_fingerDraws || c.tool == CanvasTool.text),
+    stylusDown: _stylusDown,
+  );
 
   /// The controller works in "screen" units of the page zoom with no
   /// offset: screen = notebook position × zoom.
   Offset _screen(Offset local, Rect page, double scale) =>
       (page.topLeft + local / scale) * scale;
 
-  static double _pressure(PointerEvent e) =>
-      e.kind == PointerDeviceKind.stylus ||
-          e.kind == PointerDeviceKind.invertedStylus
-      ? normalizedPressure(e.pressure, e.pressureMax)
-      : 0.5;
-
   void _down(PointerDownEvent e, CanvasController c, Rect page, double sc) {
-    final isStylus =
-        e.kind == PointerDeviceKind.stylus ||
-        e.kind == PointerDeviceKind.invertedStylus;
+    final isStylus = isStylusKind(e.kind);
+    if (e.kind == PointerDeviceKind.touch &&
+        touchFirst &&
+        c.tool == CanvasTool.text &&
+        !_stylusDown &&
+        _pointer == null &&
+        _noteTouches.length <= 1) {
+      // Tap to type (iPad Type tool, iPhone): the text is placed when the
+      // finger lifts without having moved, so a finger that scrolls or
+      // pinches the note never leaves a text box behind. (Before, a finger
+      // on iOS was refused outright and typing could not be started by
+      // touch at all.)
+      _tapPointer = e.pointer;
+      _tapDownAt = e.position;
+      _tapScreen = _screen(e.localPosition, page, sc);
+      _tapDownTime = e.timeStamp;
+      return;
+    }
     if ((!isStylus && _pointer != null) || !_accepts(e, c)) return;
     if (isStylus) {
+      _tapPointer = null;
       if (_pointer != null && !_pointerIsStylus) {
+        _strokeInput.release();
         c.pointerCancel();
         _pointer = null;
         _pointerIsStylus = false;
@@ -468,43 +494,17 @@ class _NotePageState extends State<NotePage> {
       _stylusDown = true;
     }
     _pointer = e.pointer;
-    _pointerIsStylus =
-        e.kind == PointerDeviceKind.stylus ||
-        e.kind == PointerDeviceKind.invertedStylus;
-    c.pointerDown(
-      _screen(e.localPosition, page, sc),
-      kind: e.kind,
-      pressure: _pressure(e),
-      timeStamp: e.timeStamp,
-    );
-    final pointer = e.pointer;
-    _pencilFeed.begin(
-      e,
-      move: (local, pressure, timeStamp) {
-        if (_pointer != pointer) return;
-        c.pointerMove(
-          _screen(local, page, sc),
-          pressure: pressure,
-          timeStamp: timeStamp,
-        );
-      },
-      predict: (local) {
-        if (_pointer == pointer) {
-          c.setPredictedPoint(local == null ? null : _screen(local, page, sc));
-        }
-      },
-    );
+    _pointerIsStylus = isStylus;
+    _strokeInput.down(e, c, (local) => _screen(local, page, sc));
   }
 
   void _move(PointerMoveEvent e, CanvasController c, Rect page, double sc) {
+    if (e.pointer == _tapPointer &&
+        (e.position - _tapDownAt).distance > _tapSlop) {
+      _tapPointer = null; // the finger is scrolling
+    }
     if (e.pointer != _pointer) return;
-    // Native Pencil samples may already have delivered this moment.
-    if (!_pencilFeed.flutterMove(e)) return;
-    c.pointerMove(
-      _screen(e.localPosition, page, sc),
-      pressure: _pressure(e),
-      timeStamp: e.timeStamp,
-    );
+    _strokeInput.move(e);
   }
 
   void _up(
@@ -514,20 +514,32 @@ class _NotePageState extends State<NotePage> {
     double sc, {
     bool cancel = false,
   }) {
+    if (e.pointer == _tapPointer) {
+      _tapPointer = null;
+      if (!cancel &&
+          !_stylusDown &&
+          c.tool == CanvasTool.text &&
+          (e.position - _tapDownAt).distance <= _tapSlop &&
+          e.timeStamp - _tapDownTime <= _tapTime) {
+        c.pointerDown(
+          _tapScreen,
+          kind: PointerDeviceKind.touch,
+          timeStamp: e.timeStamp,
+        );
+        c.pointerUp();
+      }
+      return;
+    }
     if (e.pointer != _pointer) return;
     final wasStylus = _pointerIsStylus;
     _pointer = null;
     _pointerIsStylus = false;
-    _pencilFeed.end();
     _stylusDown = false;
-    if (cancel) {
+    if (cancel || e is! PointerUpEvent) {
       // Pencil writing interrupted by the system is kept, not erased.
-      c.pointerCancel(keepInk: wasStylus);
+      _strokeInput.cancel(keepInk: wasStylus);
     } else {
-      c.pointerUp(
-        screen: _screen(e.localPosition, page, sc),
-        timeStamp: e.timeStamp,
-      );
+      _strokeInput.up(e);
     }
   }
 
@@ -1010,6 +1022,14 @@ class _NotePageState extends State<NotePage> {
             widths: penSizes,
             color: c.penColor,
             onSelected: (w) => c.setPen(width: w),
+          ),
+          IconButton(
+            key: const ValueKey('note-pen-opacity'),
+            tooltip: 'Pen opacity (${(c.penOpacity * 100).round()} %)',
+            visualDensity: VisualDensity.compact,
+            iconSize: 18,
+            icon: const Icon(Icons.opacity),
+            onPressed: () => showPenLookDialog(context, s, c),
           ),
         ];
       case CanvasTool.highlighter:
@@ -1542,14 +1562,26 @@ class InkWidthButton extends StatelessWidget {
   );
 }
 
-/// The ink of one notebook page as PDF strokes: points in PDF points from
-/// the page's top-left, each with its drawn width.
+/// The ink of one notebook page for the PDF export, in PDF points from
+/// the page's top-left, as the shapes that are drawn on screen:
+///  * 'fill': the closed outlines of pressure ink (flat x, y lists), filled
+///    once with the non-zero rule, exactly what the app fills;
+///  * 'line' + 'width': the smooth centre line of an even stroke, stroked
+///    once with round ends.
+/// One fill or one stroke per line, so see-through ink has one opacity
+/// (the export used to stroke every piece between two samples on its own,
+/// with straight pieces and bead-like overlaps on see-through ink).
+/// 'points' (each raw sample with its drawn width) is still sent for a
+/// native side that does not know the shapes.
 List<Map<String, Object>> annotationStrokes(
   Iterable<StrokeItem> strokes,
   Rect page,
   PageBackground background,
 ) {
   final k = background.width / page.width;
+  List<double> flat(List<Offset> points) => [
+    for (final p in points) ...[(p.dx - page.left) * k, (p.dy - page.top) * k],
+  ];
   return [
     for (final s in strokes)
       if (s.bounds.overlaps(page))
@@ -1560,11 +1592,15 @@ List<Map<String, Object>> annotationStrokes(
               [
                 (p.x - page.left) * k,
                 (p.y - page.top) * k,
-                s.strokeWidth *
-                    k *
-                    (s.pressureWidth ? pressureFactor(p.pressure) : 1),
+                s.strokeWidth * k * inkWidthFactor(s, p),
               ],
           ],
+          if (inkContours(s) case final contours?)
+            'fill': [for (final c in contours) flat(c)]
+          else ...{
+            'line': flat(centreLinePoints(s.points, null, s.strokeWidth)),
+            'width': s.strokeWidth * k,
+          },
         },
   ];
 }

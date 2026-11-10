@@ -24,6 +24,7 @@
 // view's coordinates (logical pixels = UIKit points), like
 // PointerEvent.position. Times use UITouch.timestamp × 10⁶, exactly as the
 // engine fills PointerEvent.timeStamp, so the two streams can be matched.
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -50,8 +51,12 @@ class NativeInkSample {
 
   /// 0..1 (force / maximum possible force).
   final double pressure;
-  final double altitude;
-  final double azimuth;
+
+  /// The pen's angle above the screen (radians, pi/2 = upright) and the
+  /// direction it leans towards (radians, 0 = along +x), as UIKit
+  /// measured them; kept with the stroke's points.
+  final double? altitude;
+  final double? azimuth;
 }
 
 /// The native samples of one Pencil touch, from touch-down to lift.
@@ -113,12 +118,13 @@ class NativeInk {
         () {
           final o = from + i * 7;
           final x = m[o + 1], y = m[o + 2];
+          final altitude = m[o + 5], azimuth = m[o + 6];
           return NativeInkSample(
             timeMicros: m[o].toInt(),
             position: Offset(x.isFinite ? x : 0, y.isFinite ? y : 0),
             pressure: normalizedPressure(m[o + 3], m[o + 4]),
-            altitude: m[o + 5],
-            azimuth: m[o + 6],
+            altitude: altitude.isFinite ? altitude : null,
+            azimuth: azimuth.isFinite ? azimuth : null,
           );
         }(),
     ];
@@ -197,8 +203,15 @@ class PencilFeed {
   NativeInkTrack? _track;
   int _consumed = 0;
   int _lastMicros = -1;
-  void Function(Offset local, double pressure, Duration timeStamp)? _move;
+  void Function(Offset local, NativeInkSample sample)? _move;
   void Function(Offset? local)? _predict;
+  VoidCallback? _pendingCommit;
+  Timer? _pendingTimer;
+
+  /// How long a lifted stroke waits for UIKit's last samples (see
+  /// [finish]): about two frames at 120 Hz. They normally arrive before
+  /// Flutter's own "up"; this only covers the rare other order.
+  static Duration endGrace = const Duration(milliseconds: 24);
 
   /// Whether native samples drive the current stroke.
   bool get native => _track != null;
@@ -208,10 +221,10 @@ class PencilFeed {
   /// UIKit's predicted tip, or null when there is none.
   void begin(
     PointerDownEvent down, {
-    required void Function(Offset local, double pressure, Duration timeStamp)
-    move,
+    required void Function(Offset local, NativeInkSample sample) move,
     required void Function(Offset? local) predict,
   }) {
+    completePending();
     end();
     if (down.kind != PointerDeviceKind.stylus) return;
     _pointer = down.pointer;
@@ -266,13 +279,48 @@ class PencilFeed {
       if (s.timeMicros <= _lastMicros) continue;
       _lastMicros = s.timeMicros;
       InkMetrics.instance.nativeSample();
-      move(_local(s.position), s.pressure, Duration(microseconds: s.timeMicros));
+      move(_local(s.position), s);
     }
     _consumed = samples.length;
-    final predicted = track.ended || track.cancelled || track.predicted.isEmpty
+    final over = track.ended || track.cancelled;
+    final predicted = over || track.predicted.isEmpty
         ? null
         : _local(track.predicted.last.position);
     _predict?.call(predicted);
+    // The touch's last samples have arrived: a stroke waiting for them
+    // is finished now.
+    if (over && _pendingCommit != null) completePending();
+  }
+
+  /// The pointer lifted (Flutter's "up"). Calls [commit] once every native
+  /// sample of the touch has been delivered to `move`: at once when UIKit
+  /// has already reported the touch's end (or nothing native drives the
+  /// stroke), otherwise when that report arrives, or after [endGrace].
+  /// Before this, a touch whose last coalesced samples reached Dart after
+  /// Flutter's "up" lost them (the end of the stroke was cut short).
+  void finish(VoidCallback commit) {
+    final track = _track;
+    if (track == null || track.ended || track.cancelled) {
+      _drain();
+      end();
+      commit();
+      return;
+    }
+    _pendingCommit = commit;
+    _pendingTimer?.cancel();
+    _pendingTimer = Timer(endGrace, completePending);
+  }
+
+  /// Finishes a stroke that is waiting in [finish] now.
+  void completePending() {
+    final commit = _pendingCommit;
+    if (commit == null) return;
+    _pendingCommit = null;
+    _pendingTimer?.cancel();
+    _pendingTimer = null;
+    _drain();
+    end();
+    commit();
   }
 
   Offset _local(Offset global) =>
@@ -280,6 +328,9 @@ class PencilFeed {
 
   /// Stops following (pointer up or cancel, or the surface goes away).
   void end() {
+    _pendingTimer?.cancel();
+    _pendingTimer = null;
+    _pendingCommit = null;
     final track = _track;
     if (track != null) NativeInk.instance._release(track);
     NativeInk.instance._waiting.remove(this);

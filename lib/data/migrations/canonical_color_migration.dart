@@ -60,6 +60,8 @@ abstract final class CanonicalColorMigration {
               color: color,
               strokeWidth: item.strokeWidth,
               pressureWidth: item.pressureWidth,
+              penInk: item.penInk,
+              tiltWidth: item.tiltWidth,
             );
           }
         case TextItem():

@@ -43,10 +43,10 @@ void main() {
     expect(browser, contains('Search or enter an address'));
   });
 
-  test('straightening waits 1.2 seconds', () {
+  test('straightening waits 0.9 seconds', () {
     expect(
       CanvasController.holdToStraighten,
-      const Duration(milliseconds: 1200),
+      const Duration(milliseconds: 900),
     );
   });
 }

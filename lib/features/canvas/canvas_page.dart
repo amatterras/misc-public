@@ -22,8 +22,8 @@ import 'canvas_toolbar.dart';
 import 'empty_canvas.dart';
 import '../../app/shell.dart' show openQuickAdd;
 import '../tags/tag_ui.dart' show showTagPicker;
-import '../ink/native_ink.dart';
-import '../ink/stroke_geometry.dart';
+import '../ink/ink_input.dart';
+import '../ink/pen_look.dart';
 
 class CanvasPage extends StatelessWidget {
   const CanvasPage({super.key, required this.state});
@@ -85,7 +85,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   int? _welcomePointer;
 
   /// Every Apple Pencil sample for the stroke being drawn (iPad).
-  final PencilFeed _pencilFeed = PencilFeed();
+  final InkStrokeInput _strokeInput = InkStrokeInput();
 
   /// The finished drawing kept as one image while the pen writes.
   final InkRasterCache _inkRaster = InkRasterCache();
@@ -180,7 +180,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   void dispose() {
     if (_welcomeFading) _removeWelcomeGuide();
     if (_welcomePointer != null) c.pointerCancel();
-    _pencilFeed.end();
+    _strokeInput.dispose();
     _inkRaster.dispose();
     _welcomeFade.dispose();
     _squeeze?.cancel();
@@ -493,13 +493,14 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
       );
       return;
     }
-    final isStylus =
-        e.kind == PointerDeviceKind.stylus ||
-        e.kind == PointerDeviceKind.invertedStylus;
+    final isStylus = isStylusKind(e.kind);
     if (isStylus) {
       // The pen wins: keep a finger stroke already drawn, end any pinch, and
       // ignore the fingers (the palm) until the pen lifts.
-      if (_drawingPointer != null) c.pointerUp();
+      if (_drawingPointer != null) {
+        _strokeInput.release();
+        c.pointerUp();
+      }
       _drawingPointer = null;
       if (_touchPointers.length < 2) {
         _touchPointers.clear();
@@ -514,6 +515,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
         // Pencil ink continues. Never cancel the active Pencil stroke.
         if (_drawingPointer != null &&
             _drawingPointer != _activeStylusPointer) {
+          _strokeInput.release();
           c.pointerCancel();
           _drawingPointer = null;
         }
@@ -540,10 +542,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
 
     final keyboard = HardwareKeyboard.instance;
     _drawingPointer = e.pointer;
-    final welcome =
-        c.tool == CanvasTool.select &&
-            e.kind != PointerDeviceKind.stylus &&
-            e.kind != PointerDeviceKind.invertedStylus
+    final welcome = c.tool == CanvasTool.select && !isStylusKind(e.kind)
         ? c.hitTest(c.toWorld(e.localPosition))
         : null;
     if (welcome?.id == welcomeGuideItemId && !_welcomeFading) {
@@ -552,27 +551,18 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
       _welcomeRemovalDone = false;
       c.select([welcomeGuideItemId]);
     }
-    c.pointerDown(
-      e.localPosition,
+    _strokeInput.down(
+      e,
+      c,
+      _sameUnits,
       buttons: e.buttons,
-      kind: e.kind,
-      pressure: _pressure(e),
       shift: keyboard.isShiftPressed,
       ctrl: keyboard.isControlPressed,
-      timeStamp: e.timeStamp,
-    );
-    final pointer = e.pointer;
-    _pencilFeed.begin(
-      e,
-      move: (local, pressure, timeStamp) {
-        if (_drawingPointer != pointer) return;
-        c.pointerMove(local, pressure: pressure, timeStamp: timeStamp);
-      },
-      predict: (local) {
-        if (_drawingPointer == pointer) c.setPredictedPoint(local);
-      },
     );
   }
+
+  /// The canvas controller works in this widget's own pixels.
+  static Offset _sameUnits(Offset local) => local;
 
   void _onPointerMove(PointerMoveEvent e) {
     if (_touchPointers.containsKey(e.pointer)) {
@@ -603,27 +593,13 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
       if (_activeStylusPointer != null) return; // one resting finger is palm
     }
     if (e.pointer != _drawingPointer) return;
-    // Native Pencil samples may already have delivered this moment.
-    if (!_pencilFeed.flutterMove(e)) return;
-    c.pointerMove(
-      e.localPosition,
-      pressure: _pressure(e),
-      timeStamp: e.timeStamp,
-    );
+    _strokeInput.move(e);
   }
 
   bool _isDrawingTool(CanvasTool tool) =>
       tool == CanvasTool.pen ||
       tool == CanvasTool.highlighter ||
       tool == CanvasTool.eraser;
-
-  /// Pen pressure as 0..1 (Apple Pencil reports a raw force on iOS);
-  /// fingers and mice have none, so they draw at the middle value.
-  static double _pressure(PointerEvent e) =>
-      e.kind == PointerDeviceKind.stylus ||
-          e.kind == PointerDeviceKind.invertedStylus
-      ? normalizedPressure(e.pressure, e.pressureMax)
-      : 0.5;
 
   void _onPointerUp(PointerUpEvent e) {
     final isWelcome = e.pointer == _welcomePointer;
@@ -632,8 +608,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     // must not end the pen stroke).
     if (e.pointer == _drawingPointer) {
       _drawingPointer = null;
-      _pencilFeed.end();
-      c.pointerUp(screen: e.localPosition, timeStamp: e.timeStamp);
+      _strokeInput.up(e);
       if (isWelcome) _finishWelcomeDrag(e.localPosition);
     }
   }
@@ -643,13 +618,8 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     _releasePointer(e.pointer);
     if (e.pointer == _drawingPointer) {
       _drawingPointer = null;
-      _pencilFeed.end();
       // Pencil writing interrupted by the system is kept, not erased.
-      c.pointerCancel(
-        keepInk:
-            e.kind == PointerDeviceKind.stylus ||
-            e.kind == PointerDeviceKind.invertedStylus,
-      );
+      _strokeInput.cancel(keepInk: isStylusKind(e.kind));
       if (isWelcome) {
         _welcomePointer = null;
         _welcomeStartPosition = null;
@@ -663,6 +633,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     _welcomePointer = null;
     _welcomeStartPosition = null;
     if (_drawingPointer == pointer) _drawingPointer = null;
+    _strokeInput.release();
     c.pointerCancel();
   }
 
@@ -921,6 +892,8 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       onRefreshLink: (l) => s.capture.refreshPreview(l.assetId),
                       onEraser: s.setEraser,
                       onPenWidth: s.setCanvasPenWidth,
+                      onPenLook: (context, c) =>
+                          showPenLookDialog(context, s, c),
                       onTags: _editTags,
                       onArrange: (c, action) {
                         final note = c.alignSelection(action);

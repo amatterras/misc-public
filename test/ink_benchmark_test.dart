@@ -258,6 +258,191 @@ void main() {
     c.dispose();
   });
 
+  test('erasing, selecting and hit-testing in large drawings', () async {
+    List<CanvasItem> drawing(int n) => [
+      for (var i = 0; i < n; i++)
+        StrokeItem(
+          id: 's$i',
+          points: [
+            for (var k = 0; k < 40; k++)
+              StrokePoint(
+                (i % 40) * 30.0 + k * 0.7,
+                (i ~/ 40) * 16.0 + 5 * math.sin(k / 3),
+                0.2 + 0.3 * (k % 7) / 7,
+              ),
+          ],
+          color: const ui.Color(0xFF203040),
+          strokeWidth: 2,
+          pressureWidth: true,
+        ),
+    ];
+    CanvasController open(int n) => CanvasController(
+      document: CanvasDocument(
+        id: 'b',
+        title: 'b',
+        items: drawing(n),
+        updatedAt: DateTime(2026),
+      ),
+      onSave: (_) async {},
+      saveDelay: const Duration(minutes: 5),
+    )..setView(ui.Offset.zero, 1);
+    const size = ui.Size(1200, 820);
+    int med(List<int> v) => (v..sort())[v.length ~/ 2];
+    int p95(List<int> v) => (v..sort())[(v.length * 0.95).floor()];
+    String ms(int micros) => (micros / 1000).toStringAsFixed(2);
+
+    // One frame: paint (UI thread) + software raster of the result.
+    Future<(int, int)> frame(CanvasController c, InkRasterCache cache) async {
+      final sw = Stopwatch()..start();
+      final recorder = ui.PictureRecorder();
+      CanvasPainter(
+        c,
+        rasterCache: cache,
+        devicePixelRatio: 1,
+      ).paint(ui.Canvas(recorder), size);
+      final picture = recorder.endRecording();
+      final record = sw.elapsedMicroseconds;
+      final image = await picture.toImage(1200, 820);
+      final raster = sw.elapsedMicroseconds - record;
+      image.dispose();
+      picture.dispose();
+      return (record, raster);
+    }
+
+    // The eraser dragged across a 2000-stroke page, a frame per movement.
+    // "before": every movement redrew the whole drawing into the image
+    // (what happens when the change log is not used); "after": only the
+    // touched area. Same drag, same drawing.
+    Future<(List<(int, int)>, List<(int, int)>)> drag({
+      required bool regional,
+      required bool overInk,
+    }) async {
+      final c = open(2000)
+        ..setEraser(mode: EraserMode.partial, size: 12)
+        ..tool = CanvasTool.eraser;
+      final cache = InkRasterCache();
+      await frame(c, cache);
+      await frame(c, cache);
+      c.pointerDown(overInk ? const ui.Offset(5, 4) : const ui.Offset(1190, 810));
+      await frame(c, cache);
+      final frames = <(int, int)>[];
+      for (var i = 1; i <= 40; i++) {
+        c.pointerMove(
+          overInk
+              ? ui.Offset(5 + i * 12.0, 4 + i * 9.0)
+              : ui.Offset(1190 - i * 0.2, 810),
+        );
+        if (!regional) {
+          c.inkChanges.clear();
+          if (!overInk) c.setEraser(); // a full notification, as before
+        }
+        frames.add(await frame(c, cache));
+      }
+      final mode = cache.lastPaint;
+      c.pointerUp();
+      cache.dispose();
+      c.dispose();
+      expect(
+        mode,
+        regional ? (overInk ? 'region' : 'image') : 'rebuild',
+      );
+      return (frames, frames);
+    }
+
+    final beforeInk = (await drag(regional: false, overInk: true)).$1;
+    final afterInk = (await drag(regional: true, overInk: true)).$1;
+    final beforeIdle = (await drag(regional: false, overInk: false)).$1;
+    final afterIdle = (await drag(regional: true, overInk: false)).$1;
+    row('');
+    row('| eraser drag, 2000 strokes, per frame (ms) | paint p50 | paint p95 '
+        '| raster p50 (software) |');
+    row('|---|---|---|---|');
+    for (final (name, f) in [
+      ('erasing ink, before: whole drawing redrawn', beforeInk),
+      ('erasing ink, after: touched area only', afterInk),
+      ('eraser over nothing, before', beforeIdle),
+      ('eraser over nothing, after', afterIdle),
+    ]) {
+      row('| $name | ${ms(med([for (final d in f) d.$1]))} | '
+          '${ms(p95([for (final d in f) d.$1]))} | '
+          '${ms(med([for (final d in f) d.$2]))} |');
+    }
+    // Regression thresholds: the touched-area repaint must stay well
+    // under the whole-drawing repaint, and an idle eraser must not paint
+    // the drawing at all.
+    expect(
+      med([for (final d in afterInk) d.$1]),
+      lessThan(med([for (final d in beforeInk) d.$1]) * 0.6),
+    );
+    expect(
+      med([for (final d in afterIdle) d.$1]),
+      lessThan(med([for (final d in beforeIdle) d.$1]) * 0.25),
+    );
+
+    // Controller work per pointer event (no painting), 10 000 strokes.
+    final c = open(10000);
+    final sw = Stopwatch()..start();
+    List<int> timed(int n, void Function(int i) run) {
+      final out = <int>[];
+      for (var i = 0; i < n; i++) {
+        final t = sw.elapsedMicroseconds;
+        run(i);
+        out.add(sw.elapsedMicroseconds - t);
+      }
+      return out;
+    }
+
+    final hits = timed(
+      200,
+      (i) => c.hitTest(ui.Offset(7.0 * (i % 170), 19.0 * (i % 200))),
+    );
+    c
+      ..setEraser(mode: EraserMode.stroke, size: 12)
+      ..tool = CanvasTool.eraser
+      ..pointerDown(const ui.Offset(3, 3000));
+    final whole = timed(
+      200,
+      (i) => c.pointerMove(ui.Offset(3 + i * 5.0, 3000 + (i % 9))),
+    );
+    c
+      ..pointerUp()
+      ..setEraser(mode: EraserMode.partial, size: 12)
+      ..pointerDown(const ui.Offset(3, 3400));
+    final partial = timed(
+      200,
+      (i) => c.pointerMove(ui.Offset(3 + i * 5.0, 3400 + (i % 9))),
+    );
+    c
+      ..pointerUp()
+      ..tool = CanvasTool.lasso
+      ..pointerDown(const ui.Offset(100, 100));
+    for (final p in const [
+      ui.Offset(900, 100),
+      ui.Offset(900, 1500),
+      ui.Offset(100, 1500),
+    ]) {
+      c.pointerMove(p);
+    }
+    final lasso = timed(1, (_) => c.pointerUp());
+    row('');
+    row('| controller work per event, 10 000 strokes (µs, JIT) | p50 | p95 |');
+    row('|---|---|---|');
+    row('| hit test (tap) | ${med(hits)} | ${p95(hits)} |');
+    row('| whole-stroke eraser movement | ${med(whole)} | ${p95(whole)} |');
+    row('| partial eraser movement | ${med(partial)} | ${p95(partial)} |');
+    row('| lasso release selecting ${c.selection.length} strokes | '
+        '${lasso.single} | - |');
+    // A pointer event must stay a small part of an 8.3 ms frame even in a
+    // very large drawing. Medians, and generous: this is an unoptimized
+    // test build on a shared PC, where single events are held up by the
+    // garbage collector (see the p95 column).
+    expect(med(hits), lessThan(2000));
+    expect(med(whole), lessThan(4000));
+    expect(med(partial), lessThan(8000));
+    expect(c.selection, isNotEmpty);
+    c.dispose();
+  });
+
   test('metrics summary format', () {
     final m = InkMetrics.instance..reset();
     m.strokeStarted();

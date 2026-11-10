@@ -19,6 +19,7 @@ import '../tasks/tasks_page.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_toolbar.dart' show EraserPanel;
 import '../transfer/transfer.dart';
+import '../ink/pen_look.dart';
 import 'calendar_ink.dart';
 import 'calendar_views.dart';
 import 'workload.dart';
@@ -726,6 +727,13 @@ class _CalendarPageState extends State<CalendarPage> {
                       tooltip:
                           'Pen thickness (${ink.penWidth.toStringAsFixed(1)})',
                       onTap: () => showPenWidthDialog(context, s, ink),
+                    ),
+                    GhostIconButton(
+                      key: const ValueKey('calendar-pen-opacity'),
+                      icon: Icons.opacity,
+                      tooltip:
+                          'Pen opacity (${(ink.penOpacity * 100).round()} %)',
+                      onTap: () => showPenLookDialog(context, s, ink),
                     ),
                     GhostIconButton(
                       icon: Icons.undo,
