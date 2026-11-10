@@ -58,6 +58,8 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
   private var previewURL: URL?
   private var pencilInteraction: UIPencilInteraction?
   private let peers = PeerBonjour()
+  /// Background time asked for while pending edits are saved (raw ids).
+  private var backgroundSaves = Set<Int>()
 
   func attach(messenger: FlutterBinaryMessenger) {
     inkChannel = FlutterBasicMessageChannel(
@@ -177,6 +179,28 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
       openDocument(call.arguments as? String, result)
     case "pickImages":
       pickImages(result)
+    case "beginBackgroundSave":
+      // Asks iOS for time to finish saving after the app leaves the screen
+      // (otherwise it can be suspended half way through the save). iOS
+      // ends it itself when the time runs out.
+      var id = UIBackgroundTaskIdentifier.invalid
+      id = UIApplication.shared.beginBackgroundTask(withName: "misc. save") { [weak self] in
+        guard let self = self else { return }
+        if self.backgroundSaves.remove(id.rawValue) != nil {
+          UIApplication.shared.endBackgroundTask(id)
+        }
+      }
+      if id == .invalid {
+        result(nil)
+      } else {
+        backgroundSaves.insert(id.rawValue)
+        result(id.rawValue)
+      }
+    case "endBackgroundSave":
+      if let raw = call.arguments as? Int, backgroundSaves.remove(raw) != nil {
+        UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: raw))
+      }
+      result(nil)
     case "protectedDataAvailable":
       result(UIApplication.shared.isProtectedDataAvailable)
     case "protectPaths":

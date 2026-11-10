@@ -291,7 +291,8 @@ class _TheAppState extends State<TheApp> {
         widget.appLock?.lifecycleChanged(AppLifecycleState.hidden);
         widget.state.vault.lock(); // the private vault never stays open hidden
         AttachmentStore.clearViewCopies();
-        unawaited(widget.state.flush());
+        // With background time on iPhone/iPad (see flushOnLeave).
+        unawaited(widget.state.flushOnLeave());
       },
       onPause: () {
         widget.appLock?.lifecycleChanged(AppLifecycleState.paused);
@@ -390,18 +391,34 @@ class _DataProblemPageState extends State<_DataProblemPage> {
 
   Future<void> _useRecoveryCode() async {
     setState(() => _busy = true);
-    final r = await RecoveryService(widget.recoveryRoot!).restore(_code.text);
+    String message;
+    try {
+      message = (await RecoveryService(
+        widget.recoveryRoot!,
+      ).restore(_code.text)).message;
+    } catch (e, s) {
+      // Never a spinner that turns forever: say what happened.
+      AppLog.error('Recovery code could not be used', e, s);
+      message =
+          'The recovery code could not be used: $e. Details are in the log.';
+    }
     if (mounted) {
       setState(() {
         _busy = false;
-        _recoveryMessage = r.message;
+        _recoveryMessage = message;
       });
     }
   }
 
   Future<void> _run(Future<String> Function() action) async {
     setState(() => _busy = true);
-    final result = await action();
+    String result;
+    try {
+      result = await action();
+    } catch (e, s) {
+      AppLog.error('Data recovery action failed', e, s);
+      result = 'That did not work: $e. Details are in the log.';
+    }
     if (mounted) {
       setState(() {
         _busy = false;

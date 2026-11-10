@@ -435,7 +435,7 @@ class _SecurityStatusViewState extends State<SecurityStatusView> {
         .map(BackupLabel.new)
         .where((l) => l.at != null && l.reasonId != 'imported')
         .firstOrNull;
-    if (newest == null) return;
+    if (newest == null || !mounted) return;
     setState(() => _checking = true);
     final problems = await backups.checkManifest(newest.directory);
     if (!mounted) return;

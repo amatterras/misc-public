@@ -549,7 +549,7 @@ class _LibraryPageState extends State<LibraryPage> {
     s.workspace.librarySpaces.remove(space.id);
     await s.workspace.libraryRelations.flush();
     await s.workspace.librarySpaces.flush();
-    if (_space == space.id) setState(() => _space = null);
+    if (mounted && _space == space.id) setState(() => _space = null);
   }
 
   Future<void> _open(LibraryObject object) async {

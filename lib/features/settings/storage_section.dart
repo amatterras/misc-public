@@ -681,7 +681,7 @@ class DataSafetySection extends StatelessWidget {
                                     'Deleted for good from this device, its '
                                     'backups and (when synced) the hub.',
                                   );
-                                  setState(() {});
+                                  if (context.mounted) setState(() {});
                                 },
                                 child: const Text('Delete for good'),
                               ),

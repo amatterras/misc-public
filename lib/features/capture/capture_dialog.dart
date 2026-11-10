@@ -8,6 +8,7 @@ import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
+import '../../data/storage/app_log.dart';
 import '../../data/storage/attachment_image.dart';
 import '../../platform/input_hints.dart';
 import '../../widgets/common.dart';
@@ -150,8 +151,20 @@ class _CaptureDialogState extends State<CaptureDialog> {
     return result;
   }
 
+  /// Saves; if anything fails the dialog stays open with the text still in
+  /// it and says so (before, a failure left Save disabled for good).
   Future<void> _save() async {
     if (!_canSave) return;
+    try {
+      await _saveNow();
+    } catch (e, st) {
+      AppLog.error('Quick Add could not save', e, st);
+      s.showToast('Could not save. Your text is still here; try again.');
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveNow() async {
     setState(() => _saving = true);
     final ws = s.workspace;
     final images = await _resolveImages();
@@ -168,7 +181,7 @@ class _CaptureDialogState extends State<CaptureDialog> {
 
     switch (_dest) {
       case CaptureDestination.canvas:
-        if (_canvasId == null) {
+        if (_canvasId == null || !s.canvasList.any((c) => c.id == _canvasId)) {
           setState(() => _saving = false);
           s.showToast('Choose a canvas first.');
           return;
@@ -260,7 +273,9 @@ class _CaptureDialogState extends State<CaptureDialog> {
         s.goTo(AppPage.links);
         done = 'Added to the Archive';
       case CaptureDestination.notes:
-        if (_newNote || _noteId == null) {
+        // The chosen note can be deleted meanwhile (another window, or
+        // sync from another device): then the text becomes a new note.
+        if (_newNote || _noteId == null || ws.notes[_noteId!] == null) {
           final noteTitle = title.isNotEmpty
               ? title
               : (link?.label ??
@@ -295,7 +310,8 @@ class _CaptureDialogState extends State<CaptureDialog> {
           done = 'Added to note “${note.displayTitle}”';
         }
       case CaptureDestination.calendar:
-        if (_entryId == null) {
+        // A chosen entry deleted meanwhile: the text goes to the day.
+        if (_entryId == null || (ws.entries[_entryId!]?.archived ?? true)) {
           final day = ws.dayRecord(_day);
           ws.saveDay(
             day.copyWith(
@@ -338,7 +354,8 @@ class _CaptureDialogState extends State<CaptureDialog> {
             : lines.skip(1).join('\n').trim();
         final task = ws.createTask(
           taskTitle,
-          projectId: _projectId,
+          // A project deleted meanwhile: the task gets none.
+          projectId: ws.projects.contains(_projectId ?? '') ? _projectId : null,
           dueDate: _taskDue,
         );
         ws.tasks.put(
@@ -584,7 +601,10 @@ class _CaptureDialogState extends State<CaptureDialog> {
           label: 'Canvas',
           child: DropdownButton<String>(
             isExpanded: true,
-            value: _canvasId,
+            // A chosen canvas deleted meanwhile is no longer offered.
+            value: s.canvasList.any((c) => c.id == _canvasId)
+                ? _canvasId
+                : null,
             items: [
               for (final c in s.canvasList)
                 DropdownMenuItem(value: c.id, child: Text(c.title)),
@@ -630,7 +650,9 @@ class _CaptureDialogState extends State<CaptureDialog> {
                 label: 'Note',
                 child: DropdownButton<String>(
                   isExpanded: true,
-                  value: _noteId,
+                  // A chosen note deleted meanwhile (sync, another window)
+                  // must not stay selected: the dropdown has no such item.
+                  value: notes.any((n) => n.id == _noteId) ? _noteId : null,
                   hint: const Text('Choose a note'),
                   items: [
                     for (final n in notes)
@@ -670,7 +692,8 @@ class _CaptureDialogState extends State<CaptureDialog> {
               label: 'Attach to',
               child: DropdownButton<String?>(
                 isExpanded: true,
-                value: _entryId,
+                // A chosen entry deleted or archived meanwhile.
+                value: active.any((e) => e.id == _entryId) ? _entryId : null,
                 items: [
                   const DropdownMenuItem(
                     value: null,
@@ -731,7 +754,9 @@ class _CaptureDialogState extends State<CaptureDialog> {
               label: 'Project',
               child: DropdownButton<String?>(
                 isExpanded: true,
-                value: _projectId,
+                value: projects.any((p) => p.id == _projectId)
+                    ? _projectId
+                    : null,
                 items: [
                   const DropdownMenuItem(value: null, child: Text('None')),
                   for (final p in projects)

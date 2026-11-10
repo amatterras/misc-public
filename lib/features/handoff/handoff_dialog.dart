@@ -109,7 +109,7 @@ class _ContinueDialogState extends State<ContinueDialog> {
         'That item has not reached this device yet. Sync, then try again.',
       );
       await s.syncNow();
-      setState(() {});
+      if (mounted) setState(() {});
     }
   }
 

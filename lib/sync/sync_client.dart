@@ -224,10 +224,33 @@ class SyncClient {
   /// HTTP is used, so a look-alike name cannot lead the app onto an open
   /// network. Checked once per client.
   bool _routeChecked = false;
+
+  /// Name lookup used by the route check (replaceable in tests).
+  static Future<List<InternetAddress>> Function(String host) lookup =
+      InternetAddress.lookup;
+
   Future<void> _checkRoute() async {
     if (_routeChecked) return;
     if (base.scheme == 'http' && base.host.toLowerCase().endsWith('.ts.net')) {
-      final addresses = await InternetAddress.lookup(base.host);
+      // With Tailscale off the name does not resolve: that is "offline"
+      // (retried), not an unexpected error, and a lookup that hangs is
+      // given up like any other request.
+      final List<InternetAddress> addresses;
+      try {
+        addresses = await lookup(base.host).timeout(timeout);
+      } on SocketException {
+        throw const SyncFailure(
+          'offline',
+          'The hub\'s Tailscale name cannot be found. Is Tailscale on?',
+          retryable: true,
+        );
+      } on TimeoutException {
+        throw const SyncFailure(
+          'timeout',
+          'Looking up the hub\'s Tailscale name took too long.',
+          retryable: true,
+        );
+      }
       if (addresses.isEmpty || !addresses.every(isTailscaleAddress)) {
         throw const SyncFailure(
           'insecure_transport',
@@ -301,9 +324,13 @@ class SyncClient {
       try {
         json = jsonDecode(text) as Map<String, dynamic>;
       } catch (_) {
+        // A server error page instead of JSON (a hub restarting, a proxy
+        // or network in between) is temporary: retried like "offline",
+        // not reported as a lasting problem.
         throw SyncFailure(
           'bad_response',
           'Unexpected answer from the hub (${res.statusCode}).',
+          retryable: res.statusCode >= 500 || res.statusCode == 429,
         );
       }
       if (res.statusCode != 200) {
