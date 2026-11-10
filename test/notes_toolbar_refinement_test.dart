@@ -178,12 +178,12 @@ void main() {
     await done(tester);
   });
 
-  testWidgets('the full canonical library: 19 colours, fixed order, '
+  testWidgets('the full canonical library: 22 colours, fixed order, '
       'pen and highlighter', (tester) async {
     await boot(tester);
     final n = s.workspace.createNote(title: 'Colours');
     final c = await open(tester, n.id);
-    expect(InkColors.library, hasLength(19));
+    expect(InkColors.library, hasLength(22));
     expect(notebookInk, InkColors.all);
 
     await tester.tap(tool(CanvasTool.pen));

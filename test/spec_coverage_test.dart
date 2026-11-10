@@ -148,7 +148,7 @@ void main() {
 }
 
 void calendarCellAndColourTests() {
-  test('the shared 19-colour ink library is canonical and ordered', () {
+  test('the shared 22-colour ink library is canonical and ordered', () {
     expect(
       [for (final c in InkColors.all) c.toARGB32() & 0xFFFFFF],
       [
@@ -171,6 +171,9 @@ void calendarCellAndColourTests() {
         0xF2D84A,
         0x176B4D,
         0xFF3B30,
+        0xD90429,
+        0xF6B8CB,
+        0xFF5C9E,
       ],
     );
   });

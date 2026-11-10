@@ -261,6 +261,12 @@ class CanvasController extends ChangeNotifier {
 
   CanvasTool _tool = CanvasTool.select;
   CanvasTool get tool => _tool;
+
+  /// Whether the chosen tool is one that selects photos and items (Select
+  /// and Lasso). With any other tool a tap, a long press or a right-click
+  /// on a photo or an item is not read as a selection.
+  bool get selectsItems =>
+      _tool == CanvasTool.select || _tool == CanvasTool.lasso;
   set tool(CanvasTool value) {
     if (value == _tool) return;
     cancelPendingLineStraightening();
@@ -601,11 +607,7 @@ class CanvasController extends ChangeNotifier {
     }
     _marksChanged.add(item.id);
     final index = _items.indexWhere((i) => i.id == item.id);
-    _commit(
-      index < 0
-          ? [..._items, item]
-          : ([..._items]..[index] = item),
-    );
+    _commit(index < 0 ? [..._items, item] : ([..._items]..[index] = item));
     notifyListeners();
   }
 
@@ -919,18 +921,31 @@ class CanvasController extends ChangeNotifier {
       ]);
       _selection = const {};
     }
+    // Typing is the text tool's own business: it leaves nothing selected
+    // (only Select and Lasso hold a selection).
+    if (!selectsItems) _selection = const {};
     _endTransaction();
     notifyListeners();
   }
 
+  /// How a new text box starts. The defaults are the Mindmap's and the
+  /// notebook's; the Calendar sets smaller ones (a day is a small square)
+  /// and has its boxes use the pen colour.
+  double newTextWidth = TextItem.defaultWidth;
+  double? newTextFontSize;
+  bool newTextUsesPenColor = false;
+
   TextItem createText(Offset world) {
     endEditing();
+    final fontSize = newTextFontSize;
     final item = TextItem(
       id: newId(),
       position: world - const Offset(kTextPadding, kTextPadding),
-      width: TextItem.defaultWidth,
+      width: newTextWidth,
       minHeight: 0,
       text: '',
+      fontSize: fontSize ?? 16,
+      textColor: newTextUsesPenColor ? penColor : null,
     );
     _beginTransaction();
     _setItems([..._items, item]);

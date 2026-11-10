@@ -163,6 +163,9 @@ void main() {
         0xFFF2D84A,
         0xFF176B4D,
         0xFFFF3B30,
+        0xFFD90429,
+        0xFFF6B8CB,
+        0xFFFF5C9E,
       ]);
       expect(inkColorNames, [
         'Pearl',
@@ -184,8 +187,11 @@ void main() {
         'Electric Gold',
         'Deep Pine',
         'Bright Red',
+        'Urgent Red',
+        'Blush Pink',
+        'Hot Pink',
       ]);
-      expect(InkColors.library.map((s) => s.id).toSet().length, 19);
+      expect(InkColors.library.map((s) => s.id).toSet().length, 22);
       expect(
         InkColors.library.where((s) => s.color == const Color(0xFFFF3B30)),
         hasLength(1),

@@ -1343,7 +1343,7 @@ class InkSwatchDot extends StatelessWidget {
 }
 
 /// The current ink colour; opens the complete canonical library
-/// ([InkColors.library], all 19 colours in their fixed order).
+/// ([InkColors.library], all 22 colours in their fixed order).
 class InkColorButton extends StatelessWidget {
   const InkColorButton({
     super.key,

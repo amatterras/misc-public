@@ -570,7 +570,11 @@ class CanvasPainter extends CustomPainter {
     // One boundary around the whole selection (a group or many strokes
     // are one object), with exactly two dots: top-left and top-right
     // (the top-right one resizes / scales).
-    final bounds = controller.selectionBounds;
+    // Only the Select and Lasso tools show a selection (a text box being
+    // typed in shows its own outline).
+    final showSelection =
+        controller.selectsItems || controller.editingItem != null;
+    final bounds = showSelection ? controller.selectionBounds : null;
     if (bounds != null) {
       final box = bounds.inflate(4 / scale);
       canvas.drawRRect(
@@ -840,7 +844,8 @@ class InkRasterCache {
   bool draw(Canvas canvas, Size size, CanvasPainter painter) {
     final c = painter.controller;
     final dpr = painter.devicePixelRatio;
-    final width = (size.width * dpr).ceil(), height = (size.height * dpr).ceil();
+    final width = (size.width * dpr).ceil(),
+        height = (size.height * dpr).ceil();
     if (!enabled ||
         dpr <= 0 ||
         width <= 0 ||

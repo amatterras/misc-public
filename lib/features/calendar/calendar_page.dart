@@ -7,7 +7,7 @@ import '../../app/shell.dart';
 import '../../new_ui/new_components.dart';
 import '../../app/theme.dart';
 import '../../data/models/calendar_models.dart';
-import '../../data/models/canvas_models.dart' show newId;
+import '../../data/models/canvas_models.dart' show StrokeItem, newId;
 import '../../data/models/library_models.dart';
 import '../../data/models/record.dart';
 import '../../data/workspace.dart';
@@ -18,6 +18,8 @@ import '../tasks/estimate_label.dart';
 import '../tasks/tasks_page.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_toolbar.dart' show EraserPanel;
+import '../notes/note_page.dart'
+    show InkColorButton, InkWidthButton, ZoomStepper;
 import '../transfer/transfer.dart';
 import 'calendar_ink.dart';
 import 'calendar_views.dart';
@@ -63,6 +65,12 @@ class _CalendarPageState extends State<CalendarPage> {
   DateTime? _selectedDay;
   final _viewer = TransformationController();
 
+  /// Month and week zoom (the range grid has its own, above), and the
+  /// size of the area each is shown in (zoom steps centre on it).
+  final _monthViewer = TransformationController();
+  Size _rangeViewport = Size.zero;
+  Size _monthViewport = Size.zero;
+
   /// Month/week/day/agenda/timeline: the date they show.
   DateTime _anchor = dateOnly(DateTime.now());
 
@@ -73,6 +81,8 @@ class _CalendarPageState extends State<CalendarPage> {
 
   void _setView(CalendarView v) {
     s.settings.set(widget.viewKey, v.name);
+    _monthViewer.value = Matrix4.identity();
+    _ink?.endEditing();
     setState(() {});
   }
 
@@ -105,6 +115,12 @@ class _CalendarPageState extends State<CalendarPage> {
     super.initState();
     s.openCalendarInk().then((c) {
       if (!mounted) return;
+      // A day is a small square: its text boxes start small and take the
+      // pen colour.
+      c
+        ..newTextWidth = 150
+        ..newTextFontSize = 9
+        ..newTextUsesPenColor = true;
       setState(() {
         _ink = c;
         _arbiter = CalendarInkArbiter(c)..addListener(_navigationChanged);
@@ -175,6 +191,7 @@ class _CalendarPageState extends State<CalendarPage> {
     _lifecycle?.dispose();
     s.removeListener(_endSqueezeOffPage);
     _viewer.dispose();
+    _monthViewer.dispose();
     super.dispose();
   }
 
@@ -640,80 +657,11 @@ class _CalendarPageState extends State<CalendarPage> {
           selected: {v},
           onSelectionChanged: (c) => _setView(c.first),
         ),
-        if (_ink != null &&
-            _tab == null &&
-            (v == CalendarView.range ||
-                v == CalendarView.month ||
-                v == CalendarView.week))
-          ListenableBuilder(
-            listenable: _ink!,
-            builder: (context, _) {
-              final ink = _ink!;
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  GhostIconButton(
-                    key: const ValueKey('calendar-draw'),
-                    icon: Icons.draw_outlined,
-                    tooltip: _drawing
-                        ? 'Stop drawing (dates can be tapped again)'
-                        : 'Draw on the calendar',
-                    active: _drawing && ink.tool == CanvasTool.pen,
-                    onTap: () => setState(() {
-                      final pen = ink.tool == CanvasTool.pen;
-                      _drawing = !(_drawing && pen);
-                      ink.tool = CanvasTool.pen;
-                    }),
-                  ),
-                  if (_drawing) ...[
-                    GhostIconButton(
-                      icon: Icons.auto_fix_normal,
-                      tooltip: 'Erase drawings',
-                      active: ink.tool == CanvasTool.eraser,
-                      onTap: () => setState(() => ink.tool = CanvasTool.eraser),
-                    ),
-                    if (ink.tool == CanvasTool.eraser &&
-                        !(_squeezer?.active ?? false))
-                      EraserPanel(controller: ink, onChange: s.setEraser),
-                    PopupMenuButton<Color>(
-                      tooltip: 'Pen colour',
-                      onSelected: (c) => setState(() => ink.setPen(color: c)),
-                      itemBuilder: (_) => [
-                        for (final c in InkColors.all)
-                          PopupMenuItem(
-                            value: c,
-                            height: 32,
-                            child: Container(width: 60, height: 14, color: c),
-                          ),
-                      ],
-                      child: Container(
-                        width: 18,
-                        height: 18,
-                        margin: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: ink.penColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: AppColors.border),
-                        ),
-                      ),
-                    ),
-                    GhostIconButton(
-                      key: const ValueKey('calendar-pen-width'),
-                      icon: Icons.line_weight,
-                      tooltip:
-                          'Pen thickness (${ink.penWidth.toStringAsFixed(1)})',
-                      onTap: () => showPenWidthDialog(context, s, ink),
-                    ),
-                    GhostIconButton(
-                      icon: Icons.undo,
-                      tooltip: 'Undo',
-                      onTap: ink.canUndo ? ink.undo : null,
-                    ),
-                  ],
-                ],
-              );
-            },
-          ),
+        if (_inkAvailable(v)) _inkTools(),
+        if (v == CalendarView.range ||
+            v == CalendarView.month ||
+            v == CalendarView.week)
+          _zoomControl(v),
         if (v != CalendarView.range) ...[
           GhostIconButton(
             icon: Icons.chevron_left,
@@ -749,20 +697,332 @@ class _CalendarPageState extends State<CalendarPage> {
     _setView(CalendarView.day);
   }
 
+  // ------------------------------------------------------------ drawing --
+
+  bool _inkAvailable(CalendarView v) =>
+      _ink != null &&
+      _tab == null &&
+      (v == CalendarView.range ||
+          v == CalendarView.month ||
+          v == CalendarView.week);
+
+  /// Picks [tool] and switches Draw mode on (every tool works on the days).
+  void _chooseTool(CanvasTool tool) {
+    final ink = _ink;
+    if (ink == null) return;
+    setState(() {
+      _drawing = true;
+      ink.tool = tool;
+    });
+  }
+
+  /// The day a new photo goes to: the selected day, else today if it is
+  /// shown, else the first day shown.
+  DateTime _inkTargetDay() {
+    final today = dateOnly(DateTime.now());
+    if (_view == CalendarView.range) {
+      final selected = _selectedDay;
+      if (selected != null) return selected;
+      final offset = daysBetween(s.calendarStart, today);
+      return offset >= 0 && offset < s.calendarDays ? today : s.calendarStart;
+    }
+    final shown = _view.daysAround(_anchor);
+    return shown.any((d) => daysBetween(d, today) == 0) ? today : _anchor;
+  }
+
+  /// Asks for photos and puts them on a day, ready to be moved and resized
+  /// with the Select tool.
+  Future<void> _addPhoto() async {
+    final ink = _ink;
+    if (ink == null) return;
+    final assets = await s.capture.pickImages();
+    if (!mounted || assets.isEmpty) return;
+    final day = _inkTargetDay();
+    final rect = inkDayRect(day);
+    // Near the top of the day: the month's small cells show that part.
+    var at = Offset(rect.center.dx, rect.top + 20 + 50);
+    setState(() {
+      _drawing = true;
+      ink.tool = CanvasTool.select;
+    });
+    final placed = <String>[];
+    for (final asset in assets) {
+      placed.add(ink.insertImage(asset, at, maxSide: 100).id);
+      at += const Offset(10, 10);
+    }
+    ink.select(placed);
+    s.showToast(
+      '${assets.length == 1 ? 'Photo' : 'Photos'} added to '
+      '${formatShortDate(day)}. Drag to move, the top-right dot resizes.',
+    );
+  }
+
+  Widget _inkTools() => ListenableBuilder(
+    listenable: _ink!,
+    builder: (context, _) {
+      final ink = _ink!;
+      final tool = ink.tool;
+      Widget toolButton(CanvasTool t, IconData icon, String tip) =>
+          GhostIconButton(
+            key: ValueKey('calendar-tool-${t.name}'),
+            icon: icon,
+            tooltip: tip,
+            active: _drawing && tool == t,
+            onTap: () => _chooseTool(t),
+          );
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GhostIconButton(
+            key: const ValueKey('calendar-draw'),
+            icon: Icons.draw_outlined,
+            tooltip: _drawing
+                ? 'Stop drawing (dates can be tapped again)'
+                : 'Draw on the calendar',
+            active: _drawing && tool == CanvasTool.pen,
+            onTap: () => setState(() {
+              final pen = ink.tool == CanvasTool.pen;
+              _drawing = !(_drawing && pen);
+              ink.tool = CanvasTool.pen;
+            }),
+          ),
+          if (_drawing) ...[
+            toolButton(
+              CanvasTool.eraser,
+              Icons.auto_fix_normal,
+              'Erase drawings',
+            ),
+            toolButton(CanvasTool.lasso, Icons.gesture, 'Lasso select'),
+            toolButton(
+              CanvasTool.select,
+              Icons.near_me_outlined,
+              'Select and move photos',
+            ),
+            toolButton(CanvasTool.text, Icons.title, 'Write text on a day'),
+          ],
+          GhostIconButton(
+            key: const ValueKey('calendar-add-photo'),
+            icon: Icons.add_photo_alternate_outlined,
+            tooltip: 'Add a photo to a day',
+            onTap: _addPhoto,
+          ),
+          if (_drawing) ...[..._toolOptions(ink), ..._historyButtons(ink)],
+        ],
+      );
+    },
+  );
+
+  List<Widget> _historyButtons(CanvasController ink) => [
+    GhostIconButton(
+      key: const ValueKey('calendar-undo'),
+      icon: Icons.undo,
+      tooltip: 'Undo',
+      onTap: ink.canUndo ? ink.undo : null,
+    ),
+    GhostIconButton(
+      key: const ValueKey('calendar-redo'),
+      icon: Icons.redo,
+      tooltip: 'Redo',
+      onTap: ink.canRedo ? ink.redo : null,
+    ),
+  ];
+
+  /// The options of the chosen tool, and only those.
+  List<Widget> _toolOptions(CanvasController ink) {
+    switch (ink.tool) {
+      case CanvasTool.pen:
+        return [
+          InkColorButton(
+            key: const ValueKey('calendar-pen-color'),
+            color: ink.penColor,
+            tooltip: 'Pen colour',
+            onSelected: (c) => setState(() => ink.setPen(color: c)),
+          ),
+          GhostIconButton(
+            key: const ValueKey('calendar-pen-width'),
+            icon: Icons.line_weight,
+            tooltip: 'Pen thickness (${ink.penWidth.toStringAsFixed(1)})',
+            onTap: () => showPenWidthDialog(context, s, ink),
+          ),
+        ];
+      case CanvasTool.eraser:
+        return [
+          if (!(_squeezer?.active ?? false))
+            EraserPanel(controller: ink, onChange: s.setEraser),
+          GhostIconButton(
+            key: const ValueKey('calendar-eraser-width'),
+            icon: Icons.line_weight,
+            tooltip: 'Eraser width (${ink.eraserSize.round()})',
+            onTap: () => showEraserWidthDialog(context, s, ink),
+          ),
+        ];
+      case CanvasTool.text:
+        return [
+          InkColorButton(
+            key: const ValueKey('calendar-text-color'),
+            color: ink.penColor,
+            tooltip: 'Text colour',
+            onSelected: (c) => setState(() => ink.setPen(color: c)),
+          ),
+          InkWidthButton(
+            key: const ValueKey('calendar-text-size'),
+            tooltip: 'Text size',
+            width: ink.newTextFontSize ?? 9,
+            widths: const [6.0, 9.0, 12.0, 16.0],
+            color: ink.penColor,
+            onSelected: (w) => setState(() => ink.newTextFontSize = w),
+          ),
+        ];
+      case CanvasTool.select || CanvasTool.lasso:
+        final selected = ink.selectedItems;
+        if (selected.isEmpty) {
+          return [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm),
+              child: Text(
+                ink.tool == CanvasTool.lasso
+                    ? 'Circle ink, text or photos to select them'
+                    : 'Tap a photo to select it',
+                style: TextStyle(
+                  fontSize: AppType.sizeLabel,
+                  color: AppColors.textFaint,
+                ),
+              ),
+            ),
+          ];
+        }
+        return [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm),
+            child: Text(
+              '${selected.length} selected',
+              style: TextStyle(
+                fontSize: AppType.sizeLabel,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+          InkColorButton(
+            key: const ValueKey('calendar-selection-color'),
+            color:
+                selected.whereType<StrokeItem>().firstOrNull?.color ??
+                ink.penColor,
+            tooltip: 'Recolour the selection',
+            onSelected: ink.recolorSelection,
+          ),
+          GhostIconButton(
+            key: const ValueKey('calendar-selection-duplicate'),
+            icon: Icons.copy_outlined,
+            tooltip: 'Duplicate',
+            onTap: ink.duplicateSelection,
+          ),
+          GhostIconButton(
+            key: const ValueKey('calendar-selection-delete'),
+            icon: Icons.delete_outline,
+            tooltip: 'Delete the selection',
+            onTap: ink.deleteSelection,
+          ),
+        ];
+      default:
+        return const [];
+    }
+  }
+
+  // ---------------------------------------------------------------- zoom --
+
+  static const _rangeZoom = (min: 0.35, max: 2.5);
+  static const _monthZoom = (min: 1.0, max: 4.0);
+
+  Widget _zoomControl(CalendarView v) {
+    final range = v == CalendarView.range;
+    final viewer = range ? _viewer : _monthViewer;
+    final limits = range ? _rangeZoom : _monthZoom;
+    return ListenableBuilder(
+      listenable: viewer,
+      builder: (context, _) {
+        final z = viewer.value.getMaxScaleOnAxis();
+        return ZoomStepper(
+          key: const ValueKey('calendar-zoom'),
+          valueKey: const ValueKey('calendar-zoom-value'),
+          label: '${(z * 100).round()}%',
+          outTooltip: 'Zoom out',
+          inTooltip: 'Zoom in',
+          resetTooltip: 'Back to 100%',
+          onOut: z > limits.min + 0.001 ? () => _zoomBy(v, 1 / 1.25) : null,
+          onIn: z < limits.max - 0.001 ? () => _zoomBy(v, 1.25) : null,
+          onReset: () => viewer.value = Matrix4.identity(),
+        );
+      },
+    );
+  }
+
+  /// One zoom step around the middle of the shown area.
+  void _zoomBy(CalendarView v, double factor) {
+    final range = v == CalendarView.range;
+    final viewer = range ? _viewer : _monthViewer;
+    final limits = range ? _rangeZoom : _monthZoom;
+    final size = range ? _rangeViewport : _monthViewport;
+    final current = viewer.value.getMaxScaleOnAxis();
+    final target = (current * factor).clamp(limits.min, limits.max).toDouble();
+    if ((target - current).abs() < 1e-6) return;
+    if (!range && target <= 1.0001) {
+      viewer.value = Matrix4.identity();
+      return;
+    }
+    final f = target / current;
+    final c = size.center(Offset.zero);
+    final about = Matrix4.identity()
+      ..setEntry(0, 0, f)
+      ..setEntry(1, 1, f)
+      ..setEntry(0, 3, c.dx * (1 - f))
+      ..setEntry(1, 3, c.dy * (1 - f));
+    final next = about * viewer.value;
+    if (!range) {
+      // The month fills the area at 100%: it can only be moved while larger.
+      next
+        ..setEntry(
+          0,
+          3,
+          next.entry(0, 3).clamp(size.width * (1 - target), 0.0).toDouble(),
+        )
+        ..setEntry(
+          1,
+          3,
+          next.entry(1, 3).clamp(size.height * (1 - target), 0.0).toDouble(),
+        );
+    }
+    viewer.value = next;
+  }
+
   Widget _otherView() {
     switch (_view) {
       case CalendarView.month || CalendarView.week:
-        return CalendarGridView(
-          view: _view,
-          anchor: _anchor,
-          itemsOn: _itemsOn,
-          onDay: _openDay,
-          onItem: _editItem,
-          onToggleEntry: (entry, day) =>
-              ws.toggleEntryCompletion(entry.id, day),
-          overlay: _inkOn,
-          dropOn: (day, cell) =>
-              TransferTarget(state: s, place: DayPlace(day), child: cell),
+        return LayoutBuilder(
+          builder: (context, box) {
+            _monthViewport = box.biggest;
+            return Listener(
+              onPointerDown: (e) {
+                if (_inkInput) _arbiter?.down(e);
+              },
+              onPointerUp: (e) => _arbiter?.release(e.pointer),
+              onPointerCancel: (e) => _arbiter?.release(e.pointer),
+              child: CalendarGridView(
+                view: _view,
+                anchor: _anchor,
+                itemsOn: _itemsOn,
+                onDay: _openDay,
+                onItem: _editItem,
+                onToggleEntry: (entry, day) =>
+                    ws.toggleEntryCompletion(entry.id, day),
+                overlay: _inkOn,
+                dropOn: (day, cell) =>
+                    TransferTarget(state: s, place: DayPlace(day), child: cell),
+                zoom: _monthViewer,
+                panEnabled: !_inkInput || (_arbiter?.navigating ?? false),
+                scaleEnabled: !(_inkInput && (_arbiter?.stylusDown ?? false)),
+              ),
+            );
+          },
         );
       case CalendarView.day:
         return DayPanel(
@@ -1050,8 +1310,17 @@ class _CalendarPageState extends State<CalendarPage> {
     final start = s.calendarStart;
     final days = s.calendarDays;
     final rows = (days / 7).ceil();
-    const w = CalendarPage.cellWidth, h = CalendarPage.cellHeight;
     final today = dateOnly(DateTime.now());
+    return LayoutBuilder(
+      builder: (context, box) {
+        _rangeViewport = box.biggest;
+        return _gridBody(start, days, rows, today);
+      },
+    );
+  }
+
+  Widget _gridBody(DateTime start, int days, int rows, DateTime today) {
+    const w = CalendarPage.cellWidth, h = CalendarPage.cellHeight;
     // Fingers landing between the day cells count for the arbiter too.
     return Listener(
       onPointerDown: (e) {

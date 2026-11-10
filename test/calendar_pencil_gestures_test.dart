@@ -54,6 +54,9 @@ void main() {
           ),
           onSave: (_) async {},
         );
+        // The Calendar's own tool for writing (a fresh controller starts on
+        // Select, whose finger taps are allowed on purpose, see below).
+        controller.tool = CanvasTool.pen;
         final arbiter = CalendarInkArbiter(controller);
         final finger = PointerDownEvent(
           pointer: 91,

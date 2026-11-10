@@ -10,10 +10,13 @@ import 'package:flutter/material.dart';
 import '../../app/design_tokens.dart';
 import '../../app/app_state.dart';
 import '../../app/popups.dart';
+import '../../data/models/canvas_models.dart' show TextItem;
 import '../../data/models/record.dart';
 import '../../platform/input_hints.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
+import '../canvas/canvas_toolbar.dart' show EraserPanel;
+import '../../app/theme.dart' show AppColors;
 import '../ink/native_ink.dart';
 import '../ink/pen_sizes.dart';
 import '../ink/stroke_geometry.dart';
@@ -40,7 +43,9 @@ DateTime inkDayAt(Offset world) =>
 /// navigates while Draw mode is on. One for the whole grid, shared by every
 /// day cell (a stroke and a pinch can start in different cells):
 /// - the Pencil and the mouse always draw (one stroke at a time);
-/// - one finger draws on non-iOS touch-first platforms;
+/// - one finger draws on non-iOS touch-first platforms, and on iOS it only
+///   works the Text, Select and Lasso tools (there a tap or a loop is the
+///   whole gesture; the finger never leaves ink);
 /// - a second finger makes it a pinch / two-finger pan: the finger stroke
 ///   in progress is cancelled (nothing half-drawn is kept);
 /// - on iOS only stylus-kind events draw; fingers are navigation only and
@@ -92,7 +97,7 @@ class CalendarInkArbiter extends ChangeNotifier {
       PointerDeviceKind.stylus || PointerDeviceKind.invertedStylus => true,
       PointerDeviceKind.mouse => e.buttons & kPrimaryButton != 0,
       PointerDeviceKind.touch =>
-        !touchFirst && _touches.length <= 1 && _stylus == null,
+        (!touchFirst || _fingerTool) && _touches.length <= 1 && _stylus == null,
       _ => false,
     };
     if (ok) {
@@ -101,6 +106,12 @@ class CalendarInkArbiter extends ChangeNotifier {
     }
     return ok;
   }
+
+  /// Tools a finger may use on iOS: they place, pick or loop, not write.
+  bool get _fingerTool =>
+      controller.tool == CanvasTool.text ||
+      controller.tool == CanvasTool.select ||
+      controller.tool == CanvasTool.lasso;
 
   bool owns(int pointer) => drawingPointer == pointer;
 
@@ -185,7 +196,7 @@ class _DayInkLayerState extends State<DayInkLayer> {
         ],
       );
       if (!widget.drawing) return IgnorePointer(child: paint);
-      return Listener(
+      final listener = Listener(
         key: ValueKey('calendar-ink-${dayKey(widget.day)}'),
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
@@ -235,7 +246,10 @@ class _DayInkLayerState extends State<DayInkLayer> {
           _arbiter.release(e.pointer);
           if (owned) {
             _pencilFeed.end();
-            c.pointerUp(screen: screen(e.localPosition), timeStamp: e.timeStamp);
+            c.pointerUp(
+              screen: screen(e.localPosition),
+              timeStamp: e.timeStamp,
+            );
           }
         },
         onPointerCancel: (e) {
@@ -249,7 +263,120 @@ class _DayInkLayerState extends State<DayInkLayer> {
         },
         child: paint,
       );
+      // The text box being typed in sits over its own day.
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          listener,
+          _DayTextEditor(controller: c, rect: rect, scale: scale),
+        ],
+      );
     },
+  );
+}
+
+/// The text box being typed in, when it belongs to this day: a real text
+/// field over the drawn one, at the Calendar's zoom. Leaving the field
+/// ends editing (an empty box is dropped by the controller).
+class _DayTextEditor extends StatelessWidget {
+  const _DayTextEditor({
+    required this.controller,
+    required this.rect,
+    required this.scale,
+  });
+
+  final CanvasController controller;
+  final Rect rect;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: controller,
+    builder: (context, _) {
+      final item = controller.editingItem;
+      if (item == null || !rect.contains(item.position + const Offset(1, 1))) {
+        return const SizedBox.shrink();
+      }
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: (item.position.dx - rect.left) * scale,
+            top: (item.position.dy - rect.top) * scale,
+            width: item.width * scale,
+            child: CalendarTextField(
+              key: ValueKey('calendar-text-${item.id}'),
+              controller: controller,
+              item: item,
+              scale: scale,
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// Typing in a Calendar text box (the notebook's field, for a day).
+class CalendarTextField extends StatefulWidget {
+  const CalendarTextField({
+    super.key,
+    required this.controller,
+    required this.item,
+    required this.scale,
+  });
+
+  final CanvasController controller;
+  final TextItem item;
+  final double scale;
+
+  @override
+  State<CalendarTextField> createState() => _CalendarTextFieldState();
+}
+
+class _CalendarTextFieldState extends State<CalendarTextField> {
+  late final _text = TextEditingController(text: widget.item.text);
+  final _focus = FocusNode(debugLabel: 'calendar-text');
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      // Only this box's own focus loss ends its editing (a new box being
+      // started has already replaced it by then).
+      if (!_focus.hasFocus && widget.controller.editingId == widget.item.id) {
+        widget.controller.endEditing();
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.all(kTextPadding * widget.scale),
+    child: TextField(
+      key: const ValueKey('calendar-text-field'),
+      controller: _text,
+      focusNode: _focus,
+      maxLines: null,
+      style: canvasTextStyle(
+        widget.item.fontSize * widget.scale,
+        bold: widget.item.bold,
+        italic: widget.item.italic,
+        color: widget.item.textColor,
+      ),
+      decoration: const InputDecoration.collapsed(hintText: 'Type…'),
+      onChanged: widget.controller.updateEditingText,
+    ),
   );
 }
 
@@ -367,6 +494,93 @@ Future<void> showPenWidthDialog(
               ),
               Text(
                 '${width.toStringAsFixed(1)} · new strokes only',
+                style: const TextStyle(fontSize: AppType.sizeLabel),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
+          ),
+        ],
+      );
+    },
+  ),
+);
+
+/// Eraser width: a slider with a live ring of the real size, plus the same
+/// four quick sizes as everywhere else. Remembered on this device (the
+/// Mindmap and Notes erasers share it).
+Future<void> showEraserWidthDialog(
+  BuildContext context,
+  AppState state,
+  CanvasController ink,
+) => showAppDialog<void>(
+  context: context,
+  builder: (context) => StatefulBuilder(
+    builder: (context, setState) {
+      final size = ink.eraserSize;
+      void set(double v) {
+        state.setEraser(ink, size: v);
+        setState(() {});
+      }
+
+      return AlertDialog(
+        title: const Text(
+          'Eraser width',
+          style: TextStyle(fontSize: AppType.sizeHeading),
+        ),
+        content: SizedBox(
+          width: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                key: const ValueKey('eraser-width-preview'),
+                height: 90,
+                child: Center(
+                  child: Container(
+                    width: size,
+                    height: size,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.text, width: 1.5),
+                    ),
+                  ),
+                ),
+              ),
+              Slider(
+                key: const ValueKey('eraser-width-slider'),
+                value: size.clamp(
+                  CanvasController.eraserSizes.min,
+                  CanvasController.eraserSizes.max,
+                ),
+                min: CanvasController.eraserSizes.min,
+                max: CanvasController.eraserSizes.max,
+                label: size.round().toString(),
+                onChanged: set,
+              ),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  for (final quick in EraserPanel.sizes)
+                    ChoiceChip(
+                      key: ValueKey('calendar-eraser-size-${quick.round()}'),
+                      visualDensity: VisualDensity.compact,
+                      label: Text(
+                        '${quick.round()}',
+                        style: const TextStyle(fontSize: AppType.sizeMeta),
+                      ),
+                      selected: size == quick,
+                      onSelected: (_) => set(quick),
+                    ),
+                ],
+              ),
+              Text(
+                '${size.round()} px',
                 style: const TextStyle(fontSize: AppType.sizeLabel),
               ),
             ],
