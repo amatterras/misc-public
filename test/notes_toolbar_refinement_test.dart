@@ -178,13 +178,13 @@ void main() {
     await done(tester);
   });
 
-  testWidgets('the full colour library: 24 colours, fixed order, '
+  testWidgets('the full colour library: 27 colours, fixed order, '
       'pen and highlighter', (tester) async {
     await boot(tester);
     final n = s.workspace.createNote(title: 'Colours');
     final c = await open(tester, n.id);
-    // 19 canonical colours + Bright Orange + five accents (master e47a368).
-    expect(InkColors.library, hasLength(24));
+    // 19 canonical colours + Bright Orange + five accents (master e47a368) + Urgent Red and two pinks.
+    expect(InkColors.library, hasLength(27));
     expect(notebookInk, InkColors.all);
 
     await tester.tap(tool(CanvasTool.pen));

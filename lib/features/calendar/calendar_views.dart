@@ -84,7 +84,16 @@ class CalendarGridView extends StatelessWidget {
     required this.onToggleEntry,
     this.overlay,
     this.dropOn,
+    this.zoom,
+    this.panEnabled = true,
+    this.scaleEnabled = true,
   });
+
+  /// When given, the whole grid can be zoomed in (pinch, or the zoom
+  /// buttons that drive this controller) and moved while zoomed. At 100%
+  /// it fills its area as before.
+  final TransformationController? zoom;
+  final bool panEnabled, scaleEnabled;
 
   /// Wraps each day so things can be dropped on it.
   final Widget Function(DateTime day, Widget cell)? dropOn;
@@ -106,7 +115,7 @@ class CalendarGridView extends StatelessWidget {
     final days = view.daysAround(anchor);
     final rows = (days.length / 7).ceil();
     final today = dateOnly(DateTime.now());
-    return Column(
+    final grid = Column(
       key: ValueKey('calendar-${view.name}'),
       children: [
         Row(
@@ -167,6 +176,17 @@ class CalendarGridView extends StatelessWidget {
           ),
         ),
       ],
+    );
+    final viewer = zoom;
+    if (viewer == null) return grid;
+    return InteractiveViewer(
+      key: const ValueKey('calendar-grid-zoom'),
+      transformationController: viewer,
+      minScale: 1,
+      maxScale: 4,
+      panEnabled: panEnabled,
+      scaleEnabled: scaleEnabled,
+      child: grid,
     );
   }
 }

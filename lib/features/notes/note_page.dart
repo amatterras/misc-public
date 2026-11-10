@@ -1399,7 +1399,7 @@ class InkSwatchDot extends StatelessWidget {
 }
 
 /// The current ink colour; opens the complete canonical library
-/// ([InkColors.library], all 19 colours in their fixed order).
+/// ([InkColors.library], all 27 colours in their fixed order).
 class InkColorButton extends StatelessWidget {
   const InkColorButton({
     super.key,
@@ -1451,7 +1451,7 @@ class _InkLibraryEntry extends PopupMenuEntry<Color> {
   final Color current;
 
   @override
-  double get height => 160;
+  double get height => 190;
 
   @override
   bool represents(Color? value) => value == current;

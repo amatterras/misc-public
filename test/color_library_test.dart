@@ -24,11 +24,12 @@ void main() {
   });
 
   test('new swatches come after the original 19; ids are unique', () {
-    expect(InkColors.library, hasLength(24));
-    expect(InkColors.library.last.id, 'jet-black');
+    expect(InkColors.library, hasLength(27));
+    expect(InkColors.library[23].id, 'jet-black');
+    expect(InkColors.library.last.id, 'hot-pink');
     expect(InkColors.library[18].id, 'bright-red');
-    expect(InkColors.library.map((s) => s.id).toSet(), hasLength(24));
-    expect(InkColors.all.toSet(), hasLength(24));
+    expect(InkColors.library.map((s) => s.id).toSet(), hasLength(27));
+    expect(InkColors.all.toSet(), hasLength(27));
   });
 
   test('no two swatches are nearly the same on the canvas', () {

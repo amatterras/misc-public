@@ -263,6 +263,14 @@ abstract final class InkColors {
   static const graphiteGray = Color(0xFF6B7078);
   static const jetBlack = Color(0xFF111214);
 
+  /// Urgency red: a deeper, more serious signal red than [brightRed], for
+  /// "do this now" marks. Added after [brightRed] so indices stay stable.
+  static const urgentRed = Color(0xFFD90429);
+
+  /// Two more pinks: a soft one and a vivid one ([fuchsia] leans magenta).
+  static const blushPink = Color(0xFFF6B8CB);
+  static const hotPink = Color(0xFFFF5C9E);
+
   static const library = <InkSwatch>[
     InkSwatch('pearl', 'Pearl', pearl),
     InkSwatch('steel-blue', 'Steel Blue', steelBlue),
@@ -288,6 +296,9 @@ abstract final class InkColors {
     InkSwatch('warm-brown', 'Warm Brown', warmBrown),
     InkSwatch('graphite-gray', 'Graphite Gray', graphiteGray),
     InkSwatch('jet-black', 'Jet Black', jetBlack),
+    InkSwatch('urgent-red', 'Urgent Red', urgentRed),
+    InkSwatch('blush-pink', 'Blush Pink', blushPink),
+    InkSwatch('hot-pink', 'Hot Pink', hotPink),
   ];
 
   static final List<Color> all = List.unmodifiable(

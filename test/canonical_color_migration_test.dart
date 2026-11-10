@@ -187,7 +187,7 @@ void main() {
         'Deep Pine',
         'Bright Red',
       ]);
-      expect(InkColors.library.map((s) => s.id).toSet().length, 24);
+      expect(InkColors.library.map((s) => s.id).toSet().length, 27);
       expect(InkColors.byId('bright-orange')?.color, const Color(0xFFFF6A00));
       expect(inkColorNames.skip(19), [
         'Bright Orange',
@@ -195,7 +195,11 @@ void main() {
         'Warm Brown',
         'Graphite Gray',
         'Jet Black',
+        'Urgent Red',
+        'Blush Pink',
+        'Hot Pink',
       ]);
+      expect(InkColors.byId('urgent-red')?.color, InkColors.urgentRed);
       expect(
         InkColors.library.where((s) => s.color == const Color(0xFFFF3B30)),
         hasLength(1),

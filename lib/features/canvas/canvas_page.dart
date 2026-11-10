@@ -262,7 +262,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
       placed.add(c.insertImage(a, Offset(x, at.dy), maxSide: 340));
       x += 360;
     }
-    c.select(placed.map((i) => i.id));
+    if (c.selectsItems) c.select(placed.map((i) => i.id));
   }
 
   Future<void> _addImages() async {
@@ -276,7 +276,7 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
   void _addNoteCard() {
     final note = s.workspace.createNote();
     final card = c.insertNoteCard(note.id, _centerPoint);
-    c.select([card.id]);
+    if (c.selectsItems) c.select([card.id]);
   }
 
   /// PDFs become document cards (the link card) that open in the default
@@ -487,9 +487,18 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
     _focusNode.requestFocus();
     if (e.kind == PointerDeviceKind.mouse &&
         e.buttons & kSecondaryMouseButton != 0) {
-      // Right-click: actions for what is under the pointer.
+      // Right-click: actions for what is under the pointer. Only the Select
+      // and Lasso tools read what is under it; with any other tool the menu
+      // is the canvas's own and nothing is selected.
       unawaited(
-        showCanvasMenu(context, s, c, e.position, c.toWorld(e.localPosition)),
+        showCanvasMenu(
+          context,
+          s,
+          c,
+          e.position,
+          c.toWorld(e.localPosition),
+          canvasOnly: !c.selectsItems,
+        ),
       );
       return;
     }
@@ -796,6 +805,9 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                                 _activeStylusPointer != null) {
                               return;
                             }
+                            // Photos and items are picked by the Select and
+                            // Lasso tools only.
+                            if (!c.selectsItems) return;
                             final world = c.toWorld(details.localPosition);
                             if (c.hitTest(world) == null) return;
                             unawaited(
