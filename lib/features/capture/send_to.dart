@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../../data/models/canvas_models.dart' show newId;
+import '../../data/storage/app_log.dart';
 import '../../data/models/library_models.dart';
 import '../../data/repositories/archive_duplicates.dart';
 import 'capture_service.dart';
@@ -169,6 +170,33 @@ class SendToBridge {
     );
   }
 
+  /// Imports of one request started without finishing before it is set
+  /// aside (see [processRequests]).
+  static const maxAttempts = 2;
+
+  static Future<int> _attemptsSoFar(File attempts) async {
+    try {
+      if (!await attempts.exists()) return 0;
+      // Unreadable counts as used up: it was written by an interrupted try.
+      return int.tryParse((await attempts.readAsString()).trim()) ??
+          maxAttempts;
+    } on FileSystemException {
+      return 0;
+    }
+  }
+
+  /// " (12.3 MB)" for a shared file, so a slow import is explained by the
+  /// log. Never the file's name or content.
+  static Future<String> _sizeNote(Map json) async {
+    if (json['type'] != 'file' || json['value'] is! String) return '';
+    try {
+      final bytes = await File(json['value'] as String).length();
+      return ' (${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB)';
+    } on FileSystemException {
+      return ' (file missing)';
+    }
+  }
+
   bool _busy = false;
   int failedCount = 0;
   String? lastFailure;
@@ -184,8 +212,36 @@ class SendToBridge {
     try {
       await for (final entity in requestsDir.list()) {
         if (entity is! File || !entity.path.endsWith('.json')) continue;
+        // A request whose import was started [maxAttempts] times without
+        // finishing (the app was closed, stopped or ran out of memory
+        // during it) is set aside, kept as `.failed` for recovery, instead
+        // of being retried at every launch.
+        final attempts = File('${entity.path}.attempts');
+        final tries = await _attemptsSoFar(attempts);
+        if (tries >= maxAttempts) {
+          failedCount++;
+          lastFailure =
+              'A shared item did not finish importing after $tries tries, '
+              'so it was set aside (kept, not deleted).';
+          AppLog.warn('Share inbox: $lastFailure');
+          try {
+            await entity.rename('${entity.path}.failed');
+            await attempts.delete();
+          } on FileSystemException catch (e) {
+            AppLog.warn('Share inbox: could not set a request aside: $e');
+          }
+          continue;
+        }
+        final watch = Stopwatch()..start();
+        var kind = 'unknown';
         try {
+          await attempts.writeAsString('${tries + 1}', flush: true);
           final json = jsonDecode(await entity.readAsString()) as Map;
+          kind = '${json['type']}';
+          AppLog.info(
+            'Share inbox: importing a $kind request'
+            '${await _sizeNote(json)} (try ${tries + 1})',
+          );
           if (json['type'] == 'focus') {
             onFocusRequested?.call();
             await entity.delete();
@@ -303,6 +359,10 @@ class SendToBridge {
           // imports it twice).
           await ws.flush();
           await entity.delete();
+          AppLog.info(
+            'Share inbox: $kind request imported in '
+            '${watch.elapsedMilliseconds} ms',
+          );
           // A photo the iOS Share Extension copied into the shared folder
           // has been copied into the app now. Never touches files outside
           // that folder (Windows "Send to" passes the user's own files).
@@ -318,8 +378,17 @@ class SendToBridge {
           lastFailure = e is FormatException
               ? e.message
               : 'A shared item could not be read or stored.';
-          debugPrint('A shared item could not be imported: $lastFailure');
+          AppLog.warn(
+            'Share inbox: a $kind request failed after '
+            '${watch.elapsedMilliseconds} ms: $lastFailure ($e)',
+          );
           await entity.rename('${entity.path}.failed');
+        } finally {
+          try {
+            if (await attempts.exists()) await attempts.delete();
+          } on FileSystemException {
+            // Harmless: at worst counted as one more try next time.
+          }
         }
       }
     } finally {

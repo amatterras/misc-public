@@ -83,7 +83,10 @@ void main() {
     expect(steps, contains('Starting iPhone/iPad services'));
     expect(state.canvasList, isNotEmpty, reason: 'the app opened normally');
     expect(
-      AppLog.session.any((l) => l.contains('services unavailable')),
+      // The exact service that did not answer, with how long it waited.
+      AppLog.session.any(
+        (l) => l.contains('iOS service "share inbox folder": failed after'),
+      ),
       isTrue,
       reason: 'the reason is in the log',
     );

@@ -131,11 +131,15 @@ class FileCanvasRepository implements CanvasRepository {
         return const JsonEncoder.withIndent(' ').convert(json);
       });
 
-  /// Replaces each stroke's points (`[[x, y, p], ...]`) by one flat
-  /// [Float64List]: sending a list of numbers to an isolate is one memory
-  /// copy, while thousands of small lists are copied one by one on the UI
-  /// thread (measured: most of the cost of starting the background save).
-  /// [_unpackPoints] restores the very same values, so the text is the same.
+  /// Replaces each stroke's points by one flat [Float64List] of the numbers
+  /// and a [Uint8List] of how many numbers each point has: sending a list of
+  /// numbers to an isolate is one memory copy, while thousands of small
+  /// lists are copied one by one on the UI thread (measured: most of the
+  /// cost of starting the background save). A point is `[x, y, p]`, or with
+  /// Pencil data `[x, y, p, time]` / `[x, y, p, time, altitude, azimuth]`
+  /// (see [StrokePoint.toJson]); the time is a whole number, the rest are
+  /// doubles. [_unpackPoints] restores the very same values and types, so
+  /// the text is the same. Anything else is sent as it is.
   static void _packPoints(Map<String, dynamic> json) {
     final items = json['items'];
     if (items is! List) return;
@@ -143,24 +147,33 @@ class FileCanvasRepository implements CanvasRepository {
       if (item is! Map<String, dynamic>) continue;
       final points = item['points'];
       if (points is! List || points.isEmpty) continue;
-      final flat = Float64List(points.length * 3);
+      var total = 0;
       var ok = true;
-      for (var i = 0; i < points.length && ok; i++) {
-        final p = points[i];
-        if (p is List && p.length == 3) {
-          for (var k = 0; k < 3; k++) {
-            final v = p[k];
-            if (v is double) {
-              flat[i * 3 + k] = v;
-            } else {
-              ok = false; // Not plain numbers: sent as it is.
-            }
-          }
-        } else {
+      for (final p in points) {
+        if (p is! List || (p.length != 3 && p.length != 4 && p.length != 6)) {
           ok = false;
+          break;
+        }
+        total += p.length;
+      }
+      if (!ok) continue;
+      final flat = Float64List(total);
+      final lengths = Uint8List(points.length);
+      var o = 0;
+      for (var i = 0; i < points.length && ok; i++) {
+        final p = points[i] as List;
+        lengths[i] = p.length;
+        for (var k = 0; k < p.length; k++) {
+          final v = p[k];
+          if (k == 3 ? v is int : v is double) {
+            flat[o++] = (v as num).toDouble();
+          } else {
+            ok = false; // Not the expected numbers: sent as it is.
+            break;
+          }
         }
       }
-      if (ok) item['points'] = flat;
+      if (ok) item['points'] = (flat, lengths);
     }
   }
 
@@ -169,13 +182,50 @@ class FileCanvasRepository implements CanvasRepository {
     if (items is! List) return;
     for (final item in items) {
       if (item is! Map<String, dynamic>) continue;
-      final flat = item['points'];
-      if (flat is! Float64List) continue;
+      final packed = item['points'];
+      if (packed is! (Float64List, Uint8List)) continue;
+      final (flat, lengths) = packed;
+      var o = 0;
       item['points'] = [
-        for (var i = 0; i < flat.length; i += 3)
-          [flat[i], flat[i + 1], flat[i + 2]],
+        for (final n in lengths)
+          [for (var k = 0; k < n; k++) k == 3 ? flat[o++].toInt() : flat[o++]],
       ];
     }
+  }
+
+  /// Visible for tests: the text a big drawing is saved as (packing, then
+  /// unpacking, as the background save does).
+  static String encodeLikeBackgroundSave(Map<String, dynamic> json) {
+    _packPoints(json);
+    _unpackPoints(json);
+    return const JsonEncoder.withIndent(' ').convert(json);
+  }
+
+  /// Whether [json]'s strokes would all go to the background save as flat
+  /// number lists (the fast way). Visible for tests.
+  static bool packsCompletely(Map<String, dynamic> json) {
+    _packPoints(json);
+    final items = json['items'] as List? ?? const [];
+    final ok = items.every(
+      (i) => i is! Map || i['points'] is! List || (i['points'] as List).isEmpty,
+    );
+    _unpackPoints(json);
+    return ok;
+  }
+
+  /// The oldest and newest schema among stored canvases, in one pass over
+  /// the files (start-up used to read and decode every drawing twice for
+  /// [oldestSchema] and [newestSchema]).
+  Future<(int, int)> schemaRange() async {
+    var oldest = CanvasDocument.schemaVersion;
+    var newest = 0;
+    for (final id in await store.list(_collection)) {
+      final json = await store.read(_collection, id);
+      final schema = json?['schema'] as int? ?? 1;
+      if (schema < oldest) oldest = schema;
+      if (schema > newest) newest = schema;
+    }
+    return (oldest, newest);
   }
 
   @override

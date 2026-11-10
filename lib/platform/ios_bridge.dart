@@ -10,6 +10,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../data/storage/app_log.dart';
 import '../features/ink/native_ink.dart';
 import '../sync/secret_store.dart';
 import 'file_protection.dart';
@@ -38,12 +39,31 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
   /// that arrived before Flutter was ready (including the launch link); the
   /// native side holds them until this asks for them.
   Future<void> listenForLinks(FutureOr<void> Function(Uri) onLink) async {
+    handleLinks(onLink);
+    await deliverWaitingLinks();
+  }
+
+  /// Links opened while the app runs go to [onLink] from now on (no wait).
+  void handleLinks(FutureOr<void> Function(Uri) onLink) {
     _onLink = onLink;
     _ensureHandler();
+  }
+
+  /// Asks iOS for the links that arrived before Flutter was ready and hands
+  /// each to the handler set by [handleLinks]. One link that fails is logged
+  /// by the caller's handler and does not stop the others.
+  Future<void> deliverWaitingLinks() async {
+    final onLink = _onLink;
+    if (onLink == null) return;
     final waiting = await _invoke<List<Object?>>('initialLinks') ?? const [];
     for (final link in waiting.whereType<String>()) {
       final uri = Uri.tryParse(link);
-      if (uri != null) await onLink(uri);
+      if (uri == null) continue;
+      try {
+        await onLink(uri);
+      } catch (e, s) {
+        AppLog.error('A link opened from outside could not be handled', e, s);
+      }
     }
   }
 
@@ -145,6 +165,15 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
   /// container), or null when this install has no App Group. Which group
   /// that is depends on how it was signed; the native side finds it.
   Future<String?> sharedContainerPath() => _invoke<String>('sharedContainer');
+
+  /// Asks iOS for time to finish saving after the app left the screen.
+  /// Returns the id to pass to [endBackgroundSave], or null (none given).
+  Future<int?> beginBackgroundSave() => _invoke<int>('beginBackgroundSave');
+
+  /// Gives back the time asked for by [beginBackgroundSave].
+  Future<void> endBackgroundSave(int id) async {
+    await _invoke<void>('endBackgroundSave', id);
+  }
 
   /// Which App Group the native side is using and why (or, when there is
   /// none, which names it asked for), for the log. Null off iOS.

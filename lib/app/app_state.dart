@@ -384,7 +384,13 @@ class AppState extends ChangeNotifier {
     // Data written by a newer version of THEapp must never be rewritten in
     // an older format: stop before anything is saved.
     step('Checking the data version');
-    if (await canvases.newestSchema() > CanvasDocument.schemaVersion ||
+    // One pass over the drawings for both checks (each one reads and
+    // decodes every drawing file, which grows with Pencil use).
+    final c = canvases;
+    final (oldestCanvas, newestCanvas) = c is FileCanvasRepository
+        ? await c.schemaRange()
+        : (await c.oldestSchema(), await c.newestSchema());
+    if (newestCanvas > CanvasDocument.schemaVersion ||
         workspace.newestRecordSchema > RecordCollection.schemaVersion) {
       workspace.store.readOnly = true;
       dataProblem =
@@ -398,7 +404,7 @@ class AppState extends ChangeNotifier {
     // Upgrade older files: verified backup (with photos) first, then all at
     // once, so the data is never left half-upgraded for long.
     final needsMigration =
-        await canvases.oldestSchema() < CanvasDocument.schemaVersion ||
+        oldestCanvas < CanvasDocument.schemaVersion ||
         workspace.oldestRecordSchema < RecordCollection.schemaVersion;
     if (needsMigration) {
       Directory? backup;
@@ -462,9 +468,11 @@ class AppState extends ChangeNotifier {
     if (ios != null) {
       step('Starting iPhone/iPad services');
       // Links from outside and shared items are extras: if iOS does not
-      // answer, THEapp still opens (the reason is in the log).
+      // answer, THEapp still opens (the reason is in the log). Only quick
+      // native calls run here; importing shared items and links waiting
+      // from before the launch runs after 'Ready' (see [_startIosInbox]).
       try {
-        await _startIosCapture(ios!);
+        await _startIosCapture(ios!, step);
       } catch (e, s) {
         AppLog.error('iPhone/iPad link and share services unavailable', e, s);
       }
@@ -479,6 +487,8 @@ class AppState extends ChangeNotifier {
     // A conflict settling that an interruption stopped half way is finished
     // before sync starts, so both versions and the resolution state are
     // consistent when they travel; old settled conflicts are pruned.
+    // Its own step, so a wait here is never reported as the step before.
+    step('Finishing interrupted conflict fixes');
     try {
       await conflictResolver.recoverInterrupted();
       conflictResolver.pruneSettled();
@@ -504,6 +514,7 @@ class AppState extends ChangeNotifier {
     unawaited(syncCalendarAccounts());
     _startMaintenance();
     step('Ready');
+    if (ios != null) unawaited(_startIosInbox(ios!));
   }
 
   // ------------------------------------------------ hub and every 10 s --
@@ -2214,29 +2225,108 @@ class AppState extends ChangeNotifier {
     return result;
   }
 
-  Future<void> _startIosCapture(IosBridge ios) async {
+  /// Runs one named iPhone/iPad service with start, finish and failure in
+  /// the log (with the time it took), and shows its name on the start-up
+  /// screen, so a wait names the exact service. A failure is logged and
+  /// returns null: these services are extras and never stop the app.
+  Future<T?> _iosService<T>(
+    String name,
+    Future<T> Function() run, {
+    void Function(String)? step,
+  }) async {
+    step?.call('Starting iPhone/iPad services: $name');
+    final watch = Stopwatch()..start();
+    AppLog.info('iOS service "$name": started');
+    try {
+      final result = await run();
+      AppLog.info(
+        'iOS service "$name": done in ${watch.elapsedMilliseconds} ms',
+      );
+      return result;
+    } catch (e, s) {
+      AppLog.error(
+        'iOS service "$name": failed after ${watch.elapsedMilliseconds} ms',
+        e,
+        s,
+      );
+      return null;
+    }
+  }
+
+  bool _iosCaptureStarted = false;
+
+  /// The quick part, during start-up: each step is a native call with a
+  /// time limit ([IosBridge.callTimeout]). Safe to call again (does nothing).
+  Future<void> _startIosCapture(
+    IosBridge ios, [
+    void Function(String)? step,
+  ]) async {
+    if (_iosCaptureStarted) return;
+    _iosCaptureStarted = true;
     _pencilTaps ??= ios.pencilDoubleTap.listen(onPencilDoubleTap);
-    await _publishShareTagCatalog();
-    final shared = await ios.sharedContainerPath();
+    await _iosService('share tag list', _publishShareTagCatalog, step: step);
+    final shared = await _iosService(
+      'share inbox folder',
+      ios.sharedContainerPath,
+      step: step,
+    );
     _sharedInbox = shared == null ? null : SendToBridge(Directory(shared));
-    final summary = await ios.sharedContainerSummary();
+    final summary = await _iosService(
+      'share inbox check',
+      ios.sharedContainerSummary,
+      step: step,
+    );
     if (summary != null) {
       (shared == null ? AppLog.warn : AppLog.info)('Share inbox: $summary');
     }
-    await importSharedItems();
-    await ios.listenForLinks((uri) async {
-      if (completeOAuthRedirect(uri)) return; // a calendar sign-in
-      if (openWidgetLink(uri)) return;
-      if (await addSharedLinkToLinks(uri)) return;
-      final saved = await sendTo.handleUriToArchive(uri, capture);
-      if (saved == 0) return;
-      await workspace.flush();
-      final reused = sendTo.takeReused();
-      if (saved > reused.length) {
-        showToast('Added ${saved - reused.length} item(s) to the Archive');
+    // From here on, links opened while the app runs are handled at once.
+    ios.handleLinks(_handleIncomingLink);
+  }
+
+  Future<void>? _iosInbox;
+
+  /// Tests: the import started after 'Ready' (null before it starts).
+  @visibleForTesting
+  Future<void>? get iosInboxImport => _iosInbox;
+
+  /// The slow part, after 'Ready': imports items left by the Share
+  /// Extension (a shared file can be hundreds of MB: copied, encrypted and
+  /// hashed) and links that arrived before the app was ready. Before this
+  /// fix it ran inside start-up, so one large or damaged shared item kept
+  /// the app on the start-up screen at every launch. Runs once at a time.
+  Future<void> _startIosInbox(IosBridge ios) {
+    return _iosInbox ??= () async {
+      final slow = Timer(const Duration(seconds: 20), () {
+        AppLog.warn(
+          'iOS share inbox: still importing after 20 s '
+          '(the app is usable meanwhile)',
+        );
+      });
+      try {
+        await _iosService('shared items import', importSharedItems);
+        await _iosService(
+          'links waiting from before start',
+          ios.deliverWaitingLinks,
+        );
+      } finally {
+        slow.cancel();
       }
-      await offerArchiveDuplicates(reused);
-    });
+    }();
+  }
+
+  Future<void> _handleIncomingLink(Uri uri) async {
+    if (_disposed) return;
+    if (completeOAuthRedirect(uri)) return; // a calendar sign-in
+    if (openWidgetLink(uri)) return;
+    if (await addSharedLinkToLinks(uri)) return;
+    final saved = await sendTo.handleUriToArchive(uri, capture);
+    if (saved == 0) return;
+    await workspace.flush();
+    final reused = sendTo.takeReused();
+    if (saved > reused.length) {
+      showToast('Added ${saved - reused.length} item(s) to the Archive');
+    }
+    await offerArchiveDuplicates(reused);
   }
 
   /// Set by the app shell: shows the small "Already in Archive" popup.
@@ -3956,6 +4046,35 @@ class AppState extends ChangeNotifier {
   }
 
   /// Saves everything that is pending. Called before the app exits.
+  /// Saves pending edits when the app leaves the screen. On iPhone/iPad it
+  /// first asks iOS for background time, so the save is not suspended half
+  /// way (the edits would then only be written at the next launch, or lost
+  /// if iOS ends the app meanwhile). A failure is logged, never thrown.
+  Future<void> flushOnLeave() async {
+    final ios = this.ios;
+    int? task;
+    if (ios != null) {
+      try {
+        task = await ios.beginBackgroundSave();
+      } catch (e) {
+        AppLog.warn('No background time for saving: $e');
+      }
+    }
+    try {
+      await flush();
+    } catch (e, s) {
+      AppLog.error('Saving when leaving the app failed', e, s);
+    } finally {
+      if (task != null) {
+        try {
+          await ios!.endBackgroundSave(task);
+        } catch (e) {
+          AppLog.warn('Could not end the background save: $e');
+        }
+      }
+    }
+  }
+
   Future<void> flush() async {
     await _canvas?.flush();
     await _links?.flush();
