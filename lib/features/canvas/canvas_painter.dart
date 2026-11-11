@@ -162,10 +162,13 @@ class CanvasPainter extends CustomPainter {
     }
     final liveConnection = controller.liveConnection;
     if (liveConnection != null) {
+      // A hand-drawn gesture is shown as the refined line it will become.
+      final refined = controller.livePreview;
       _paintConnector(
         canvas,
-        [liveConnection.$1, liveConnection.$2],
+        refined?.points ?? [liveConnection.$1, liveConnection.$2],
         scale,
+        smooth: refined?.smooth ?? true,
         selected: true,
       );
     }

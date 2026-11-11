@@ -43,6 +43,7 @@ import '../features/home_widgets/widget_snapshot.dart';
 import '../platform/ios_bridge.dart';
 import '../platform/input_hints.dart';
 import '../platform/platform.dart' as native;
+import '../widgets/common.dart' as common;
 import '../widgets/date_prefs.dart';
 import '../data/models/unknown_fields.dart' show unknownFields;
 import '../sync/conflict_resolver.dart';
@@ -64,11 +65,13 @@ import '../hub/hub_host.dart';
 import 'attention_gate.dart';
 import 'maintenance.dart';
 import '../sync/local_hub.dart';
+import '../features/calendar/calendar_ink.dart' show inkDayAt;
 import '../features/calendar/external/external_calendar.dart';
 import '../features/calendar/external/oauth.dart';
 import '../features/graph/relationship_graph.dart';
 import '../features/links/archive_library.dart';
 import '../features/links/link_tags.dart';
+import '../features/relations/pdf_page_viewer.dart' show showPdfInApp;
 import '../features/search/pdf_ocr.dart';
 import '../features/search/text_index.dart';
 import '../features/think/experiment_page.dart';
@@ -157,6 +160,10 @@ class AppState extends ChangeNotifier {
     capture.libraryRepository = library;
     library.onIndexDocuments = pdfTexts.indexAll;
     library.indexedDocumentText = (assetId) => pdfTexts[assetId];
+    // Attachment chips everywhere open PDFs in the in-app page viewer
+    // where this device can render them (iPhone/iPad, Windows).
+    common.inAppDocumentOpener = (context, asset) =>
+        showPdfInApp(context, this, asset, null);
   }
 
   /// iPhone/iPad services (links opened from outside, shared items); null
@@ -1527,6 +1534,7 @@ class AppState extends ChangeNotifier {
       notebookPages: () => pageSearchText,
       pdfPages: (id) => pdfTexts.pagesOf(id),
       pdfText: (id) => pdfTexts[id],
+      calendarNotes: () => _calendarNoteText,
     ),
   );
 
@@ -1905,12 +1913,41 @@ class AppState extends ChangeNotifier {
       ..clear()
       ..addAll({
         for (final c in all)
-          if (!c.isCanvas && c.searchText.trim().isNotEmpty) c.id: c.searchText,
+          if (!c.isCanvas &&
+              !c.isCalendarInk &&
+              c.searchText.trim().isNotEmpty)
+            c.id: c.searchText,
       });
+    // The Calendar's typed text belongs to days: read where each box sits.
+    if (all.any((c) => c.isCalendarInk && c.searchText.trim().isNotEmpty)) {
+      try {
+        final doc = await canvases.load(calendarInkId);
+        if (doc != null) _indexCalendarNotes(doc);
+      } on Object catch (e) {
+        AppLog.warn('Calendar notes are not searchable ($e)');
+      }
+    }
     notifyListeners();
   }
 
   final Map<String, String> _pageText = {};
+
+  /// Text boxes on the Calendar's drawing layer, by day key, for search.
+  /// Strokes (handwriting) are never part of it.
+  final Map<String, String> _calendarNoteText = {};
+
+  void _indexCalendarNotes(CanvasDocument doc) {
+    final byDay = <String, StringBuffer>{};
+    for (final item in doc.items) {
+      if (item is! TextItem || item.text.trim().isEmpty) continue;
+      (byDay[dayKey(inkDayAt(item.position))] ??= StringBuffer()).writeln(
+        item.text,
+      );
+    }
+    _calendarNoteText
+      ..clear()
+      ..addAll({for (final e in byDay.entries) e.key: e.value.toString()});
+  }
 
   /// Text typed on note pages (`nb-<note id>`) and on the Archive board, by
   /// document id, for global search. Kept current by [saveDocument].
@@ -1920,6 +1957,7 @@ class AppState extends ChangeNotifier {
   /// current. (Canvases save through [_saveCanvas].)
   Future<void> saveDocument(CanvasDocument doc) async {
     await canvases.save(doc);
+    if (doc.id == calendarInkId) _indexCalendarNotes(doc);
     // A mindmap saved after an edit: sync it soon (canvas files are not
     // workspace records, so they do not tell the scheduler themselves).
     _editedLocally();
@@ -3681,26 +3719,16 @@ class AppState extends ChangeNotifier {
     return c;
   }
 
-  /// The canvas tool strip and the colour/options strip, folded away or
-  /// not (this device; the Mindmap and the Archive board share them, as
-  /// they share the strips). Folding hides them only.
+  /// The canvas tool strip, folded away or not (this device; the Mindmap
+  /// and the Archive board share it). Folding hides it only. The pen /
+  /// highlighter / eraser settings panel is not remembered: it starts
+  /// folded and belongs to the chosen tool (CanvasController.optionsExpanded).
   bool get canvasToolsCollapsed =>
       settings.get<bool>('canvasToolsCollapsed') ?? false;
-  bool get canvasOptionsCollapsed =>
-      settings.get<bool>('canvasOptionsCollapsed') ?? false;
 
   Future<void> toggleCanvasTools() {
     final saved = settings.set('canvasToolsCollapsed', !canvasToolsCollapsed);
     notifyListeners(); // shown at once, saved meanwhile
-    return saved;
-  }
-
-  Future<void> toggleCanvasOptions() {
-    final saved = settings.set(
-      'canvasOptionsCollapsed',
-      !canvasOptionsCollapsed,
-    );
-    notifyListeners();
     return saved;
   }
 

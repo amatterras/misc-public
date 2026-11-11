@@ -542,7 +542,7 @@ void main() {
         await h.key(LogicalKeyboardKey.keyK, ctrl: true);
         await tester.pump(const Duration(milliseconds: 400));
         expect(
-          find.textContaining('Search notes, canvases'),
+          find.textContaining('Search notes, tasks, calendar'),
           findsOneWidget,
           reason: 'Ctrl+K on $page',
         );

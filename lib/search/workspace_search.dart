@@ -23,6 +23,8 @@ import '../data/models/object_library_models.dart';
 import '../data/models/task_models.dart';
 import '../data/storage/app_log.dart';
 import '../data/workspace.dart';
+import '../features/links/link_tags.dart';
+import '../features/smartlinks/smart_links.dart' show plainLinkText;
 import 'search_index.dart';
 
 /// Text that does not live in a record collection.
@@ -32,6 +34,7 @@ class SearchSources {
     this.notebookPages = _noPages,
     this.pdfPages = _noPdf,
     this.pdfText = _noText,
+    this.calendarNotes = _noPages,
   });
 
   static List<CanvasSummary> _none() => const [];
@@ -49,6 +52,10 @@ class SearchSources {
 
   /// The whole text of a PDF when it is not split in pages.
   final String? Function(String assetId) pdfText;
+
+  /// Text typed on the Calendar's drawing layer: day key (yyyy-mm-dd) → the
+  /// text boxes of that day. Never the strokes.
+  final Map<String, String> Function() calendarNotes;
 }
 
 class WorkspaceSearch {
@@ -192,7 +199,27 @@ class WorkspaceSearch {
           id: c.id,
           title: c.title,
           subtitle: 'Mindmap',
-          fields: [SearchField('body', c.searchText)],
+          fields: [SearchField('body', plainLinkText(c.searchText))],
+        );
+      },
+    );
+    final notes = sources.calendarNotes();
+    _external(
+      'x:calendar-notes',
+      {
+        for (final e in notes.entries)
+          if (e.value.trim().isNotEmpty)
+            e.key: '${e.value.hashCode}.${e.value.length}',
+      },
+      DocKind.calendarNote,
+      (id) {
+        final day = DateTime.tryParse(id);
+        return IndexedDoc(
+          kind: DocKind.calendarNote,
+          id: id,
+          title: day == null ? 'Calendar note' : 'Calendar note ($id)',
+          subtitle: 'Calendar note',
+          fields: [SearchField('body', notes[id] ?? '')],
         );
       },
     );
@@ -214,7 +241,7 @@ class WorkspaceSearch {
           id: noteId,
           title: note.displayTitle,
           subtitle: 'Note page',
-          fields: [SearchField('pages', pages[id] ?? '')],
+          fields: [SearchField('pages', plainLinkText(pages[id] ?? ''))],
         );
       },
       docId: (id) => id.substring(3),
@@ -327,7 +354,7 @@ class WorkspaceSearch {
       title: n.displayTitle,
       subtitle: 'Note',
       fields: [
-        SearchField('body', n.body),
+        SearchField('body', plainLinkText(n.body)),
         if (n.tags.isNotEmpty) SearchField('tags', n.tags.join(' '), weight: 6),
         if (folder != null) SearchField('folder', folder, weight: 3),
       ],
@@ -336,16 +363,29 @@ class WorkspaceSearch {
 
   IndexedDoc _task(Task t) {
     final project = ws.projects[t.projectId]?.name;
+    // A subtask is a task with a parent: it is found by its own text and by
+    // the parent's title, and says whose subtask it is.
+    final parent = t.parentId == null ? null : ws.tasks[t.parentId!];
+    final props = [
+      for (final e in t.properties.entries) '${e.key} ${e.value}',
+    ].join(' ');
     return IndexedDoc(
       kind: DocKind.task,
       id: t.id,
       title: t.title,
-      subtitle: t.isExam ? 'Exam' : 'Task',
+      subtitle: t.isExam
+          ? 'Exam'
+          : parent != null
+          ? 'Subtask of ${parent.title}'
+          : 'Task',
       fields: [
-        if (t.notes.isNotEmpty) SearchField('notes', t.notes),
+        if (t.notes.isNotEmpty)
+          SearchField('notes', plainLinkText(t.notes)),
         if (t.labels.isNotEmpty)
           SearchField('tags', t.labels.join(' '), weight: 6),
         if (project != null) SearchField('project', project, weight: 4),
+        if (parent != null) SearchField('parent', parent.title, weight: 3),
+        if (props.isNotEmpty) SearchField('properties', props, weight: 3),
       ],
     );
   }
@@ -356,17 +396,17 @@ class WorkspaceSearch {
     title: e.name,
     subtitle: e.category.label,
     fields: [
-      SearchField('description', e.description, weight: 3),
-      SearchField('notes', e.notes),
+      SearchField('description', plainLinkText(e.description), weight: 3),
+      SearchField('notes', plainLinkText(e.notes)),
       if (e.author.isNotEmpty) SearchField('author', e.author, weight: 4),
-      SearchField('highlights', e.highlights),
+      SearchField('highlights', plainLinkText(e.highlights)),
     ],
   );
 
   IndexedDoc _asset(Asset a) {
     final tags = [
       ...ws.tagsOfAsset(a).map((t) => t.name),
-      ...a.linkTags,
+      ...LinkTag.of(a.linkTags).map((t) => t.label),
     ].join(' ');
     if (a.kind == AssetKind.document) {
       final pages = sources.pdfPages(a.id);
@@ -409,7 +449,8 @@ class WorkspaceSearch {
       if (o.description != null)
         SearchField('description', o.description!, weight: 3),
       if (o.summary != null) SearchField('summary', o.summary!, weight: 3),
-      if (o.content != null) SearchField('body', o.content!),
+      if (o.content != null)
+        SearchField('body', plainLinkText(o.content!)),
       if (o.sourceUrl != null) SearchField('url', o.sourceUrl!, weight: 4),
       if (o.mainEntity != null)
         SearchField('entity', o.mainEntity!.name, weight: 4),

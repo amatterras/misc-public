@@ -2,6 +2,7 @@
 // (LibrarySpace folders, LibraryObject items and their 'space' relations).
 // No second store: folder colour, pinning, order and nesting are additive
 // fields of LibrarySpace; items are the library objects themselves.
+import '../data/models/library_models.dart' show AssetKind;
 import '../data/models/object_library_models.dart';
 import '../data/repositories/library_repository.dart';
 import '../data/workspace.dart';
@@ -9,6 +10,23 @@ import 'new_folder_colors.dart';
 
 /// Id of the virtual collection that holds items not filed in any folder.
 const unfiledId = '_unfiled';
+
+/// The stored file to show for an item: its thumbnail (saved as an asset
+/// id — resolved to that asset's file, never used as a file name itself),
+/// its link preview, or the image file.
+String? archiveImageFileOf(Workspace ws, LibraryObject object) {
+  final thumbRef = object.thumbnailId;
+  // Historically an asset id; tolerate a raw stored-file name too.
+  final thumbFile = thumbRef == null
+      ? null
+      : ws.assets[thumbRef]?.file ??
+            (ws.assets[thumbRef] == null ? thumbRef : null);
+  final assetId = object.attachmentIds.where((id) => id.isNotEmpty).firstOrNull;
+  final asset = assetId == null ? null : ws.assets[assetId];
+  return thumbFile ??
+      asset?.previewFile ??
+      (asset?.kind == AssetKind.image ? asset?.file : null);
+}
 
 class ArchiveCollection {
   const ArchiveCollection({

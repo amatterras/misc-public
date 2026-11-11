@@ -4,8 +4,6 @@
 // completely behind a small handle. It only presents; every action is the
 // one the Original sidebar uses (state.goTo, Quick Add, command palette, app
 // switcher, settings, the same drop targets and lists).
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 
 import '../app/app_state.dart';
@@ -15,6 +13,7 @@ import '../features/settings/settings_dialog.dart';
 import '../platform/input_hints.dart';
 import 'new_components.dart' show BrandPlus;
 import '../app/theme.dart';
+import '../widgets/glass_surface.dart';
 
 /// Places [child] (the page area) with the floating sidebar over its right
 /// edge. In a normal window the page area keeps clear of the capsule so
@@ -255,8 +254,7 @@ class NewSidebar extends StatelessWidget {
   }
 }
 
-/// Translucent, blurred, softly lit pill that floats over the page, with a
-/// faint coloured glow around it.
+/// The sidebar's glass pill: the shared [GlassSurface] at the capsule width.
 class _GlassCapsule extends StatelessWidget {
   const _GlassCapsule({required this.child, required this.expanded});
 
@@ -265,38 +263,12 @@ class _GlassCapsule extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const radius = BorderRadius.all(Radius.circular(_CapsuleSizes.width / 2));
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: radius,
-        boxShadow: [...AppElevation.floating, ...AppElevation.glow],
+    return GlassSurface(
+      borderRadius: const BorderRadius.all(
+        Radius.circular(_CapsuleSizes.width / 2),
       ),
-      child: ClipRRect(
-        borderRadius: radius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: AppBlur.glass,
-            sigmaY: AppBlur.glass,
-          ),
-          child: AnimatedContainer(
-            duration: AppMotion.normal,
-            curve: AppMotion.standard,
-            width: expanded
-                ? _CapsuleSizes.expandedWidth
-                : _CapsuleSizes.width,
-            decoration: BoxDecoration(
-              color: AppColors.glass,
-              borderRadius: radius,
-              border: Border.all(color: AppColors.glassBorder),
-            ),
-            foregroundDecoration: BoxDecoration(
-              gradient: AppGradients.lighting,
-              borderRadius: radius,
-            ),
-            child: child,
-          ),
-        ),
-      ),
+      width: expanded ? _CapsuleSizes.expandedWidth : _CapsuleSizes.width,
+      child: child,
     );
   }
 }
@@ -577,9 +549,9 @@ class _Handle extends StatelessWidget {
 
 /// Measurements of the sidebar capsule (only this file draws it).
 abstract final class _CapsuleSizes {
-  static const icon = 20.0;
+  static const icon = ChromeMetrics.icon;
   static const navItem = 44.0;
-  static const width = 60.0;
+  static const width = ChromeMetrics.thickness;
   static const expandedWidth = 188.0;
-  static const border = 1.0;
+  static const border = ChromeMetrics.border;
 }

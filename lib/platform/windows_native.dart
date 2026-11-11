@@ -71,6 +71,22 @@ class _Win {
         .lookupFunction<IntPtr Function(Uint32), int Function(int)>(
           'GetClipboardData',
         );
+    emptyClipboard = user32.lookupFunction<Int32 Function(), int Function()>(
+      'EmptyClipboard',
+    );
+    setClipboardData = user32
+        .lookupFunction<
+          IntPtr Function(Uint32, IntPtr),
+          int Function(int, int)
+        >('SetClipboardData');
+    globalAlloc = kernel32
+        .lookupFunction<IntPtr Function(Uint32, IntPtr), int Function(int, int)>(
+          'GlobalAlloc',
+        );
+    globalFree = kernel32
+        .lookupFunction<IntPtr Function(IntPtr), int Function(int)>(
+          'GlobalFree',
+        );
     registerFormat = user32
         .lookupFunction<
           Uint32 Function(Pointer<Utf16>),
@@ -159,6 +175,10 @@ class _Win {
   late final int Function() closeClipboard;
   late final int Function(int) isFormatAvailable;
   late final int Function(int) getClipboardData;
+  late final int Function() emptyClipboard;
+  late final int Function(int, int) setClipboardData;
+  late final int Function(int, int) globalAlloc;
+  late final int Function(int) globalFree;
   late final int Function(Pointer<Utf16>) registerFormat;
   late final int Function(Pointer<Utf16>, Pointer<Utf16>) findWindow;
   late final int Function(int, int) showWindow;
@@ -299,6 +319,77 @@ List<int> _u32(int v) => [
   (v >> 16) & 0xFF,
   (v >> 24) & 0xFF,
 ];
+
+/// Puts an image on the clipboard: raw [rgba] pixels as CF_DIB (the format
+/// most Windows apps paste) and, when given, [png] under the registered
+/// "PNG" format (kept by apps that understand it, e.g. browsers, Office).
+/// True when the clipboard took at least one of them.
+bool writeClipboardImage({
+  required Uint8List rgba,
+  required int width,
+  required int height,
+  Uint8List? png,
+}) {
+  final w = _win;
+  if (w == null) return false;
+  if (width <= 0 || height <= 0 || rgba.length != width * height * 4) {
+    return false;
+  }
+  // BITMAPINFOHEADER (40 bytes) + BGRA rows, top-down (negative height).
+  final dib = Uint8List(40 + rgba.length);
+  final d = ByteData.sublistView(dib);
+  d.setUint32(0, 40, Endian.little);
+  d.setInt32(4, width, Endian.little);
+  d.setInt32(8, -height, Endian.little);
+  d.setUint16(12, 1, Endian.little); // planes
+  d.setUint16(14, 32, Endian.little); // bits per pixel
+  d.setUint32(16, 0, Endian.little); // BI_RGB
+  d.setUint32(20, rgba.length, Endian.little);
+  for (var i = 0; i < rgba.length; i += 4) {
+    dib[40 + i] = rgba[i + 2];
+    dib[40 + i + 1] = rgba[i + 1];
+    dib[40 + i + 2] = rgba[i];
+    dib[40 + i + 3] = rgba[i + 3];
+  }
+  var opened = false;
+  for (var i = 0; i < 5 && !opened; i++) {
+    opened = w.openClipboard(0) != 0;
+    if (!opened) sleep(const Duration(milliseconds: 20));
+  }
+  if (!opened) return false;
+  try {
+    if (w.emptyClipboard() == 0) return false;
+    var ok = _putGlobal(w, _cfDib, dib);
+    if (png != null) {
+      final pngName = 'PNG'.toNativeUtf16();
+      final format = w.registerFormat(pngName);
+      calloc.free(pngName);
+      if (format != 0) ok = _putGlobal(w, format, png) || ok;
+    }
+    return ok;
+  } finally {
+    w.closeClipboard();
+  }
+}
+
+bool _putGlobal(_Win w, int format, Uint8List bytes) {
+  const gmemMoveable = 0x2;
+  final handle = w.globalAlloc(gmemMoveable, bytes.length);
+  if (handle == 0) return false;
+  final ptr = w.globalLock(handle);
+  if (ptr == nullptr) {
+    w.globalFree(handle);
+    return false;
+  }
+  ptr.asTypedList(bytes.length).setAll(0, bytes);
+  w.globalUnlock(handle);
+  if (w.setClipboardData(format, handle) == 0) {
+    // The clipboard refused it; the handle is still ours to free.
+    w.globalFree(handle);
+    return false;
+  }
+  return true; // the system owns the handle now
+}
 
 /// Shows the standard Windows "Open" dialog for images. Returns the chosen
 /// paths (empty if cancelled).

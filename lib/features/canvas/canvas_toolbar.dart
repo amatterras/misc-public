@@ -7,6 +7,7 @@ import '../../app/background_palette.dart';
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
 import '../../data/models/tag_models.dart';
+import '../../widgets/glass_surface.dart';
 import '../../platform/input_hints.dart';
 import '../ink/pen_sizes.dart';
 import 'alignment.dart';
@@ -39,7 +40,6 @@ class CanvasToolbar extends StatelessWidget {
     required this.onAddLink,
     this.onAddDocument,
     this.onMore,
-    this.onPenDoubleTap,
     this.horizontal = false,
     this.onLayers,
     this.layersOpen = false,
@@ -60,23 +60,30 @@ class CanvasToolbar extends StatelessWidget {
   /// Opens the canvas menu (versions, components, links to mindmaps);
   /// on Windows it is also on right-click.
   final ValueChanged<Offset>? onMore;
-  final VoidCallback? onPenDoubleTap;
 
   @override
   Widget build(BuildContext context) {
     final tool = controller.tool;
-    Widget toolButton(
-      CanvasTool t,
-      Widget icon,
-      String label, {
-      VoidCallback? onDoubleTap,
-    }) => ToolButton(
-      icon: icon,
-      tooltip: label,
-      active: tool == t,
-      onPressed: () => controller.tool = t,
-      onDoubleTap: onDoubleTap,
-    );
+    // Choosing a tool selects it (its panel stays folded). Tapping the
+    // chosen tool again opens its settings panel, and again folds it.
+    Widget toolButton(CanvasTool t, Widget icon, String label) {
+      final expandable = CanvasController.toolHasOptions(t);
+      return ToolButton(
+        icon: icon,
+        tooltip: label,
+        active: tool == t,
+        marker: true,
+        expandable: expandable,
+        expanded: expandable && tool == t && controller.optionsExpanded,
+        onPressed: () {
+          if (tool == t) {
+            controller.toggleOptions();
+          } else {
+            controller.tool = t;
+          }
+        },
+      );
+    }
 
     final column = Column(
       mainAxisSize: MainAxisSize.min,
@@ -88,30 +95,29 @@ class CanvasToolbar extends StatelessWidget {
               CanvasTool.select,
               Transform.flip(
                 flipX: true,
-                child: const Icon(Icons.near_me_outlined, size: 18),
+                child: const Icon(Icons.near_me_outlined, size: ChromeMetrics.icon),
               ),
               'Select & move  (V)',
             ),
             toolButton(
               CanvasTool.lasso,
-              const Icon(Icons.gesture, size: 18),
+              const Icon(Icons.gesture, size: ChromeMetrics.icon),
               'Lasso select  (L)',
             ),
             toolButton(
               CanvasTool.pan,
-              const Icon(Icons.pan_tool_outlined, size: 17),
+              const Icon(Icons.pan_tool_outlined, size: ChromeMetrics.icon),
               'Pan  (H, or hold Space / middle mouse)',
             ),
             const _PanelDivider(),
             toolButton(
               CanvasTool.pen,
-              const Icon(Icons.draw_outlined, size: 18),
+              const Icon(Icons.draw_outlined, size: ChromeMetrics.icon),
               'Draw  (P)',
-              onDoubleTap: onPenDoubleTap,
             ),
             toolButton(
               CanvasTool.highlighter,
-              const Icon(Icons.highlight, size: 18),
+              const Icon(Icons.highlight, size: ChromeMetrics.icon),
               'Highlighter',
             ),
             toolButton(
@@ -121,32 +127,32 @@ class CanvasToolbar extends StatelessWidget {
             ),
             toolButton(
               CanvasTool.text,
-              const Icon(Icons.title, size: 18),
+              const Icon(Icons.title, size: ChromeMetrics.icon),
               touchFirst
                   ? 'Note  (or double-tap)'
                   : 'Note  (T, or double-click)',
             ),
             toolButton(
               CanvasTool.connect,
-              const Icon(Icons.share_outlined, size: 18),
+              const Icon(Icons.share_outlined, size: ChromeMetrics.icon),
               touchFirst
                   ? 'Connect — tap one item, then another (or drag)'
                   : 'Connect — click one item, then another, or drag  (C)',
             ),
             const _PanelDivider(),
             ToolButton(
-              icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+              icon: const Icon(Icons.add_photo_alternate_outlined, size: ChromeMetrics.icon),
               tooltip: 'Add photos from this PC',
               onPressed: onAddImage,
             ),
             if (onAddDocument != null)
               ToolButton(
-                icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                icon: const Icon(Icons.picture_as_pdf_outlined, size: ChromeMetrics.icon),
                 tooltip: 'Add PDF documents from this PC',
                 onPressed: onAddDocument!,
               ),
             ToolButton(
-              icon: const Icon(Icons.add_link, size: 18),
+              icon: const Icon(Icons.add_link, size: ChromeMetrics.icon),
               tooltip: 'Add link  (or paste a URL with Ctrl+V)',
               onPressed: onAddLink,
             ),
@@ -156,12 +162,12 @@ class CanvasToolbar extends StatelessWidget {
         ToolPanel(
           children: [
             ToolButton(
-              icon: const Icon(Icons.undo, size: 18),
+              icon: const Icon(Icons.undo, size: ChromeMetrics.icon),
               tooltip: 'Undo  (Ctrl+Z)',
               onPressed: controller.canUndo ? controller.undo : null,
             ),
             ToolButton(
-              icon: const Icon(Icons.redo, size: 18),
+              icon: const Icon(Icons.redo, size: ChromeMetrics.icon),
               tooltip: 'Redo  (Ctrl+Y)',
               onPressed: controller.canRedo ? controller.redo : null,
             ),
@@ -177,7 +183,7 @@ class CanvasToolbar extends StatelessWidget {
               Builder(
                 builder: (context) => ToolButton(
                   key: const ValueKey('canvas-more'),
-                  icon: const Icon(Icons.more_horiz, size: 18),
+                  icon: const Icon(Icons.more_horiz, size: ChromeMetrics.icon),
                   tooltip: 'More: versions, components, links to mindmaps',
                   onPressed: () {
                     final box = context.findRenderObject() as RenderBox;
@@ -216,8 +222,6 @@ class CanvasContextBar extends StatelessWidget {
     this.onEraser,
     this.onPenWidth,
     this.onPenLook,
-    this.collapsed = false,
-    this.onToggleCollapsed,
     this.onTags,
     this.tagChoices,
     this.onArrange,
@@ -239,11 +243,6 @@ class CanvasContextBar extends StatelessWidget {
   /// Archive board: their resources).
   final void Function(CanvasController c, List<CanvasItem> items)? onTags;
 
-  /// Folded away (see [CollapsibleBar]); [onToggleCollapsed] null: the
-  /// strip cannot be folded (e.g. inside a dialog).
-  final bool collapsed;
-  final VoidCallback? onToggleCollapsed;
-
   final CanvasController controller;
   final void Function(CanvasItem) onActivate;
   final void Function(LinkItem) onRefreshLink;
@@ -261,12 +260,17 @@ class CanvasContextBar extends StatelessWidget {
   static const _highlighterWidths = [12.0, 18.0, 26.0, 36.0];
   static const _fontSizes = {'S': 13.0, 'M': 16.0, 'L': 22.0, 'XL': 32.0};
 
-  /// The strip, folded away with its own handle when it has anything.
+  /// The strip. The pen, highlighter and eraser panels are folded until the
+  /// chosen tool is tapped again ([CanvasController.optionsExpanded]) and
+  /// open and close with a short size and fade; the selection actions are
+  /// shown whenever something is selected.
   @override
   Widget build(BuildContext context) {
-    final panel = _panel(context);
+    final inkTool = CanvasController.toolHasOptions(controller.tool);
+    final open = !inkTool || controller.optionsExpanded;
+    final panel = open ? _panel(context) : const SizedBox.shrink();
     final width = MediaQuery.sizeOf(context).width;
-    final usable = width < 900
+    final usable = width < 900 && panel is! SizedBox
         ? SizedBox(
             width: width - 64,
             child: SingleChildScrollView(
@@ -275,15 +279,22 @@ class CanvasContextBar extends StatelessWidget {
             ),
           )
         : panel;
-    final toggle = onToggleCollapsed;
-    if (toggle == null || panel is SizedBox) return usable;
-    return CollapsibleBar(
-      collapsed: collapsed,
-      onToggle: toggle,
-      vertical: false,
-      what: 'colours and options',
-      handleKey: const ValueKey('context-bar-collapse'),
-      child: usable,
+    return AnimatedSize(
+      duration: AppMotion.quick,
+      curve: AppMotion.standard,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: AppMotion.quick,
+        switchInCurve: AppMotion.standard,
+        transitionBuilder: (child, animation) =>
+            FadeTransition(opacity: animation, child: child),
+        child: KeyedSubtree(
+          key: ValueKey(
+            panel is SizedBox ? 'none' : (inkTool ? controller.tool : 'select'),
+          ),
+          child: usable,
+        ),
+      ),
     );
   }
 
@@ -334,7 +345,7 @@ class CanvasContextBar extends StatelessWidget {
             onPressed: () {
               c.recognizeShapes = !c.recognizeShapes;
             },
-            icon: const Icon(Icons.category_outlined, size: 17),
+            icon: const Icon(Icons.category_outlined, size: ChromeMetrics.icon),
           ),
         ],
       );
@@ -385,7 +396,7 @@ class CanvasContextBar extends StatelessWidget {
             key: const ValueKey('selection-tags'),
             tooltip: 'Tags…',
             onPressed: () => onTags!(c, selected),
-            icon: const Icon(Icons.sell_outlined, size: 17),
+            icon: const Icon(Icons.sell_outlined, size: ChromeMetrics.icon),
           ),
           if (tagChoices != null)
             PopupMenuButton<String>(
@@ -468,14 +479,14 @@ class CanvasContextBar extends StatelessWidget {
             active: first.bold,
             onPressed: () =>
                 c.updateSelectedTexts((t) => t.copyWith(bold: !first.bold)),
-            icon: const Icon(Icons.format_bold, size: 18),
+            icon: const Icon(Icons.format_bold, size: ChromeMetrics.icon),
           ),
           ToolButton(
             tooltip: 'Italic',
             active: first.italic,
             onPressed: () =>
                 c.updateSelectedTexts((t) => t.copyWith(italic: !first.italic)),
-            icon: const Icon(Icons.format_italic, size: 18),
+            icon: const Icon(Icons.format_italic, size: ChromeMetrics.icon),
           ),
           ToolButton(
             tooltip: 'Alignment',
@@ -487,7 +498,7 @@ class CanvasContextBar extends StatelessWidget {
               TextAlignment.left => Icons.format_align_left,
               TextAlignment.center => Icons.format_align_center,
               TextAlignment.right => Icons.format_align_right,
-            }, size: 18),
+            }, size: ChromeMetrics.icon),
           ),
           _ColorMenu(
             tooltip: 'Text colour',
@@ -515,12 +526,12 @@ class CanvasContextBar extends StatelessWidget {
           ToolButton(
             tooltip: 'Open link in browser  (double-click)',
             onPressed: () => onActivate(single),
-            icon: const Icon(Icons.open_in_new, size: 17),
+            icon: const Icon(Icons.open_in_new, size: ChromeMetrics.icon),
           ),
           ToolButton(
             tooltip: 'Fetch title & preview again',
             onPressed: () => onRefreshLink(single),
-            icon: const Icon(Icons.refresh, size: 17),
+            icon: const Icon(Icons.refresh, size: ChromeMetrics.icon),
           ),
           const _PanelDivider(vertical: true),
         ],
@@ -600,7 +611,7 @@ class CanvasContextBar extends StatelessWidget {
           ToolButton(
             tooltip: 'Open note  (double-click)',
             onPressed: () => onActivate(single),
-            icon: const Icon(Icons.open_in_new, size: 17),
+            icon: const Icon(Icons.open_in_new, size: ChromeMetrics.icon),
           ),
           const _PanelDivider(vertical: true),
         ],
@@ -678,7 +689,7 @@ class CanvasContextBar extends StatelessWidget {
               height: 36,
               child: Icon(
                 Icons.palette_outlined,
-                size: 17,
+                size: ChromeMetrics.icon,
                 color: AppColors.textMuted,
               ),
             ),
@@ -717,7 +728,7 @@ class CanvasContextBar extends StatelessWidget {
             height: 36,
             child: Icon(
               Icons.sell_outlined,
-              size: 17,
+              size: ChromeMetrics.icon,
               color: single != null && c.tagOf(single.id) != null
                   ? CanvasTagColors.selected[c.tagOf(single.id)!]
                   : AppColors.textMuted,
@@ -775,7 +786,7 @@ class CanvasContextBar extends StatelessWidget {
             selected.every((i) => c.isLocked(i.id))
                 ? Icons.lock
                 : Icons.lock_open,
-            size: 17,
+            size: ChromeMetrics.icon,
           ),
         ),
         if (selected.length > 1 || c.groupOf(selected.first.id) != null)
@@ -796,42 +807,42 @@ class CanvasContextBar extends StatelessWidget {
                 c.groupSelection();
               }
             },
-            icon: const Icon(Icons.workspaces_outline, size: 17),
+            icon: const Icon(Icons.workspaces_outline, size: ChromeMetrics.icon),
           ),
         if (selected.any((i) => i is StrokeItem))
           ToolButton(
             key: const ValueKey('canvas-rotate'),
             tooltip: 'Rotate ink 90°',
             onPressed: () => c.rotateSelection(math.pi / 2),
-            icon: const Icon(Icons.rotate_90_degrees_cw_outlined, size: 17),
+            icon: const Icon(Icons.rotate_90_degrees_cw_outlined, size: ChromeMetrics.icon),
           ),
         if (selected.any((i) => i is ImageItem || i is LinkItem))
           ToolButton(
             key: const ValueKey('canvas-reference'),
             tooltip: 'Use as reference (faint, behind the ink, not selectable)',
             onPressed: c.makeSelectionReference,
-            icon: const Icon(Icons.layers_outlined, size: 17),
+            icon: const Icon(Icons.layers_outlined, size: ChromeMetrics.icon),
           ),
         const _PanelDivider(vertical: true),
         ToolButton(
           tooltip: 'Duplicate  (Ctrl+D)',
           onPressed: c.duplicateSelection,
-          icon: const Icon(Icons.copy_all_outlined, size: 17),
+          icon: const Icon(Icons.copy_all_outlined, size: ChromeMetrics.icon),
         ),
         ToolButton(
           tooltip: 'Bring to front',
           onPressed: c.bringToFront,
-          icon: const Icon(Icons.flip_to_front, size: 17),
+          icon: const Icon(Icons.flip_to_front, size: ChromeMetrics.icon),
         ),
         ToolButton(
           tooltip: 'Send to back',
           onPressed: c.sendToBack,
-          icon: const Icon(Icons.flip_to_back, size: 17),
+          icon: const Icon(Icons.flip_to_back, size: ChromeMetrics.icon),
         ),
         ToolButton(
           tooltip: 'Delete  (Del)',
           onPressed: c.deleteSelection,
-          icon: const Icon(Icons.delete_outline, size: 17),
+          icon: const Icon(Icons.delete_outline, size: ChromeMetrics.icon),
         ),
       ],
     );
@@ -900,7 +911,7 @@ class _ColorMenu extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 17, color: AppColors.textMuted),
+            Icon(icon, size: ChromeMetrics.icon, color: AppColors.textMuted),
             const SizedBox(height: 2),
             Container(
               width: 16,
@@ -917,6 +928,23 @@ class _ColorMenu extends StatelessWidget {
   }
 }
 
+/// Tells the controls inside a [ToolPanel] which way the bar runs.
+class _PanelScope extends InheritedWidget {
+  const _PanelScope({required this.vertical, required super.child});
+
+  final bool vertical;
+
+  static bool verticalOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_PanelScope>()?.vertical ??
+      true;
+
+  @override
+  bool updateShouldNotify(_PanelScope old) => vertical != old.vertical;
+}
+
+/// A group of tools in the same glass capsule as the navigation sidebar
+/// ([GlassSurface], [ChromeMetrics]): as wide as the sidebar when vertical,
+/// as tall when horizontal.
 class ToolPanel extends StatelessWidget {
   const ToolPanel({super.key, required this.children, this.horizontal = false});
 
@@ -925,20 +953,36 @@ class ToolPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(AppRadii.md),
-        border: Border.all(color: AppColors.border),
-        boxShadow: AppElevation.floating,
+    const radius = BorderRadius.all(
+      Radius.circular(ChromeMetrics.thickness / 2),
+    );
+    return _PanelScope(
+      vertical: !horizontal,
+      child: GlassSurface(
+        borderRadius: radius,
+        width: horizontal ? null : ChromeMetrics.thickness,
+        height: horizontal ? ChromeMetrics.thickness : null,
+        child: horizontal
+            ? Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: children,
+                  ),
+                ),
+              )
+            : Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpace.sm),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: children,
+                ),
+              ),
       ),
-      child: horizontal
-          ? SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(mainAxisSize: MainAxisSize.min, children: children),
-            )
-          : Column(mainAxisSize: MainAxisSize.min, children: children),
     );
   }
 }
@@ -950,15 +994,19 @@ class _PanelDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    width: vertical ? 1 : 20,
-    height: vertical ? 20 : 1,
+    width: vertical ? 1 : ChromeMetrics.separator,
+    height: vertical ? ChromeMetrics.separator : 1,
     margin: vertical
-        ? const EdgeInsets.symmetric(horizontal: 6)
-        : const EdgeInsets.symmetric(vertical: 6),
-    color: AppColors.border,
+        ? const EdgeInsets.symmetric(horizontal: AppSpace.sm)
+        : const EdgeInsets.symmetric(vertical: AppSpace.sm),
+    color: AppColors.glassBorder,
   );
 }
 
+/// One control in a [ToolPanel], drawn like a sidebar entry: a rounded chip
+/// that tints on hover, an accent icon and soft accent chip when selected
+/// (and, with [marker], the slim brand marker on the bar's edge for the
+/// current tool), a faint icon when it cannot be used.
 class ToolButton extends StatelessWidget {
   const ToolButton({
     super.key,
@@ -966,6 +1014,9 @@ class ToolButton extends StatelessWidget {
     required this.tooltip,
     required this.onPressed,
     this.active = false,
+    this.marker = false,
+    this.expandable = false,
+    this.expanded = false,
     this.onDoubleTap,
   });
 
@@ -973,43 +1024,119 @@ class ToolButton extends StatelessWidget {
   final String tooltip;
   final VoidCallback? onPressed;
   final bool active;
+
+  /// Also draws the edge marker while [active] (the current tool, not a
+  /// setting such as a thickness).
+  final bool marker;
+
+  /// The control has a folded settings panel behind it: a small chevron in
+  /// the corner of the chip says so and turns over while the panel is
+  /// [expanded].
+  final bool expandable;
+  final bool expanded;
   final VoidCallback? onDoubleTap;
 
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
+    final vertical = _PanelScope.verticalOf(context);
+    // The cell reaches the capsule's border across the bar, so the marker
+    // sits against it; along the bar it is one control pitch.
+    const across = ChromeMetrics.thickness - 2 * ChromeMetrics.border;
+    final iconColor = !enabled
+        ? AppColors.textFaint
+        : active
+        ? AppColors.accent
+        : AppColors.textMuted;
     return Tooltip(
       message: tooltip,
       preferBelow: false,
-      child: Material(
-        color: active ? AppColors.selected : Colors.transparent,
-        borderRadius: BorderRadius.circular(AppRadii.sm),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppRadii.sm),
-          hoverColor: AppColors.hover,
-          onTap: onPressed,
-          onDoubleTap: onDoubleTap,
-          child: SizedBox(
-            width: 36,
-            height: 36,
-            child: Center(
-              child: IconTheme.merge(
-                data: IconThemeData(
-                  color: !enabled
-                      ? AppColors.textFaint
-                      : active
-                      ? AppColors.text
-                      : AppColors.textMuted,
-                ),
-                child: DefaultTextStyle.merge(
-                  style: TextStyle(
-                    color: active ? AppColors.text : AppColors.textMuted,
+      child: SizedBox(
+        width: vertical ? across : ChromeMetrics.pitch,
+        height: vertical ? ChromeMetrics.pitch : across,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            if (active && marker)
+              Positioned(
+                left: vertical ? 0 : null,
+                top: vertical ? null : 0,
+                child: Container(
+                  width: vertical
+                      ? ChromeMetrics.markerThickness
+                      : ChromeMetrics.markerLength,
+                  height: vertical
+                      ? ChromeMetrics.markerLength
+                      : ChromeMetrics.markerThickness,
+                  decoration: BoxDecoration(
+                    gradient: AppGradients.brand,
+                    borderRadius: vertical
+                        ? const BorderRadius.horizontal(
+                            right: Radius.circular(AppRadii.xs),
+                          )
+                        : const BorderRadius.vertical(
+                            bottom: Radius.circular(AppRadii.xs),
+                          ),
                   ),
-                  child: icon,
+                ),
+              ),
+            SizedBox(
+              width: ChromeMetrics.chip,
+              height: ChromeMetrics.chip,
+              child: Material(
+                animationDuration: AppMotion.quick,
+                color: active ? AppColors.accentSoft : Colors.transparent,
+                borderRadius: BorderRadius.circular(AppRadii.popup),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppRadii.popup),
+                  hoverColor: AppColors.hover,
+                  highlightColor: AppColors.hover,
+                  splashColor: AppColors.accentSoft,
+                  onTap: onPressed,
+                  onDoubleTap: onDoubleTap,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      IconTheme.merge(
+                        data: IconThemeData(
+                          color: iconColor,
+                          size: ChromeMetrics.icon,
+                        ),
+                        child: DefaultTextStyle.merge(
+                          style: TextStyle(color: iconColor),
+                          child: icon,
+                        ),
+                      ),
+                      if (expandable)
+                        Positioned(
+                          right: 2,
+                          bottom: 2,
+                          child: IgnorePointer(
+                            child: AnimatedRotation(
+                              key: ValueKey(
+                                expanded
+                                    ? 'tool-chevron-open'
+                                    : 'tool-chevron-closed',
+                              ),
+                              turns: expanded ? 0.5 : 0,
+                              duration: AppMotion.quick,
+                              curve: AppMotion.standard,
+                              child: Icon(
+                                Icons.expand_more,
+                                size: 12,
+                                color: expanded || active
+                                    ? AppColors.accent
+                                    : AppColors.textFaint,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -1095,7 +1222,7 @@ class _EraserIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = IconTheme.of(context).color ?? AppColors.textMuted;
     return CustomPaint(
-      size: const Size(18, 18),
+      size: const Size(ChromeMetrics.icon, ChromeMetrics.icon),
       painter: _EraserPainter(color),
     );
   }
@@ -1182,14 +1309,14 @@ class EraserPanel extends StatelessWidget {
           tooltip: 'Erase whole strokes',
           active: c.eraserMode == EraserMode.stroke,
           onPressed: () => _set(mode: EraserMode.stroke),
-          icon: const Icon(Icons.gesture, size: 18),
+          icon: const Icon(Icons.gesture, size: ChromeMetrics.icon),
         ),
         ToolButton(
           key: const ValueKey('eraser-mode-partial'),
           tooltip: 'Erase only the part under the eraser',
           active: c.eraserMode == EraserMode.partial,
           onPressed: () => _set(mode: EraserMode.partial),
-          icon: const Icon(Icons.content_cut, size: 18),
+          icon: const Icon(Icons.content_cut, size: ChromeMetrics.icon),
         ),
         ToolButton(
           key: const ValueKey('eraser-mode-precision'),
@@ -1403,24 +1530,33 @@ class CollapsibleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The fold handle is a small piece of the same glass as the bars.
     final handle = Tooltip(
       message: collapsed ? 'Show $what' : 'Hide $what',
-      child: Material(
-        color: AppColors.cardRaised,
-        shape: const CircleBorder(),
-        elevation: 2,
-        child: InkWell(
-          key: handleKey,
-          customBorder: const CircleBorder(),
-          onTap: onToggle,
-          child: Padding(
-            padding: const EdgeInsets.all(5),
-            child: Icon(
-              vertical
-                  ? (collapsed ? Icons.expand_more : Icons.expand_less)
-                  : (collapsed ? Icons.chevron_right : Icons.chevron_left),
-              size: 16,
-              color: AppColors.textMuted,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.glass,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.glassBorder),
+          boxShadow: AppElevation.floating,
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          shape: const CircleBorder(),
+          child: InkWell(
+            key: handleKey,
+            customBorder: const CircleBorder(),
+            hoverColor: AppColors.hover,
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.all(5),
+              child: Icon(
+                vertical
+                    ? (collapsed ? Icons.expand_more : Icons.expand_less)
+                    : (collapsed ? Icons.chevron_right : Icons.chevron_left),
+                size: 16,
+                color: AppColors.textMuted,
+              ),
             ),
           ),
         ),

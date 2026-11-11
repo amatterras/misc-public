@@ -400,39 +400,33 @@ void main() {
     await shutDown(tester, s);
   });
 
-  testWidgets('single pen tap selects tool; double tap unfolds shared colors', (
+  testWidgets('pen settings start folded; tapping the chosen pen again opens', (
     tester,
   ) async {
     addTearDown(tester.view.reset);
     final s = await boot(tester, dir);
     s.goTo(AppPage.canvas);
     await settle(tester);
-    s.canvas!.tool = CanvasTool.pen;
-    await tester.pump();
-    expect(find.byKey(const ValueKey('context-bar-collapse')), findsOneWidget);
     final pen = find.byTooltip('Draw  (P)');
     await tester.tap(pen);
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('context-bar-collapse')));
-    await tester.pump();
-    expect(s.canvasOptionsCollapsed, isTrue);
-
-    await tester.tap(pen);
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     expect(s.canvas!.tool, CanvasTool.pen);
     expect(
-      s.canvasOptionsCollapsed,
-      isTrue,
-      reason: 'a single tap keeps the existing tool action',
+      find.byTooltip('Bright Red'),
+      findsNothing,
+      reason: 'selecting a tool leaves its panel folded',
     );
 
-    await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(pen);
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(pen);
-    await tester.pump();
-    expect(s.canvasOptionsCollapsed, isFalse);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(s.canvas!.tool, CanvasTool.pen);
     expect(find.byTooltip('Bright Red'), findsOneWidget);
+
+    await tester.tap(pen);
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byTooltip('Bright Red'), findsNothing);
     await shutDown(tester, s);
   });
 
@@ -506,38 +500,18 @@ void main() {
         await tester.tap(find.text(view).first);
         await tester.pumpAndSettle();
         for (final entry in expectedEntries) {
-          var check = find.byKey(
+          final check = find.byKey(
             ValueKey('entry-check-${entry.id}-${dayKey(day)}'),
           );
-          if (check.evaluate().isEmpty && view == 'Month') {
-            final cell = find.byKey(ValueKey('calendar-cell-${dayKey(day)}'));
-            final more = find.descendant(
-              of: cell,
-              matching: find.textContaining('more'),
-            );
-            expect(more, findsOneWidget, reason: 'overflow in $view view');
-            await tester.tap(more);
-            await tester.pumpAndSettle();
-            check = find.byKey(
-              ValueKey('overflow-entry-check-${entry.id}-${dayKey(day)}'),
-            );
-          }
           expect(check, findsOneWidget, reason: '${entry.name} in $view view');
+          // A crowded Month cell scrolls inside itself; bring it into view.
+          await tester.ensureVisible(check);
+          await tester.pump();
           await tester.tap(check);
           await tester.pump();
           expect(s.workspace.entries[entry.id]!.isCheckedOn(day), isTrue);
-          if (view == 'Month' &&
-              check.evaluate().single.widget is CheckboxListTile) {
-            final more = find.descendant(
-              of: find.byKey(ValueKey('calendar-cell-${dayKey(day)}')),
-              matching: find.textContaining('more'),
-            );
-            await tester.tap(more);
-            await tester.pumpAndSettle();
-            check = find.byKey(
-              ValueKey('overflow-entry-check-${entry.id}-${dayKey(day)}'),
-            );
-          }
+          await tester.ensureVisible(check);
+          await tester.pump();
           await tester.tap(check);
           await tester.pump();
           expect(s.workspace.entries[entry.id]!.isCheckedOn(day), isFalse);

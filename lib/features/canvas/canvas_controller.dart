@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show HardwareKeyboard;
 
 import '../../app/theme.dart';
 import '../../data/models/canvas_models.dart';
+import 'connector_path.dart';
 import '../../data/models/library_models.dart';
 import '../../data/models/tag_models.dart';
 import '../../data/storage/app_log.dart';
@@ -278,6 +279,8 @@ class CanvasController extends ChangeNotifier {
       _tool == CanvasTool.select || _tool == CanvasTool.lasso;
   set tool(CanvasTool value) {
     if (value == _tool) return;
+    // Choosing another tool always folds the settings panel away.
+    _optionsFor = null;
     cancelPendingLineStraightening();
     endEditing();
     _pendingFrom = null;
@@ -287,6 +290,33 @@ class CanvasController extends ChangeNotifier {
     if (value != CanvasTool.select && value != CanvasTool.lasso) {
       _selection = const {};
     }
+    notifyListeners();
+  }
+
+  /// Tools with a settings panel (colour, thickness, opacity, eraser mode):
+  /// the pen, the highlighter and the eraser.
+  static bool toolHasOptions(CanvasTool t) =>
+      t == CanvasTool.pen ||
+      t == CanvasTool.highlighter ||
+      t == CanvasTool.eraser;
+
+  /// The tool whose settings panel is open, if any. One value for the whole
+  /// canvas, so two panels can never be open together, and it is tied to a
+  /// tool: any change of tool leaves it pointing at a tool that is no
+  /// longer chosen, i.e. folded. Panels start folded. Nothing here touches
+  /// the tool settings (colour, width, eraser mode and size stay as set).
+  CanvasTool? _optionsFor;
+
+  /// Whether the chosen tool settings panel is open.
+  bool get optionsExpanded => _optionsFor != null && _optionsFor == _tool;
+
+  /// Tapping the chosen tool again opens its panel, and again folds it.
+  void toggleOptions() => setOptionsExpanded(!optionsExpanded);
+
+  void setOptionsExpanded(bool open) {
+    final target = open && toolHasOptions(_tool) ? _tool : null;
+    if (_optionsFor == target) return;
+    _optionsFor = target;
     notifyListeners();
   }
 
@@ -2476,6 +2506,21 @@ class CanvasController extends ChangeNotifier {
   String? _connectFrom;
   Offset? _connectEnd;
 
+  /// The pencil's path during a connect drag, in world coordinates (the
+  /// same pointer tracking as drawing, so zoom and pan do not matter). Only
+  /// its refined shape is ever kept (see connector_path.dart).
+  final List<Offset> _connectTrail = [];
+
+  void _trackConnect(Offset world) {
+    if (_connectTrail.isEmpty ||
+        (world - _connectTrail.last).distance * _scale >= 1.5) {
+      _connectTrail.add(world);
+    } else {
+      // Keep the newest position as the last point.
+      _connectTrail[_connectTrail.length - 1] = world;
+    }
+  }
+
   /// Where on a drawn line the connection starts (see ConnectorItem.fromT).
   double? _fromT;
 
@@ -2491,6 +2536,9 @@ class CanvasController extends ChangeNotifier {
     _drag = _Drag.connect;
     _connectFrom = hit.id;
     _connectEnd = world;
+    _connectTrail
+      ..clear()
+      ..add(world);
     _fromT = hit is StrokeItem ? strokeAnchorAt(hit, world) : null;
   }
 
@@ -2533,8 +2581,103 @@ class CanvasController extends ChangeNotifier {
         : _edgePoint(itemBounds(from), end);
     final targetId = connectTarget;
     final target = targetId == null ? null : itemById(targetId);
-    if (target != null) end = _attachPoint(target, end, start);
+    if (target != null) {
+      // The ends the finished connection will really have, so nothing
+      // moves when the pencil lifts.
+      final joined = connectorEnds(_pending(from.id, target, end));
+      if (joined != null) return joined;
+      end = _attachPoint(target, end, start);
+    }
     return (start, end);
+  }
+
+  /// The connection that releasing at [at] over [target] would make, as a
+  /// straight one (for measuring its ends).
+  ConnectorItem _pending(String fromId, CanvasItem target, Offset at) =>
+      ConnectorItem(
+        id: 'pending',
+        fromId: fromId,
+        toId: target.id,
+        fromT: _fromT,
+        toT: target is StrokeItem ? strokeAnchorAt(target, at) : null,
+      );
+
+  ({List<Offset> points, bool smooth})? _livePreviewCache;
+  int _livePreviewTrail = -1;
+  Offset? _livePreviewEnd;
+  double _livePreviewScale = 0;
+
+  /// The refined line of the connection being drawn (null: a straight
+  /// one), exactly as it will be when the pencil lifts: the same fit, the
+  /// same waypoints, the same drawing.
+  ({List<Offset> points, bool smooth})? get livePreview {
+    final live = liveConnection;
+    if (live == null || _connectFrom == null || _connectTrail.length < 3) {
+      return null;
+    }
+    if (_livePreviewTrail == _connectTrail.length &&
+        _livePreviewEnd == live.$2 &&
+        _livePreviewScale == _scale) {
+      return _livePreviewCache;
+    }
+    final target = connectTarget == null ? null : itemById(connectTarget!);
+    final drawn = _drawn(_connectFrom!, target, live.$1, live.$2);
+    ({List<Offset> points, bool smooth})? shape;
+    if (drawn != null) {
+      if (target != null) {
+        shape = connectorShape(
+          _pending(
+            _connectFrom!,
+            target,
+            _connectEnd!,
+          ).copyWith(bends: drawn.bends, style: drawn.style),
+        );
+      } else {
+        shape = (
+          points: [live.$1, ...drawn.bends, live.$2],
+          smooth: drawn.style == ConnectorStyle.curved,
+        );
+      }
+    }
+    _livePreviewTrail = _connectTrail.length;
+    _livePreviewEnd = live.$2;
+    _livePreviewScale = _scale;
+    return _livePreviewCache = shape;
+  }
+
+  /// The waypoints and style a hand-drawn gesture gives the connection
+  /// between [a] and [b], or null when a straight line says the same.
+  ({List<Offset> bends, ConnectorStyle style})? _drawn(
+    String fromId,
+    CanvasItem? target,
+    Offset a,
+    Offset b,
+  ) {
+    final keys = _fitFor(fromId, target, a, b);
+    if (keys == null) return null;
+    final pts = connectorKeyPoints(a, b, keys);
+    return (
+      bends: pts.sublist(1, pts.length - 1),
+      style: connectorHasCorner(pts)
+          ? ConnectorStyle.straight
+          : ConnectorStyle.curved,
+    );
+  }
+
+  /// The curve for the pencil's trail between [a] and [b]: the part of the
+  /// trail inside the two boxes is not part of the line.
+  List<Offset>? _fitFor(String fromId, CanvasItem? target, Offset a, Offset b) {
+    final source = itemById(fromId);
+    var trail = List<Offset>.of(_connectTrail);
+    bool inside(CanvasItem? item, Offset p) =>
+        item is BoxItem && itemBounds(item).contains(p);
+    while (trail.length > 3 && inside(source, trail.first)) {
+      trail.removeAt(0);
+    }
+    while (trail.length > 3 && inside(target, trail.last)) {
+      trail.removeLast();
+    }
+    return fitConnector(trail, a, b, tolerance: 3 / _scale);
   }
 
   /// Finishes a connect drag: joins the two items. Released on the same
@@ -2549,7 +2692,10 @@ class CanvasController extends ChangeNotifier {
       _pendingFrom = fromId;
       return;
     }
-    if (isConnectable(target)) _connect(fromId, target!, end);
+    if (isConnectable(target)) {
+      _connect(fromId, target!, end, trail: List.of(_connectTrail));
+    }
+    _connectTrail.clear();
     _fromT = null;
   }
 
@@ -2568,7 +2714,12 @@ class CanvasController extends ChangeNotifier {
 
   /// Joins two items unless one is gone or they are already joined at the
   /// same places. A drawn line keeps where on it the connection attaches.
-  void _connect(String fromId, CanvasItem target, Offset at) {
+  void _connect(
+    String fromId,
+    CanvasItem target,
+    Offset at, {
+    List<Offset>? trail,
+  }) {
     if (itemById(fromId) == null || itemById(target.id) == null) return;
     final toT = target is StrokeItem ? strokeAnchorAt(target, at) : null;
     final fromT = _fromT;
@@ -2580,16 +2731,30 @@ class CanvasController extends ChangeNotifier {
           i.toT == toT,
     );
     if (exists) return;
-    _commit([
-      ..._items,
-      ConnectorItem(
-        id: newId(),
-        fromId: fromId,
-        toId: target.id,
-        fromT: fromT,
-        toT: toT,
-      ),
-    ]);
+    var made = ConnectorItem(
+      id: newId(),
+      fromId: fromId,
+      toId: target.id,
+      fromT: fromT,
+      toT: toT,
+    );
+    // A hand-drawn gesture becomes a clean curve (or stays straight if it
+    // was nearly straight); a tap-tap connection is straight.
+    final ends = connectorEnds(made);
+    if (trail != null && trail.length >= 3 && ends != null) {
+      final saved = List<Offset>.of(_connectTrail);
+      _connectTrail
+        ..clear()
+        ..addAll(trail);
+      final drawn = _drawn(fromId, target, ends.$1, ends.$2);
+      _connectTrail
+        ..clear()
+        ..addAll(saved);
+      if (drawn != null) {
+        made = made.copyWith(bends: drawn.bends, style: drawn.style);
+      }
+    }
+    _commit([..._items, made]);
   }
 
   void _selectDown(
@@ -2802,6 +2967,7 @@ class CanvasController extends ChangeNotifier {
         return;
       case _Drag.connect:
         _connectEnd = world;
+        _trackConnect(world);
       case _Drag.connectTap:
         // Moving means a drag, not a tap: from an item it is an ordinary
         // connect drag from there (the waiting source is dropped); from
@@ -2814,6 +2980,7 @@ class CanvasController extends ChangeNotifier {
             _tapAt = _tapScreen = null;
             _startConnect(hit!, at!);
             _connectEnd = world;
+            _trackConnect(world);
           } else {
             _tapMoved = true;
           }
