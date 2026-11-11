@@ -77,6 +77,8 @@ void main() {
     );
     s.capture.fetchPreviews = false;
     await s.init();
+    // Shared items and waiting links are imported just after 'Ready'.
+    await s.iosInboxImport;
     return s;
   }
 

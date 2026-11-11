@@ -75,6 +75,8 @@ void main() {
     );
     state.capture.fetchPreviews = false;
     await state.init();
+    // Shared items and waiting links are imported just after 'Ready'.
+    await state.iosInboxImport;
     return state;
   }
 
