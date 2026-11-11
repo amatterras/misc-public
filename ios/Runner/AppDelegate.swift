@@ -56,7 +56,6 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
   private var pickResult: FlutterResult?
   private var documentResult: FlutterResult?
   private var previewURL: URL?
-  private var pencilInteraction: UIPencilInteraction?
   private let peers = PeerBonjour()
   /// Background time asked for while pending edits are saved (raw ids).
   private var backgroundSaves = Set<Int>()
@@ -617,17 +616,54 @@ final class TheAppIosBridge: NSObject, PHPickerViewControllerDelegate,
 
   // MARK: Apple Pencil Pro squeeze (iOS 17.5+; other Pencils never send it)
 
-  /// Adds one UIPencilInteraction to the app window so squeezes reach
-  /// THEapp. Returns false if there is no window yet.
+  /// Set once Dart asked for Pencil squeezes and double-taps.
+  private var pencilInteractionOn = false
+
+  /// Dart asks for Pencil squeezes and double-taps (both arrive through
+  /// UIPencilInteraction). Remembered, so every later window and every
+  /// scene activation gets the interaction too (see SceneDelegate).
   private func installPencilInteraction() -> Bool {
-    if pencilInteraction != nil { return true }
-    guard let view = topViewController()?.view.window ?? topViewController()?.view
-    else { return false }
+    pencilInteractionOn = true
+    return installPencilInteractions()
+  }
+
+  /// Puts one UIPencilInteraction on every Flutter window, in whatever
+  /// state its scene is, the same way installInkObservers finds them.
+  ///
+  /// It used to be added only to the key window of a foreground-active
+  /// scene, at the moment Dart asked. Every drawing page asks as soon as it
+  /// is built, which is during start-up (all pages are built then), while
+  /// Face ID is asked or while the app is not yet active; then there was no
+  /// such window, the install failed silently and was never tried again,
+  /// so neither the squeeze (eraser) nor the double-tap (Undo) arrived.
+  /// Returns whether at least one window has the interaction.
+  @discardableResult
+  func installPencilInteractions() -> Bool {
+    guard pencilInteractionOn else { return false }
+    var any = false
+    for scene in UIApplication.shared.connectedScenes {
+      guard let windowScene = scene as? UIWindowScene else { continue }
+      for window in windowScene.windows where window.rootViewController is FlutterViewController {
+        addPencilInteraction(to: window)
+        any = true
+      }
+    }
+    if !any, let view = topViewController()?.view.window ?? topViewController()?.view {
+      // No Flutter root found: the window that was used before.
+      addPencilInteraction(to: view)
+      any = true
+    }
+    return any
+  }
+
+  /// One interaction per view: never a second one on the same window.
+  private func addPencilInteraction(to view: UIView) {
+    if view.interactions.contains(where: { ($0 as? UIPencilInteraction)?.delegate === self }) {
+      return
+    }
     let interaction = UIPencilInteraction()
     interaction.delegate = self
     view.addInteraction(interaction)
-    pencilInteraction = interaction
-    return true
   }
 
   /// Squeeze phases: began (eraser on), changed (ignored), ended or

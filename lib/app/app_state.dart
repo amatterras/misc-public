@@ -2259,6 +2259,8 @@ class AppState extends ChangeNotifier {
   /// nothing to undo, so a tap never seems to do nothing for no reason.
   PencilTapResult onPencilDoubleTap(String preferredAction) {
     final result = pencilDoubleTap.handle(preferredAction);
+    // In the log, so a device report shows whether taps arrive at all.
+    AppLog.info('Apple Pencil double-tap ($preferredAction): ${result.name}');
     if (result == PencilTapResult.nothingToUndo) showToast('Nothing to undo.');
     return result;
   }

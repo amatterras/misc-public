@@ -89,6 +89,9 @@ class SceneDelegate: FlutterSceneDelegate {
     // A new window (Stage Manager, a second scene) gets full-rate Pencil
     // capture too, once Dart has switched it on.
     TheAppIosBridge.shared.installInkObservers()
+    // The same for Pencil squeeze (eraser) and double-tap (Undo): if Dart
+    // asked while no window was ready, they start working now.
+    TheAppIosBridge.shared.installPencilInteractions()
   }
 
   override func scene(

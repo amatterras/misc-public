@@ -69,6 +69,7 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
 
   FutureOr<void> Function(Uri)? _onLink;
   bool _handlerSet = false;
+  bool _pencilLogged = false;
   final _squeeze = StreamController<String>.broadcast();
   final _peerFound = StreamController<Map<String, dynamic>>.broadcast();
   final _peerLost = StreamController<String>.broadcast();
@@ -87,6 +88,7 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
         case 'peerLost' when call.arguments is String:
           _peerLost.add(call.arguments as String);
         case 'pencilSqueeze' when call.arguments is String:
+          AppLog.info('Apple Pencil squeeze: ${call.arguments}');
           _squeeze.add(call.arguments as String);
         case 'protectedData' when call.arguments is bool:
           _protectedData.add(call.arguments as bool);
@@ -155,7 +157,19 @@ class IosBridge implements KeychainBackend, ProtectionBackend {
       // Older native side: nothing to switch on.
     }
     try {
-      return await _invoke<bool>('enablePencilSqueeze') ?? false;
+      final on = await _invoke<bool>('enablePencilSqueeze') ?? false;
+      // Logged once: squeeze and double-tap both depend on it (iOS adds
+      // it again when the app becomes active, see SceneDelegate.swift).
+      if (!_pencilLogged) {
+        _pencilLogged = true;
+        (on ? AppLog.info : AppLog.warn)(
+          on
+              ? 'Apple Pencil squeeze and double-tap: listening'
+              : 'Apple Pencil squeeze and double-tap: no window yet; '
+                    'iOS retries when the app becomes active',
+        );
+      }
+      return on;
     } on Exception {
       return false;
     }
