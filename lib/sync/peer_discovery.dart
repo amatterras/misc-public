@@ -4,6 +4,9 @@
 // another ([ManualPeerDiscovery]); more can be added without touching the
 // engine.
 import 'dart:async';
+import 'dart:io';
+
+import '../hub/hub_server.dart' show isPlainHttpAddress;
 
 import '../platform/ios_bridge.dart';
 
@@ -36,12 +39,15 @@ abstract interface class PeerDiscovery {
   /// A peer went away (its device id).
   Stream<String> get lost;
 
-  /// Makes this device findable.
+  /// Makes this device findable. [host] is the address its hub listens on
+  /// (Tailscale); peers connect there rather than to the Wi-Fi address that
+  /// Bonjour resolves.
   Future<void> advertise({
     required String deviceId,
     required String name,
     required int port,
     required String tag,
+    String? host,
   });
 
   Future<void> startBrowsing();
@@ -70,6 +76,7 @@ class ManualPeerDiscovery implements PeerDiscovery {
     required String name,
     required int port,
     required String tag,
+    String? host,
   }) async {}
 
   @override
@@ -77,6 +84,17 @@ class ManualPeerDiscovery implements PeerDiscovery {
 
   @override
   Future<void> stop() async {}
+}
+
+/// Where to reach a peer found by Bonjour: the Tailscale address it put in
+/// its announcement (`addr`), else the address Bonjour resolved. An `addr`
+/// that is not a Tailscale address is ignored (a peer cannot redirect us to
+/// an arbitrary host that way).
+String? announcedHost(String? addr, Object? resolved) {
+  final a = addr == null ? null : InternetAddress.tryParse(addr);
+  if (a != null && !a.isLoopback && isPlainHttpAddress(a)) return a.address;
+  if (resolved is String && resolved.isNotEmpty) return resolved;
+  return null;
 }
 
 /// Bonjour (`_misc-sync._tcp`) through the iOS bridge. The Swift side
@@ -89,9 +107,8 @@ class BonjourPeerDiscovery implements PeerDiscovery {
       final txt = (m['txt'] as Map?)?.cast<String, String>() ?? const {};
       final id = txt['id'], tag = txt['tag'];
       final port = m['port'];
-      final host = m['host'];
-      if (id == null || tag == null || port is! int || host is! String) return;
-      if (host.isEmpty) return;
+      final host = announcedHost(txt['addr'], m['host']);
+      if (id == null || tag == null || port is! int || host == null) return;
       _found.add(
         PeerAnnouncement(
           deviceId: id,
@@ -124,12 +141,13 @@ class BonjourPeerDiscovery implements PeerDiscovery {
     required String name,
     required int port,
     required String tag,
+    String? host,
   }) async {
     _names[name] = deviceId;
     await _bridge.peerAdvertise(
       name: name,
       port: port,
-      txt: {'id': deviceId, 'tag': tag},
+      txt: {'id': deviceId, 'tag': tag, 'addr': ?host},
     );
   }
 

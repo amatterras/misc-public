@@ -20,6 +20,10 @@ class PeerSyncRow extends StatelessWidget {
     PeerSyncStatus.needsKey =>
       'This device does not have your workspace key yet. Pair it once with '
           'your PC (or a device that has it), then turn this on.',
+    PeerSyncStatus.needsTailscale =>
+      'Needs Tailscale. Turn on Tailscale on this device and the other one, '
+          'then switch this off and on again. (Direct sync does not use plain '
+          'Wi-Fi connections, because they are not encrypted.)',
     PeerSyncStatus.failed => 'Could not start: ${c.problem ?? 'unknown'}',
     PeerSyncStatus.unsupported => 'Not available on this device.',
     PeerSyncStatus.off =>

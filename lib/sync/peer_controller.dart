@@ -11,6 +11,13 @@
 // so instead of doing anything. Handing a brand-new device that key still
 // needs the existing one-time pairing (with the PC hub or a device that
 // already has it).
+//
+// Address: the peer hub speaks plain HTTP (the sync payload itself is end-to-
+// end encrypted), and the hub refuses plain HTTP on a home-network address
+// (HubServer._checkPrivateHost). So it listens only on this device's
+// Tailscale address, which is an encrypted tunnel, and puts that address in
+// its Bonjour announcement so the other device connects there. Without
+// Tailscale the switch says so (needsTailscale) and starts nothing.
 import 'dart:async';
 import 'dart:io';
 
@@ -18,6 +25,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/repositories/canvas_repository.dart';
 import '../data/storage/app_log.dart';
+import '../hub/hub_server.dart' show isPlainHttpAddress;
 import '../data/workspace.dart';
 import '../platform/ios_bridge.dart';
 import 'peer_discovery.dart';
@@ -25,7 +33,17 @@ import 'peer_sync.dart';
 import 'peer_trust.dart';
 import 'sync_key_store.dart';
 
-enum PeerSyncStatus { off, needsKey, starting, running, unsupported, failed }
+enum PeerSyncStatus {
+  off,
+  needsKey,
+
+  /// No Tailscale address on this device: plain HTTP on Wi-Fi is not allowed.
+  needsTailscale,
+  starting,
+  running,
+  unsupported,
+  failed,
+}
 
 class PeerSyncController extends ChangeNotifier {
   PeerSyncController({
@@ -35,7 +53,7 @@ class PeerSyncController extends ChangeNotifier {
     PeerDiscovery Function()? discovery,
     this.supported,
     this.every = const Duration(seconds: 20),
-    this.lan = lanAddress,
+    this.address = peerListenAddress,
   }) : _discoveryFactory = discovery;
 
   static const settingKey = 'peerSync';
@@ -48,7 +66,9 @@ class PeerSyncController extends ChangeNotifier {
   /// Whether this platform can do it (null: iPhone and iPad only).
   final bool? supported;
   final Duration every;
-  final Future<String?> Function() lan;
+
+  /// The address this device's hub listens on (see [peerListenAddress]).
+  final Future<String?> Function() address;
 
   PeerSyncStatus _status = PeerSyncStatus.off;
   String? _problem;
@@ -97,6 +117,11 @@ class PeerSyncController extends ChangeNotifier {
         _set(PeerSyncStatus.needsKey);
         return;
       }
+      final listenOn = await address();
+      if (listenOn == null) {
+        _set(PeerSyncStatus.needsTailscale);
+        return;
+      }
       final trust = PeerTrust(crypto.exportKey());
       final host = PeerHost(
         workspace: workspace,
@@ -104,7 +129,7 @@ class PeerSyncController extends ChangeNotifier {
         crypto: crypto,
         trust: trust,
       );
-      final port = await host.start(privateHost: await lan());
+      final port = await host.start(privateHost: listenOn);
       final discovery =
           _discoveryFactory?.call() ?? BonjourPeerDiscovery(IosBridge.instance);
       final service = PeerSyncService(
@@ -121,6 +146,7 @@ class PeerSyncController extends ChangeNotifier {
         name: workspace.device!.id,
         port: port,
         tag: trust.tag,
+        host: listenOn,
       );
       await service.start();
       _host = host;
@@ -187,23 +213,30 @@ class PeerSyncController extends ChangeNotifier {
   }
 }
 
-/// This device's private (home or office network) IPv4 address, or null.
-Future<String?> lanAddress() async {
+/// The address this device's peer hub listens on: its Tailscale address, or
+/// null when Tailscale is not on. Never a home-network (Wi-Fi) address,
+/// because the hub only serves plain HTTP on this device and on Tailscale.
+Future<String?> peerListenAddress({
+  Future<List<NetworkInterface>> Function()? interfaces,
+}) async {
   try {
-    for (final i in await NetworkInterface.list(
-      type: InternetAddressType.IPv4,
-    )) {
-      for (final a in i.addresses) {
-        final b = a.rawAddress;
-        final private =
-            b[0] == 10 ||
-            (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
-            (b[0] == 192 && b[1] == 168);
-        if (private) return a.address;
-      }
-    }
+    final list = await (interfaces?.call() ?? NetworkInterface.list());
+    return choosePeerAddress([for (final i in list) ...i.addresses]);
   } on SocketException {
-    // No interface list right now.
+    return null; // No interface list right now (network change).
   }
-  return null;
+}
+
+/// Picks the Tailscale address out of [addresses] (IPv4 first, then
+/// Tailscale IPv6), or null. Loopback and home-network addresses are never
+/// chosen: plain HTTP on them is refused by the hub.
+String? choosePeerAddress(Iterable<InternetAddress> addresses) {
+  final ok = [
+    for (final a in addresses)
+      if (!a.isLoopback && isPlainHttpAddress(a)) a,
+  ];
+  for (final a in ok) {
+    if (a.type == InternetAddressType.IPv4) return a.address;
+  }
+  return ok.isEmpty ? null : ok.first.address;
 }
