@@ -243,6 +243,10 @@ class _SwitchDialogState extends State<_SwitchDialog> {
     if (mounted) setState(() => _busy = false);
   }
 
+  /// Links this PC with the hub running on it, in one step: a code is made
+  /// and used at once. It is never left on screen, because a code works
+  /// only once: typed on an iPad instead, it connected the iPad and this
+  /// PC's own Pair was then refused (seen 2026-11-12).
   Future<void> _codeFromThisPc() => _guard(() async {
     try {
       final r = await widget.state.newPairingCode();
@@ -250,11 +254,20 @@ class _SwitchDialogState extends State<_SwitchDialog> {
       _address.text = 'http://127.0.0.1:${r.port}';
     } on LocalHubException catch (e) {
       _error = e.message;
+      return;
+    }
+    try {
+      await _connectNow();
+    } finally {
+      // Used (or refused): either way it is not for another device.
+      _code.clear();
     }
   });
 
   /// Check the destination and connect (pairing / sign-in).
-  Future<void> _connect() => _guard(() async {
+  Future<void> _connect() => _guard(_connectNow);
+
+  Future<void> _connectNow() async {
     final uri = Uri.tryParse(_address.text.trim());
     if (uri == null || uri.host.isEmpty) {
       throw const SyncFailure('bad_address', 'Enter the address.');
@@ -276,7 +289,7 @@ class _SwitchDialogState extends State<_SwitchDialog> {
     _password.clear();
     _switch = change;
     _step = _Step.copy;
-  });
+  }
 
   Future<void> _copy() => _guard(() async {
     final v = _verification = await _switch!.copyAndVerify();
@@ -401,7 +414,16 @@ class _SwitchDialogState extends State<_SwitchDialog> {
           child: TextButton.icon(
             onPressed: _busy ? null : _codeFromThisPc,
             icon: const Icon(Icons.key_outlined, size: 16),
-            label: const Text('Get a code from the hub on this PC'),
+            label: const Text('Link this PC to the hub on this PC'),
+          ),
+        ),
+      if (widget.state.ios == null && Platform.isWindows)
+        Text(
+          'Pairing an iPhone/iPad? Link this PC first, then use Settings → '
+          'Sync → "Get a code for another device". Each code works once.',
+          style: TextStyle(
+            fontSize: AppType.sizeLabel,
+            color: AppColors.textFaint,
           ),
         ),
       ValueListenableBuilder<TextEditingValue>(

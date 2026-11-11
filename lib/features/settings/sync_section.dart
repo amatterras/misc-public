@@ -262,10 +262,13 @@ class _SyncSectionState extends State<SyncSection> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
+                    // Links at once (a fresh code straight into the verified
+                    // switch): a code shown here was easily typed on the iPad
+                    // instead, which used it up and left this PC unlinked.
                     key: const ValueKey('local-pair-code'),
-                    onPressed: _busy ? null : _codeFromThisPc,
+                    onPressed: _busy ? null : _linkThisPc,
                     icon: const Icon(Icons.key_outlined, size: 16),
-                    label: const Text('Get a code from the hub on this PC'),
+                    label: const Text('Link this PC to the hub on this PC'),
                   ),
                 ),
               if (_shownCode != null)
@@ -552,7 +555,8 @@ class _ConnectGuide extends StatelessWidget {
             ? 'On the PC, open misc. → Settings → Sync → "Get a code" (or '
                   'run "thehub pair"). Type the PC’s Tailscale address '
                   '(http://100.x.y.z:47710) and the code below.'
-            : 'Press "Get a code from the hub on this PC", then Pair.',
+            : 'Press "Link this PC to the hub on this PC". Then, for an '
+                  'iPhone/iPad, use "Get a code for another device".',
       ),
     ];
     return Column(
