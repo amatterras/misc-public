@@ -5,6 +5,8 @@
 // page, unchanged. All data and actions are the library's own: folders are
 // LibrarySpace records, items are LibraryObject records, saving, deleting,
 // moving and searching call LibraryRepository.
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -16,6 +18,7 @@ import '../data/workspace.dart';
 import '../features/library/duplicate_prompt.dart';
 import '../features/library/library_page.dart';
 import '../widgets/common.dart' show confirm, promptText;
+import 'archive_item_actions.dart';
 import 'archive_model.dart';
 import 'new_components.dart';
 import 'new_folder_colors.dart';
@@ -33,13 +36,18 @@ Future<void> openArchiveItem(
       barrierColor: Colors.transparent,
       transitionDuration: Duration.zero,
       reverseTransitionDuration: Duration.zero,
+      // The page itself stays hidden; it only hosts the item's dialog. It
+      // still needs a Material parent for its fields and chips.
       pageBuilder: (context, _, _) => Visibility(
         visible: false,
         maintainState: true,
-        child: LibraryPage(
-          state: state,
-          initialObjectId: objectId,
-          closeAfterInitialObject: true,
+        child: Material(
+          type: MaterialType.transparency,
+          child: LibraryPage(
+            state: state,
+            initialObjectId: objectId,
+            closeAfterInitialObject: true,
+          ),
         ),
       ),
     ),
@@ -70,6 +78,7 @@ class _NewArchivePageState extends State<NewArchivePage> {
   bool _selectMode = false;
   final _selected = <String>{};
   bool _dragging = false;
+  double _dragTravel = 0; // how far a long-press drag has moved
   bool _colorsQueued = false;
 
   AppState get s => widget.state;
@@ -535,7 +544,8 @@ class _NewArchivePageState extends State<NewArchivePage> {
               key: ValueKey('archive-item-${o.id}'),
               state: s,
               object: o,
-              onTap: () => openArchiveItem(context, s, o.id),
+              onTap: () => _tap(o),
+              onLongPress: () => openArchiveItem(context, s, o.id),
             ),
           ),
       ],
@@ -903,6 +913,14 @@ class _NewArchivePageState extends State<NewArchivePage> {
     );
   }
 
+  /// One tap: the link, the photo or the PDF itself (info for the rest).
+  Future<void> _tap(LibraryObject o) => tapArchiveItem(
+    context,
+    s,
+    o,
+    info: () => openArchiveItem(context, s, o.id),
+  );
+
   Widget _itemWithActions(ArchiveCollection c, LibraryObject o) {
     final row = _ItemRow(
       key: ValueKey('archive-item-${o.id}'),
@@ -916,16 +934,27 @@ class _NewArchivePageState extends State<NewArchivePage> {
             if (!_selected.add(o.id)) _selected.remove(o.id);
           });
         } else {
-          openArchiveItem(context, s, o.id);
+          _tap(o);
         }
       },
     );
     if (_selectMode) return row;
+    // Long press: held still, the item's info opens; moved, it is dragged
+    // to another folder (as before).
     return LongPressDraggable<_ItemDrag>(
       data: _ItemDrag([o.id]),
       hapticFeedbackOnStart: true,
-      onDragStarted: () => setState(() => _dragging = true),
-      onDragEnd: (_) => setState(() => _dragging = false),
+      onDragStarted: () => setState(() {
+        _dragging = true;
+        _dragTravel = 0;
+      }),
+      onDragUpdate: (d) => _dragTravel += d.delta.distance,
+      onDragEnd: (d) {
+        setState(() => _dragging = false);
+        if (!d.wasAccepted && _dragTravel < 12) {
+          openArchiveItem(context, s, o.id);
+        }
+      },
       feedback: SizedBox(
         width: MediaQuery.sizeOf(context).width - 2 * AppSpace.lg,
         child: Opacity(opacity: 0.9, child: row),
@@ -933,6 +962,8 @@ class _NewArchivePageState extends State<NewArchivePage> {
       childWhenDragging: Opacity(opacity: 0.3, child: row),
       child: SwipeActions(
         key: ValueKey('archive-swipe-${o.id}'),
+        // Pulled all the way left: deleted (with Undo).
+        onFullSwipe: () => _deleteItems([o]),
         actions: [
           SwipeAction(
             key: ValueKey('archive-swipe-move-${o.id}'),
@@ -1168,7 +1199,7 @@ class _PreviewTile extends StatelessWidget {
     // Paper-like tiles (cream / tinted) with dark text, as saved cards.
     final paper = Color.lerp(const Color(0xFFFFFBFA), tint, 0.16)!;
     final ink = contrastOn(paper);
-    final image = archiveImageOf(state, object);
+    final image = archiveImageFileOf(state.workspace, object);
     final title = object.title.isEmpty ? 'Untitled' : object.title;
     final snippet = object.type == LibraryObjectType.note
         ? (object.content ?? '').trim()
@@ -1181,7 +1212,10 @@ class _PreviewTile extends StatelessWidget {
             ? Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image(image: image, fit: BoxFit.cover),
+                  SmartCropImage(
+                    store: state.workspace.attachments,
+                    name: image,
+                  ),
                   Positioned(
                     left: 0,
                     right: 0,
@@ -1272,23 +1306,33 @@ class _ItemRow extends StatelessWidget {
     required this.state,
     required this.object,
     required this.onTap,
+    this.onLongPress,
     this.selecting = false,
     this.selected = false,
   });
 
+  /// Side of the square preview (twice the old 56).
+  static const previewSize = 112.0;
+
   final AppState state;
   final LibraryObject object;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final bool selecting;
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    final image = archiveImageOf(state, object);
+    final image = archiveImageFileOf(state.workspace, object);
     final favorite = object.metadata['favorite'] == true;
+    final placeholder = ColoredBox(
+      color: AppColors.surfaceSecondary,
+      child: Icon(archiveIconOf(object), size: 36, color: AppColors.textMuted),
+    );
     return NewCard(
       padding: const EdgeInsets.all(AppSpace.sm),
       onTap: onTap,
+      onLongPress: onLongPress,
       borderColor: selected ? AppColors.accent : null,
       child: Row(
         children: [
@@ -1303,17 +1347,15 @@ class _ItemRow extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(AppRadii.md),
             child: SizedBox(
-              width: 56,
-              height: 56,
-              child: image != null
-                  ? Image(image: image, fit: BoxFit.cover)
-                  : ColoredBox(
-                      color: AppColors.surfaceSecondary,
-                      child: Icon(
-                        archiveIconOf(object),
-                        color: AppColors.textMuted,
-                      ),
-                    ),
+              key: ValueKey('archive-preview-${object.id}'),
+              width: previewSize,
+              height: previewSize,
+              child: ArchivePreview(
+                state: state,
+                object: object,
+                imageFile: image,
+                fallback: placeholder,
+              ),
             ),
           ),
           const SizedBox(width: AppSpace.md),
@@ -1323,7 +1365,7 @@ class _ItemRow extends StatelessWidget {
               children: [
                 Text(
                   object.title.isEmpty ? 'Untitled' : object.title,
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: AppType.body.copyWith(
                     fontWeight: FontWeight.w600,
@@ -1340,7 +1382,8 @@ class _ItemRow extends StatelessWidget {
               ],
             ),
           ),
-          if (favorite) Icon(Icons.star, size: 18, color: BrandColors.warmCoral),
+          if (favorite)
+            Icon(Icons.star, size: 18, color: BrandColors.warmCoral),
         ],
       ),
     );
@@ -1369,10 +1412,19 @@ class SwipeAction {
 /// be pulled more than a third of the way open) keeps an accidental brush
 /// from opening them.
 class SwipeActions extends StatefulWidget {
-  const SwipeActions({super.key, required this.actions, required this.child});
+  const SwipeActions({
+    super.key,
+    required this.actions,
+    required this.child,
+    this.onFullSwipe,
+  });
 
   final List<SwipeAction> actions;
   final Widget child;
+
+  /// Called when the row is pulled more than half its width to the left
+  /// (e.g. delete). Without it the row stops at its actions.
+  final VoidCallback? onFullSwipe;
 
   @override
   State<SwipeActions> createState() => _SwipeActionsState();
@@ -1382,9 +1434,24 @@ class _SwipeActionsState extends State<SwipeActions> {
   static const _each = 68.0;
   double _dx = 0; // 0 … -open
 
+  double _width = 0;
+
   double get _open => _each * widget.actions.length;
 
+  /// How far the row can be pulled.
+  double get _limit =>
+      widget.onFullSwipe == null ? _open : math.max(_open, _width);
+
+  bool get _past =>
+      widget.onFullSwipe != null && -_dx > math.max(_open + 24, _width * 0.5);
+
   void _end() {
+    if (_past) {
+      HapticFeedback.mediumImpact();
+      setState(() => _dx = 0);
+      widget.onFullSwipe!();
+      return;
+    }
     final snapOpen = -_dx > _open / 3;
     if (snapOpen) HapticFeedback.selectionClick();
     setState(() => _dx = snapOpen ? -_open : 0);
@@ -1392,54 +1459,81 @@ class _SwipeActionsState extends State<SwipeActions> {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        _width = box.maxWidth.isFinite ? box.maxWidth : 0;
+        return _build(context);
+      },
+    );
+  }
+
+  Widget _build(BuildContext context) {
     return GestureDetector(
       onHorizontalDragUpdate: (d) =>
-          setState(() => _dx = (_dx + d.delta.dx).clamp(-_open, 0).toDouble()),
+          setState(() => _dx = (_dx + d.delta.dx).clamp(-_limit, 0).toDouble()),
       onHorizontalDragEnd: (_) => _end(),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadii.card),
         child: Stack(
           children: [
-            Positioned.fill(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final a in widget.actions)
-                      GestureDetector(
-                        key: a.key,
-                        onTap: () {
-                          setState(() => _dx = 0);
-                          a.onTap();
-                        },
-                        child: Container(
-                          width: _each,
-                          color: a.color,
-                          alignment: Alignment.center,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                a.icon,
-                                size: 20,
-                                color: contrastOn(a.color),
-                              ),
-                              Text(
-                                a.label,
-                                style: TextStyle(
-                                  fontSize: AppType.sizeMeta,
+            if (_past)
+              Positioned.fill(
+                child: ColoredBox(
+                  key: const ValueKey('swipe-full'),
+                  color: widget.actions.last.color,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: AppSpace.lg),
+                      child: Icon(
+                        widget.actions.last.icon,
+                        color: contrastOn(widget.actions.last.color),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            else
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final a in widget.actions)
+                        GestureDetector(
+                          key: a.key,
+                          onTap: () {
+                            setState(() => _dx = 0);
+                            a.onTap();
+                          },
+                          child: Container(
+                            width: _each,
+                            color: a.color,
+                            alignment: Alignment.center,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  a.icon,
+                                  size: 20,
                                   color: contrastOn(a.color),
                                 ),
-                              ),
-                            ],
+                                Text(
+                                  a.label,
+                                  style: TextStyle(
+                                    fontSize: AppType.sizeMeta,
+                                    color: contrastOn(a.color),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
             AnimatedContainer(
               duration: _dx == 0 || _dx == -_open
                   ? AppMotion.quick

@@ -208,7 +208,13 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('archive-whole-look')));
       await tester.pump();
       await tester.pump();
-      await tester.tap(find.text(object.title.isEmpty ? 'Untitled' : object.title).first);
+      await tester.ensureVisible(
+        find.text(object.title.isEmpty ? 'Untitled' : object.title).first,
+      );
+      await tester.pump();
+      await tester.tap(
+        find.text(object.title.isEmpty ? 'Untitled' : object.title).first,
+      );
       await tester.pumpAndSettle();
 
       // The dialog shows the real image, not just a name.
@@ -219,9 +225,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('archive-dest-note')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(ValueKey('archive-pick-note-$targetNoteId')),
-      );
+      await tester.tap(find.byKey(ValueKey('archive-pick-note-$targetNoteId')));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 200)),
       );
@@ -260,16 +264,20 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('archive-whole-look')));
       await tester.pump();
       await tester.pump();
-      await tester.tap(find.text(object.title.isEmpty ? 'Untitled' : object.title).first);
+      await tester.ensureVisible(
+        find.text(object.title.isEmpty ? 'Untitled' : object.title).first,
+      );
+      await tester.pump();
+      await tester.tap(
+        find.text(object.title.isEmpty ? 'Untitled' : object.title).first,
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('archive-move-to')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('archive-dest-note')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(ValueKey('archive-pick-note-$targetNoteId')),
-      );
+      await tester.tap(find.byKey(ValueKey('archive-pick-note-$targetNoteId')));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 200)),
       );
@@ -311,6 +319,8 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('archive-whole-look')));
       await tester.pump();
       await tester.pump();
+      await tester.ensureVisible(find.text('Example').first);
+      await tester.pump();
       await tester.tap(find.text('Example').first);
       await tester.pumpAndSettle();
 
@@ -322,9 +332,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('archive-dest-note')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(ValueKey('archive-pick-note-$targetNoteId')),
-      );
+      await tester.tap(find.byKey(ValueKey('archive-pick-note-$targetNoteId')));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 200)),
       );
@@ -352,7 +360,13 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('archive-whole-look')));
       await tester.pump();
       await tester.pump();
-      await tester.tap(find.text(object.title.isEmpty ? 'Untitled' : object.title).first);
+      await tester.ensureVisible(
+        find.text(object.title.isEmpty ? 'Untitled' : object.title).first,
+      );
+      await tester.pump();
+      await tester.tap(
+        find.text(object.title.isEmpty ? 'Untitled' : object.title).first,
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('archive-make-note')));
