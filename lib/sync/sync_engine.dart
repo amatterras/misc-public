@@ -1074,8 +1074,8 @@ class SyncEngine {
         if (c.deleted || c.data == null) continue;
         final mine = local[c.key];
         if (mine == null || mine.rev != c.rev || mine.data == null) continue;
-        if (_canonical(_withoutBlobIds(mine.data)) !=
-            _canonical(_withoutBlobIds(c.data))) {
+        if (_canonical(comparableForReadBack(c.collection, mine.data)) !=
+            _canonical(comparableForReadBack(c.collection, c.data))) {
           report.problems.add(
             'A ${c.collection} record did not read back correctly from the '
             'hub, so it was not switched to end-to-end encryption.',
@@ -1089,6 +1089,22 @@ class SyncEngine {
     }
     AppLog.info('Sync: $checked record(s) read back from the hub and verified');
     return true;
+  }
+
+  /// What the read-back compares. A canvas's `order` (its item ids, in
+  /// stacking order) is worked out from the items it has right now, and
+  /// adding, removing or receiving an item does not give the canvas record
+  /// a new revision: the copy here and the hub's copy of the same revision
+  /// then differ only in `order`. That is not damage (every item is its own
+  /// record and is checked on its own), so it is left out here; before, it
+  /// failed the check on every sync and the hub was never switched over.
+  static Map<String, dynamic>? comparableForReadBack(
+    String collection,
+    Map<String, dynamic>? data,
+  ) {
+    final out = _withoutBlobIds(data);
+    if (collection == 'canvases') out?.remove('order');
+    return out;
   }
 
   /// The sealed attachment ids are added to an asset only on its way out.

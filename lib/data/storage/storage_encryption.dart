@@ -298,7 +298,13 @@ abstract final class StorageEncryption {
 
   /// Folders whose files are encrypted ([root] relative). Logs and exports
   /// are deliberately outside.
-  static const skippedTopLevel = {'keys', 'logs', 'exports'};
+  ///
+  /// `peer_hub` is the small hub of direct device sync (peer_sync.dart): it
+  /// reads its files as plain text and holds only records that are already
+  /// end-to-end encrypted, like the PC hub (which is not under this folder).
+  /// Encrypting it here made direct sync fail after every app start
+  /// ("Failed to decode data using encoding 'utf-8' … peer_hub/hub-id").
+  static const skippedTopLevel = {'keys', 'logs', 'exports', 'peer_hub'};
 
   /// Opens (or, the very first time, creates) the workspace key.
   static Future<StorageEncryptionState> open(

@@ -23,6 +23,7 @@ import 'dart:io';
 
 import '../data/repositories/canvas_repository.dart';
 import '../data/storage/app_log.dart';
+import '../data/storage/storage_encryption.dart';
 import '../data/workspace.dart';
 import '../hub/hub_server.dart';
 import 'e2ee.dart';
@@ -99,8 +100,12 @@ class PeerHost {
   /// hub listens on this device only (tests).
   Future<int> start({String? privateHost}) async {
     if (_hub != null) return port;
+    final dir = Directory(
+      '${workspace.root.path}${Platform.pathSeparator}peer_hub',
+    );
+    await restorePlainPeerHub(dir, StorageEncryption.active);
     final hub = await HubServer.start(
-      dir: Directory('${workspace.root.path}${Platform.pathSeparator}peer_hub'),
+      dir: dir,
       port: 0,
       privateHost: privateHost,
       dailyBackups: false,
@@ -277,6 +282,41 @@ class PeerSyncService {
       client: client,
       openCanvas: openCanvas,
       remote: peer.deviceId,
+    );
+  }
+}
+
+/// Earlier versions encrypted the files of this device's direct-sync hub
+/// together with the rest of the data folder, which the hub cannot read
+/// (it failed to start). Opens such files again with [cipher] so the hub
+/// finds them as it wrote them. A file that cannot be opened sets the whole
+/// folder aside (renamed, nothing deleted): the hub then starts empty and is
+/// filled again from this device's own data by its first sync.
+Future<void> restorePlainPeerHub(Directory dir, FileCipher? cipher) async {
+  if (!await dir.exists()) return;
+  final sealed = <File>[];
+  await for (final e in dir.list(recursive: true, followLinks: false)) {
+    if (e is File && await FileCipher.fileIsEncrypted(e)) sealed.add(e);
+  }
+  if (sealed.isEmpty) return;
+  try {
+    if (cipher == null) {
+      throw const StorageLockedException('no key for the encrypted files');
+    }
+    for (final f in sealed) {
+      final plain = cipher.decrypt(await f.readAsBytes());
+      final tmp = File('${f.path}.plain-tmp');
+      await tmp.writeAsBytes(plain, flush: true);
+      await tmp.rename(f.path);
+    }
+    AppLog.info('Direct sync: ${sealed.length} hub file(s) restored');
+  } on Object catch (e) {
+    final aside = '${dir.path}.unreadable-'
+        '${DateTime.now().millisecondsSinceEpoch}';
+    await dir.rename(aside);
+    AppLog.warn(
+      'Direct sync: hub files could not be opened (${e.runtimeType}); '
+      'set aside, starting fresh',
     );
   }
 }
