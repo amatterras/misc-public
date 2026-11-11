@@ -224,6 +224,16 @@ class StorageSwitch {
   String? _token;
   Directory? _temp;
 
+  /// Upper bound on sync cycles while copying (each moves every deferred
+  /// attachment on by at least one step), so a destination that stops
+  /// accepting files cannot keep the copy going forever.
+  static const maxCopyCycles = 2000;
+
+  /// Tests: a shorter per-cycle transfer budget for the copy (zero makes
+  /// every attachment after the first transfer step wait for the next
+  /// cycle, as a slow link does). Null keeps the engine's default.
+  Duration? copyTransferBudget;
+
   /// The destination's device key once connected (never written to disk by
   /// this class).
   String? get token => _token;
@@ -421,7 +431,22 @@ class StorageSwitch {
         canvases: canvases,
         client: client,
       );
-      final report = await engine.syncOnce();
+      final budget = copyTransferBudget;
+      if (budget != null) engine.transferBudget = budget;
+      // A cycle spends at most `transferBudget` (2 s) on attachments and
+      // defers the rest, with their asset records, to the next cycle. The
+      // copy must be complete before it is compared, so cycles run until
+      // nothing is deferred (every cycle moves each pending file on). One
+      // cycle only made any photo or PDF that took longer than 2 s to send
+      // fail with "Not on the destination: assets/…", and a retry started
+      // the upload from scratch again.
+      var report = await engine.syncOnce();
+      var conflicts = report.conflicts;
+      for (var cycle = 1; report.deferred > 0; cycle++) {
+        if (cycle >= maxCopyCycles) break; // the check below reports what is left
+        report = await engine.syncOnce();
+        conflicts += report.conflicts;
+      }
       stage = SwitchStage.copied;
 
       // Read everything back from the destination.
@@ -483,7 +508,7 @@ class StorageSwitch {
         problems: problems,
         checked: local.length,
         attachmentsChecked: attachments,
-        conflicts: report.conflicts,
+        conflicts: conflicts,
       );
     } on SyncFailure {
       stage = SwitchStage.failed;

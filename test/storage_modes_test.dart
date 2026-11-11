@@ -203,6 +203,20 @@ void main() {
       return sw;
     }
 
+    // Regression (2026-11-11, iPad over Tailscale): one sync cycle spends at
+    // most 2 s on attachments; the copy ran only one, so a photo that took
+    // longer failed with "Not on the destination: assets/…" every time.
+    test('copy and verify waits for attachments that need several cycles '
+        '(slow link)', () async {
+      final s = await appOn(f.dir);
+      final sw = await connected(s);
+      await sw.plan();
+      sw.copyTransferBudget = Duration.zero; // every file waits a cycle
+      final v = await sw.copyAndVerify();
+      expect(v.ok, isTrue, reason: v.problems.join('\n'));
+      expect(v.attachmentsChecked, 2);
+    });
+
     test('switch copies and verifies before anything changes, then syncs '
         'everything exactly once', () async {
       final s = await appOn(f.dir);

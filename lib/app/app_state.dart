@@ -1323,6 +1323,15 @@ class AppState extends ChangeNotifier {
     // a one-way function of it. An ordinary short code uses this device's own
     // key (made now if it has none).
     final secret = PairingSecret.parse(code);
+    // A long code that does not parse is a typing mistake, not an old-style
+    // 8-character code: say so instead of sending it to the hub, which could
+    // only answer "wrong or expired".
+    if (secret == null && code.trim().length > 12) {
+      return 'That is not a valid pairing code, so nothing was sent. A code '
+          'has 26 letters and numbers (letters A–Z without I and O, digits '
+          '2–9). Check each character, or copy and paste the code from the '
+          'PC.';
+    }
     String? pin;
     if (secret?.certPrefix != null) {
       pin = await fetchPinnedCertificate(uri, secret!.certPrefix!);

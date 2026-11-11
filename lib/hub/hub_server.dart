@@ -389,7 +389,12 @@ class HubServer {
     return token.startsWith('$t.') ? token.substring(t.length + 1) : null;
   }
 
-  Future<Map<String, dynamic>> _json(HttpRequest r) async {
+  /// The request body as a JSON object. [allowEmpty]: an empty body (none
+  /// sent) is an empty map instead of an error.
+  Future<Map<String, dynamic>> _json(
+    HttpRequest r, {
+    bool allowEmpty = false,
+  }) async {
     final length = r.contentLength;
     if (length > maxJsonBodyBytes) {
       throw const ProtocolException(
@@ -409,8 +414,12 @@ class HubServer {
         );
       }
     }
+    final bytes = builder.takeBytes();
+    if (allowEmpty && utf8.decode(bytes).trim().isEmpty) {
+      return <String, dynamic>{};
+    }
     try {
-      final decoded = jsonDecode(utf8.decode(builder.takeBytes()));
+      final decoded = jsonDecode(utf8.decode(bytes));
       if (decoded is Map<String, dynamic>) return decoded;
     } catch (_) {}
     throw const ProtocolException('bad_request', 'Body must be a JSON object.');
@@ -745,7 +754,13 @@ class HubServer {
           // With an offer ({registerCode, wrappedKey}) the code is made by
           // the app and the hub never sees it; without, an ordinary code
           // (for read-only devices such as the mirror).
-          final offer = r.contentLength > 0 ? await _json(r) : const {};
+          // The body may come without Content-Length (chunked: dart:io's
+          // HttpClient sends it that way unless told the length, as the
+          // app's localPairingOffer did), so it is always read. Checking
+          // `contentLength > 0` here dropped every offer from the app: the
+          // hub made an unrelated short code and the code shown on the PC
+          // could never pair.
+          final offer = await _json(r, allowEmpty: true);
           if (offer['registerCode'] is String) {
             auth.createPairingOffer(
               registerCode: offer['registerCode'] as String,

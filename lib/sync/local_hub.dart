@@ -120,15 +120,27 @@ Future<({int minutes, int port})> localPairingOffer({
     );
     req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
     req.headers.contentType = ContentType.json;
-    req.write(
+    final payload = utf8.encode(
       jsonEncode({
         'registerCode': registerCode,
         'wrappedKey': wrappedKey,
         if (readOnly) 'readOnly': true,
       }),
     );
+    // Stated length (not chunked): an older hub reads the offer only when
+    // Content-Length is set, and otherwise makes an unrelated code.
+    req.contentLength = payload.length;
+    req.add(payload);
     final res = await req.close();
     final body = jsonDecode(await utf8.decodeStream(res));
+    // An older hub that ignored the offer answers with its own short code:
+    // the code shown here would never pair, so say so instead of showing it.
+    if (res.statusCode == 200 && body is Map && body['code'] is String) {
+      throw const LocalHubException(
+        'The hub on this PC did not accept the pairing offer. Restart '
+        'misc. on this PC and make a new code.',
+      );
+    }
     if (res.statusCode != 200 || body is! Map) {
       throw LocalHubException(
         'The hub refused: ${body is Map ? body['message'] : res.statusCode}',

@@ -3,11 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter_application_1/hub/hub_auth.dart';
 import 'package:flutter_application_1/hub/hub_backup.dart';
 import 'package:flutter_application_1/hub/hub_server.dart';
 import 'package:flutter_application_1/hub/hub_store.dart';
 import 'package:flutter_application_1/sync/hlc.dart';
+import 'package:flutter_application_1/sync/e2ee.dart';
 import 'package:flutter_application_1/sync/protocol.dart';
+import 'package:flutter_application_1/sync/secret_store.dart';
 import 'package:flutter_application_1/sync/sync_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -591,5 +594,66 @@ void main() {
         expect(res.statusCode, 401);
       },
     );
+
+    // Regression (2026-11-11): the hub read the offer only when the request
+    // had Content-Length, but dart:io's HttpClient sends a written body
+    // chunked. Every code the PC app showed was dropped, and the iPad got
+    // "The pairing code is wrong or has expired".
+    test('a pairing offer sent chunked is kept and the code pairs', () async {
+      final server = await HubServer.start(
+        dir: dir,
+        port: 0,
+        dailyBackups: false,
+      );
+      addTearDown(server.stop);
+      final adminToken = await readSecret(HubAuth.adminTokenFile(dir));
+      expect(adminToken, isNotNull);
+      final secret = PairingSecret.generate();
+      final http = HttpClient();
+      addTearDown(http.close);
+      final req = await http.postUrl(
+        Uri.parse('http://127.0.0.1:${server.port}/v1/admin/pair'),
+      );
+      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $adminToken');
+      req.headers.contentType = ContentType.json;
+      // No contentLength: sent chunked, exactly like the old app code.
+      req.write(
+        jsonEncode({
+          'registerCode': secret.registerCode,
+          'wrappedKey': 'wrapped-key',
+        }),
+      );
+      final res = await req.close();
+      final body = jsonDecode(await utf8.decodeStream(res)) as Map;
+      expect(res.statusCode, 200);
+      expect(body.containsKey('code'), isFalse, reason: 'offer was ignored');
+
+      final paired = await server.auth.registerWithKey(
+        secret.registerCode,
+        'ipad0001',
+        'iPad',
+      );
+      expect(paired.wrappedKey, 'wrapped-key');
+    });
+
+    test('an empty admin pair request still makes a short code', () async {
+      final server = await HubServer.start(
+        dir: dir,
+        port: 0,
+        dailyBackups: false,
+      );
+      addTearDown(server.stop);
+      final adminToken = await readSecret(HubAuth.adminTokenFile(dir));
+      final http = HttpClient();
+      addTearDown(http.close);
+      final req = await http.postUrl(
+        Uri.parse('http://127.0.0.1:${server.port}/v1/admin/pair'),
+      );
+      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $adminToken');
+      final res = await req.close();
+      final body = jsonDecode(await utf8.decodeStream(res)) as Map;
+      expect(res.statusCode, 200);
+      expect(body['code'], isA<String>());
+    });
   });
 }
