@@ -7,11 +7,16 @@
 // body, url…) with a weight each. Fields may be split in pages (a PDF's
 // pages, a notebook's pages) so a hit can say which page matched.
 //
-// Querying: every word of the query must match (in any field); the last word
-// also matches as a prefix (so results appear while typing). Ranking: title
-// beats tags beats other fields; an exact phrase in the title and exact
-// words rank above prefix matches. Each hit says which fields matched, shows
-// a snippet around the match and, for paged fields, the page.
+// Querying: every word of the query must match (in any field). A word
+// matches a whole word of the text, the start of one (so results appear
+// while typing) or, from three letters on, any part of one ("ount" finds
+// "account"). Case, accents and punctuation never matter. When nothing
+// matches word by word, the query is also tried with its spaces and
+// punctuation removed against the text with theirs removed ("to do" finds
+// "to-do" and "todo", "mind map" finds "mindmap"). Ranking: title beats tags
+// beats other fields; an exact phrase in the title and exact words rank above
+// prefix matches, and those above partial ones. Each hit says which fields
+// matched, shows a snippet around the match and, for paged fields, the page.
 //
 // Pure Dart (no Flutter).
 import 'dart:math';
@@ -30,6 +35,9 @@ enum DocKind {
   bookmark,
   aiChat,
   experiment,
+
+  /// Text typed on the Calendar's drawing layer, by day (not the strokes).
+  calendarNote,
 }
 
 /// One searchable text of a document. [pages] set: the text is split in
@@ -91,17 +99,115 @@ class SearchHit {
 
 final _splitter = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
 
-/// Lower-case words of [text].
+/// Accented letters by their plain letter (the first of each group). One
+/// character for one character, so a position in the folded text is the
+/// same position in the original.
+const _accentGroups = [
+  'aàáâãäåāăą',
+  'cçćĉċč',
+  'dďđ',
+  'eèéêëēĕėęě',
+  'gĝğġģ',
+  'hĥħ',
+  'iìíîïĩīĭįı',
+  'jĵ',
+  'kķ',
+  'lĺļľŀł',
+  'nñńņň',
+  'oòóôõöøōŏő',
+  'rŕŗř',
+  'sśŝşš',
+  'tţťŧ',
+  'uùúûüũūŭůűų',
+  'wŵ',
+  'yýÿŷ',
+  'zźżž',
+];
+final Map<int, String> _accentFold = {
+  for (final group in _accentGroups)
+    for (final r in group.runes.skip(1)) r: String.fromCharCode(group.runes.first),
+};
+
+/// [text] in lower case with accents removed: what the index compares.
+String foldText(String text) {
+  final lower = text.toLowerCase();
+  // Plain ASCII (most text) needs no folding.
+  var plain = true;
+  for (var i = 0; i < lower.length; i++) {
+    if (lower.codeUnitAt(i) > 0x7f) {
+      plain = false;
+      break;
+    }
+  }
+  if (plain) return lower;
+  final codes = <int>[];
+  for (final r in lower.runes) {
+    final plainLetter = _accentFold[r];
+    codes.add(plainLetter == null ? r : plainLetter.codeUnitAt(0));
+  }
+  return String.fromCharCodes(codes);
+}
+
+/// Lower-case, accent-free words of [text].
 List<String> tokenize(String text) => [
-  for (final w in text.toLowerCase().split(_splitter))
+  for (final w in foldText(text).split(_splitter))
     if (w.isNotEmpty) w,
 ];
+
+/// [text] reduced to its letters and digits, folded: spacing and punctuation
+/// removed.
+String compactText(String text) => foldText(text).replaceAll(_splitter, '');
+
+/// Shortest word that is also looked for inside other words.
+const _infixMinLength = 3;
+
+/// Where [query] matches in [text] (for highlighting): the places where a
+/// query word occurs, plus, when no word occurs, the run of text that equals
+/// the query once spaces and punctuation are ignored. Sorted, not
+/// overlapping.
+List<({int start, int end})> matchRanges(String text, String query) {
+  final folded = foldText(text);
+  final words = tokenize(query);
+  if (words.isEmpty) return const [];
+  final spans = <({int start, int end})>[];
+  for (final w in words.toSet()) {
+    var from = 0;
+    while (true) {
+      final i = folded.indexOf(w, from);
+      if (i < 0) break;
+      spans.add((start: i, end: i + w.length));
+      from = i + w.length;
+    }
+  }
+  if (spans.isEmpty) {
+    // Spacing / punctuation variations: the letters in order with anything
+    // that is not a letter or digit between them.
+    final letters = words.join().split('');
+    final pattern = letters.map(RegExp.escape).join(r'[^\p{L}\p{N}]*');
+    final m = RegExp(pattern, unicode: true).firstMatch(folded);
+    if (m != null) spans.add((start: m.start, end: m.end));
+  }
+  spans.sort((a, b) => a.start.compareTo(b.start));
+  final merged = <({int start, int end})>[];
+  for (final s in spans) {
+    if (merged.isNotEmpty && s.start <= merged.last.end) {
+      final last = merged.removeLast();
+      merged.add((start: last.start, end: s.end > last.end ? s.end : last.end));
+    } else {
+      merged.add(s);
+    }
+  }
+  return merged;
+}
 
 class SearchIndex {
   final Map<String, IndexedDoc> _docs = {};
   final Map<String, Map<String, Set<String>>> _fieldTerms =
       {}; // doc → field → terms
   final Map<String, Set<String>> _postings = {}; // term → doc keys
+  // doc → field → letters and digits only, for the spacing fallback. Built
+  // the first time a query needs it (most never do), then kept current.
+  Map<String, Map<String, String>>? _compact;
   List<String>? _sortedTerms;
 
   int get length => _docs.length;
@@ -123,6 +229,7 @@ class SearchIndex {
       all.addAll(terms);
     }
     _fieldTerms[d.key] = byField;
+    _compact?[d.key] = _compactOf(d);
     for (final t in all) {
       (_postings[t] ??= {}).add(d.key);
     }
@@ -131,6 +238,7 @@ class SearchIndex {
 
   void remove(String key) {
     final old = _docs.remove(key);
+    _compact?.remove(key);
     if (old == null) return;
     final byField = _fieldTerms.remove(key) ?? const {};
     final terms = <String>{for (final s in byField.values) ...s};
@@ -144,6 +252,7 @@ class SearchIndex {
   }
 
   void clear() {
+    _compact = null;
     _docs.clear();
     _fieldTerms.clear();
     _postings.clear();
@@ -180,14 +289,17 @@ class SearchIndex {
     final perWord = <Map<String, ({double score, Set<String> fields})>>[];
     for (var i = 0; i < words.length; i++) {
       final w = words[i];
-      final last = i == words.length - 1;
       final matches = <String, ({double score, Set<String> fields})>{};
-      final candidates = <String>{
-        if (_postings.containsKey(w)) w,
-        if (last) ..._withPrefix(w),
+      // Whole word, start of a word, then (longer words) part of a word.
+      final candidates = <String, double>{
+        if (_postings.containsKey(w)) w: 1.0,
+        for (final t in _withPrefix(w, limit: 200)) t: 0.7,
+        if (w.length >= _infixMinLength)
+          for (final t in _containing(w, limit: 200)) t: 0.4,
       };
-      for (final term in candidates) {
-        final exact = term == w;
+      for (final entry in candidates.entries) {
+        final term = entry.key;
+        final factor = entry.value;
         for (final key in _postings[term] ?? const <String>{}) {
           final doc = _docs[key]!;
           if (kinds != null && !kinds.contains(doc.kind)) continue;
@@ -204,7 +316,7 @@ class SearchIndex {
                         orElse: () => const SearchField('', ''),
                       )
                       .weight;
-            final s = weight * (exact ? 1.0 : 0.7);
+            final s = weight * factor;
             fields.add(name);
             if (s > best) best = s;
           });
@@ -216,7 +328,7 @@ class SearchIndex {
           }
         }
       }
-      if (matches.isEmpty) return const [];
+      if (matches.isEmpty) return _spacingFallback(words, kinds, limit);
       perWord.add(matches);
     }
     // Every word must match: intersect.
@@ -224,6 +336,7 @@ class SearchIndex {
     for (final m in perWord.skip(1)) {
       keys = keys.intersection(m.keys.toSet());
     }
+    if (keys.isEmpty) return _spacingFallback(words, kinds, limit);
     final phrase = words.join(' ');
     final hits = <SearchHit>[];
     for (final key in keys) {
@@ -256,6 +369,83 @@ class SearchIndex {
     return hits.length > limit ? hits.sublist(0, limit) : hits;
   }
 
+  /// Terms that contain [part] somewhere inside (not at the start: those
+  /// are the prefix matches).
+  Iterable<String> _containing(String part, {int limit = 200}) sync* {
+    var n = 0;
+    for (final t in _terms) {
+      if (n >= limit) return;
+      if (t.length > part.length && t.contains(part) && !t.startsWith(part)) {
+        n++;
+        yield t;
+      }
+    }
+  }
+
+  static const _compactMaxLength = 20000;
+
+  /// Letters-and-digits form of the short fields (a long text such as a PDF
+  /// is only matched word by word, to keep this small).
+  static Map<String, String> _compactOf(IndexedDoc d) {
+    final compact = <String, String>{'title': compactText(d.title)};
+    for (final f in d.fields) {
+      if (f.pages != null || f.text.length > _compactMaxLength) continue;
+      compact[f.name] = '${compact[f.name] ?? ''}${compactText(f.text)}';
+    }
+    return compact;
+  }
+
+  /// "to do" / "to-do" / "todo": the query with spaces and punctuation
+  /// removed, looked for in the documents' text with theirs removed. Only
+  /// used when matching word by word found nothing.
+  List<SearchHit> _spacingFallback(
+    List<String> words,
+    Set<DocKind>? kinds,
+    int limit,
+  ) {
+    final needle = words.join();
+    if (needle.length < 2) return const [];
+    final hits = <SearchHit>[];
+    final all = _compact ??= {
+      for (final e in _docs.entries) e.key: _compactOf(e.value),
+    };
+    for (final entry in all.entries) {
+      final doc = _docs[entry.key]!;
+      if (kinds != null && !kinds.contains(doc.kind)) continue;
+      final reasons = <String>{};
+      var score = 0.0;
+      entry.value.forEach((field, compact) {
+        if (!compact.contains(needle)) return;
+        reasons.add(field);
+        final weight = field == 'title'
+            ? 10.0
+            : doc.fields
+                  .firstWhere(
+                    (f) => f.name == field,
+                    orElse: () => const SearchField('', ''),
+                  )
+                  .weight;
+        if (weight * 0.5 > score) score = weight * 0.5;
+      });
+      if (reasons.isEmpty) continue;
+      final (snippet, page) = _snippet(doc, words);
+      hits.add(
+        SearchHit(
+          doc: doc,
+          score: score,
+          reasons: _orderReasons(reasons),
+          snippet: snippet,
+          page: page,
+        ),
+      );
+    }
+    hits.sort((a, b) {
+      final c = b.score.compareTo(a.score);
+      return c != 0 ? c : a.doc.title.compareTo(b.doc.title);
+    });
+    return hits.length > limit ? hits.sublist(0, limit) : hits;
+  }
+
   static List<String> _orderReasons(Set<String> r) {
     const order = ['title', 'tags', 'project', 'url'];
     final list = r.toList()
@@ -269,10 +459,13 @@ class SearchIndex {
   /// A short text around the first match in the best non-title field (and the
   /// page, for paged fields).
   (String, int?) _snippet(IndexedDoc doc, List<String> words) {
+    final query = words.join(' ');
     bool has(String text) {
-      final l = text.toLowerCase();
-      return words.every((w) => l.contains(w));
+      final l = foldText(text);
+      return words.every(l.contains);
     }
+
+    bool any(String text) => matchRanges(text, query).isNotEmpty;
 
     // Paged text first: the first page where every word occurs, else the
     // first page with any.
@@ -280,32 +473,28 @@ class SearchIndex {
       final pages = f.pages;
       if (pages == null) continue;
       for (var i = 0; i < pages.length; i++) {
-        if (has(pages[i])) return (_around(pages[i], words), i + 1);
+        if (has(pages[i])) return (_around(pages[i], query), i + 1);
       }
       for (var i = 0; i < pages.length; i++) {
-        final l = pages[i].toLowerCase();
-        if (words.any(l.contains)) return (_around(pages[i], words), i + 1);
+        if (any(pages[i])) return (_around(pages[i], query), i + 1);
       }
     }
     SearchField? best;
     for (final f in doc.fields) {
-      final l = f.text.toLowerCase();
-      if (!words.any(l.contains)) continue;
+      if (!any(f.text)) continue;
       if (best == null || f.weight > best.weight) best = f;
     }
-    if (best != null) return (_around(best.text, words), null);
+    if (best != null) return (_around(best.text, query), null);
     return (doc.subtitle, null);
   }
 
-  static String _around(String text, List<String> words) {
+  static String _around(String text, String query) {
     final flat = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    final lower = flat.toLowerCase();
-    var at = -1;
-    for (final w in words) {
-      final i = lower.indexOf(w);
-      if (i >= 0 && (at < 0 || i < at)) at = i;
+    final spans = matchRanges(flat, query);
+    if (spans.isEmpty) {
+      return flat.length > 100 ? '${flat.substring(0, 100)}…' : flat;
     }
-    if (at < 0) return flat.length > 100 ? '${flat.substring(0, 100)}…' : flat;
+    final at = spans.first.start;
     final start = max(0, at - 36);
     final end = min(flat.length, at + 80);
     return '${start > 0 ? '…' : ''}${flat.substring(start, end)}'

@@ -258,10 +258,22 @@ class FolderDropdown extends StatelessWidget {
   }
 }
 
+/// Set at startup (AppState): shows a PDF inside the app where this device
+/// can render pages; returns false to fall back to the default app.
+Future<bool> Function(BuildContext context, Asset asset)? inAppDocumentOpener;
+
 /// A compact link or image attachment. Links open in the browser on click;
 /// images show a thumbnail.
-/// Opens a stored PDF in its default app, or says why it can't.
-void openDocumentAsset(BuildContext context, Workspace ws, Asset asset) {
+/// Opens a stored document: PDFs in the in-app viewer where possible,
+/// otherwise in its default app, or says why it can't.
+Future<void> openDocumentAsset(
+  BuildContext context,
+  Workspace ws,
+  Asset asset,
+) async {
+  final opener = inAppDocumentOpener;
+  if (opener != null && await opener(context, asset)) return;
+  if (!context.mounted) return;
   final file = ws.documentFile(asset);
   if (file != null && native.openDocument(file.path)) return;
   showAppDialog<void>(

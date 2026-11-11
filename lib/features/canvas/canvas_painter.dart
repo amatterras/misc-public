@@ -136,18 +136,18 @@ class CanvasPainter extends CustomPainter {
     // Mind-map connections first, so they run underneath the items.
     final selectedIds = controller.selection;
     for (final c in controller.items.whereType<ConnectorItem>()) {
-      final ends = controller.connectorEnds(c);
-      if (ends == null) continue;
-      _paintConnector(
-        canvas,
-        ends,
-        scale,
-        selected: selectedIds.contains(c.id),
-      );
+      final path = controller.connectorPath(c);
+      if (path == null) continue;
+      _paintConnector(canvas, path, scale, selected: selectedIds.contains(c.id));
     }
     final liveConnection = controller.liveConnection;
     if (liveConnection != null) {
-      _paintConnector(canvas, liveConnection, scale, selected: true);
+      _paintConnector(
+        canvas,
+        controller.livePath ?? [liveConnection.$1, liveConnection.$2],
+        scale,
+        selected: true,
+      );
     }
 
     for (final item in controller.items) {
@@ -507,19 +507,29 @@ class CanvasPainter extends CustomPainter {
   /// A connection: a line with small dots where it meets the two items.
   void _paintConnector(
     Canvas canvas,
-    (Offset, Offset) ends,
+    List<Offset> path,
     double scale, {
     required bool selected,
   }) {
     final color = selected ? AppColors.accent : AppColors.textMuted;
     final line = Paint()
       ..color = color
+      ..style = PaintingStyle.stroke
       ..strokeWidth = (selected ? 2.5 : 1.6) / scale
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(ends.$1, ends.$2, line);
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    if (path.length == 2) {
+      canvas.drawLine(path.first, path.last, line);
+    } else {
+      final p = Path()..moveTo(path.first.dx, path.first.dy);
+      for (final point in path.skip(1)) {
+        p.lineTo(point.dx, point.dy);
+      }
+      canvas.drawPath(p, line);
+    }
     final dot = Paint()..color = color;
-    canvas.drawCircle(ends.$1, 3 / scale, dot);
-    canvas.drawCircle(ends.$2, 3 / scale, dot);
+    canvas.drawCircle(path.first, 3 / scale, dot);
+    canvas.drawCircle(path.last, 3 / scale, dot);
   }
 
   void _paintSelection(Canvas canvas, double scale) {

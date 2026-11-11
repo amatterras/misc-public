@@ -396,6 +396,7 @@ class ConnectorItem extends CanvasItem {
     required this.toId,
     this.fromT,
     this.toT,
+    this.curve,
   });
 
   final String fromId;
@@ -410,6 +411,13 @@ class ConnectorItem extends CanvasItem {
   final double? fromT;
   final double? toT;
 
+  /// The shape of a hand-drawn connection: key points between the two ends,
+  /// in the frame of the chord from start to end (x along it, y across it,
+  /// both in chord lengths). Stored that way so the line stays attached and
+  /// keeps its shape when either item moves. Null: a straight line (every
+  /// connection made by tapping, and older files). Written only when set.
+  final List<Offset>? curve;
+
   /// The line's real extent depends on the two items; the controller
   /// computes it (see `CanvasController.itemBounds`).
   @override
@@ -420,12 +428,24 @@ class ConnectorItem extends CanvasItem {
   ConnectorItem translated(Offset delta) => this;
 
   @override
-  ConnectorItem withId(String id) =>
-      ConnectorItem(id: id, fromId: fromId, toId: toId, fromT: fromT, toT: toT);
+  ConnectorItem withId(String id) => ConnectorItem(
+    id: id,
+    fromId: fromId,
+    toId: toId,
+    fromT: fromT,
+    toT: toT,
+    curve: curve,
+  );
 
   /// The same connection between other items (copies keep their anchors).
-  ConnectorItem rejoined(String id, String from, String to) =>
-      ConnectorItem(id: id, fromId: from, toId: to, fromT: fromT, toT: toT);
+  ConnectorItem rejoined(String id, String from, String to) => ConnectorItem(
+    id: id,
+    fromId: from,
+    toId: to,
+    fromT: fromT,
+    toT: toT,
+    curve: curve,
+  );
 
   bool touches(String itemId) => fromId == itemId || toId == itemId;
 
@@ -440,7 +460,30 @@ class ConnectorItem extends CanvasItem {
     'to': toId,
     'fromT': ?fromT,
     'toT': ?toT,
+    if (curve != null && curve!.isNotEmpty)
+      'curve': [
+        for (final k in curve!) ...[_round(k.dx), _round(k.dy)],
+      ],
   };
+
+  static double _round(double v) => (v * 10000).roundToDouble() / 10000;
+
+  /// Key points from the stored flat list; anything damaged (odd length,
+  /// not numbers, too many, far outside the two ends) is ignored, which
+  /// leaves a straight line.
+  static List<Offset>? _curve(Object? v) {
+    if (v is! List || v.isEmpty || v.length.isOdd || v.length > 128) {
+      return null;
+    }
+    final out = <Offset>[];
+    for (var i = 0; i < v.length; i += 2) {
+      final x = v[i], y = v[i + 1];
+      if (x is! num || y is! num || !x.isFinite || !y.isFinite) return null;
+      if (x < -1 || x > 2 || y.abs() > 3) return null;
+      out.add(Offset(x.toDouble(), y.toDouble()));
+    }
+    return List.unmodifiable(out);
+  }
 
   static double? _t(Object? v) =>
       v is num && v.isFinite ? v.toDouble().clamp(0.0, 1.0) : null;
@@ -451,6 +494,7 @@ class ConnectorItem extends CanvasItem {
     toId: j['to'] as String,
     fromT: _t(j['fromT']),
     toT: _t(j['toT']),
+    curve: _curve(j['curve']),
   );
 }
 

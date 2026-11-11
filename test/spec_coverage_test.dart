@@ -112,7 +112,7 @@ void main() {
     );
     await s.createCanvas(title: 'Quokka board');
     final kinds = searchEverything(s, 'quokka').map((r) => r.kind).toSet();
-    expect(kinds, containsAll(['Note', 'Task', 'Events', 'Canvas']));
+    expect(kinds, containsAll(['Note', 'Task', 'Events', 'Mindmap']));
     expect(searchEverything(s, 'MARSUPIAL'), isNotEmpty, reason: 'any case');
     expect(searchEverything(s, 'zebra'), isEmpty);
     s.dispose();

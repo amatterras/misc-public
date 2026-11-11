@@ -925,11 +925,6 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                       onEraser: s.setEraser,
                       onPenWidth: s.setCanvasPenWidth,
                       onTags: _editTags,
-                      collapsed: s.canvasOptionsCollapsed,
-                      onToggleCollapsed: () {
-                        unawaited(s.toggleCanvasOptions());
-                        setState(() {});
-                      },
                     ),
                   ),
                 ),
@@ -961,15 +956,6 @@ class _CanvasViewState extends State<CanvasView> with TickerProviderStateMixin {
                         onAddImage: _addImages,
                         onAddLink: _addLink,
                         onAddDocument: _addDocuments,
-                        onPenDoubleTap: () {
-                          // The existing context bar is THEapp's shared
-                          // pen color library. A double tap only unfolds it;
-                          // the normal single-tap tool action remains intact.
-                          unawaited(
-                            s.settings.set('canvasOptionsCollapsed', false),
-                          );
-                          setState(() {});
-                        },
                         onMore: (at) {
                           c.select(const []);
                           unawaited(

@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app/app_state.dart';
-import '../data/models/library_models.dart' show AssetKind;
 import '../data/models/object_library_models.dart';
 import '../data/repositories/library_repository.dart';
 import '../data/storage/attachment_image.dart';
@@ -1126,14 +1125,9 @@ class _CollectionCard extends StatelessWidget {
 }
 
 /// ImageProvider for an item's real picture or thumbnail, if it has one.
+/// (The file is resolved by archiveImageFileOf in archive_model.dart.)
 ImageProvider? archiveImageOf(AppState state, LibraryObject object) {
-  final assetId = object.attachmentIds.where((id) => id.isNotEmpty).firstOrNull;
-  final asset = assetId == null ? null : state.workspace.assets[assetId];
-  final isImage = asset?.kind == AssetKind.image || object.thumbnailId != null;
-  final name =
-      object.thumbnailId ??
-      asset?.previewFile ??
-      (isImage ? asset?.file : null);
+  final name = archiveImageFileOf(state.workspace, object);
   if (name == null) return null;
   return AttachmentImageProvider(state.workspace.attachments, name);
 }

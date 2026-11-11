@@ -1,14 +1,13 @@
 // Reading a PDF page by page, with the notes that cite it.
 //
-// iPhone and iPad: pages are drawn by the system's PDFKit (the bridge call
-// that notes already use), one at a time, so memory stays small however long
-// the PDF is. Windows has no in-app page renderer (a plugin would be needed),
-// so there the PDF opens in the default viewer and misc. says which page to
-// go to; the page references themselves (notes citing page N, found from the
-// PDF and from the note) work the same everywhere.
+// Pages are drawn by the platform renderer (PdfRenderer: PDFKit on
+// iPhone/iPad, Windows.Data.Pdf on Windows), one at a time, so memory
+// stays small however long the PDF is. Where no renderer exists the PDF
+// opens in the default viewer and misc. says which page to go to; the page
+// references themselves (notes citing page N, found from the PDF and from
+// the note) work the same everywhere.
 //
 // This is a reading and referencing aid, not a PDF editor.
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -16,7 +15,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/library_models.dart';
-import '../../platform/ios_bridge.dart';
+import '../../platform/pdf_renderer.dart';
 import '../../widgets/common.dart' show promptText;
 import 'relations.dart';
 
@@ -32,25 +31,39 @@ Future<void> openPdfAtPage(
     s.showToast('This PDF is not on this device yet.');
     return;
   }
-  if (Platform.isIOS) {
-    final sizes = await IosBridge.instance.pdfPageSizes(file.path);
-    if (sizes != null && sizes.isNotEmpty && context.mounted) {
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => PdfPageViewer(
-            state: s,
-            asset: asset,
-            path: file.path,
-            pages: sizes.length,
-            initialPage: (page ?? 1).clamp(1, sizes.length),
-          ),
-        ),
-      );
-      return;
-    }
-  }
+  if (await showPdfInApp(context, s, asset, page)) return;
   s.openDocument(file.path);
   if (page != null) s.showToast('Opened. Go to page $page.');
+}
+
+/// Shows [asset] in the in-app page viewer (navigation, zoom, citing).
+/// False when it cannot be shown here — not a PDF, not on this device yet,
+/// unreadable, or no page renderer on this platform — so the caller can
+/// fall back to the default app.
+Future<bool> showPdfInApp(
+  BuildContext context,
+  AppState s,
+  Asset asset,
+  int? page,
+) async {
+  final renderer = PdfRenderer.instance;
+  final file = s.workspace.documentFile(asset);
+  if (renderer == null || file == null) return false;
+  if (!file.path.toLowerCase().endsWith('.pdf')) return false;
+  final sizes = await renderer.pageSizes(file.path);
+  if (sizes == null || sizes.isEmpty || !context.mounted) return false;
+  await Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => PdfPageViewer(
+        state: s,
+        asset: asset,
+        path: file.path,
+        pages: sizes.length,
+        initialPage: (page ?? 1).clamp(1, sizes.length),
+      ),
+    ),
+  );
+  return true;
 }
 
 class PdfPageViewer extends StatefulWidget {
@@ -92,7 +105,7 @@ class _PdfPageViewerState extends State<PdfPageViewer> {
         (MediaQuery.sizeOf(context).width *
                 MediaQuery.devicePixelRatioOf(context))
             .round();
-    final bytes = await IosBridge.instance.renderPdfPage(
+    final bytes = await PdfRenderer.instance?.renderPage(
       widget.path,
       _page - 1,
       width.clamp(300, 2400),

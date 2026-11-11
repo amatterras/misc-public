@@ -1,265 +1,19 @@
-import 'ranked_search.dart';
-
+// Search everything: one field over the one index (lib/search). Results
+// update as the user types (after a very short pause, so typing never waits
+// on a search), are grouped by section, show where each match is with the
+// matching words highlighted, and open the exact item or place. Handwriting
+// is never searched: the index is made from typed text only.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import '../../app/app_state.dart';
-import '../../app/canvas_ops.dart' show canvasLinkTarget;
 import '../../app/theme.dart';
-import '../../data/models/canvas_models.dart';
-import '../../data/models/library_models.dart';
-import '../../data/models/record.dart';
-import '../../platform/platform.dart' as native;
-import '../../widgets/common.dart';
-import '../links/link_tags.dart';
+import '../../search/search_index.dart' show matchRanges;
+import 'ranked_search.dart';
 
-class SearchResult {
-  const SearchResult({
-    required this.icon,
-    required this.kind,
-    required this.title,
-    required this.subtitle,
-    required this.open,
-    this.why = '',
-  });
-
-  final IconData icon;
-  final String kind;
-  final String title;
-  final String subtitle;
-  final VoidCallback open;
-
-  /// Where the match is ("in title, tags"), for ranked results.
-  final String why;
-}
-
-/// Searches every kind of record. Pure function so it can be tested.
-List<SearchResult> searchEverything(AppState s, String query) {
-  final q = query.trim().toLowerCase();
-  if (q.isEmpty) return const [];
-  bool has(String? text) => text != null && text.toLowerCase().contains(q);
-  String snippet(String text) {
-    final i = text.toLowerCase().indexOf(q);
-    if (i < 0) return text.length > 90 ? '${text.substring(0, 90)}…' : text;
-    final start = (i - 30).clamp(0, text.length);
-    final end = (i + q.length + 60).clamp(0, text.length);
-    return '${start > 0 ? '…' : ''}${text.substring(start, end).replaceAll('\n', ' ')}${end < text.length ? '…' : ''}';
-  }
-
-  final ws = s.workspace;
-  final results = <SearchResult>[];
-  for (final n in ws.notes.all) {
-    if (has(n.title) || has(n.body) || n.tags.any(has)) {
-      results.add(
-        SearchResult(
-          icon: Icons.description_outlined,
-          kind: 'Note',
-          title: n.displayTitle,
-          subtitle: has(n.body) ? snippet(n.body) : ws.folderLabel(n.folderId),
-          open: () => s.openNote(n.id),
-        ),
-      );
-    }
-  }
-  // Text typed on note pages and on the Archive board.
-  for (final MapEntry(key: id, value: text) in s.pageSearchText.entries) {
-    if (!has(text)) continue;
-    if (isNotebookId(id)) {
-      final note = ws.notes[id.substring('nb-'.length)];
-      if (note == null) continue; // a deleted note's pages
-      results.add(
-        SearchResult(
-          icon: Icons.edit_note,
-          kind: 'Note page',
-          title: note.displayTitle,
-          subtitle: snippet(text),
-          open: () => s.openNote(note.id),
-        ),
-      );
-    } else if (isLinksBoardId(id)) {
-      results.add(
-        SearchResult(
-          icon: Icons.bookmarks_outlined,
-          kind: 'Archive',
-          title: 'Archive board',
-          subtitle: snippet(text),
-          open: () => s.goTo(AppPage.links),
-        ),
-      );
-    }
-  }
-  for (final c in s.canvasList) {
-    if (has(c.title) || has(c.searchText)) {
-      results.add(
-        SearchResult(
-          icon: Icons.grid_view,
-          kind: 'Canvas',
-          title: c.title,
-          subtitle: has(c.searchText) ? snippet(c.searchText) : 'Canvas',
-          open: () => s.openCanvas(c.id),
-        ),
-      );
-    }
-  }
-  for (final a in ws.assets.all) {
-    final tags = LinkTag.of(a.linkTags);
-    final own = ws.tagsOfAsset(a); // the user's own tags
-    if (a.kind == AssetKind.link &&
-        (has(a.title) ||
-            has(a.url) ||
-            has(a.description) ||
-            has(a.siteName) ||
-            tags.any((t) => has(t.label)) ||
-            own.any((t) => has(t.name)))) {
-      results.add(
-        SearchResult(
-          icon: Icons.link,
-          kind: 'Link',
-          title: a.label,
-          subtitle: [
-            if (tags.isNotEmpty || own.isNotEmpty)
-              [
-                ...tags.map((t) => t.label),
-                ...own.map((t) => t.name),
-              ].join(', '),
-            a.url ?? '',
-          ].join('  ·  '),
-          // The card in Archive if there is one, else the web page.
-          open: () async {
-            final mindmap = canvasLinkTarget(a.url);
-            if (mindmap != null) {
-              await s.openCanvas(mindmap); // a link to another mindmap
-              return;
-            }
-            if (!await s.openLinkCard(a.id) && a.url != null) {
-              native.openUrl(a.url!);
-            }
-          },
-        ),
-      );
-    } else if (a.kind == AssetKind.document &&
-        (has(a.title) || has(s.pdfTexts[a.id]))) {
-      final body = s.pdfTexts[a.id] ?? '';
-      results.add(
-        SearchResult(
-          icon: Icons.picture_as_pdf_outlined,
-          kind: 'Document',
-          title: a.label,
-          // Text recognised on a scanned page names the page.
-          subtitle: switch (s.pdfTexts.pageMatch(a.id, [q])) {
-            (final page, final text) => 'Page $page: ${snippet(text)}',
-            null => has(body) ? snippet(body) : 'PDF',
-          },
-          open: () {
-            final file = ws.documentFile(a);
-            if (file != null) s.openDocument(file.path);
-          },
-        ),
-      );
-    }
-  }
-  for (final e in ws.entries.all) {
-    if (has(e.name) ||
-        has(e.description) ||
-        has(e.notes) ||
-        has(e.author) ||
-        has(e.highlights)) {
-      final day =
-          e.startDate ??
-          (e.dates.isNotEmpty
-              ? parseDayKey((e.dates.toList()..sort()).first)
-              : null) ??
-          (e.readingLog.isNotEmpty
-              ? parseDayKey((e.readingLog.keys.toList()..sort()).first)
-              : null) ??
-          DateTime.now();
-      results.add(
-        SearchResult(
-          icon: Icons.calendar_today_outlined,
-          kind: e.category.label,
-          title: e.name + (e.archived ? '  (archived)' : ''),
-          subtitle: e.description.isNotEmpty
-              ? snippet(e.description)
-              : formatShortDate(day),
-          open: () => s.openCalendarDay(day),
-        ),
-      );
-    }
-  }
-  for (final p in ws.projects.all) {
-    if (has(p.name)) {
-      results.add(
-        SearchResult(
-          icon: Icons.folder_outlined,
-          kind: 'Project',
-          title: p.name,
-          subtitle: 'Tasks',
-          open: () => s.goTo(AppPage.tasks),
-        ),
-      );
-    }
-  }
-  for (final t in ws.tasks.all) {
-    if (has(t.title) || has(t.notes)) {
-      results.add(
-        SearchResult(
-          icon: t.done
-              ? Icons.check_box_outlined
-              : Icons.check_box_outline_blank,
-          kind: t.isExam ? 'Exam' : 'Task',
-          title: t.title,
-          subtitle: t.dueDate == null
-              ? (ws.projects[t.projectId]?.name ?? '')
-              : 'Due ${formatShortDate(t.dueDate!)}',
-          open: () => s.openTask(t.id),
-        ),
-      );
-    }
-  }
-  for (final c in ws.aiConversations.all) {
-    final text = c.messages.map((m) => m.text).join(' ');
-    if (has(c.title) || has(text)) {
-      results.add(
-        SearchResult(
-          icon: Icons.auto_awesome_outlined,
-          kind: 'AI chat',
-          title: c.title,
-          subtitle: has(text) ? snippet(text) : '',
-          open: () => s.openAiConversation(c.id),
-        ),
-      );
-    }
-  }
-  for (final x in ws.experiments.all) {
-    final text = x.toText();
-    if (has(text)) {
-      results.add(
-        SearchResult(
-          icon: Icons.psychology_outlined,
-          kind: 'Thought experiment',
-          title: x.title,
-          subtitle: snippet(text),
-          open: () => s.openExperiment(x.id),
-        ),
-      );
-    }
-  }
-  for (final b in ws.bookmarks.all) {
-    if (has(b.title) || has(b.url)) {
-      results.add(
-        SearchResult(
-          icon: Icons.bookmark_outline,
-          kind: 'Bookmark',
-          title: b.title,
-          subtitle: b.url,
-          open: () => s.openInSafari(b.url),
-        ),
-      );
-    }
-  }
-  return results;
-}
+export 'ranked_search.dart'
+    show SearchFilter, SearchResult, searchEverything, searchRanked;
 
 Future<void> showSearchDialog(BuildContext context, AppState state) {
   return showAppDialog<void>(
@@ -267,6 +21,9 @@ Future<void> showSearchDialog(BuildContext context, AppState state) {
     builder: (_) => _SearchDialog(state: state, rootContext: context),
   );
 }
+
+/// Pause after the last key before a search runs.
+const searchPause = Duration(milliseconds: 120);
 
 class _SearchDialog extends StatefulWidget {
   const _SearchDialog({required this.state, this.rootContext});
@@ -284,24 +41,110 @@ class _SearchDialog extends StatefulWidget {
 String _pdfLine(AppState s) {
   final p = s.pdfTexts;
   if (p.running) return 'Reading PDF text… ${p.done} of ${p.total}';
-  return 'Text inside PDFs is searched on this device. Scanned PDFs are '
-      'read with on-device text recognition (Windows OCR / Apple Vision) '
-      'where available; nothing is sent anywhere.';
+  return 'Typed text is searched on this device. Handwriting is not '
+      'searched. Nothing is sent anywhere.';
 }
 
 class _SearchDialogState extends State<_SearchDialog> {
+  final _controller = TextEditingController();
+  Timer? _pause;
   String _query = '';
   SearchFilter _filter = SearchFilter.all;
+
+  /// A search is waiting for the typing pause or is running.
+  bool _loading = false;
+  Object? _error;
+  List<SearchResult> _results = const [];
+
+  /// Results of a search by meaning (local AI), until the text changes.
+  List<SearchResult>? _meaning;
+  bool _searchingMeaning = false;
 
   @override
   void initState() {
     super.initState();
     unawaited(widget.state.pdfTexts.indexAll());
+    // Text that changes while the dialog is open (a PDF finishing, a note
+    // saved by sync) updates the results too.
+    widget.state.pdfTexts.addListener(_refreshSoon);
   }
 
-  /// Results of a search by meaning (local AI), until the text changes.
-  List<SearchResult>? _meaning;
-  bool _searchingMeaning = false;
+  @override
+  void dispose() {
+    widget.state.pdfTexts.removeListener(_refreshSoon);
+    _pause?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _refreshSoon() {
+    if (_query.trim().isNotEmpty) _schedule();
+  }
+
+  void _typed(String value) {
+    _query = value;
+    _meaning = null;
+    _schedule();
+    setState(() {});
+  }
+
+  void _schedule() {
+    _pause?.cancel();
+    if (_query.trim().isEmpty) {
+      setState(() {
+        _loading = false;
+        _error = null;
+        _results = const [];
+      });
+      return;
+    }
+    setState(() => _loading = true);
+    _pause = Timer(searchPause, _run);
+  }
+
+  Future<void> _run() async {
+    // One frame first, so "Searching…" shows before the first (possibly
+    // larger) index build.
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    final query = _query;
+    try {
+      final found = searchRanked(
+        widget.state,
+        query,
+        filter: _filter,
+        context: widget.rootContext,
+      );
+      if (!mounted || query != _query) return;
+      setState(() {
+        _results = found;
+        _error = null;
+        _loading = false;
+      });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
+
+  /// Starts again from a clean index (after an error).
+  void _retry() {
+    try {
+      widget.state.search.rebuild();
+    } on Object catch (error) {
+      setState(() => _error = error);
+      return;
+    }
+    _schedule();
+  }
+
+  void _clear() {
+    _controller.clear();
+    _typed('');
+  }
 
   Future<void> _byMeaning() async {
     final s = widget.state;
@@ -315,6 +158,8 @@ class _SearchDialogState extends State<_SearchDialog> {
             kind: 'By meaning ${(score * 100).round()}%',
             title: note.displayTitle,
             subtitle: note.body.split('\n').first,
+            section: 'By meaning',
+            location: 'Notes',
             open: () => s.openNote(note.id),
           ),
       ];
@@ -324,19 +169,33 @@ class _SearchDialogState extends State<_SearchDialog> {
     if (mounted) setState(() => _searchingMeaning = false);
   }
 
+  void _open(SearchResult r) {
+    Navigator.pop(context);
+    r.open();
+  }
+
+  /// Section headers and results in one list. Sections appear in the order
+  /// of their best result; inside a section the ranking is kept.
+  List<Object> _rows(List<SearchResult> results) {
+    final order = <String>[];
+    final bySection = <String, List<SearchResult>>{};
+    for (final r in results) {
+      final key = r.section.isEmpty ? 'Results' : r.section;
+      if (!bySection.containsKey(key)) order.add(key);
+      (bySection[key] ??= []).add(r);
+    }
+    return [
+      for (final key in order) ...[key, ...bySection[key]!],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final results =
-        _meaning ??
-        searchRanked(
-          widget.state,
-          _query,
-          filter: _filter,
-          context: widget.rootContext,
-        );
+    final results = _meaning ?? _results;
     final viewport = MediaQuery.sizeOf(context);
     final dialogWidth = (viewport.width - 24).clamp(0.0, 620.0).toDouble();
-    final dialogHeight = (viewport.height - 24).clamp(180.0, 460.0).toDouble();
+    final dialogHeight = (viewport.height - 24).clamp(180.0, 520.0).toDouble();
+    final rows = _rows(results);
     return Dialog(
       alignment: const Alignment(0, -0.5),
       insetPadding: const EdgeInsets.all(12),
@@ -350,26 +209,30 @@ class _SearchDialogState extends State<_SearchDialog> {
               padding: const EdgeInsets.all(AppSpace.lg),
               child: TextField(
                 key: const ValueKey('global-search-field'),
+                controller: _controller,
                 autofocus: true,
                 style: const TextStyle(fontSize: 15),
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search, size: 18),
-                  hintText: 'Search notes, canvases, links, calendar and tasks',
-                  contentPadding: EdgeInsets.symmetric(
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          key: const ValueKey('search-clear'),
+                          tooltip: 'Clear',
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: _clear,
+                        ),
+                  hintText: 'Search notes, tasks, calendar, mindmaps, Archive…',
+                  contentPadding: const EdgeInsets.symmetric(
                     horizontal: AppSpace.md,
                     vertical: 16,
                   ),
-                  constraints: BoxConstraints(minHeight: 56),
+                  constraints: const BoxConstraints(minHeight: 56),
                 ),
-                onChanged: (v) => setState(() {
-                  _query = v;
-                  _meaning = null;
-                }),
+                onChanged: _typed,
                 onSubmitted: (_) {
-                  if (results.isNotEmpty) {
-                    Navigator.pop(context);
-                    results.first.open();
-                  }
+                  if (results.isNotEmpty) _open(results.first);
                 },
               ),
             ),
@@ -421,67 +284,195 @@ class _SearchDialogState extends State<_SearchDialog> {
                         ),
                         selected: _filter == f,
                         visualDensity: VisualDensity.compact,
-                        onSelected: (_) => setState(() => _filter = f),
+                        onSelected: (_) {
+                          setState(() => _filter = f);
+                          _schedule();
+                        },
                       ),
                     ),
                 ],
               ),
             ),
             const Divider(),
-            Expanded(
-              child: results.isEmpty
-                  ? Center(
-                      child: Text(
-                        _query.isEmpty
-                            ? 'Start typing to search everything.'
-                            : 'Nothing found.',
-                        style: TextStyle(
-                          color: AppColors.textFaint,
-                          fontSize: AppType.sizeBodySmall,
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: results.length,
-                      itemBuilder: (context, i) {
-                        final r = results[i];
-                        return ListTile(
-                          dense: true,
-                          leading: Icon(
-                            r.icon,
-                            size: 18,
-                            color: AppColors.textMuted,
-                          ),
-                          title: Text(r.title, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(
-                            r.why.isEmpty
-                                ? r.subtitle
-                                : '${r.subtitle}\n${r.why}',
-                            maxLines: r.why.isEmpty ? 1 : 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: AppType.sizeLabel,
-                              color: AppColors.textFaint,
-                            ),
-                          ),
-                          trailing: Text(
-                            r.kind,
-                            style: TextStyle(
-                              fontSize: AppType.sizeMeta,
-                              color: AppColors.textFaint,
-                            ),
-                          ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            r.open();
-                          },
-                        );
-                      },
-                    ),
-            ),
+            Expanded(child: _body(rows, results)),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _message(String text, {String? detail, Widget? action, Key? key}) {
+    return Center(
+      key: key,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpace.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: AppType.sizeBodySmall,
+              ),
+            ),
+            if (detail != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                detail,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.textFaint,
+                  fontSize: AppType.sizeLabel,
+                ),
+              ),
+            ],
+            if (action != null) ...[const SizedBox(height: 8), action],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _body(List<Object> rows, List<SearchResult> results) {
+    if (_error != null) {
+      return _message(
+        'Search ran into a problem.',
+        detail: 'Your data is untouched. Try again.',
+        key: const ValueKey('search-error'),
+        action: TextButton(
+          key: const ValueKey('search-retry'),
+          onPressed: _retry,
+          child: const Text('Try again'),
+        ),
+      );
+    }
+    if (_query.trim().isEmpty) {
+      return _message(
+        'Start typing to search everything.',
+        detail:
+            'Notes, tasks, projects, calendar, mindmaps and the Archive. '
+            'Parts of words work too.',
+        key: const ValueKey('search-hint'),
+      );
+    }
+    if (results.isEmpty) {
+      if (_loading) {
+        return _message(
+          'Searching…',
+          key: const ValueKey('search-loading'),
+        );
+      }
+      return _message(
+        'Nothing found for “${_query.trim()}”.',
+        detail: _filter == SearchFilter.all
+            ? 'Check the spelling, or try fewer or shorter words.'
+            : 'Only ${_filter.label} is searched. Try All.',
+        key: const ValueKey('search-empty'),
+      );
+    }
+    return Column(
+      children: [
+        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        Expanded(
+          child: ListView.builder(
+            key: const ValueKey('search-results'),
+            itemCount: rows.length,
+            itemBuilder: (context, i) {
+              final row = rows[i];
+              if (row is String) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpace.lg,
+                    AppSpace.md,
+                    AppSpace.lg,
+                    2,
+                  ),
+                  child: Text(
+                    row.toUpperCase(),
+                    key: ValueKey('search-section-$row'),
+                    style: TextStyle(
+                      fontSize: AppType.sizeMeta,
+                      letterSpacing: 0.8,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textFaint,
+                    ),
+                  ),
+                );
+              }
+              return _row(row as SearchResult);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _row(SearchResult r) {
+    final meta = TextStyle(
+      fontSize: AppType.sizeLabel,
+      color: AppColors.textFaint,
+    );
+    return ListTile(
+      key: ValueKey('search-result-${r.kind}-${r.title}'),
+      dense: true,
+      leading: Icon(r.icon, size: 18, color: AppColors.textMuted),
+      title: _highlight(
+        r.title,
+        _query,
+        const TextStyle(fontSize: AppType.sizeBodySmall),
+        maxLines: 1,
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (r.subtitle.isNotEmpty) _highlight(r.subtitle, _query, meta),
+          if (r.location.isNotEmpty || r.why.isNotEmpty)
+            Text(
+              [
+                if (r.location.isNotEmpty) r.location,
+                if (r.why.isNotEmpty) r.why,
+              ].join('  ·  '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: meta.copyWith(fontSize: AppType.sizeMeta),
+            ),
+        ],
+      ),
+      trailing: Text(r.kind, style: meta.copyWith(fontSize: AppType.sizeMeta)),
+      onTap: () => _open(r),
+    );
+  }
+
+  /// [text] with the parts that match [query] in the accent colour and
+  /// bold.
+  Widget _highlight(String text, String query, TextStyle base, {int maxLines = 2}) {
+    final spans = matchRanges(text, query);
+    if (spans.isEmpty) {
+      return Text(
+        text,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+        style: base,
+      );
+    }
+    final marked = base.copyWith(
+      fontWeight: FontWeight.w700,
+      color: AppColors.accent,
+    );
+    final parts = <TextSpan>[];
+    var at = 0;
+    for (final s in spans) {
+      if (s.start > at) parts.add(TextSpan(text: text.substring(at, s.start)));
+      parts.add(TextSpan(text: text.substring(s.start, s.end), style: marked));
+      at = s.end;
+    }
+    if (at < text.length) parts.add(TextSpan(text: text.substring(at)));
+    return Text.rich(
+      TextSpan(style: base, children: parts),
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }

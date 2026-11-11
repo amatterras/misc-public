@@ -9,6 +9,7 @@ project(runner LANGUAGES CXX)
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
+  "pdf_renderer.cpp"
   "utils.cpp"
   "webview_host.cpp"
   "win32_window.cpp"
@@ -20,6 +21,10 @@ add_executable(${BINARY_NAME} WIN32
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
+
+# C++/WinRT needs C++20 (<coroutine>) with current MSVC; the rest of the
+# runner stays on the standard settings.
+set_source_files_properties("pdf_renderer.cpp" PROPERTIES COMPILE_OPTIONS "/std:c++20")
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
@@ -35,6 +40,8 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
+# C++/WinRT (Windows.Data.Pdf renders PDF pages; ships with Windows).
+target_link_libraries(${BINARY_NAME} PRIVATE "windowsapp.lib")
 
 # Microsoft Edge WebView2 SDK (headers + static loader) for Safari's
 # Windows engine, fetched once from Microsoft's official NuGet package at

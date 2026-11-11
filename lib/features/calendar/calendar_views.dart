@@ -72,7 +72,16 @@ extension CalendarViewInfo on CalendarView {
 /// Which items the views show (the page's filters).
 typedef ItemsOn = List<DayItem> Function(DateTime day);
 
-/// Month (6 weeks) or week grid of compact day cells.
+/// How many week rows the month of [anchor] needs, when its grid starts on
+/// [gridStart] (the first day shown): 4, 5 or 6.
+int monthWeeks(DateTime anchor, DateTime gridStart) {
+  final last = DateTime(anchor.year, anchor.month + 1, 0);
+  return (daysBetween(gridStart, last) ~/ 7) + 1;
+}
+
+/// Month or week grid of day cells. The grid fills the area it is given;
+/// every cell shows everything on its date (a crowded date scrolls inside
+/// its own cell, with the date kept in view).
 class CalendarGridView extends StatelessWidget {
   const CalendarGridView({
     super.key,
@@ -113,7 +122,11 @@ class CalendarGridView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final days = view.daysAround(anchor);
-    final rows = (days.length / 7).ceil();
+    // A month shows the weeks it really has (4, 5 or 6), so the cells grow
+    // into the space instead of a trailing week of the next month.
+    final rows = view == CalendarView.month
+        ? monthWeeks(anchor, days.first)
+        : (days.length / 7).ceil();
     final today = dateOnly(DateTime.now());
     final grid = Column(
       key: ValueKey('calendar-${view.name}'),
@@ -210,6 +223,7 @@ class _CompactDayCell extends StatelessWidget {
   final ValueChanged<DayItem> onItem;
   final ValueChanged<CalendarEntry> onToggleEntry;
 
+  /// Least height of one label row (a comfortable tap target).
   static const labelHeight = 18.0;
 
   @override
@@ -222,99 +236,88 @@ class _CompactDayCell extends StatelessWidget {
         decoration: BoxDecoration(
           border: Border.all(color: AppColors.background),
         ),
-        padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
-        child: LayoutBuilder(
-          builder: (context, box) {
-            // Date top-left, labels bottom-left, as many as fit.
-            final room = ((box.maxHeight - 22) / labelHeight).floor();
-            final fit = room < 0 ? 0 : room;
-            final shown = items.length > fit && fit > 0
-                ? items.take(fit - 1).toList()
-                : items.take(fit).toList();
-            final overflow = items.skip(shown.length).toList();
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${day.day}',
-                  style: TextStyle(
-                    fontSize: AppType.sizeBody,
-                    fontWeight: FontWeight.w600,
-                    color: isToday
-                        ? AppColors.accent
-                        : dimmed
-                        ? AppColors.textFaint
-                        : AppColors.text,
-                  ),
+        padding: const EdgeInsets.fromLTRB(6, 4, 6, 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // The date stays put; only the items below it scroll.
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                fontSize: AppType.sizeBody,
+                fontWeight: FontWeight.w600,
+                color: isToday
+                    ? AppColors.accent
+                    : dimmed
+                    ? AppColors.textFaint
+                    : AppColors.text,
+              ),
+            ),
+            if (items.isNotEmpty)
+              Expanded(
+                child: _CellItems(
+                  items: items,
+                  day: day,
+                  onItem: onItem,
+                  onToggleEntry: onToggleEntry,
                 ),
-                const Spacer(),
-                for (final item in shown)
-                  _ItemLabel(
-                    item: item,
-                    day: day,
-                    onTap: () => onItem(item),
-                    onToggleEntry: onToggleEntry,
-                  ),
-                if (overflow.isNotEmpty)
-                  InkWell(
-                    onTap: () => showAppDialog<void>(
-                      context: context,
-                      builder: (dialogContext) => AlertDialog(
-                        title: Text(formatLongDate(day)),
-                        content: SizedBox(
-                          width: 360,
-                          child: ListView(
-                            shrinkWrap: true,
-                            children: [
-                              for (final item in overflow)
-                                if (item case EntryOnDay(:final entry))
-                                  CheckboxListTile(
-                                    key: ValueKey(
-                                      'overflow-entry-check-${entry.id}-${dayKey(day)}',
-                                    ),
-                                    value: entry.isCheckedOn(day),
-                                    title: Text(entry.name),
-                                    controlAffinity:
-                                        ListTileControlAffinity.leading,
-                                    onChanged: (_) {
-                                      onToggleEntry(entry);
-                                      Navigator.of(dialogContext).pop();
-                                    },
-                                  )
-                                else
-                                  ListTile(
-                                    title: Text(item.label),
-                                    onTap: () {
-                                      Navigator.of(dialogContext).pop();
-                                      onItem(item);
-                                    },
-                                  ),
-                            ],
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(dialogContext).pop(),
-                            child: const Text('Close'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    child: SizedBox(
-                      height: labelHeight,
-                      child: Text(
-                        '+${overflow.length} more',
-                        style: TextStyle(
-                          fontSize: AppType.sizeMicro,
-                          color: AppColors.textFaint,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
+              ),
+          ],
         ),
+      ),
+    ),
+  );
+}
+
+/// Everything on a date, one after the other. Taller than the cell: it
+/// scrolls here (wheel, drag or the thin scrollbar) and is clipped to the
+/// cell, so it never paints over a neighbour. A list that fits takes no
+/// drags, so panning and zooming the grid is not affected.
+class _CellItems extends StatefulWidget {
+  const _CellItems({
+    required this.items,
+    required this.day,
+    required this.onItem,
+    required this.onToggleEntry,
+  });
+
+  final List<DayItem> items;
+  final DateTime day;
+  final ValueChanged<DayItem> onItem;
+  final ValueChanged<CalendarEntry> onToggleEntry;
+
+  @override
+  State<_CellItems> createState() => _CellItemsState();
+}
+
+class _CellItemsState extends State<_CellItems> {
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scrollbar(
+    controller: _scroll,
+    thickness: 3,
+    radius: const Radius.circular(AppRadii.xs),
+    child: SingleChildScrollView(
+      key: ValueKey('calendar-cell-items-${dayKey(widget.day)}'),
+      controller: _scroll,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final item in widget.items)
+            _ItemLabel(
+              item: item,
+              day: widget.day,
+              onTap: () => widget.onItem(item),
+              onToggleEntry: widget.onToggleEntry,
+            ),
+        ],
       ),
     ),
   );
@@ -346,9 +349,10 @@ class _ItemLabel extends StatelessWidget {
     };
     return GestureDetector(
       onTap: onTap,
-      child: SizedBox(
-        height: _CompactDayCell.labelHeight,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: _CompactDayCell.labelHeight),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (entry != null)
               Semantics(
@@ -367,24 +371,32 @@ class _ItemLabel extends StatelessWidget {
                 ),
               )
             else
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: dayItemColor(item),
-                  shape: BoxShape.circle,
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: dayItemColor(item),
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ),
             const SizedBox(width: 4),
             Expanded(
-              child: Text(
-                item.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: AppType.sizeMeta,
-                  decoration: done ? TextDecoration.lineThrough : null,
-                  color: done ? AppColors.textFaint : AppColors.textMuted,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 1),
+                // Two lines, so a long name is still readable; the full
+                // text is one tap away.
+                child: Text(
+                  item.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: AppType.sizeMeta,
+                    decoration: done ? TextDecoration.lineThrough : null,
+                    color: done ? AppColors.textFaint : AppColors.textMuted,
+                  ),
                 ),
               ),
             ),

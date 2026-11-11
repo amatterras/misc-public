@@ -10,6 +10,7 @@ import 'app_state.dart';
 import 'page_windows.dart';
 import 'navigation.dart' show appDestinations;
 import 'theme.dart';
+import '../features/search/search_dialog.dart' show showSearchDialog;
 import '../widgets/common.dart' show promptText;
 
 IconData pageIcon(AppPage kind) => switch (kind) {
@@ -224,6 +225,7 @@ class TopBar extends StatelessWidget {
                 children: [for (final p in w.all) _chip(context, p)],
               ),
             ),
+            _SearchPill(onTap: () => showSearchDialog(context, state)),
             IconButton(
               key: const ValueKey('top-bar-collapse'),
               tooltip: 'Collapse the page bar',
@@ -323,6 +325,68 @@ class TopBar extends StatelessWidget {
                       ),
                     ),
                   ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Search everything" in the upper-right corner of the page bar: opens the
+/// global search (the same one as Ctrl+K and the command palette). A pill
+/// with its label in a wide window, just the magnifier in a narrow one.
+class _SearchPill extends StatelessWidget {
+  const _SearchPill({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 760;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.xs, vertical: 5),
+      child: Tooltip(
+        message: 'Search everything  (Ctrl+K)',
+        child: Semantics(
+          button: true,
+          label: 'Search everything',
+          child: InkWell(
+            key: const ValueKey('top-bar-search'),
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppRadii.capsule),
+            hoverColor: AppColors.hover,
+            child: Container(
+              height: 24,
+              width: wide ? 176 : 34,
+              padding: EdgeInsets.symmetric(horizontal: wide ? 10 : 0),
+              decoration: BoxDecoration(
+                color: AppColors.glass,
+                borderRadius: BorderRadius.circular(AppRadii.capsule),
+                border: Border.all(color: AppColors.glassBorder),
+              ),
+              child: Row(
+                mainAxisAlignment: wide
+                    ? MainAxisAlignment.start
+                    : MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.search, size: 14, color: AppColors.textMuted),
+                  if (wide) ...[
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Search everything',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppType.sizeLabel,
+                          color: AppColors.textFaint,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

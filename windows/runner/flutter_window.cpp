@@ -4,9 +4,16 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "pdf_renderer.h"
 #include "utils.h"
+
+namespace {
+// Posted when a background job queued a reply for the platform thread.
+constexpr UINT kRunUiTasksMessage = WM_APP + 0x5D;
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -38,6 +45,68 @@ bool FlutterWindow::OnCreate() {
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
+        // PDF rendering (Windows.Data.Pdf): work runs on a worker thread,
+        // the reply is marshalled back to this (the platform) thread.
+        if (call.method_name() == "pdfInfo" ||
+            call.method_name() == "pdfRenderPage") {
+          std::string path;
+          int page = 0, width = 0;
+          if (call.method_name() == "pdfInfo") {
+            const auto* p = std::get_if<std::string>(call.arguments());
+            if (!p) {
+              result->Error("bad-args", "Expected a path");
+              return;
+            }
+            path = *p;
+          } else {
+            const auto* args =
+                std::get_if<flutter::EncodableMap>(call.arguments());
+            if (!args) {
+              result->Error("bad-args", "Expected a map");
+              return;
+            }
+            auto path_it = args->find(flutter::EncodableValue("path"));
+            if (path_it != args->end()) {
+              if (const auto* v = std::get_if<std::string>(&path_it->second)) {
+                path = *v;
+              }
+            }
+            auto read_arg = [args](const char* key) -> int {
+              auto it = args->find(flutter::EncodableValue(key));
+              if (it == args->end()) return 0;
+              if (const auto* v = std::get_if<int32_t>(&it->second)) return *v;
+              if (const auto* v = std::get_if<int64_t>(&it->second)) {
+                return static_cast<int>(*v);
+              }
+              return 0;
+            };
+            page = read_arg("page");
+            width = read_arg("width");
+            if (path.empty()) {
+              result->Error("bad-args", "Expected a path");
+              return;
+            }
+          }
+          std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>
+              shared(result.release());
+          auto reply = [this, shared](flutter::EncodableValue value,
+                                      std::string error) {
+            PostUiTask([shared, value = std::move(value),
+                        error = std::move(error)]() {
+              if (error.empty()) {
+                shared->Success(value);
+              } else {
+                shared->Error("pdf", error);
+              }
+            });
+          };
+          if (call.method_name() == "pdfInfo") {
+            pdf_renderer::PageSizes(path, std::move(reply));
+          } else {
+            pdf_renderer::RenderPage(path, page, width, std::move(reply));
+          }
+          return;
+        }
         if (call.method_name() != "setWindowTheme") {
           result->NotImplemented();
           return;
@@ -85,12 +154,27 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  {
+    // Late PDF replies must not reach a torn-down engine.
+    std::lock_guard<std::mutex> lock(ui_tasks_->mutex);
+    ui_tasks_->alive = false;
+    ui_tasks_->tasks.clear();
+  }
   webviews_ = nullptr;  // before the engine it talks through
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
 
   Win32Window::OnDestroy();
+}
+
+void FlutterWindow::PostUiTask(std::function<void()> task) {
+  {
+    std::lock_guard<std::mutex> lock(ui_tasks_->mutex);
+    if (!ui_tasks_->alive) return;
+    ui_tasks_->tasks.push_back(std::move(task));
+  }
+  PostMessage(GetHandle(), kRunUiTasksMessage, 0, 0);
 }
 
 LRESULT
@@ -108,6 +192,17 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   switch (message) {
+    case kRunUiTasksMessage: {
+      std::vector<std::function<void()>> tasks;
+      {
+        std::lock_guard<std::mutex> lock(ui_tasks_->mutex);
+        tasks.swap(ui_tasks_->tasks);
+      }
+      for (auto& task : tasks) {
+        task();
+      }
+      return 0;
+    }
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;

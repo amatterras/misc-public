@@ -24,7 +24,7 @@ import '../../data/storage/app_log.dart';
 import '../../new_ui/new_components.dart' show NewAtmosphere;
 import '../../platform/device_idiom.dart';
 import '../../platform/input_hints.dart';
-import '../../platform/ios_bridge.dart';
+import '../../platform/pdf_renderer.dart';
 import '../../widgets/common.dart';
 import '../canvas/canvas_controller.dart';
 import '../canvas/canvas_painter.dart';
@@ -521,7 +521,9 @@ class _NotePageState extends State<NotePage> {
     for (final asset in assets) {
       s.workspace.attachToNote(widget.noteId, asset.id);
       final file = s.workspace.documentFile(asset);
-      final sizes = file == null ? null : await s.ios?.pdfPageSizes(file.path);
+      final sizes = file == null
+          ? null
+          : await PdfRenderer.instance?.pageSizes(file.path);
       if (sizes == null || sizes.isEmpty) continue;
       final layout = NotebookLayout(
         backgrounds: backgrounds,
@@ -548,8 +550,8 @@ class _NotePageState extends State<NotePage> {
       s.showToast('Added $added PDF page(s)');
     } else {
       s.showToast(
-        'PDF attached to the note. Its pages can be written on on '
-        'iPhone/iPad.',
+        'PDF attached to the note. Open it from the attachment chip; its '
+        'pages could not be laid out here.',
       );
     }
   }
@@ -1545,7 +1547,9 @@ Future<String?> importPdfAsNote(AppState state, {String? folderId}) async {
   );
   state.workspace.attachToNote(note.id, asset.id);
   final file = state.workspace.documentFile(asset);
-  final sizes = file == null ? null : await state.ios?.pdfPageSizes(file.path);
+  final sizes = file == null
+      ? null
+      : await PdfRenderer.instance?.pageSizes(file.path);
   if (sizes != null && sizes.isNotEmpty) {
     final doc = CanvasDocument(
       id: notebookIdFor(note.id),
@@ -1568,7 +1572,8 @@ Future<String?> importPdfAsNote(AppState state, {String? folderId}) async {
     await state.canvases.save(doc);
   } else {
     state.showToast(
-      'PDF saved as a note. Its pages can be written on on iPhone/iPad.',
+      'PDF saved as a note. Open it from the attachment chip; its pages '
+      'could not be laid out here.',
     );
   }
   await state.workspace.flush();
@@ -1609,12 +1614,12 @@ class _PdfPageViewState extends State<PdfPageView> {
   }
 
   void _load() {
-    final ios = widget.state.ios;
+    final renderer = PdfRenderer.instance;
     final asset = widget.state.workspace.assets[widget.background.assetId];
     final file = asset == null
         ? null
         : widget.state.workspace.documentFile(asset);
-    if (ios == null || file == null) return;
+    if (renderer == null || file == null) return;
     final ratio = MediaQuery.devicePixelRatioOf(context);
     // Widths in steps of 256 px, so small zoom changes reuse the image.
     final want = (NotebookLayout.pageWidth * widget.scale * ratio / 256)
@@ -1625,7 +1630,7 @@ class _PdfPageViewState extends State<PdfPageView> {
     _key = key;
     unawaited(
       PdfPageCache.instance
-          .get(ios, file.path, widget.background.pdfPage, want * 256)
+          .get(renderer, file.path, widget.background.pdfPage, want * 256)
           .then((image) {
             if (mounted && _key == key) setState(() => _image = image);
           }),
@@ -1643,9 +1648,9 @@ class _PdfPageViewState extends State<PdfPageView> {
       color: BackgroundPalette.lightPaper,
       child: Center(
         child: Text(
-          widget.state.ios == null
-              ? 'PDF page ${widget.background.pdfPage + 1} (shown on '
-                    'iPhone/iPad)'
+          PdfRenderer.instance == null
+              ? 'PDF page ${widget.background.pdfPage + 1} (not shown on '
+                    'this device)'
               : '',
           style: const TextStyle(
             color: Colors.black54,
@@ -1666,14 +1671,14 @@ class PdfPageCache {
   static const capacity = 8;
   final _images = <String, Future<ui.Image?>>{};
 
-  Future<ui.Image?> get(IosBridge ios, String path, int page, int width) {
+  Future<ui.Image?> get(PdfRenderer renderer, String path, int page, int width) {
     final key = '$path#$page@$width';
     final cached = _images.remove(key);
     if (cached != null) {
       _images[key] = cached; // most recently used last
       return cached;
     }
-    final future = _render(ios, path, page, width);
+    final future = _render(renderer, path, page, width);
     _images[key] = future;
     while (_images.length > capacity) {
       unawaited(
@@ -1684,13 +1689,13 @@ class PdfPageCache {
   }
 
   static Future<ui.Image?> _render(
-    IosBridge ios,
+    PdfRenderer renderer,
     String path,
     int page,
     int width,
   ) async {
     try {
-      final bytes = await ios.renderPdfPage(path, page, width);
+      final bytes = await renderer.renderPage(path, page, width);
       if (bytes == null) return null;
       final codec = await ui.instantiateImageCodec(bytes);
       return (await codec.getNextFrame()).image;

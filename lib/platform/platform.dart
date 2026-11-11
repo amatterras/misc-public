@@ -76,6 +76,21 @@ Future<File> replaceFile(File source, File destination) async {
 List<String> pickCalendarFiles() =>
     Platform.isWindows ? win.pickCalendarFiles() : const <String>[];
 
+/// Puts an image on the system clipboard (Windows; iPhone/iPad copy
+/// through the share sheet instead). [rgba] is width×height×4 raw pixels;
+/// [png] the same image encoded, for apps that paste PNG.
+bool copyImageToClipboard({
+  required Uint8List rgba,
+  required int width,
+  required int height,
+  Uint8List? png,
+}) =>
+    Platform.isWindows &&
+    win.writeClipboardImage(rgba: rgba, width: width, height: height, png: png);
+
+/// Whether [copyImageToClipboard] works here.
+bool get canCopyImages => Platform.isWindows;
+
 /// Opens a stored document in its default app (iOS: Quick Look preview).
 bool openDocument(String path) => Platform.isIOS
     ? IosBridge.instance.openDocument(path)

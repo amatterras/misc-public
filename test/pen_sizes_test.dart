@@ -127,6 +127,9 @@ void main() {
         ),
       ),
     );
+    // The pen's panel starts folded; the chosen pen opens it.
+    c.setOptionsExpanded(true);
+    await tester.pumpAndSettle();
     for (final w in penSizes) {
       expect(find.byKey(ValueKey('pen-size-$w')), findsOneWidget);
     }

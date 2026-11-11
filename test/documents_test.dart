@@ -143,7 +143,7 @@ void main() {
     final s = await start([]);
     await s.workspace.documentAssetFromFile(pdf);
     final hits = searchEverything(s, 'lecture');
-    expect(hits.map((r) => r.kind), contains('Document'));
+    expect(hits.map((r) => r.kind), contains('PDF'));
     s.dispose();
   });
 
