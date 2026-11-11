@@ -193,3 +193,57 @@ Future<bool> setLocalHubPaused(bool paused, {Directory? hubDir}) async {
     client.close(force: true);
   }
 }
+
+/// The devices paired with the hub running on this PC (ids, names, whether
+/// removed), read as its owner, or null when no hub answers here. Works
+/// before this PC is itself paired, so Settings → Sync can notice that an
+/// iPhone/iPad just used a code shown here.
+Future<List<({String id, String name, bool revoked})>?> localHubDevices({
+  Directory? hubDir,
+}) async {
+  if (hubDir == null &&
+      (TestEnvironment.active ||
+          Platform.environment.containsKey('FLUTTER_TEST'))) {
+    return null;
+  }
+  final dir = hubDir ?? defaultLocalHubDir();
+  final port = await localHubPort(dir);
+  if (port == null) return null;
+  final token = await readSecret(HubAuth.adminTokenFile(dir));
+  if (token == null) return null;
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+  try {
+    final req = await client.getUrl(
+      Uri.parse('http://127.0.0.1:$port/v1/admin/status'),
+    );
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+    final res = await req.close();
+    final body = jsonDecode(await utf8.decodeStream(res));
+    if (res.statusCode != 200 || body is! Map || body['devices'] is! List) {
+      return null;
+    }
+    return [
+      for (final d in body['devices'] as List)
+        if (d is Map && d['id'] is String)
+          (
+            id: d['id'] as String,
+            name: d['name'] is String ? d['name'] as String : 'A device',
+            revoked: d['revoked'] == true,
+          ),
+    ];
+  } on Object {
+    return null; // no hub answering here right now
+  } finally {
+    client.close(force: true);
+  }
+}
+
+/// Which of [now] are new since [before] (not removed, not [selfId]).
+List<({String id, String name, bool revoked})> newlyPairedDevices(
+  Set<String> before,
+  List<({String id, String name, bool revoked})> now, {
+  String? selfId,
+}) => [
+  for (final d in now)
+    if (!d.revoked && d.id != selfId && !before.contains(d.id)) d,
+];

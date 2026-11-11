@@ -1,5 +1,6 @@
 import 'peer_sync_row.dart';
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -51,6 +52,7 @@ class _SyncSectionState extends State<SyncSection> {
 
   @override
   void dispose() {
+    _watch?.cancel();
     _url.dispose();
     _code.dispose();
     super.dispose();
@@ -78,19 +80,147 @@ class _SyncSectionState extends State<SyncSection> {
       _error = null;
     });
     try {
+      final before = await localHubDevices();
       final r = await widget.state.newPairingCode();
       _code.text = r.code;
       _url.text = 'http://127.0.0.1:${r.port}';
+      _joined = null;
       _shownCode =
-          'Code ${r.code} (valid ${r.minutes} minutes). '
-          '${widget.state.syncPaired ? '' : 'Press Pair to connect this PC, or '}'
+          'Code ${r.code} (valid ${r.minutes} minutes, works once). '
+          '${widget.state.syncPaired ? '' : 'Press Pair to link this PC first, then get a second code for your iPhone/iPad. Or '}'
           'type the code on your iPhone/iPad with this PC’s '
           'Tailscale address (http://100.x.y.z:${r.port}).';
+      _watchForNewDevice(before, Duration(minutes: r.minutes));
     } on LocalHubException catch (e) {
       _error = e.message;
     }
     if (mounted) setState(() => _busy = false);
   }
+
+  // ---- noticing that another device used the code shown here ----------
+  //
+  // The code is redeemed on the hub, not in this window, so without this the
+  // PC showed the same code forever while the iPad was already connected
+  // (and, when this PC was not paired, never said that the PC itself still
+  // has to be linked to see the iPad's notes).
+
+  Timer? _watch;
+
+  /// The device that just used the code shown here.
+  String? _joined;
+
+  /// Bumped to make the device list load again.
+  int _devicesVersion = 0;
+
+  void _watchForNewDevice(
+    List<({String id, String name, bool revoked})>? before,
+    Duration lifetime,
+  ) {
+    _watch?.cancel();
+    if (before == null) return; // no hub answering as owner here
+    final known = {for (final d in before) d.id};
+    final until = DateTime.now().add(lifetime + const Duration(minutes: 1));
+    var checking = false;
+    _watch = Timer.periodic(const Duration(seconds: 3), (t) async {
+      if (checking) return;
+      if (!mounted || DateTime.now().isAfter(until)) {
+        t.cancel();
+        return;
+      }
+      checking = true;
+      try {
+        final now = await localHubDevices();
+        if (now == null || !mounted) return;
+        final selfId = widget.state.workspace.device?.id;
+        // This PC used the code itself (Pair): the switch dialog says so.
+        if (now.any((d) => d.id == selfId && !known.contains(d.id))) {
+          t.cancel();
+          return;
+        }
+        final fresh = newlyPairedDevices(known, now, selfId: selfId);
+        if (fresh.isEmpty) return;
+        t.cancel();
+        setState(() {
+          _joined = fresh.first.name;
+          _shownCode = null;
+          _code.clear();
+          _devicesVersion++;
+        });
+        // Take in what the new device sends as soon as it arrives.
+        if (widget.state.syncPaired) unawaited(widget.state.syncNow());
+      } finally {
+        checking = false;
+      }
+    });
+  }
+
+  /// Links this PC with the hub running on it: a fresh code (the shown one
+  /// was used by the other device), then the usual verified switch.
+  Future<void> _linkThisPc() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final r = await widget.state.newPairingCode();
+      if (!mounted) return;
+      setState(() => _busy = false);
+      final ok = await showStorageSwitchDialog(
+        context,
+        widget.state,
+        StorageMode.pcHub,
+        address: 'http://127.0.0.1:${r.port}',
+        pairingCode: r.code,
+      );
+      if (ok && mounted) setState(() => _joined = null);
+    } on LocalHubException catch (e) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = e.message;
+        });
+      }
+    }
+  }
+
+  Widget _joinedNotice(String name, {required bool pcPaired}) => Padding(
+    key: const ValueKey('device-joined'),
+    padding: const EdgeInsets.only(bottom: AppSpace.sm),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.check_circle_outline, size: 16, color: AppColors.success),
+            const SizedBox(width: AppSpace.xs),
+            Expanded(
+              child: Text(
+                '$name is now connected to the hub on this PC.',
+                style: const TextStyle(fontSize: AppType.sizeBodySmall),
+              ),
+            ),
+          ],
+        ),
+        if (!pcPaired) ...[
+          const SizedBox(height: AppSpace.xs),
+          Text(
+            'This PC itself is not linked to the hub yet, so notes from '
+            '$name will not show up here. Link this PC to sync both ways.',
+            style: TextStyle(
+              fontSize: AppType.sizeLabel,
+              color: AppColors.textFaint,
+            ),
+          ),
+          const SizedBox(height: AppSpace.xs),
+          FilledButton(
+            key: const ValueKey('link-this-pc'),
+            onPressed: _busy ? null : _linkThisPc,
+            child: const Text('Link this PC'),
+          ),
+        ],
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +255,7 @@ class _SyncSectionState extends State<SyncSection> {
                     label: const Text('Sync health'),
                   ),
                 ),
+              if (_joined != null) _joinedNotice(_joined!, pcPaired: false),
               _ConnectGuide(mobile: mobile),
               _HostedForm(state: s),
               if (!mobile && Platform.isWindows)
@@ -309,7 +440,11 @@ class _SyncSectionState extends State<SyncSection> {
                 ),
               ),
             const SizedBox(height: AppSpace.sm),
-            DevicesSection(state: s),
+            if (_joined != null) _joinedNotice(_joined!, pcPaired: true),
+            DevicesSection(
+              key: ValueKey('devices-$_devicesVersion'),
+              state: s,
+            ),
             const SizedBox(height: AppSpace.sm),
             SwitchListTile(
               key: const ValueKey('handoff-enabled'),
