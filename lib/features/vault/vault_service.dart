@@ -1,6 +1,5 @@
 // The private vault: notes only readable with the vault password (or the
-// recovery code). Threat model and limits are in
-// docs/history/THEAPP_IMPLEMENTATION_HANDOFF.md (5/5). In short: the vault protects
+// recovery code). In short: the vault protects
 // what is stored on disk, in backups and on the hub; it cannot protect
 // against malware on an unlocked device. Vault items never go to search,
 // AI, sharing or exports. It locks after [idleLimit] and when the app goes

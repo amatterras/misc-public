@@ -23,8 +23,7 @@ import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/phone/phone_profile.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const _out =
-    r'C:\Users\user\Documents\THEapp\theapp\flutter_application_1\screenshots\phone';
+const _out = r'screenshots\phone';
 
 Future<void> _loadFonts() async {
   ByteData bytes(String p) => ByteData.sublistView(File(p).readAsBytesSync());

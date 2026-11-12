@@ -96,13 +96,9 @@ One set of tokens, one name per token:
   with title/heading swapped). Those aliases are gone; don't reintroduce them.
 
 ### Documents
-- Root: `README.md`, this file, `MASTER_SPEC.md` (product decisions) and
-  `THEapp_PROGRESS.md` (dated work log).
+- Root: `README.md` and this file.
 - `docs/` — current reference: sync, storage modes, migrations, iOS build,
-  feature matrix, requirements inventory, Archive library, ink engine,
-  phone UI, security audit, manual checklist.
-- `docs/history/` — dated audits, hand-offs and verification reports. Kept
-  as a record; they describe the code as it was then, not now.
+  feature matrix, Archive library, phone UI, security audit.
 
 ## Testing
 - **Manual testing never uses real data.** `tool/testenv.ps1` manages a separate
@@ -204,8 +200,7 @@ audit above; the audit remains intact as a record of its earlier inspection.
 - Windows widget/integration tests exercise exports, welcome dismissal, drawing
   gestures, inter-window drag, reading goals, note zoom, compact floating browser and
   sync. Passing tests establish code behavior, not a fresh visible native-window or
-  physical iPad/Pencil check. See `docs/history/THEAPP_VERIFICATION_REPORT.md` for the exact
-  commands and current environment limits.
+  physical iPad/Pencil check. 
 
 ## Data safety and storage modes (2026-10-25)
 
@@ -234,4 +229,4 @@ audit above; the audit remains intact as a record of its earlier inspection.
   `lib/app/theme.dart` owns semantic theme roles and the shared drawing swatches;
   stored ink colors remain object colors and do not change with the UI theme.
   The light token values are provisional because the earlier exact palette was
-  not recoverable from repository docs or history; see `MASTER_SPEC.md`.
+  not recoverable from repository docs or history .

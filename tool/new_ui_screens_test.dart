@@ -24,9 +24,8 @@ import 'package:flutter_application_1/main.dart';
 import 'package:flutter_application_1/platform/device_idiom.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const _out =
-    r'C:\Users\user\Documents\THEapp\theapp\flutter_application_1\screenshots\new_ui';
-const _testEnv = r'C:\Users\user\Documents\THEapp\THEapp-TESTENV';
+const _out = r'screenshots\new_ui';
+final _testEnv = Platform.environment['THEAPP_TESTENV'] ?? 'THEapp-TESTENV';
 
 Future<void> _loadFonts() async {
   ByteData bytes(String p) => ByteData.sublistView(File(p).readAsBytesSync());

@@ -53,3 +53,29 @@ hosted-data/
 
 # Windows release output (scripts/build_windows_release.ps1)
 /dist/
+
+# Secrets and signing material (never commit)
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.p8
+*.jks
+*.keystore
+*.key
+*.pem
+!test/support/tls/*.pem
+GoogleService-Info.plist
+google-services.json
+firebase*.json
+
+# Built apps, user data and backups
+*.ipa
+*.exe
+*.msix
+*.theappbackup
+backups/

@@ -2874,7 +2874,7 @@ class AppState extends ChangeNotifier {
 
   /// The two calendar accounts (each connected and revoked on its own).
   /// Client ids are the user's own app registrations (not secret, kept in
-  /// settings); see docs/history/THEAPP_IMPLEMENTATION_HANDOFF.md for setup.
+  /// settings); see the Settings screen for setup.
   late final Map<String, ExternalCalendarSync> calendarAccounts = {
     'google': ExternalCalendarSync(
       ws: workspace,

@@ -212,7 +212,7 @@ This is a self-review, not an independent audit; misc. is not "certified secure"
 | Native shell actions (Always on top, Send to, drag-and-drop) | Implemented; real-window behaviour partly manual | n/a |
 | Hosted service | Code and Docker config exist; tested in-process without TLS; **not deployed** | n/a |
 
-"Verified" here means an automated test or recorded check; a passing fake-provider or simulated-channel test is not real-service or real-hardware verification. The manual checks that still need a person are in [`docs/MANUAL_CHECKLIST.md`](docs/MANUAL_CHECKLIST.md).
+"Verified" here means an automated test or recorded check; a passing fake-provider or simulated-channel test is not real-service or real-hardware verification.
 
 ## Getting started (development)
 
@@ -364,17 +364,11 @@ Anything the user can read (window title, iOS home-screen name, permission promp
 | Document | Covers |
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Data layout, code layout, layering rules, testing |
-| [`MASTER_SPEC.md`](MASTER_SPEC.md) | Product decisions and palettes |
-| [`THEapp_PROGRESS.md`](THEapp_PROGRESS.md) | Dated work log |
 | [`docs/FEATURE_MATRIX.md`](docs/FEATURE_MATRIX.md) | Every requirement with status and evidence |
 | [`docs/SYNC_ARCHITECTURE.md`](docs/SYNC_ARCHITECTURE.md) | Sync protocol, conflicts, security, backups |
 | [`docs/STORAGE_MODES.md`](docs/STORAGE_MODES.md) | Local / PC hub / hosted, and switching |
 | [`docs/DATA_MIGRATIONS.md`](docs/DATA_MIGRATIONS.md) | Versioned migrations, backups, deletion |
 | [`docs/LIBRARY_ARCHITECTURE.md`](docs/LIBRARY_ARCHITECTURE.md) | The Archive object library |
-| [`docs/INK_ENGINE_REPORT.md`](docs/INK_ENGINE_REPORT.md) | Pencil/ink capture and rendering |
 | [`docs/PHONE_UI.md`](docs/PHONE_UI.md) | The iPhone layer |
 | [`docs/IOS_BUILD_GUIDE.md`](docs/IOS_BUILD_GUIDE.md) | Building the IPA with Codemagic |
 | [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) | Threat model and findings |
-| [`docs/MANUAL_CHECKLIST.md`](docs/MANUAL_CHECKLIST.md) | Checks that need a person |
-| [`docs/THEAPP_REQUIREMENTS_INVENTORY.md`](docs/THEAPP_REQUIREMENTS_INVENTORY.md) | Requirements inventory |
-| [`docs/history/`](docs/history) | Dated audits and hand-offs (a record, not current truth) |

@@ -2,7 +2,7 @@
 // web page, a note as Markdown, as pictures of its pages, or as a web
 // page. Files go to the "THEapp Exports" folder; the note, mindmap and
 // attachments are only read. Read-only web pages are files you can send
-// or put online yourself; THEapp does not host them (see MASTER_SPEC).
+// or put online yourself; THEapp does not host them.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';

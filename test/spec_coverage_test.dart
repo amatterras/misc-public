@@ -1,4 +1,4 @@
-// Requirements from MASTER_SPEC.md that had code but no direct test.
+// Requirements from the product spec that had code but no direct test.
 import 'dart:convert';
 import 'dart:io';
 

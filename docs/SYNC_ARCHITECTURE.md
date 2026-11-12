@@ -460,8 +460,7 @@ sync (§11).
 
 ## 15. Running the hub
 
-Run every command from the project folder
-`C:\Users\user\Documents\THEapp\theapp\flutter_application_1`:
+Run every command from the repository root:
 
 | Action | Command |
 |---|---|

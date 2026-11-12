@@ -1,5 +1,5 @@
 // Regression tests for the reliability audit of 2026-11-10 (see
-// docs/history/RELIABILITY_AUDIT_2026-11-10.md). Each failed before its fix.
+// the 2026-11-10 reliability audit). Each failed before its fix.
 // The iOS side is SIMULATED; nothing here proves iPad behaviour.
 import 'dart:convert';
 import 'dart:io';

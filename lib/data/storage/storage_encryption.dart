@@ -17,7 +17,7 @@
 //   iPhone/iPad) get NO encryption and say so ([EncryptionStatus]); the key
 //   is never written beside the data.
 //
-// What is NOT covered (see STORAGE_MODES / MASTER_SPEC): the log, user-asked
+// What is NOT covered (see docs/STORAGE_MODES.md): the log, user-asked
 // exports, the home-screen widget snapshot, and the short-lived decrypted
 // copies that native viewers need (see AttachmentStore.viewFile).
 import 'dart:convert';

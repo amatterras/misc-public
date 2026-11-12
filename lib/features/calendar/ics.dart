@@ -3,7 +3,7 @@
 // event becomes a line in that day's notes ("10:00 Dentist"), so it never
 // breaks the five-active-entries rule; importing the same file twice adds
 // nothing new. Live two-way sync with Google or Outlook needs their OAuth
-// apps and is not part of THEapp (see docs/history/THEAPP_IMPLEMENTATION_HANDOFF.md).
+// apps and is not part of THEapp.
 import 'dart:convert';
 
 import '../../data/models/calendar_models.dart';

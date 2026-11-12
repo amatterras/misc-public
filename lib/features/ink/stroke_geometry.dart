@@ -2,7 +2,7 @@
 // pages, PDF pages, Calendar days, widgets) so ink looks and behaves the
 // same everywhere, on every platform.
 //
-// Two representations are kept apart (docs/INK_ENGINE_REPORT.md):
+// Two representations are kept apart:
 //  * the saved stroke: the raw samples as the pen delivered them
 //    (position + pressure), never smoothed or resampled;
 //  * the drawn shape, rebuilt from those samples here, every time, by
